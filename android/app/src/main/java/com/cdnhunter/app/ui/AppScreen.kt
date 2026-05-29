@@ -68,7 +68,7 @@ fun AppScreen(
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
     var currentTab by remember { mutableStateOf(Tab.HOME) }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0A0E21), DarkBg)))) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 when (currentTab) {
@@ -126,7 +126,7 @@ private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (Sc
                     .clickable { if (state.running) onStop() else onStart() },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.Radar, null, tint = Color.White, modifier = Modifier.size(48.dp))
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -154,12 +154,28 @@ private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (Sc
                 Text("CDN Provider", fontSize = 13.sp, color = TextSecondary)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(CdnProvider.SMART, CdnProvider.CLOUDFLARE, CdnProvider.AKAMAI, CdnProvider.FASTLY, CdnProvider.ALL).forEach { p ->
+                    CdnProvider.entries.forEach { p ->
                         val sel = config.cdnProvider == p
                         Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.2f) else CardBg2).clickable { onConfigChange(config.copy(cdnProvider = p)) }.padding(10.dp, 6.dp)) {
                             Text(p.label, fontSize = 12.sp, color = if (sel) AccentBlue else TextSecondary)
                         }
                     }
+                }
+                // Manual IP input
+                if (config.cdnProvider == CdnProvider.MANUAL) {
+                    Spacer(Modifier.height(10.dp))
+                    ConfigField(config.manualIps, { onConfigChange(config.copy(manualIps = it)) }, "IPs: 1.2.3.4, 5.6.7.8")
+                }
+                // Manual CIDR input
+                if (config.cdnProvider == CdnProvider.CIDR) {
+                    Spacer(Modifier.height(10.dp))
+                    ConfigField(config.manualCidr, { onConfigChange(config.copy(manualCidr = it)) }, "CIDR: 104.16.0.0/12")
+                }
+                // Max IPs + Workers
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f)) { ConfigField("${config.maxIps}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v.coerceIn(10, 50000))) } }, "Max IPs") }
+                    Box(Modifier.weight(1f)) { ConfigField("${config.concurrency}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v.coerceIn(1, 500))) } }, "Workers") }
                 }
             }
         }
@@ -329,9 +345,12 @@ private fun ConfigScreen(results: List<ScanResult>) {
             Spacer(Modifier.height(8.dp))
             ConfigField(sni, { sni = it }, "SNI (e.g. a248.e.akamai.net)")
             Spacer(Modifier.height(6.dp))
-            ConfigField(host, { host = it }, "Host header")
+            ConfigField(host, { host = it }, "Host header (your domain)")
             Spacer(Modifier.height(6.dp))
             ConfigField(uuid, { uuid = it }, "UUID (auto = random)")
+            Spacer(Modifier.height(6.dp))
+            var domain by remember { mutableStateOf("") }
+            ConfigField(domain, { domain = it; if (host.isBlank()) host = it }, "Your Domain (e.g. mysite.com)")
         } } }
         // Generate button
         item { Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp))
@@ -402,7 +421,7 @@ private fun ToolsScreen(
                 Box(Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(12.dp))
                     .background(if (sel) AccentBlue.copy(0.12f) else CardBg2)
                     .border(1.dp, if (sel) AccentBlue.copy(0.5f) else Color.Transparent, RoundedCornerShape(12.dp))
-                    .clickable { onConfigChange(profile.config); onStart() }.padding(12.dp)) {
+                    .clickable { onConfigChange(profile.config) }.padding(12.dp)) {
                     Column {
                         Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else TextPrimary)
                         Text(profile.desc, fontSize = 11.sp, color = TextSecondary)

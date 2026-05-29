@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
@@ -20,24 +19,42 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             CDNHunterTheme {
-                MainContent()
+                MainContent(this)
             }
         }
     }
 }
 
 @Composable
-fun MainContent() {
+fun MainContent(activity: ComponentActivity) {
     val viewModel: ScanViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val config by viewModel.config.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
+    // Load saved config on first launch
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("cdnhunter", 0)
+        val savedConc = prefs.getInt("concurrency", 60)
+        val savedMax = prefs.getInt("maxIps", 3000)
+        val savedTimeout = prefs.getFloat("timeout", 4.0f)
+        val savedHost = prefs.getString("host", "") ?: ""
+        val savedSni = prefs.getString("sni", "") ?: ""
+        viewModel.updateConfig(config.copy(concurrency = savedConc, maxIps = savedMax, timeout = savedTimeout, host = savedHost, sni = savedSni))
+    }
+
     AppScreen(
         state = state,
         config = config,
-        onConfigChange = { viewModel.updateConfig(it) },
+        onConfigChange = { newConfig ->
+            viewModel.updateConfig(newConfig)
+            // Save to SharedPreferences
+            val prefs = context.getSharedPreferences("cdnhunter", 0)
+            prefs.edit().putInt("concurrency", newConfig.concurrency).putInt("maxIps", newConfig.maxIps)
+                .putFloat("timeout", newConfig.timeout).putString("host", newConfig.host)
+                .putString("sni", newConfig.sni).apply()
+        },
         onStart = { viewModel.startScan() },
         onStop = { viewModel.stopScan() },
         onCopyIps = {
