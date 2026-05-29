@@ -2287,1232 +2287,600 @@ _WEB_HTML = """
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CDN Hunter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg:       #0a0a0a;
-  --surface:  #111111;
-  --surface2: #161616;
-  --surface3: #1a1a1a;
-  --line:     #1f1f1f;
-  --line2:    #2a2a2a;
-  --line3:    #333;
-  --fg4:      #333;
-  --fg3:      #555;
-  --fg2:      #888;
-  --fg1:      #bbb;
-  --fg0:      #ededed;
-  --blue:     #0070f3;
-  --blue-s:   rgba(0,112,243,0.12);
-  --blue-b:   rgba(0,112,243,0.25);
-  --green:    #50e3a4;
-  --green-s:  rgba(80,227,164,0.1);
-  --green-b:  rgba(80,227,164,0.2);
-  --red:      #ff4444;
-  --red-s:    rgba(255,68,68,0.1);
-  --red-b:    rgba(255,68,68,0.2);
-  --amber:    #f5a623;
-  --amber-s:  rgba(245,166,35,0.1);
-  --sidebar-w: 220px;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#000;--surface:#0a0a0a;--surface2:#111;--surface3:#171717;
+--border:#222;--border2:#333;--fg4:#444;--fg3:#666;--fg2:#999;--fg1:#ccc;--fg0:#fafafa;
+--blue:#0070f3;--green:#46c98b;--red:#e5484d;--amber:#f5a623;
+--green-s:rgba(70,201,139,0.08);--green-b:rgba(70,201,139,0.25);
+--blue-s:rgba(0,112,243,0.08);--blue-b:rgba(0,112,243,0.25);
+--red-s:rgba(229,72,77,0.08);--red-b:rgba(229,72,77,0.25);
+--sidebar-w:240px;--radius:8px;
 }
+html,body{height:100%;background:var(--bg);color:var(--fg1);font-family:'Inter',sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
 
-html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family: 'Geist', sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
+/* ── App Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
 
-/* ─── App shell ─── */
-.app { display: flex; height: 100vh; overflow: hidden; }
-
-/* ─── Sidebar drawer ─── */
-.sidebar-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(2px);
-  z-index: 300;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.22s;
+/* ── Sidebar ── */
+.sidebar{
+  width:var(--sidebar-w);height:100%;background:var(--bg);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;
+  position:fixed;top:0;left:0;z-index:400;
+  transform:translateX(-100%);transition:transform .25s ease;
 }
-.sidebar-overlay.open { opacity: 1; pointer-events: all; }
+.sidebar.open{transform:translateX(0)}
+.sb-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.sb-overlay.open{opacity:1;pointer-events:all}
 
-.sidebar {
-  position: fixed;
-  top: 0; left: 0; bottom: 0;
-  width: var(--sidebar-w);
-  z-index: 400;
-  border-right: 1px solid var(--line2);
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transform: translateX(-100%);
-  transition: transform 0.25s cubic-bezier(.4,0,.2,1);
-  box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+@media(min-width:769px){
+  .sidebar{transform:translateX(0);position:relative}
+  .sb-overlay{display:none}
+  .hamburger{display:none!important}
 }
 
-.sidebar-header {
-  height: 52px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
+.sb-header{
+  height:52px;display:flex;align-items:center;gap:10px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
 }
-.sidebar-icon {
-  width: 20px; height: 20px;
-  background: var(--fg0);
-  border-radius: 5px;
-  display: grid; place-items: center;
-  font-size: 9px; font-weight: 700;
-  color: var(--bg);
-  font-family: 'Geist Mono', monospace;
-  letter-spacing: -0.03em;
+.sb-logo{
+  width:22px;height:22px;background:var(--fg0);
+  clip-path:polygon(50% 0%,100% 100%,0% 100%);flex-shrink:0;
 }
-.sidebar-project {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg0);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sidebar-chevron {
-  color: var(--fg3);
-  font-size: 10px;
-}
-.sidebar.open { transform: translateX(0); }
+.sb-title{font-size:14px;font-weight:600;color:var(--fg0)}
 
-.sidebar-search {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.sb-section{margin-bottom:4px}
+.sb-section-label{
+  font-size:10px;font-weight:500;color:var(--fg4);
+  letter-spacing:.05em;text-transform:uppercase;padding:8px 16px 4px;
 }
-.search-input {
-  width: 100%;
-  background: var(--surface2);
-  border: 1px solid var(--line2);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-family: 'Geist', sans-serif;
-  font-size: 12px;
-  color: var(--fg1);
-  outline: none;
-  transition: border-color 0.15s;
+.sb-item{
+  display:flex;align-items:center;gap:10px;padding:8px 16px;
+  font-size:13px;color:var(--fg2);cursor:pointer;transition:all .1s;
 }
-.search-input::placeholder { color: var(--fg3); }
-.search-input:focus { border-color: var(--line3); }
+.sb-item:hover{background:var(--surface2);color:var(--fg0)}
+.sb-item.active{background:var(--surface2);color:var(--fg0)}
+.sb-icon{width:16px;text-align:center;font-size:13px;opacity:.6}
+.sb-item.active .sb-icon{opacity:1}
+.sb-badge{
+  margin-left:auto;font-size:10px;font-family:'JetBrains Mono',monospace;
+  background:var(--green-s);border:1px solid var(--green-b);color:var(--green);
+  padding:1px 6px;border-radius:99px;
+}
+.sb-badge.amber{background:rgba(245,166,35,.08);border-color:rgba(245,166,35,.25);color:var(--amber)}
 
-.sidebar-nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
+.sb-footer{padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.sb-btn{
+  width:100%;height:34px;border:none;border-radius:6px;font-size:13px;
+  font-weight:500;cursor:pointer;font-family:inherit;transition:all .15s;
 }
-.nav-section {
-  margin-bottom: 2px;
-}
-.nav-section-label {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--fg3);
-  letter-spacing: 0.04em;
-  padding: 8px 16px 4px;
-  text-transform: uppercase;
-}
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 16px;
-  font-size: 13px;
-  color: var(--fg2);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-  border-radius: 0;
-  user-select: none;
-}
-.nav-item:hover { background: var(--surface2); color: var(--fg0); }
-.nav-item.active {
-  background: var(--surface2);
-  color: var(--fg0);
-}
-.nav-item.active .nav-icon { opacity: 1; }
-.nav-icon { font-size: 13px; opacity: 0.5; width: 16px; text-align: center; flex-shrink: 0; }
-.nav-item.active .nav-icon { opacity: 1; }
-.nav-badge {
-  margin-left: auto;
-  font-size: 10px;
-  font-family: 'Geist Mono', monospace;
-  color: var(--green);
-  background: var(--green-s);
-  border: 1px solid var(--green-b);
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 500;
-}
-.nav-badge.amber { color: var(--amber); background: var(--amber-s); border-color: rgba(245,166,35,0.2); }
+.sb-btn-start{background:var(--fg0);color:var(--bg)}
+.sb-btn-start:hover{background:#ddd}
+.sb-btn-start:disabled{opacity:.5;cursor:not-allowed}
+.sb-btn-stop{background:var(--surface2);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+.sb-btn-stop:hover{background:rgba(245,166,35,.08)}
 
-.sidebar-footer {
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.btn-start {
-  width: 100%;
-  height: 32px;
-  background: var(--fg0);
-  color: var(--bg);
-  border: none;
-  border-radius: 6px;
-  font-family: 'Geist', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.15s;
-}
-.btn-start:hover { background: #d4d4d4; }
-.btn-start.scanning { background: var(--surface3); color: var(--fg2); border: 1px solid var(--line2); }
-.btn-stop {
-  width: 100%;
-  height: 28px;
-  background: transparent;
-  color: var(--fg2);
-  border: 1px solid var(--line2);
-  border-radius: 6px;
-  font-family: 'Geist', sans-serif;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn-stop:hover { border-color: var(--red); color: var(--red); background: var(--red-s); }
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
-/* ─── Main ─── */
-.main {
-  flex: 1;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg);
+/* ── Topbar ── */
+.topbar{
+  height:48px;display:flex;align-items:center;gap:12px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
 }
+.hamburger{
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;cursor:pointer;color:var(--fg2);border-radius:6px;
+}
+.hamburger:hover{background:var(--surface2);color:var(--fg0)}
+.topbar-title{font-size:14px;font-weight:600;color:var(--fg0)}
+.topbar-slash{color:var(--border2);font-size:18px;font-weight:200}
+.topbar-sub{font-size:13px;color:var(--fg2)}
+.status-pill{
+  display:inline-flex;align-items:center;gap:6px;height:26px;
+  padding:0 10px;border-radius:99px;border:1px solid var(--border);
+  font-size:12px;color:var(--fg2);margin-left:auto;
+}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--fg4)}
+.status-dot.live{background:var(--green);animation:pulse 2s infinite}
+.status-dot.done{background:var(--blue)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.topbar-actions{display:flex;gap:6px;margin-left:8px}
+.btn-sm{
+  height:28px;padding:0 10px;font-size:12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg);color:var(--fg1);
+  cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap;
+}
+.btn-sm:hover{background:var(--surface2);border-color:var(--border2)}
+.btn-exit{color:var(--red);border-color:rgba(229,72,77,.3)}
+.btn-exit:hover{background:var(--red-s)}
+</style>
+</head>
 
-/* ─── Topbar ─── */
-.topbar {
-  height: 52px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  gap: 16px;
-  flex-shrink: 0;
-  background: var(--bg);
+/* ── Stats Strip ── */
+.stats-strip{
+  display:grid;grid-template-columns:repeat(6,1fr);
+  border-bottom:1px solid var(--border);flex-shrink:0;
 }
-.topbar-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fg0);
-}
-.topbar-slash { color: var(--fg4); }
-.topbar-sub { color: var(--fg2); }
-.status-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-family: 'Geist Mono', monospace;
-  color: var(--fg2);
-  background: var(--surface2);
-  border: 1px solid var(--line2);
-  border-radius: 100px;
-  padding: 3px 10px;
-}
-.status-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--fg3);
-}
-.status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s ease-in-out infinite; }
-.status-dot.done { background: var(--green); }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+.stat-cell{padding:14px 16px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:1px}
+.stat-cell:last-child{border-right:none}
+.stat-label{font-size:11px;color:var(--fg3)}
+.stat-val{font-size:22px;font-weight:600;color:var(--fg0);font-family:'JetBrains Mono',monospace;letter-spacing:-.02em}
+.stat-val.green{color:var(--green)}.stat-val.red{color:var(--red)}.stat-val.amber{color:var(--amber)}
+.stat-sub{font-size:10px;color:var(--fg4)}
 
-.topbar-actions { margin-left: auto; display: flex; gap: 6px; }
-.btn-sm {
-  height: 28px;
-  padding: 0 12px;
-  background: var(--surface2);
-  border: 1px solid var(--line2);
-  border-radius: 6px;
-  font-family: 'Geist', sans-serif;
-  font-size: 11px;
-  color: var(--fg1);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  transition: all 0.15s;
-  white-space: nowrap;
+/* ── Progress ── */
+.progress-row{
+  height:40px;display:flex;align-items:center;gap:12px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
 }
-.btn-sm:hover { border-color: var(--line3); color: var(--fg0); background: var(--surface3); }
-.btn-sm.ghost { background: transparent; border-color: transparent; }
-.btn-sm.ghost:hover { background: var(--surface2); border-color: var(--line2); }
+.prog-label{font-size:11px;font-weight:500;color:var(--fg2);text-transform:uppercase;letter-spacing:.03em;min-width:100px}
+.prog-track{flex:1;height:3px;background:var(--surface2);border-radius:99px;overflow:hidden}
+.prog-fill{height:100%;background:var(--fg0);border-radius:99px;transition:width .4s;min-width:0}
+.prog-fill.done{background:var(--green)}
+.prog-pct{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg2);min-width:36px;text-align:right}
 
-/* ─── Content ─── */
-.content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+/* ── Tab bar ── */
+.tab-bar{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  padding:0 16px;flex-shrink:0;overflow-x:auto;
 }
+.tab{
+  font-size:12px;color:var(--fg3);padding:10px 14px;cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;transition:color .15s;
+}
+.tab:hover{color:var(--fg1)}
+.tab.active{color:var(--fg0);border-bottom-color:var(--fg0)}
+.tab-count{
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:var(--surface3);border:1px solid var(--border);
+  color:var(--fg2);padding:1px 5px;border-radius:3px;
+}
+.tab.active .tab-count{background:var(--fg4);color:var(--fg0)}
 
-/* ─── Stats strip ─── */
-.stats-strip {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.stat-cell {
-  padding: 18px 20px;
-  border-right: 1px solid var(--line);
-}
-.stat-cell:last-child { border-right: none; }
-.stat-cell-label {
-  font-size: 11px;
-  color: var(--fg3);
-  margin-bottom: 6px;
-  font-weight: 400;
-}
-.stat-cell-val {
-  font-family: 'Geist Mono', monospace;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--fg0);
-  line-height: 1;
-  margin-bottom: 3px;
-}
-.stat-cell-val.blue { color: var(--blue); }
-.stat-cell-val.green { color: var(--green); }
-.stat-cell-val.red { color: var(--red); }
-.stat-cell-val.amber { color: var(--amber); }
-.stat-cell-val.sm { font-size: 14px; padding-top: 4px; }
-.stat-cell-sub { font-size: 10px; color: var(--fg3); }
+/* ── Tab pages ── */
+.tab-page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tab-page.active{display:flex}
 
-/* ─── Progress ─── */
-.progress-row {
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-shrink: 0;
-  background: var(--surface);
+/* ── IP List ── */
+.ip-feed{display:flex;flex-direction:column;flex:1;overflow-y:auto}
+.ip-row{
+  display:grid;grid-template-columns:1fr 65px 35px auto;align-items:center;
+  gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);
+  animation:fadeIn .2s;transition:background .1s;
 }
-.progress-label { font-size: 11px; color: var(--fg3); min-width: 120px; font-family: 'Geist Mono', monospace; }
-.progress-track {
-  flex: 1;
-  height: 2px;
-  background: var(--line2);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  width: 38%;
-  background: var(--fg0);
-  border-radius: 2px;
-  transition: width 0.5s ease;
-}
-.progress-pct {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--fg1);
-  min-width: 34px;
-  text-align: right;
-}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+.ip-row:hover{background:var(--surface)}
+.ip-addr{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)}
+.ip-ms{font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
+.ip-ms.fast{color:var(--green)}.ip-ms.med{color:var(--amber)}.ip-ms.slow{color:var(--red)}
+.ip-cc{font-size:11px;color:var(--fg3);text-align:center}
+.ip-tags{display:flex;gap:3px;justify-content:flex-end}
+.tag{font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;border:1px solid}
+.tag-ok{background:var(--green-s);border-color:var(--green-b);color:var(--green)}
+.tag-front{background:var(--blue-s);border-color:var(--blue-b);color:var(--blue)}
+.tag-fail{background:var(--red-s);border-color:var(--red-b);color:var(--red)}
 
-/* ─── Panel grid ─── */
-.panels {
-  flex: 1;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr auto;
+/* ── Results table ── */
+.results-wrap{flex:1;overflow:auto}
+.rtable{width:100%;border-collapse:collapse}
+.rtable th{
+  text-align:left;font-size:10px;font-weight:500;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--fg3);padding:10px 14px;
+  border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:2;
 }
-.panel {
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
+.rtable td{padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg2);border-bottom:1px solid var(--border);white-space:nowrap}
+.rtable tr:hover td{background:var(--surface)}
+.c-ip{color:var(--fg0)}.c-g{color:var(--green)}.c-a{color:var(--amber)}.c-r{color:var(--red)}.c-d{color:var(--fg3)}
+.copy-btn{
+  opacity:0;font-size:10px;padding:1px 5px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:3px;color:var(--fg3);
+  cursor:pointer;margin-left:6px;transition:opacity .1s;
 }
-.panel:nth-child(2) { border-right: none; }
-.panel-wide {
-  grid-column: 1 / -1;
-  border-right: none;
-  border-bottom: none;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-.panel-head {
-  height: 40px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  background: var(--surface);
-}
-.panel-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--fg2);
-  letter-spacing: 0.02em;
-}
-.panel-actions { display: flex; gap: 4px; }
-.panel-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-}
-.panel-body.no-pad { padding: 0; }
+.rtable tr:hover .copy-btn{opacity:1}
 
-/* ─── IP rows ─── */
-.ip-list { display: flex; flex-direction: column; gap: 2px; }
-.ip-row-item {
-  display: grid;
-  grid-template-columns: 1fr 52px 24px auto;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 10px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11.5px;
-  transition: background 0.1s, border-color 0.1s;
-  animation: fadeUp 0.2s ease;
+/* ── Fronting cards ── */
+.front-grid{padding:16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow-y:auto}
+.front-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;display:flex;flex-direction:column;gap:10px;
 }
-@keyframes fadeUp { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:translateY(0)} }
-.ip-row-item:hover { background: var(--surface2); border-color: var(--line); }
-.ip-ip { color: var(--fg0); }
-.ip-lat { color: var(--fg2); font-size: 10px; text-align: right; }
-.ip-lat.fast { color: var(--green); }
-.ip-lat.slow { color: var(--amber); }
-.ip-cc { color: var(--fg3); font-size: 10px; }
-.ip-tags { display: flex; gap: 3px; justify-content: flex-end; }
-.tag {
-  font-size: 9px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 3px;
-  letter-spacing: 0.04em;
-  font-family: 'Geist', sans-serif;
-  border: 1px solid;
-}
-.tag-ok { background: var(--green-s); border-color: var(--green-b); color: var(--green); }
-.tag-front { background: var(--blue-s); border-color: var(--blue-b); color: #60a5fa; }
-.tag-fail { background: var(--red-s); border-color: var(--red-b); color: var(--red); }
+.front-card:hover{border-color:var(--border2)}
 
-/* ─── Log ─── */
-.log-list { display: flex; flex-direction: column; gap: 0; }
-.log-entry {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 10px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--line);
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  line-height: 1.5;
+/* ── Config ── */
+.cfg-wrap{flex:1;overflow-y:auto;padding:20px 16px}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:600px}
+.cfg-group{display:flex;flex-direction:column;gap:5px}
+.cfg-full{grid-column:1/-1}
+.cfg-label{font-size:12px;font-weight:500;color:var(--fg1)}
+.cfg-hint{font-size:11px;color:var(--fg4);margin-top:2px}
+.cfg-input{
+  width:100%;height:34px;background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;padding:0 10px;font-family:'JetBrains Mono',monospace;
+  font-size:12px;color:var(--fg0);outline:none;transition:border-color .15s;
 }
-.log-entry:last-child { border-bottom: none; }
-.log-ts { color: var(--fg4); flex-shrink: 0; }
-.log-msg { color: var(--fg2); word-break: break-all; }
-.log-entry.ok .log-msg { color: var(--green); }
-.log-entry.err .log-msg { color: var(--red); }
-.log-entry.sys .log-msg { color: var(--fg1); }
+.cfg-input:focus{border-color:var(--fg3)}
+.cfg-input::placeholder{color:var(--fg4)}
+select.cfg-input option{background:var(--surface)}
 
-/* ─── Table ─── */
-.result-table { width: 100%; border-collapse: collapse; }
-.result-table th {
-  text-align: left;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  color: var(--fg3);
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  position: sticky; top: 0;
-  text-transform: uppercase;
-}
-.result-table td {
-  padding: 9px 14px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11.5px;
-  color: var(--fg2);
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-.result-table tr:last-child td { border-bottom: none; }
-.result-table tr:hover td { background: var(--surface2); }
-.col-ip { color: var(--fg0); }
-.col-green { color: var(--green); }
-.col-amber { color: var(--amber); }
-.col-red { color: var(--red); }
-.col-dim { color: var(--fg2); }
-.copy-ip-btn {
-  opacity: 0;
-  font-size: 9px;
-  padding: 1px 5px;
-  background: var(--surface3);
-  border: 1px solid var(--line2);
-  border-radius: 3px;
-  color: var(--fg2);
-  cursor: pointer;
-  margin-left: 6px;
-  font-family: 'Geist', sans-serif;
-  transition: opacity 0.1s;
-}
-tr:hover .copy-ip-btn { opacity: 1; }
+/* ── Log ── */
+.log-wrap{flex:1;overflow-y:auto;padding:10px 16px}
+.log-entry{display:flex;gap:8px;padding:3px 0;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)}
+.log-entry:last-child{border-bottom:none}
+.log-ts{color:var(--fg4);flex-shrink:0}.log-msg{color:var(--fg2);word-break:break-all}
+.log-entry.ok .log-msg{color:var(--green)}.log-entry.err .log-msg{color:var(--red)}
 
-/* ─── Config panel (settings tab) ─── */
-.config-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  max-width: 640px;
-  padding: 20px 24px;
-}
-.cfg-group { display: flex; flex-direction: column; gap: 6px; }
-.cfg-label { font-size: 11px; font-weight: 500; color: var(--fg2); }
-.cfg-hint { font-size: 10px; color: var(--fg3); margin-top: 3px; }
-.cfg-input {
-  width: 100%;
-  background: var(--surface2);
-  border: 1px solid var(--line2);
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--fg0);
-  outline: none;
-  transition: border-color 0.15s;
-}
-.cfg-input:focus { border-color: var(--line3); }
-.cfg-input::placeholder { color: var(--fg4); }
-select.cfg-input option { background: #111; }
-.cfg-full { grid-column: 1 / -1; }
+/* ── Empty state ── */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--fg3);padding:40px 16px}
+.empty-icon{font-size:28px;opacity:.3}.empty-title{font-size:14px;font-weight:500;color:var(--fg2)}.empty-desc{font-size:12px;color:var(--fg4);text-align:center}
 
-/* ─── Scrollbar ─── */
-::-webkit-scrollbar { width: 3px; height: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 2px; }
+/* ── Toast ── */
+.toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);
+  background:var(--fg0);color:var(--bg);font-size:13px;font-weight:500;
+  padding:8px 18px;border-radius:6px;opacity:0;pointer-events:none;
+  transition:all .25s;z-index:9999;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* ─── Toast ─── */
-.toast {
-  position: fixed;
-  bottom: 20px; left: 50%;
-  transform: translateX(-50%) translateY(8px);
-  background: var(--fg0); color: var(--bg);
-  font-size: 12px; font-weight: 500;
-  padding: 8px 18px; border-radius: 6px;
-  opacity: 0; pointer-events: none;
-  transition: all 0.2s;
-  z-index: 999;
-}
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
 
-/* ─── Tabs ─── */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--line);
-  padding: 0 24px;
-  flex-shrink: 0;
-  background: var(--bg);
+/* ── Responsive ── */
+@media(max-width:768px){
+  .stats-strip{grid-template-columns:repeat(3,1fr)}
+  .cfg-grid{grid-template-columns:1fr}
+  .stat-val{font-size:16px}
+  .stat-cell{padding:10px 12px}
 }
-.tab {
-  font-size: 12px;
-  color: var(--fg3);
-  padding: 10px 14px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+@media(max-width:480px){
+  .stats-strip{grid-template-columns:repeat(2,1fr)}
+  .topbar-actions .btn-sm span{display:none}
 }
-.tab:hover { color: var(--fg1); }
-.tab.active { color: var(--fg0); border-bottom-color: var(--fg0); }
-.tab-count {
-  font-family: 'Geist Mono', monospace;
-  font-size: 10px;
-  background: var(--surface3);
-  border: 1px solid var(--line2);
-  color: var(--fg2);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-.tab.active .tab-count { background: var(--fg4); color: var(--fg0); border-color: var(--fg3); }
-
-/* ─── Tab pages ─── */
-.tab-page { display: none; flex: 1; overflow: hidden; flex-direction: column; }
-.tab-page.active { display: flex; }
 </style>
 </head>
 <body>
-
-<div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
-
+<div class="sb-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
 <div class="app">
 
-  <!-- ─── Sidebar ─── -->
-  <div class="sidebar">
-
-    <div class="sidebar-header">
-      <div class="sidebar-icon">CH</div>
-      <div class="sidebar-project">CDN Hunter</div>
-      <div class="sidebar-chevron">⌄</div>
-    </div>
-
-    <div class="sidebar-search">
-      <input class="search-input" placeholder="Search...">
-    </div>
-
-    <nav class="sidebar-nav">
-      <div class="nav-section">
-        <div class="nav-item" onclick="setTab('scan');closeSidebar()">
-          <span class="nav-icon">◈</span> Overview
-        </div>
-        <div class="nav-item" onclick="setTab('results');closeSidebar()">
-          <span class="nav-icon">≡</span> Results
-          <span class="nav-badge">27</span>
-        </div>
-        <div class="nav-item" onclick="setTab('fronting');closeSidebar()">
-          <span class="nav-icon">★</span> Fronting IPs
-          <span class="nav-badge amber">4</span>
-        </div>
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-header">
+    <div class="sb-logo"></div>
+    <span class="sb-title">CDN Hunter</span>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-section">
+      <div class="sb-item active" onclick="setTab('overview');closeSidebar()">
+        <span class="sb-icon">&#9670;</span> Overview
       </div>
-      <div class="nav-section">
-        <div class="nav-section-label">Settings</div>
-        <div class="nav-item" onclick="setTab('config');closeSidebar()">
-          <span class="nav-icon">⚙</span> Scan Config
-        </div>
-        <div class="nav-item">
-          <span class="nav-icon">↓</span> Update Ranges
-        </div>
-        <div class="nav-item">
-          <span class="nav-icon">◎</span> Learned IPs
-          <span class="nav-badge">12</span>
-        </div>
+      <div class="sb-item" onclick="setTab('results');closeSidebar()">
+        <span class="sb-icon">&#8801;</span> Results
+        <span class="sb-badge" id="sb-badge-results">0</span>
       </div>
-    </nav>
-
-    <div class="sidebar-footer">
-      <button class="btn-start" id="btn-start">▶ &nbsp;Start Scan</button>
-      <button class="btn-stop">■ &nbsp;Stop</button>
+      <div class="sb-item" onclick="setTab('fronting');closeSidebar()">
+        <span class="sb-icon">&#9733;</span> Fronting IPs
+        <span class="sb-badge amber" id="sb-badge-fronting">0</span>
+      </div>
     </div>
+    <div class="sb-section">
+      <div class="sb-section-label">Settings</div>
+      <div class="sb-item" onclick="setTab('config');closeSidebar()">
+        <span class="sb-icon">&#9881;</span> Scan Config
+      </div>
+      <div class="sb-item" onclick="setTab('log');closeSidebar()">
+        <span class="sb-icon">&#9783;</span> Activity Log
+      </div>
+    </div>
+  </nav>
+  <div class="sb-footer">
+    <button class="sb-btn sb-btn-start" id="sb-btn-start" onclick="startScan()">&#9654; Start Scan</button>
+    <button class="sb-btn sb-btn-stop" id="sb-btn-stop" onclick="stopScan()" style="display:none">&#9632; Stop</button>
+  </div>
+</aside>
 
+<!-- Main -->
+<div class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="hamburger" onclick="openSidebar()">&#9776;</div>
+    <span class="topbar-title">CDN Hunter</span>
+    <span class="topbar-slash">/</span>
+    <span class="topbar-sub" id="topbar-sub">Overview</span>
+    <div class="status-pill">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Idle</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn-sm" onclick="copyAllIPs()"><span>Copy </span>IPs</button>
+      <button class="btn-sm btn-exit" onclick="exitServer()">Exit</button>
+    </div>
   </div>
 
-  <!-- ─── Main ─── -->
-  <div class="main">
-
-    <!-- Topbar -->
-    <div class="topbar">
-      <button class="btn-sm ghost" onclick="openSidebar()" style="padding:0 8px;font-size:14px;gap:0">☰</button>
-      <span class="topbar-title">CDN Hunter</span>
-      <span class="topbar-slash">/</span>
-      <span class="topbar-sub" id="topbar-sub">Overview</span>
-      <div class="status-pill">
-        <div class="status-dot live" id="status-dot"></div>
-        <span id="status-text">Scanning · Smart</span>
-      </div>
-      <div class="topbar-actions">
-        <button class="btn-sm" onclick="copyIPs()">⊡ &nbsp;Copy IPs</button>
-        <button class="btn-sm" style="color:var(--red);border-color:rgba(255,68,68,0.2)" onclick="exitServer()">✕ &nbsp;Exit</button>
-      </div>
-    </div>
-
-    <!-- Stats strip -->
-    <div class="stats-strip">
-      <div class="stat-cell">
-        <div class="stat-cell-label">Scanned</div>
-        <div class="stat-cell-val" id="s-scanned">1,842</div>
-        <div class="stat-cell-sub">total probed</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-cell-label">Healthy</div>
-        <div class="stat-cell-val green" id="s-healthy">27</div>
-        <div class="stat-cell-sub">responding</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-cell-label">Failed</div>
-        <div class="stat-cell-val red" id="s-failed">1,815</div>
-        <div class="stat-cell-sub">no response</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-cell-label">Speed</div>
-        <div class="stat-cell-val amber" id="s-speed">142<span style="font-size:12px;color:var(--fg3)">/s</span></div>
-        <div class="stat-cell-sub">IPs per sec</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-cell-label">Elapsed</div>
-        <div class="stat-cell-val sm" id="s-elapsed">1m 13s</div>
-        <div class="stat-cell-sub" id="s-eta">ETA ~21s</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-cell-label">Source</div>
-        <div class="stat-cell-val sm" id="s-src">Smart</div>
-        <div class="stat-cell-sub">c60 · t4s · r2</div>
-      </div>
-    </div>
-
-    <!-- Progress -->
-    <div class="progress-row">
-      <div class="progress-label" id="p-label">SCANNING · SMART</div>
-      <div class="progress-track">
-        <div class="progress-fill" id="p-fill" style="width:38%"></div>
-      </div>
-      <div class="progress-pct" id="p-pct">38%</div>
-    </div>
-
-    <!-- Tab bar -->
-    <div class="tab-bar">
-      <div class="tab active" onclick="setTab('scan')" data-tab="scan">Overview</div>
-      <div class="tab" onclick="setTab('results')" data-tab="results">Results <span class="tab-count">27</span></div>
-      <div class="tab" onclick="setTab('fronting')" data-tab="fronting">Fronting <span class="tab-count">4</span></div>
-      <div class="tab" onclick="setTab('config')" data-tab="config">Config</div>
-    </div>
-
-    <!-- ── Tab: Overview ── -->
-    <div class="tab-page active" id="page-scan">
-      <div class="panels" style="grid-template-columns:1fr;grid-template-rows:1fr auto">
-
-        <div class="panel" style="border-right:none">
-          <div class="panel-head">
-            <div class="panel-label">Live IPs</div>
-            <div class="panel-actions">
-              <button class="btn-sm ghost" onclick="copyIPs()" style="font-size:10px;height:24px">⊡ Copy</button>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="ip-list" id="live-ip-list">
-              <div class="ip-row-item">
-                <div class="ip-ip">151.101.1.57</div>
-                <div class="ip-lat fast">184ms</div>
-                <div class="ip-cc">US</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span><span class="tag tag-front">FRONT</span></div>
-              </div>
-              <div class="ip-row-item">
-                <div class="ip-ip">104.16.248.249</div>
-                <div class="ip-lat fast">212ms</div>
-                <div class="ip-cc">NL</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span></div>
-              </div>
-              <div class="ip-row-item">
-                <div class="ip-ip">92.122.144.22</div>
-                <div class="ip-lat fast">97ms</div>
-                <div class="ip-cc">DE</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span></div>
-              </div>
-              <div class="ip-row-item">
-                <div class="ip-ip">151.101.192.81</div>
-                <div class="ip-lat slow">143ms</div>
-                <div class="ip-cc">US</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span></div>
-              </div>
-              <div class="ip-row-item">
-                <div class="ip-ip">146.75.128.44</div>
-                <div class="ip-lat fast">88ms</div>
-                <div class="ip-cc">FR</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span></div>
-              </div>
-              <div class="ip-row-item">
-                <div class="ip-ip">104.21.3.45</div>
-                <div class="ip-lat slow">310ms</div>
-                <div class="ip-cc">SG</div>
-                <div class="ip-tags"><span class="tag tag-ok">OK</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ── Tab: Results ── -->
-    <div class="tab-page" id="page-results">
-      <div style="flex:1;overflow:auto">
-        <table class="result-table">
-          <thead>
-            <tr>
-              <th>IP Address</th>
-              <th>Latency</th>
-              <th>Code</th>
-              <th>CDN</th>
-              <th>Country</th>
-              <th>kB/s</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="col-ip">151.101.1.57 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-green">184ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Fastly</td>
-              <td class="col-dim">US</td>
-              <td class="col-green">2,410</td>
-              <td><span class="tag tag-ok">OK</span> <span class="tag tag-front">FRONT</span></td>
-            </tr>
-            <tr>
-              <td class="col-ip">104.16.248.249 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-amber">212ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Cloudflare</td>
-              <td class="col-dim">NL</td>
-              <td class="col-green">1,890</td>
-              <td><span class="tag tag-ok">OK</span></td>
-            </tr>
-            <tr>
-              <td class="col-ip">92.122.144.22 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-green">97ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Akamai</td>
-              <td class="col-dim">DE</td>
-              <td class="col-green">3,120</td>
-              <td><span class="tag tag-ok">OK</span></td>
-            </tr>
-            <tr>
-              <td class="col-ip">151.101.192.81 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-green">143ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Fastly</td>
-              <td class="col-dim">US</td>
-              <td class="col-green">2,780</td>
-              <td><span class="tag tag-ok">OK</span></td>
-            </tr>
-            <tr>
-              <td class="col-ip">146.75.128.44 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-green">88ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Fastly</td>
-              <td class="col-dim">FR</td>
-              <td class="col-green">4,210</td>
-              <td><span class="tag tag-ok">OK</span></td>
-            </tr>
-            <tr>
-              <td class="col-ip">104.21.3.45 <button class="copy-ip-btn">copy</button></td>
-              <td class="col-red">310ms</td>
-              <td class="col-dim">200</td>
-              <td class="col-dim">Cloudflare</td>
-              <td class="col-dim">SG</td>
-              <td class="col-dim">980</td>
-              <td><span class="tag tag-ok">OK</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ── Tab: Fronting ── -->
-    <div class="tab-page" id="page-fronting">
-      <div style="padding:20px 24px;flex:1;overflow:auto">
-        <div style="max-width:600px;display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:11px;color:var(--fg3);margin-bottom:8px;">Psiphon / Shir-o-Khorshid verified fronting IPs</div>
-          <div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div>
-                <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-                <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">a248.e.akamai.net</div>
-              </div>
-              <button class="btn-sm">⊡ Copy IPs</button>
-            </div>
-            <div>
-              <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (2)</div>
-              <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">151.101.1.57 · 92.122.144.22</div>
-            </div>
-          </div>
-          <div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div>
-                <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-                <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">e8218.b.akamaiedge.net</div>
-              </div>
-              <button class="btn-sm">⊡ Copy IPs</button>
-            </div>
-            <div>
-              <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (2)</div>
-              <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">104.16.248.249 · 146.75.128.44</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Tab: Config ── -->
-    <div class="tab-page" id="page-config">
-      <div style="flex:1;overflow:auto">
-        <div class="config-grid">
-          <div class="cfg-group cfg-full">
-            <label class="cfg-label">CDN / Source</label>
-            <select class="cfg-input">
-              <option>★ Smart Scan (recommended)</option>
-              <option>Akamai</option>
-              <option>Fastly</option>
-              <option>Cloudflare</option>
-              <option>Google</option>
-              <option>CloudFront (AWS)</option>
-              <option>Gcore</option>
-              <option>All CDNs</option>
-              <option>Akamai + Fastly</option>
-              <option>Custom CIDR</option>
-              <option>Manual IPs</option>
-            </select>
-          </div>
-          <div class="cfg-group cfg-full">
-            <label class="cfg-label">Host Header</label>
-            <input class="cfg-input" placeholder="a248.e.akamai.net">
-            <div class="cfg-hint">Leave blank for auto SSL</div>
-          </div>
-          <div class="cfg-group cfg-full">
-            <label class="cfg-label">Psiphon SNI</label>
-            <input class="cfg-input" placeholder="auto">
-          </div>
-          <div class="cfg-group">
-            <label class="cfg-label">Concurrency</label>
-            <input class="cfg-input" type="number" value="60">
-            <div class="cfg-hint">Android: 25–60</div>
-          </div>
-          <div class="cfg-group">
-            <label class="cfg-label">Timeout (s)</label>
-            <input class="cfg-input" type="number" value="4" step="0.5">
-          </div>
-          <div class="cfg-group">
-            <label class="cfg-label">Max IPs</label>
-            <input class="cfg-input" type="number" value="3000">
-          </div>
-          <div class="cfg-group">
-            <label class="cfg-label">Retries</label>
-            <input class="cfg-input" type="number" value="2">
-          </div>
-          <div class="cfg-group cfg-full">
-            <label class="cfg-label">Save to File</label>
-            <input class="cfg-input" placeholder="results.txt (blank = off)">
-          </div>
-          <div class="cfg-group cfg-full" style="margin-top:4px">
-            <button class="btn-start" style="max-width:200px">▶ &nbsp;Start Scan</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
+  <!-- Stats -->
+  <div class="stats-strip">
+    <div class="stat-cell"><div class="stat-label">Scanned</div><div class="stat-val" id="s-scanned">0</div><div class="stat-sub">total probed</div></div>
+    <div class="stat-cell"><div class="stat-label">Healthy</div><div class="stat-val green" id="s-healthy">0</div><div class="stat-sub">responding</div></div>
+    <div class="stat-cell"><div class="stat-label">Failed</div><div class="stat-val red" id="s-failed">0</div><div class="stat-sub">no response</div></div>
+    <div class="stat-cell"><div class="stat-label">Speed</div><div class="stat-val amber" id="s-speed">0</div><div class="stat-sub">IPs/sec</div></div>
+    <div class="stat-cell"><div class="stat-label">Elapsed</div><div class="stat-val" id="s-elapsed">0s</div><div class="stat-sub" id="s-eta"></div></div>
+    <div class="stat-cell"><div class="stat-label">Source</div><div class="stat-val" id="s-source" style="font-size:14px">-</div><div class="stat-sub" id="s-cfg"></div></div>
   </div>
+
+  <!-- Progress -->
+  <div class="progress-row">
+    <div class="prog-label" id="p-label">IDLE</div>
+    <div class="prog-track"><div class="prog-fill" id="p-fill" style="width:0%"></div></div>
+    <div class="prog-pct" id="p-pct">0%</div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
+    <div class="tab" data-tab="results" onclick="setTab('results')">Results <span class="tab-count" id="tc-results">0</span></div>
+    <div class="tab" data-tab="fronting" onclick="setTab('fronting')">Fronting <span class="tab-count" id="tc-fronting">0</span></div>
+    <div class="tab" data-tab="config" onclick="setTab('config')">Config</div>
+    <div class="tab" data-tab="log" onclick="setTab('log')">Log</div>
+  </div>
+
+  <!-- Tab: Overview -->
+  <div class="tab-page active" id="page-overview">
+    <div class="ip-feed" id="live-ip-list">
+      <div class="empty" id="empty-live">
+        <div class="empty-icon">&#9678;</div>
+        <div class="empty-title">No IPs found yet</div>
+        <div class="empty-desc">Start a scan to discover healthy CDN IPs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Results -->
+  <div class="tab-page" id="page-results">
+    <div class="results-wrap">
+      <table class="rtable"><thead><tr>
+        <th>IP Address</th><th>Latency</th><th>Code</th><th>CDN</th><th>Country</th><th>kB/s</th><th>Status</th>
+      </tr></thead><tbody id="results-tbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Tab: Fronting -->
+  <div class="tab-page" id="page-fronting">
+    <div class="front-grid" id="fronting-list">
+      <div class="empty" id="empty-fronting">
+        <div class="empty-icon">&#9733;</div>
+        <div class="empty-title">No fronting IPs verified</div>
+        <div class="empty-desc">Fronting-verified IPs appear here after scan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Config -->
+  <div class="tab-page" id="page-config">
+    <div class="cfg-wrap">
+      <div class="cfg-grid">
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">CDN / Source</label>
+          <select class="cfg-input" id="cfg-cdn">
+            <option value="smart">Smart Scan (recommended)</option>
+            <option value="akamai">Akamai</option>
+            <option value="fastly">Fastly</option>
+            <option value="cloudflare">Cloudflare</option>
+            <option value="google">Google</option>
+            <option value="cloudfront">CloudFront (AWS)</option>
+            <option value="gcore">Gcore</option>
+            <option value="all">All CDNs</option>
+          </select>
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Host Header</label>
+          <input class="cfg-input" id="cfg-host" placeholder="Leave blank for auto SSL">
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Psiphon SNI</label>
+          <input class="cfg-input" id="cfg-sni" placeholder="auto (e.g. a248.e.akamai.net)">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Concurrency</label>
+          <input class="cfg-input" id="cfg-conc" type="number" value="60">
+          <div class="cfg-hint">Android: 25-60</div>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Timeout (s)</label>
+          <input class="cfg-input" id="cfg-timeout" type="number" value="4" step="0.5">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Max IPs</label>
+          <input class="cfg-input" id="cfg-sample" type="number" value="3000">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Retries</label>
+          <input class="cfg-input" id="cfg-retries" type="number" value="2">
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Save to File</label>
+          <input class="cfg-input" id="cfg-out" placeholder="results.txt (blank = off)">
+        </div>
+        <div class="cfg-group cfg-full" style="margin-top:6px">
+          <button class="sb-btn sb-btn-start" onclick="startScan()" style="max-width:180px">&#9654; Start Scan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Log -->
+  <div class="tab-page" id="page-log">
+    <div class="log-wrap" id="log-list">
+      <div class="log-entry"><span class="log-ts">--:--</span><span class="log-msg">Ready</span></div>
+    </div>
+  </div>
+
 </div>
-
-<div class="toast" id="toast">Copied!</div>
-
+</div>
+<div class="toast" id="toast"></div>
 <script>
-// ── State ──────────────────────────────────────────────
-let _results = [], _liveIPs = [], _pollTimer = null;
+let _results=[],_liveIPs=[],_pollTimer=null,_startTime=null;
 
-// ── Sidebar ─────────────────────────────────────────────
-function openSidebar() {
-  document.querySelector('.sidebar').classList.add('open');
-  document.getElementById('sb-overlay').classList.add('open');
-}
-function closeSidebar() {
-  document.querySelector('.sidebar').classList.remove('open');
-  document.getElementById('sb-overlay').classList.remove('open');
-}
+function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sb-overlay').classList.add('open')}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sb-overlay').classList.remove('open')}
 
-// ── Tabs ────────────────────────────────────────────────
-function setTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
-  const labels = {scan:'Overview', results:'Results', fronting:'Fronting IPs', config:'Scan Config'};
-  document.getElementById('topbar-sub').textContent = labels[name] || name;
+function setTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.tab-page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
+  document.querySelectorAll('.sb-item').forEach(item=>{
+    const onclick=item.getAttribute('onclick')||'';
+    item.classList.toggle('active',onclick.includes("'"+name+"'"));
+  });
+  const labels={overview:'Overview',results:'Results',fronting:'Fronting IPs',config:'Scan Config',log:'Activity Log'};
+  document.getElementById('topbar-sub').textContent=labels[name]||name;
 }
 
-// ── Toast ───────────────────────────────────────────────
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+
+function copyAllIPs(){
+  const ips=_liveIPs.map(r=>r.ip||r).filter(Boolean);
+  if(!ips.length){showToast('No IPs yet');return}
+  navigator.clipboard.writeText(ips.join('\n')).then(()=>showToast(ips.length+' IPs copied')).catch(()=>showToast('Copy failed'));
+}
+function copyIP(ip){navigator.clipboard.writeText(ip).then(()=>showToast('Copied: '+ip)).catch(()=>showToast('Copy failed'))}
+function exitServer(){if(!confirm('Close web server?'))return;fetch('/api/exit',{method:'POST'}).finally(()=>showToast('Server closed'))}
+
+function getCfg(){return{
+  cdn:document.getElementById('cfg-cdn').value,
+  host:document.getElementById('cfg-host').value,
+  sni:document.getElementById('cfg-sni').value,
+  conc:document.getElementById('cfg-conc').value||60,
+  timeout:document.getElementById('cfg-timeout').value||4,
+  sample:document.getElementById('cfg-sample').value||3000,
+  retries:document.getElementById('cfg-retries').value||2,
+  out_file:document.getElementById('cfg-out').value||'',
+}}
+
+function startScan(){
+  const btn=document.getElementById('sb-btn-start');
+  btn.disabled=true;btn.textContent='Scanning...';
+  document.getElementById('sb-btn-stop').style.display='';
+  _startTime=Date.now();
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getCfg())})
+  .then(r=>r.json()).then(d=>{
+    if(!d.ok){showToast(d.msg||'Error');resetBtn()}
+    else{startPoll()}
+  }).catch(()=>{showToast('Cannot reach server');resetBtn()});
+}
+function stopScan(){fetch('/api/stop',{method:'POST'}).catch(()=>{})}
+function resetBtn(){
+  const btn=document.getElementById('sb-btn-start');
+  btn.disabled=false;btn.textContent='\u25B6 Start Scan';
+  document.getElementById('sb-btn-stop').style.display='none';
 }
 
-// ── Copy ────────────────────────────────────────────────
-function copyIPs() {
-  const ips = _liveIPs.map(r => r.ip || r).filter(Boolean);
-  if (!ips.length) { showToast('No IPs yet'); return; }
-  navigator.clipboard?.writeText(ips.join('\n'))
-    .then(() => showToast('Copied ' + ips.length + ' IPs'))
-    .catch(() => showToast('Copy failed'));
-}
+function startPoll(){if(_pollTimer)clearInterval(_pollTimer);_pollTimer=setInterval(poll,800);poll()}
+function poll(){fetch('/api/state').then(r=>r.json()).then(updateUI).catch(()=>{})}
 
-function copyRowIP(ip) {
-  navigator.clipboard?.writeText(ip)
-    .then(() => showToast('Copied: ' + ip))
-    .catch(() => showToast('Copy failed'));
-}
-
-function exitServer() {
-  if (!confirm('Close the web server?')) return;
-  fetch('/api/exit', {method:'POST'}).finally(() => showToast('Server closed'));
-}
-
-// ── Get config from Config tab ──────────────────────────
-function getCfg() {
-  const inputs = document.querySelectorAll('#page-config .cfg-input');
-  return {
-    cdn:     inputs[0]?.value || 'smart',
-    host:    inputs[1]?.value || '',
-    sni:     inputs[2]?.value || '',
-    conc:    inputs[3]?.value || 60,
-    timeout: inputs[4]?.value || 4,
-    sample:  inputs[5]?.value || 3000,
-    retries: inputs[6]?.value || 2,
-    out:     inputs[7]?.value || '',
-  };
-}
-
-// ── Start / Stop ─────────────────────────────────────────
-function startScan() {
-  const btn = document.getElementById('btn-start');
-  const btn2 = document.getElementById('btn-start-2');
-  [btn, btn2].forEach(b => { if(b){ b.disabled = true; b.textContent = '⟳  Scanning...'; b.classList.add('scanning'); }});
-  fetch('/api/start', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(getCfg())
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (!d.ok) {
-      showToast(d.msg || 'Error');
-      resetStartBtn();
-    } else {
-      startPoll();
-    }
-  })
-  .catch(() => { showToast('Cannot reach server'); resetStartBtn(); });
-}
-
-function stopScan() {
-  fetch('/api/stop', {method:'POST'}).catch(() => {});
-}
-
-function resetStartBtn() {
-  const btn = document.getElementById('btn-start');
-  const btn2 = document.getElementById('btn-start-2');
-  [btn, btn2].forEach(b => { if(b){ b.disabled = false; b.textContent = '▶  Start Scan'; b.classList.remove('scanning'); }});
-}
-
-// ── Polling ───────────────────────────────────────────────
-function startPoll() {
-  if (_pollTimer) clearInterval(_pollTimer);
-  _pollTimer = setInterval(poll, 800);
-  poll();
-}
-
-function poll() {
-  fetch('/api/state')
-    .then(r => r.json())
-    .then(updateUI)
-    .catch(() => {});
-}
-
-// ── Update UI from state ──────────────────────────────────
-function updateUI(s) {
-  // Stats strip
-  setText('s-scanned', fmt(s.scanned));
-  setText('s-healthy', fmt(s.healthy));
-  setText('s-failed',  fmt(s.failed));
-  const elapsed = s.elapsed || 0;
-  setText('s-elapsed', fmtTime(elapsed));
-  if (s.scanned > 0 && elapsed > 0) {
-    const speed = Math.round(s.scanned / elapsed);
-    setText('s-speed', speed + '<span style="font-size:12px;color:var(--fg3)">/s</span>');
-    const remaining = s.total ? Math.max(0, s.total - s.scanned) : 0;
-    const eta = speed > 0 && remaining > 0 ? Math.round(remaining / speed) : 0;
-    setText('s-eta', eta > 0 ? 'ETA ~' + fmtTime(eta) : '');
+function updateUI(s){
+  const scanned=s.scanned||0,healthy=s.healthy||0,failed=s.failed||0;
+  setText('s-scanned',fmtNum(scanned));
+  setText('s-healthy',fmtNum(healthy));
+  setText('s-failed',fmtNum(failed));
+  const elapsed=_startTime&&s.running?(Date.now()-_startTime)/1000:0;
+  setText('s-elapsed',fmtTime(elapsed));
+  if(scanned>0&&elapsed>0){
+    const speed=Math.round(scanned/elapsed);
+    setText('s-speed',fmtNum(speed));
   }
-  const src = (s.source || 'Smart').replace(/^[a-z]/, c => c.toUpperCase());
-  setText('s-src', src);
+  setText('s-source',s.source||'-');
 
-  // Progress bar
-  const pct = Math.round(s.pct || 0);
-  const fill = document.getElementById('p-fill');
-  if (fill) fill.style.width = pct + '%';
-  setText('p-pct', pct + '%');
-  setText('p-label', 'SCANNING · ' + src.toUpperCase());
+  const pct=Math.round(s.pct||0);
+  const fill=document.getElementById('p-fill');
+  if(fill){fill.style.width=pct+'%';fill.classList.toggle('done',pct>=100&&!s.running)}
+  setText('p-pct',pct+'%');
+  setText('p-label',s.running?'SCANNING':(scanned>0?'COMPLETE':'IDLE'));
 
-  // Status pill
-  const dot = document.getElementById('status-dot');
-  const stxt = document.getElementById('status-text');
-  if (s.running) {
-    dot?.classList.add('live'); dot?.classList.remove('done');
-    if (stxt) stxt.textContent = 'Scanning · ' + src;
-  } else {
-    dot?.classList.remove('live'); dot?.classList.add('done');
-    if (stxt) stxt.textContent = s.scanned > 0 ? 'Done · ' + src : 'Idle';
-    resetStartBtn();
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  const dot=document.getElementById('status-dot');
+  const stxt=document.getElementById('status-text');
+  if(s.running){
+    dot.className='status-dot live';stxt.textContent='Scanning';
+    document.getElementById('sb-btn-stop').style.display='';
+    document.getElementById('sb-btn-start').disabled=true;
+    if(!_pollTimer)startPoll();
+  }else if(scanned>0){
+    dot.className='status-dot done';stxt.textContent='Done';
+    resetBtn();if(_pollTimer){clearInterval(_pollTimer);_pollTimer=null}
+  }else{
+    dot.className='status-dot';stxt.textContent='Idle';
   }
 
-  // Live IPs list
-  if (s.live_ips && s.live_ips.length) {
-    _liveIPs = s.live_ips;
-    renderLiveIPs(s.live_ips);
-    // Update tab count
-    const cnt = s.live_ips_total || s.live_ips.length;
-    document.querySelectorAll('.tab-count').forEach((el, i) => {
-      if (i === 0) el.textContent = cnt;
-    });
-    updateNavBadge('results', cnt);
+  if(s.live_ips&&s.live_ips.length){
+    const okIPs=s.live_ips.filter(r=>r.ok);
+    if(okIPs.length){_liveIPs=okIPs;renderLiveIPs(okIPs)}
   }
-
-  // Results table
-  if (s.results && s.results.length) {
-    _results = s.results;
-    renderResultsTable(s.results);
-    renderFronting(s.results);
+  if(s.results&&s.results.length){
+    const ok=s.results.filter(r=>r.ok);
+    _results=s.results;_liveIPs=ok;
+    renderResults(ok);renderFronting(s.results);
+    setBadge('tc-results',ok.length);setBadge('sb-badge-results',ok.length);
   }
-
-  // Log
-  if (s.log && s.log.length) renderLog(s.log);
+  if(s.log&&s.log.length)renderLog(s.log);
 }
 
-// ── Render: Live IPs ──────────────────────────────────────
-function renderLiveIPs(ips) {
-  const el = document.getElementById('live-ip-list');
-  if (!el) return;
-  el.innerHTML = ips.slice().reverse().map(r => {
-    const lat = r.latency || r.ms || 0;
-    const latCls = lat < 200 ? 'fast' : lat < 400 ? 'slow' : '';
-    const isFront = r.fronting || r.front;
-    return `<div class="ip-row-item">
-      <div class="ip-ip">${r.ip}</div>
-      <div class="ip-lat ${latCls}">${lat}ms</div>
-      <div class="ip-cc">${r.cc || r.country || '—'}</div>
-      <div class="ip-tags">
-        <span class="tag tag-ok">OK</span>
-        ${isFront ? '<span class="tag tag-front">FRONT</span>' : ''}
-      </div>
-    </div>`;
+function renderLiveIPs(ips){
+  const el=document.getElementById('live-ip-list');if(!el)return;
+  const empty=document.getElementById('empty-live');
+  if(!ips.length)return;
+  if(empty)empty.style.display='none';
+  el.innerHTML=ips.slice().reverse().slice(0,50).map(r=>{
+    const ms=r.ms||0;const cls=ms<200?'fast':ms<400?'med':'slow';
+    const fr=r.fronting_ok||r.fronting;
+    return '<div class="ip-row"><div class="ip-addr">'+r.ip+'</div><div class="ip-ms '+cls+'">'+ms+'ms</div><div class="ip-cc">'+(r.country||r.cc||'')+'</div><div class="ip-tags"><span class="tag tag-ok">OK</span>'+(fr?'<span class="tag tag-front">FRONT</span>':'')+'</div></div>';
   }).join('');
 }
 
-// ── Render: Results table ─────────────────────────────────
-function renderResultsTable(results) {
-  const tbody = document.querySelector('#page-results tbody');
-  if (!tbody) return;
-  tbody.innerHTML = results.slice().reverse().map(r => {
-    const lat = r.latency || r.ms || 0;
-    const latCls = lat < 200 ? 'col-green' : lat < 400 ? 'col-amber' : 'col-red';
-    const isFront = r.fronting || r.front;
-    return `<tr>
-      <td class="col-ip">${r.ip} <button class="copy-ip-btn" onclick="copyRowIP('${r.ip}')">copy</button></td>
-      <td class="${latCls}">${lat}ms</td>
-      <td class="col-dim">${r.code || r.status || 200}</td>
-      <td class="col-dim">${r.cdn || '—'}</td>
-      <td class="col-dim">${r.cc || r.country || '—'}</td>
-      <td class="${lat < 300 ? 'col-green' : 'col-dim'}">${r.kbps ? Math.round(r.kbps) : '—'}</td>
-      <td><span class="tag tag-ok">OK</span>${isFront ? ' <span class="tag tag-front">FRONT</span>' : ''}</td>
-    </tr>`;
+function renderResults(results){
+  const tbody=document.getElementById('results-tbody');if(!tbody)return;
+  tbody.innerHTML=results.map(r=>{
+    const ms=r.ms||0;const cls=ms<200?'c-g':ms<400?'c-a':'c-r';
+    const fr=r.fronting_ok||r.fronting;
+    return '<tr><td class="c-ip">'+r.ip+' <button class="copy-btn" onclick="copyIP(\''+r.ip+'\')">copy</button></td><td class="'+cls+'">'+ms+'ms</td><td class="c-d">'+(r.code||'200')+'</td><td class="c-d">'+(r.cdn||'-')+'</td><td class="c-d">'+(r.country||r.cc||'-')+'</td><td class="'+(r.kbps>1000?'c-g':'c-d')+'">'+(r.kbps?Math.round(r.kbps):'- ')+'</td><td><span class="tag tag-ok">OK</span>'+(fr?' <span class="tag tag-front">FRONT</span>':'')+'</td></tr>';
   }).join('');
-  // Update tab count
-  updateNavBadge('results', results.length);
 }
 
-// ── Render: Fronting groups ───────────────────────────────
-function renderFronting(results) {
-  const front = results.filter(r => r.fronting || r.front);
-  const el = document.querySelector('#page-fronting > div > div:last-child') || document.querySelector('#page-fronting .fronting-list');
-  updateNavBadge('fronting', front.length);
-  if (!front.length || !el) return;
-
-  // Group by SNI
-  const groups = {};
-  front.forEach(r => {
-    const sni = r.sni || r.host || 'Unknown';
-    if (!groups[sni]) groups[sni] = [];
-    groups[sni].push(r.ip);
-  });
-
-  el.innerHTML = Object.entries(groups).map(([sni, ips]) => `
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-          <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">${sni}</div>
-        </div>
-        <button class="btn-sm" onclick="copyRowIP('${ips.join('\n')}')">⊡ Copy IPs</button>
-      </div>
-      <div>
-        <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (${ips.length})</div>
-        <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">${ips.join(' · ')}</div>
-      </div>
-    </div>`).join('');
+function renderFronting(results){
+  const front=results.filter(r=>r.fronting_ok||r.fronting);
+  setBadge('tc-fronting',front.length);setBadge('sb-badge-fronting',front.length);
+  const el=document.getElementById('fronting-list');if(!el)return;
+  const empty=document.getElementById('empty-fronting');
+  if(!front.length){if(empty)empty.style.display='flex';return}
+  if(empty)empty.style.display='none';
+  const groups={};
+  front.forEach(r=>{const sni=r.sni||r.fronting_sni||r.host||'Unknown';if(!groups[sni])groups[sni]=[];groups[sni].push(r.ip)});
+  el.innerHTML=Object.entries(groups).map(([sni,ips])=>'<div class="front-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:10px;color:var(--fg3);text-transform:uppercase">SNI</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--fg0);margin-top:2px">'+sni+'</div></div><button class="btn-sm" onclick="copyIP(\''+ips.join('\\n')+'\')">Copy IPs</button></div><div><div style="font-size:10px;color:var(--fg3);margin-bottom:3px">IPs ('+ips.length+')</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--green)">'+ips.join(' &middot; ')+'</div></div></div>').join('');
 }
 
-// ── Render: Log ───────────────────────────────────────────
-function renderLog(logs) {
-  // No log panel in this UI — skip (or add if needed)
+function renderLog(logs){
+  const el=document.getElementById('log-list');if(!el)return;
+  el.innerHTML=logs.slice(-40).map(msg=>{
+    const cls=msg.startsWith('OK')?'ok':(msg.includes('ERR')||msg.includes('error')?'err':'');
+    const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    return '<div class="log-entry '+cls+'"><span class="log-ts">'+ts+'</span><span class="log-msg">'+msg+'</span></div>';
+  }).join('');
+  el.scrollTop=el.scrollHeight;
 }
 
-// ── Helpers ───────────────────────────────────────────────
-function setText(id, html) {
-  const el = document.getElementById(id);
-  if (el) el.innerHTML = html;
-}
-function fmt(n) { return n >= 1000 ? (n/1000).toFixed(1) + 'k' : String(n || 0); }
-function fmtTime(s) {
-  s = Math.round(s);
-  if (s < 60) return s + 's';
-  return Math.floor(s/60) + 'm ' + (s%60) + 's';
-}
-function updateNavBadge(tab, count) {
-  document.querySelectorAll('.nav-item').forEach(item => {
-    if (item.getAttribute('onclick')?.includes("'" + tab + "'")) {
-      let badge = item.querySelector('.nav-badge');
-      if (badge) badge.textContent = count;
-    }
-  });
-  document.querySelectorAll('.tab').forEach(t => {
-    if (t.dataset.tab === tab) {
-      let cnt = t.querySelector('.tab-count');
-      if (cnt) cnt.textContent = count;
-    }
-  });
-}
+function setText(id,v){const el=document.getElementById(id);if(el)el.innerHTML=String(v)}
+function setBadge(id,n){const el=document.getElementById(id);if(el)el.textContent=n}
+function fmtNum(n){return n>=10000?(n/1000).toFixed(1)+'k':n>=1000?n.toLocaleString():String(n||0)}
+function fmtTime(s){s=Math.round(s);return s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'}
 
-// ── Wire up buttons ───────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('btn-start')?.addEventListener('click', startScan);
-  // Config page start button
-  const btn2 = document.querySelector('#page-config .btn-start');
-  if (btn2) { btn2.id = 'btn-start-2'; btn2.addEventListener('click', startScan); }
-  // Stop buttons
-  document.querySelectorAll('.btn-stop').forEach(b => b.addEventListener('click', stopScan));
-  // Poll state on load
-  poll();
-});
+document.addEventListener('DOMContentLoaded',()=>{poll();setInterval(poll,1500)});
 </script>
 </body>
 </html>
