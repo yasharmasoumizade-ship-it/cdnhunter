@@ -2287,38 +2287,38 @@ _WEB_HTML = """
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CDN Hunter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:       #0a0a0a;
-  --surface:  #111111;
-  --surface2: #161616;
-  --surface3: #1a1a1a;
-  --line:     #1f1f1f;
-  --line2:    #2a2a2a;
-  --line3:    #333;
-  --fg4:      #333;
-  --fg3:      #555;
-  --fg2:      #888;
-  --fg1:      #bbb;
-  --fg0:      #ededed;
+  --bg:       #000000;
+  --surface:  #0a0a0a;
+  --surface2: #111111;
+  --surface3: #171717;
+  --line:     #1c1c1c;
+  --line2:    #262626;
+  --line3:    #333333;
+  --fg4:      #3b3b3b;
+  --fg3:      #666666;
+  --fg2:      #a1a1a1;
+  --fg1:      #ededed;
+  --fg0:      #fafafa;
   --blue:     #0070f3;
-  --blue-s:   rgba(0,112,243,0.12);
-  --blue-b:   rgba(0,112,243,0.25);
-  --green:    #50e3a4;
-  --green-s:  rgba(80,227,164,0.1);
-  --green-b:  rgba(80,227,164,0.2);
-  --red:      #ff4444;
-  --red-s:    rgba(255,68,68,0.1);
-  --red-b:    rgba(255,68,68,0.2);
+  --blue-s:   rgba(0,112,243,0.08);
+  --blue-b:   rgba(0,112,243,0.2);
+  --green:    #46c98b;
+  --green-s:  rgba(70,201,139,0.08);
+  --green-b:  rgba(70,201,139,0.2);
+  --red:      #e5484d;
+  --red-s:    rgba(229,72,77,0.08);
+  --red-b:    rgba(229,72,77,0.2);
   --amber:    #f5a623;
-  --amber-s:  rgba(245,166,35,0.1);
+  --amber-s:  rgba(245,166,35,0.08);
   --sidebar-w: 220px;
 }
 
-html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family: 'Geist', sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
+html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
 
 /* ─── App shell ─── */
 .app { display: flex; height: 100vh; overflow: hidden; }
@@ -2365,7 +2365,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   display: grid; place-items: center;
   font-size: 9px; font-weight: 700;
   color: var(--bg);
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   letter-spacing: -0.03em;
 }
 .sidebar-project {
@@ -2394,7 +2394,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   border: 1px solid var(--line2);
   border-radius: 6px;
   padding: 6px 10px;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   color: var(--fg1);
   outline: none;
@@ -2442,7 +2442,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
 .nav-badge {
   margin-left: auto;
   font-size: 10px;
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   color: var(--green);
   background: var(--green-s);
   border: 1px solid var(--green-b);
@@ -2467,7 +2467,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   color: var(--bg);
   border: none;
   border-radius: 6px;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -2486,7 +2486,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   color: var(--fg2);
   border: 1px solid var(--line2);
   border-radius: 6px;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
@@ -2526,7 +2526,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   color: var(--fg2);
   background: var(--surface2);
   border: 1px solid var(--line2);
@@ -2549,7 +2549,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   background: var(--surface2);
   border: 1px solid var(--line2);
   border-radius: 6px;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 11px;
   color: var(--fg1);
   cursor: pointer;
@@ -2590,7 +2590,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   font-weight: 400;
 }
 .stat-cell-val {
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 20px;
   font-weight: 600;
   color: var(--fg0);
@@ -2614,7 +2614,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   flex-shrink: 0;
   background: var(--surface);
 }
-.progress-label { font-size: 11px; color: var(--fg3); min-width: 120px; font-family: 'Geist Mono', monospace; }
+.progress-label { font-size: 11px; color: var(--fg3); min-width: 120px; font-family: 'JetBrains Mono', monospace; }
 .progress-track {
   flex: 1;
   height: 2px;
@@ -2630,7 +2630,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   transition: width 0.5s ease;
 }
 .progress-pct {
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 500;
   color: var(--fg1);
@@ -2698,7 +2698,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   padding: 7px 10px;
   border-radius: 6px;
   border: 1px solid transparent;
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11.5px;
   transition: background 0.1s, border-color 0.1s;
   animation: fadeUp 0.2s ease;
@@ -2717,7 +2717,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   padding: 2px 6px;
   border-radius: 3px;
   letter-spacing: 0.04em;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   border: 1px solid;
 }
 .tag-ok { background: var(--green-s); border-color: var(--green-b); color: var(--green); }
@@ -2732,7 +2732,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   gap: 10px;
   padding: 4px 0;
   border-bottom: 1px solid var(--line);
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   line-height: 1.5;
 }
@@ -2759,7 +2759,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
 }
 .result-table td {
   padding: 9px 14px;
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11.5px;
   color: var(--fg2);
   border-bottom: 1px solid var(--line);
@@ -2782,7 +2782,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg1); font-family
   color: var(--fg2);
   cursor: pointer;
   margin-left: 6px;
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   transition: opacity 0.1s;
 }
 tr:hover .copy-ip-btn { opacity: 1; }
@@ -2804,7 +2804,7 @@ tr:hover .copy-ip-btn { opacity: 1; }
   border: 1px solid var(--line2);
   border-radius: 6px;
   padding: 7px 10px;
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   color: var(--fg0);
   outline: none;
@@ -2858,7 +2858,7 @@ select.cfg-input option { background: #111; }
 .tab:hover { color: var(--fg1); }
 .tab.active { color: var(--fg0); border-bottom-color: var(--fg0); }
 .tab-count {
-  font-family: 'Geist Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   background: var(--surface3);
   border: 1px solid var(--line2);
@@ -3138,26 +3138,26 @@ select.cfg-input option { background: #111; }
             <div style="display:flex;align-items:center;justify-content:space-between">
               <div>
                 <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-                <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">a248.e.akamai.net</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)">a248.e.akamai.net</div>
               </div>
               <button class="btn-sm">⊡ Copy IPs</button>
             </div>
             <div>
               <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (2)</div>
-              <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">151.101.1.57 · 92.122.144.22</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green)">151.101.1.57 · 92.122.144.22</div>
             </div>
           </div>
           <div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
             <div style="display:flex;align-items:center;justify-content:space-between">
               <div>
                 <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-                <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">e8218.b.akamaiedge.net</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)">e8218.b.akamaiedge.net</div>
               </div>
               <button class="btn-sm">⊡ Copy IPs</button>
             </div>
             <div>
               <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (2)</div>
-              <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">104.16.248.249 · 146.75.128.44</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green)">104.16.248.249 · 146.75.128.44</div>
             </div>
           </div>
         </div>
@@ -3460,13 +3460,13 @@ function renderFronting(results) {
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div>
           <div style="font-size:10px;color:var(--fg3);margin-bottom:3px">SNI</div>
-          <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--fg0)">${sni}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)">${sni}</div>
         </div>
         <button class="btn-sm" onclick="copyRowIP('${ips.join('\n')}')">⊡ Copy IPs</button>
       </div>
       <div>
         <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">IPs (${ips.length})</div>
-        <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--green)">${ips.join(' · ')}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green)">${ips.join(' · ')}</div>
       </div>
     </div>`).join('');
 }
