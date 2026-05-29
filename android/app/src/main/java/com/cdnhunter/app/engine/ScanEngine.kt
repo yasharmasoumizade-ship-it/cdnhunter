@@ -41,15 +41,17 @@ class ScanEngine {
         scanIps(ips, config)
     }
 
-    fun expandIps(config: ScanConfig): List<String> = when (config.cdnProvider) {
-        CdnProvider.MANUAL -> parseManualIps(config.manualIps)
-        CdnProvider.CIDR -> expandCidrs(parseCidrs(config.manualCidr), config.maxIps)
-        CdnProvider.SMART -> expandSmartScan(config.maxIps)
-        CdnProvider.ALL -> expandAllCdns(config.maxIps)
-        else -> {
-            val key = config.cdnProvider.label
-            val cidrs = CdnRanges.ranges[key] ?: return emptyList()
-            expandCidrs(cidrs.shuffled().take(min(10, cidrs.size)), config.maxIps)
+    fun expandIps(config: ScanConfig): List<String> {
+        return when (config.cdnProvider) {
+            CdnProvider.MANUAL -> parseManualIps(config.manualIps)
+            CdnProvider.CIDR -> expandCidrs(parseCidrs(config.manualCidr), config.maxIps)
+            CdnProvider.SMART -> expandSmartScan(config.maxIps)
+            CdnProvider.ALL -> expandAllCdns(config.maxIps)
+            else -> {
+                val key = config.cdnProvider.label
+                val cidrs = CdnRanges.ranges[key] ?: return emptyList()
+                expandCidrs(cidrs.shuffled().take(min(10, cidrs.size)), config.maxIps)
+            }
         }
     }
 
