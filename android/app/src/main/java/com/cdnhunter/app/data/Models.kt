@@ -12,6 +12,46 @@ data class ScanConfig(
     val manualCidr: String = "",
 )
 
+// ── Scan Profiles ───────────────────────────────────────────────────────────
+enum class ScanProfile(val label: String, val desc: String, val config: ScanConfig) {
+    QUICK("Quick Scan", "100 IPs, fast", ScanConfig(cdnProvider = CdnProvider.SMART, maxIps = 100, concurrency = 80, timeout = 3f, retries = 1)),
+    NORMAL("Normal", "1000 IPs, balanced", ScanConfig(cdnProvider = CdnProvider.SMART, maxIps = 1000, concurrency = 60, timeout = 4f)),
+    DEEP("Deep Scan", "5000 IPs, thorough", ScanConfig(cdnProvider = CdnProvider.ALL, maxIps = 5000, concurrency = 100, timeout = 5f)),
+    CF_ONLY("Cloudflare Only", "Cloudflare ranges", ScanConfig(cdnProvider = CdnProvider.CLOUDFLARE, maxIps = 2000, concurrency = 80)),
+    AKAMAI_ONLY("Akamai Only", "Akamai ranges", ScanConfig(cdnProvider = CdnProvider.AKAMAI, maxIps = 2000, concurrency = 80)),
+    FASTLY_ONLY("Fastly Only", "Fastly ranges", ScanConfig(cdnProvider = CdnProvider.FASTLY, maxIps = 1500, concurrency = 60)),
+}
+
+// ── Config Generator ────────────────────────────────────────────────────────
+enum class ProxyType(val label: String) {
+    VLESS("VLESS (v2ray)"),
+    VMESS("VMess (v2ray)"),
+    TROJAN("Trojan"),
+    SINGBOX("Sing-Box"),
+    CLASH("Clash Meta"),
+}
+
+data class ProxyConfig(
+    val type: ProxyType = ProxyType.VLESS,
+    val ip: String = "",
+    val port: Int = 443,
+    val sni: String = "",
+    val host: String = "",
+    val uuid: String = "auto",
+    val path: String = "/",
+    val security: String = "tls",
+)
+
+// ── Navigation ──────────────────────────────────────────────────────────────
+enum class NavScreen(val label: String, val icon: String) {
+    SCAN("Scan", "radar"),
+    RESULTS("Results", "list"),
+    CONFIG_GEN("Config Generator", "code"),
+    EXPORT("Export & Share", "share"),
+    PROFILES("Scan Profiles", "speed"),
+    SETTINGS("Settings", "settings"),
+}
+
 enum class CdnProvider(val label: String, val key: String) {
     SMART("Smart (Auto)", "smart"),
     CLOUDFLARE("Cloudflare", "cloudflare"),
