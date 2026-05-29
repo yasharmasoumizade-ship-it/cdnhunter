@@ -2255,7 +2255,8 @@ def _self_install():
 #  WEB DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 _WEB_STATE = {"running":False,"pct":0,"scanned":0,"healthy":0,"failed":0,
-              "results":[],"log":[],"source":"","server":None,"live_ips":[]}
+              "results":[],"log":[],"source":"","server":None,"live_ips":[],
+              "phase":"idle","phase_detail":""}
 _WEB_LOCK = threading.Lock()
 
 def _web_log(msg: str):
@@ -2295,13 +2296,13 @@ a{color:inherit;text-decoration:none}
 .sidebar-header{padding:20px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}
 .sidebar-logo{width:32px;height:32px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
 .sidebar-title{font-size:15px;font-weight:600;color:#fafafa}
-.sidebar-nav{flex:1;padding:12px;overflow-y:auto}
+.sidebar-nav{flex:1;padding:12px;overflow-y:auto;min-height:0}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:#999;transition:all 0.15s;margin-bottom:2px}
 .nav-item:hover{background:#171717;color:#e5e5e5}
 .nav-item.active{background:#171717;color:#fff;font-weight:500}
 .nav-item .badge{margin-left:auto;background:#222;color:#999;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:500}
 .nav-item.active .badge{background:#3b82f6;color:#fff}
-.sidebar-footer{padding:16px;border-top:1px solid #222;display:flex;flex-direction:column;gap:8px}
+.sidebar-footer{padding:16px;border-top:1px solid #222;display:flex;flex-direction:column;gap:8px;position:sticky;bottom:0;background:#0a0a0a;z-index:10;flex-shrink:0}
 .btn{padding:10px 16px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all 0.15s}
 .btn-primary{background:#3b82f6;color:#fff}
 .btn-primary:hover{background:#2563eb}
@@ -2328,8 +2329,17 @@ a{color:inherit;text-decoration:none}
 .stat-value.red{color:#ef4444}
 .stat-value.blue{color:#3b82f6}
 
-.progress-bar-container{margin-bottom:20px;background:#111;border-radius:6px;height:6px;overflow:hidden}
+.progress-bar-container{margin-bottom:12px;background:#111;border-radius:6px;height:6px;overflow:hidden}
 .progress-bar-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:6px;transition:width 0.3s ease;width:0%}
+
+.phase-stepper{display:flex;align-items:center;gap:0;margin-bottom:20px;padding:10px 0;overflow-x:auto}
+.phase-step{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;font-size:12px;color:#555;white-space:nowrap;transition:all 0.3s}
+.phase-step .step-num{width:20px;height:20px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#555;transition:all 0.3s}
+.phase-step.active{color:#3b82f6;background:#0d1b2a}
+.phase-step.active .step-num{background:#3b82f6;color:#fff}
+.phase-step.done{color:#22c55e}
+.phase-step.done .step-num{background:#22c55e;color:#fff}
+.phase-arrow{color:#333;font-size:14px;margin:0 2px}
 
 .tab-bar{display:flex;gap:0;border-bottom:1px solid #222;margin-bottom:20px;overflow-x:auto}
 .tab-btn{padding:10px 18px;background:none;border:none;color:#666;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
@@ -2446,6 +2456,18 @@ a{color:inherit;text-decoration:none}
     <div class="progress-bar-fill" id="progressBar"></div>
   </div>
 
+  <div class="phase-stepper" id="phaseStepper">
+    <div class="phase-step" id="phase-scanning"><span class="step-num">1</span><span>Scanning</span></div>
+    <span class="phase-arrow">&#8594;</span>
+    <div class="phase-step" id="phase-ipcheck"><span class="step-num">2</span><span>IP Check</span></div>
+    <span class="phase-arrow">&#8594;</span>
+    <div class="phase-step" id="phase-fronting"><span class="step-num">3</span><span>Fronting</span></div>
+    <span class="phase-arrow">&#8594;</span>
+    <div class="phase-step" id="phase-throughput"><span class="step-num">4</span><span>Throughput</span></div>
+    <span class="phase-arrow">&#8594;</span>
+    <div class="phase-step" id="phase-done"><span class="step-num">&#10003;</span><span>Done</span></div>
+  </div>
+
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="overview" type="button">Overview</button>
     <button class="tab-btn" data-tab="results" type="button">Results</button>
@@ -2464,10 +2486,10 @@ a{color:inherit;text-decoration:none}
     <div style="overflow-x:auto">
       <table class="results-table">
         <thead>
-          <tr><th>IP</th><th>Latency</th><th>Code</th><th>CDN</th><th>Country</th><th>kB/s</th><th>Status</th></tr>
+          <tr><th>IP</th><th>Latency</th><th>Code</th><th>CDN</th><th>SNI</th><th>Country</th><th>kB/s</th><th>Status</th></tr>
         </thead>
         <tbody id="resultsBody">
-          <tr><td colspan="7" style="text-align:center;color:#444;padding:40px">No results yet</td></tr>
+          <tr><td colspan="8" style="text-align:center;color:#444;padding:40px">No results yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -2594,6 +2616,25 @@ function closeSidebar() {
   $('overlay').className = 'overlay';
 }
 
+function loadConfig() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/config', true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4 && xhr.status === 200) {
+      try {
+        var cfg = JSON.parse(xhr.responseText);
+        if (cfg.host) $('cfgHost').value = cfg.host;
+        if (cfg.sni) $('cfgSni').value = cfg.sni;
+        if (cfg.conc) $('cfgConc').value = cfg.conc;
+        if (cfg.timeout) $('cfgTimeout').value = cfg.timeout;
+        if (cfg.retries !== undefined) $('cfgRetries').value = cfg.retries;
+        if (cfg.out_file) $('cfgOutFile').value = cfg.out_file;
+      } catch(e) {}
+    }
+  };
+  xhr.send();
+}
+
 function startScan() {
   var cfg = {
     cdn: $('cfgCdn').value,
@@ -2689,26 +2730,68 @@ function updateUI(state) {
   var txt = $('statusText');
   if (state.running) {
     dot.className = 'status-dot running';
-    txt.textContent = 'Scanning...';
+    txt.textContent = (state.phase_detail || state.phase || 'Scanning') + '...';
   } else {
     dot.className = 'status-dot';
-    txt.textContent = 'Idle';
+    txt.textContent = state.pct >= 100 ? 'Complete' : 'Idle';
+  }
+
+  // Update phase stepper
+  var phases = ['scanning','ipcheck','fronting','throughput','done'];
+  var currentPhase = state.phase || 'idle';
+  var phaseOrder = {'idle':-1,'scanning':0,'ipcheck':1,'fronting':2,'throughput':3,'done':4};
+  var currentIdx = phaseOrder[currentPhase] !== undefined ? phaseOrder[currentPhase] : -1;
+  for (var pi = 0; pi < phases.length; pi++) {
+    var el = $('phase-' + phases[pi]);
+    if (!el) continue;
+    if (pi < currentIdx) { el.className = 'phase-step done'; }
+    else if (pi === currentIdx) { el.className = 'phase-step active'; }
+    else { el.className = 'phase-step'; }
   }
 
   var liveFeed = $('liveFeed');
   var liveIps = state.live_ips || [];
+  var logs = state.log || [];
   $('badge-live').textContent = state.live_ips_total || liveIps.length;
-  if (liveIps.length > 0) {
-    var html = '';
-    var i;
-    for (i = liveIps.length - 1; i >= 0; i--) {
-      var ip = typeof liveIps[i] === 'string' ? liveIps[i] : (liveIps[i].ip || liveIps[i]);
-      html += '<div class="live-item"><span class="live-dot"></span>' + escHtml(String(ip)) + '</div>';
-    }
-    liveFeed.innerHTML = html;
-  } else if (!state.running && liveIps.length === 0) {
-    liveFeed.innerHTML = '<div class="empty-state">No live IPs yet. Start a scan to see results.</div>';
+
+  // Build terminal-style live feed combining logs and live IPs
+  var feedHtml = '';
+  // Show current phase banner
+  if (state.running && state.phase && state.phase !== 'idle') {
+    var phaseLabels = {scanning:'Scanning IPs',ipcheck:'Checking IP Regions',fronting:'Testing CDN Fronting',throughput:'Measuring Throughput',done:'Complete'};
+    var phaseLabel = phaseLabels[state.phase] || state.phase;
+    feedHtml += '<div style="padding:8px 12px;border-bottom:1px solid #222;color:#3b82f6;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600">&#9654; ' + escHtml(phaseLabel) + (state.phase_detail && state.phase_detail !== phaseLabel ? ' — ' + escHtml(state.phase_detail) : '') + '</div>';
   }
+  // Show recent log entries (terminal style)
+  var recentLogs = logs.slice(-8);
+  for (var li = recentLogs.length - 1; li >= 0; li--) {
+    var logColor = '#999';
+    var logMsg = recentLogs[li];
+    if (logMsg.indexOf('[Phase') !== -1) logColor = '#a78bfa';
+    else if (logMsg.indexOf('OK ') === 0) logColor = '#22c55e';
+    else if (logMsg.indexOf('ERR') !== -1 || logMsg.indexOf('STOP') !== -1) logColor = '#ef4444';
+    else if (logMsg.indexOf('Done') !== -1) logColor = '#22c55e';
+    feedHtml += '<div style="padding:4px 12px;border-bottom:1px solid #0d0d0d;font-family:JetBrains Mono,monospace;font-size:11px;color:' + logColor + '">$ ' + escHtml(logMsg) + '</div>';
+  }
+  // Show live IP results
+  if (liveIps.length > 0) {
+    feedHtml += '<div style="padding:6px 12px;border-bottom:1px solid #222;color:#666;font-size:11px;font-weight:500">LIVE RESULTS (' + (state.live_ips_total || liveIps.length) + ')</div>';
+    for (var i = liveIps.length - 1; i >= 0; i--) {
+      var item = liveIps[i];
+      var ipStr = typeof item === 'string' ? item : (item.ip || '');
+      var itemOk = typeof item === 'object' && item.ok;
+      var itemMs = typeof item === 'object' ? (item.ms || '') : '';
+      var itemCode = typeof item === 'object' ? (item.code || '') : '';
+      var dotColor = itemOk ? '#22c55e' : '#ef4444';
+      var lineColor = itemOk ? '#22c55e' : '#666';
+      var extra = itemMs ? '  ' + itemMs + 'ms' : '';
+      extra += itemCode ? '  [' + itemCode + ']' : '';
+      feedHtml += '<div class="live-item" style="color:' + lineColor + '"><span class="live-dot" style="background:' + dotColor + '"></span>' + escHtml(ipStr) + '<span style="color:#555;font-size:10px">' + escHtml(extra) + '</span></div>';
+    }
+  } else if (!state.running && logs.length === 0) {
+    feedHtml = '<div class="empty-state">No live IPs yet. Start a scan to see results.</div>';
+  }
+  liveFeed.innerHTML = feedHtml;
 
   var results = state.results || [];
   $('badge-results').textContent = results.length;
@@ -2719,7 +2802,7 @@ function updateUI(state) {
       var r = results[j];
       var statusCls = r.ok ? 'status-ok' : 'status-fail';
       var statusTxt = r.ok ? 'OK' : 'FAIL';
-      rhtml += '<tr><td>' + escHtml(r.ip) + '</td><td>' + r.ms + 'ms</td><td>' + escHtml(String(r.code)) + '</td><td>' + escHtml(r.cdn || '?') + '</td><td>' + escHtml(r.country || '-') + '</td><td>' + (r.kbps || 0) + '</td><td class="' + statusCls + '">' + statusTxt + '</td></tr>';
+      rhtml += '<tr><td>' + escHtml(r.ip) + '</td><td>' + r.ms + 'ms</td><td>' + escHtml(String(r.code)) + '</td><td>' + escHtml(r.cdn || '?') + '</td><td style="color:#3b82f6;font-size:11px">' + escHtml(r.fronting_sni || '-') + '</td><td>' + escHtml(r.country || '-') + '</td><td>' + (r.kbps || 0) + '</td><td class="' + statusCls + '">' + statusTxt + '</td></tr>';
     }
     $('resultsBody').innerHTML = rhtml;
   }
@@ -2737,16 +2820,23 @@ function updateUI(state) {
     var m;
     for (m = 0; m < frontingIps.length; m++) {
       var cdn = frontingIps[m].cdn || 'Unknown';
-      if (!groups[cdn]) groups[cdn] = [];
-      groups[cdn].push(frontingIps[m].ip);
+      var sni = frontingIps[m].fronting_sni || '';
+      var gkey2 = cdn + '||' + sni;
+      if (!groups[gkey2]) groups[gkey2] = {cdn: cdn, sni: sni, host: frontingIps[m].fronting_host || '', ips: []};
+      groups[gkey2].ips.push(frontingIps[m].ip);
     }
     var fhtml = '';
     for (var gkey in groups) {
       if (groups.hasOwnProperty(gkey)) {
-        fhtml += '<div class="fronting-group"><div class="fronting-title">' + escHtml(gkey) + ' <span class="badge">' + groups[gkey].length + '</span></div><div class="fronting-ips">';
+        var g = groups[gkey];
+        var sniLabel = g.sni ? g.sni : 'auto';
+        var hostLabel = (g.host && g.host !== g.sni) ? ' &rarr; Host: <span style="color:#8b5cf6">' + escHtml(g.host) + '</span>' : '';
+        fhtml += '<div class="fronting-group"><div class="fronting-title">' + escHtml(g.cdn) + ' <span class="badge">' + g.ips.length + '</span></div>';
+        fhtml += '<div style="font-size:12px;color:#999;margin-bottom:10px">SNI: <span style="color:#3b82f6;font-family:JetBrains Mono,monospace">' + escHtml(sniLabel) + '</span>' + hostLabel + '</div>';
+        fhtml += '<div class="fronting-ips">';
         var n;
-        for (n = 0; n < groups[gkey].length; n++) {
-          fhtml += '<span class="fronting-ip">' + escHtml(groups[gkey][n]) + '</span>';
+        for (n = 0; n < g.ips.length; n++) {
+          fhtml += '<span class="fronting-ip">' + escHtml(g.ips[n]) + '</span>';
         }
         fhtml += '</div></div>';
       }
@@ -2754,12 +2844,18 @@ function updateUI(state) {
     $('frontingContainer').innerHTML = fhtml;
   }
 
-  var logs = state.log || [];
   if (logs.length > 0) {
     var lhtml = '';
     var p;
     for (p = logs.length - 1; p >= 0; p--) {
-      lhtml += '<div class="log-entry">' + escHtml(logs[p]) + '</div>';
+      var lc = '#999';
+      var lmsg = logs[p];
+      if (lmsg.indexOf('[Phase') !== -1) lc = '#a78bfa';
+      else if (lmsg.indexOf('OK ') === 0) lc = '#22c55e';
+      else if (lmsg.indexOf('ERR') !== -1 || lmsg.indexOf('FAIL') !== -1 || lmsg.indexOf('STOP') !== -1) lc = '#ef4444';
+      else if (lmsg.indexOf('Done') !== -1 || lmsg.indexOf('complete') !== -1) lc = '#22c55e';
+      else if (lmsg.indexOf('Smart') !== -1 || lmsg.indexOf('Scan started') !== -1) lc = '#3b82f6';
+      lhtml += '<div class="log-entry" style="color:' + lc + '">$ ' + escHtml(lmsg) + '</div>';
     }
     $('logContainer').innerHTML = lhtml;
   }
@@ -2779,6 +2875,10 @@ function poll() {
       try {
         var state = JSON.parse(xhr.responseText);
         updateUI(state);
+        // Faster polling during active scan
+        var interval = state.running ? 800 : 2000;
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(poll, interval);
       } catch(e) {}
     }
   };
@@ -2820,6 +2920,7 @@ function init() {
 
   poll();
   pollTimer = setInterval(poll, 1500);
+  loadConfig();
 }
 
 if (document.readyState === 'loading') {
@@ -2850,11 +2951,21 @@ class _WebHandler(BaseHTTPRequestHandler):
         elif path == "/api/state":
             with _WEB_LOCK:
                 live = _WEB_STATE["live_ips"]
-                data = {k: _WEB_STATE[k] for k in ("running","pct","scanned","healthy","failed","source","log")}
+                data = {k: _WEB_STATE[k] for k in ("running","pct","scanned","healthy","failed","source","log","phase","phase_detail")}
                 data["results"] = _WEB_STATE["results"][-100:]
                 data["live_ips_total"] = len(live)
                 data["live_ips"] = live[-30:]
             self._send(200, "application/json", json.dumps(data).encode())
+        elif path == "/api/config":
+            cfg_data = {
+                "host": SCAN_CFG.get("host", ""),
+                "sni": SCAN_CFG.get("psiphon_sni", ""),
+                "conc": SCAN_CFG.get("concurrency", _DEFAULT_CONCURRENCY),
+                "timeout": SCAN_CFG.get("timeout", _DEFAULT_TIMEOUT),
+                "retries": SCAN_CFG.get("retries", 2),
+                "out_file": SCAN_CFG.get("out_file", "") or "",
+            }
+            self._send(200, "application/json", json.dumps(cfg_data).encode())
         else: self._send(404, "text/plain", b"Not found")
 
     def do_POST(self):
@@ -2902,9 +3013,17 @@ def _run_scan_web(cfg: dict):
     out_file = cfg.get("out_file","").strip() or None
     if cfg.get("sni","").strip(): SCAN_CFG["psiphon_sni"] = cfg["sni"].strip()
 
+    # Sync web config back to terminal SCAN_CFG
+    SCAN_CFG["host"] = host
+    SCAN_CFG["concurrency"] = concurrency
+    SCAN_CFG["timeout"] = timeout
+    SCAN_CFG["retries"] = retries
+    SCAN_CFG["out_file"] = out_file
+
     with _WEB_LOCK:
         _WEB_STATE.update({"running":True,"pct":0,"scanned":0,"healthy":0,"failed":0,
-                           "results":[],"log":[],"live_ips":[],"source":cdn_choice})
+                           "results":[],"log":[],"live_ips":[],"source":cdn_choice,
+                           "phase":"scanning","phase_detail":"Loading IPs"})
     _web_log(f"Scan started — CDN={cdn_choice}  conc={concurrency}  timeout={timeout}s")
 
     ips = []; source = cdn_choice
@@ -2943,7 +3062,9 @@ def _run_scan_web(cfg: dict):
                 cdn_ranges_full["Loaded"] = list(USER_LOADED_RANGES)
 
             _web_log("Smart: probing CDN ranges...")
+            with _WEB_LOCK: _WEB_STATE.update({"phase_detail":"Probing CDN ranges"})
             probe_list = _build_probe_list(cdn_ranges_full, max_ranges_per_cdn=30, ips_per_range=2)
+            _web_log(f"Probing {len(probe_list)} IPs across {len(cdn_ranges_full)} CDN providers...")
             try:
                 if HAS_AIOHTTP:
                     loop = asyncio.new_event_loop()
@@ -2987,7 +3108,7 @@ def _run_scan_web(cfg: dict):
             source = "Akamai+Fastly"
 
         random.shuffle(ips)
-        with _WEB_LOCK: _WEB_STATE["source"] = source
+        with _WEB_LOCK: _WEB_STATE.update({"source": source, "phase_detail": f"Ready: {len(ips):,} IPs"})
         _web_log(f"{len(ips):,} IPs loaded from {source}")
     except Exception as e:
         _web_log(f"ERR loading IPs: {e}")
@@ -3002,6 +3123,8 @@ def _run_scan_web(cfg: dict):
                 _WEB_STATE.update({"pct":pct,"healthy":fnd,"scanned":scanned_est,"failed":max(scanned_est-fnd,0)})
             time.sleep(0.25)
 
+    with _WEB_LOCK: _WEB_STATE.update({"phase":"scanning","phase_detail":"Scanning IPs"})
+    _web_log(f"[Phase 1/4] Scanning {len(ips):,} IPs...")
     watcher = threading.Thread(target=_progress_watcher, daemon=True); watcher.start()
     try:
         result = run_scan(ips, host, 443, "/", concurrency, timeout, out_file, retries,
@@ -3012,22 +3135,57 @@ def _run_scan_web(cfg: dict):
 
     if not result and _partial_healthy:
         with _partial_healthy_lock: result = list(_partial_healthy)
+
+    # Phase 2: IP Check (country lookup)
+    with _WEB_LOCK: _WEB_STATE.update({"phase":"ipcheck","phase_detail":"Checking regions","running":True})
+    _web_log(f"[Phase 2/4] Checking IP regions...")
     results_clean = []
+    healthy_results = [r for r in (result or []) if isinstance(r, dict) and r.get("ok")]
+    if healthy_results:
+        batch_ips = [r.get("ip","") for r in healthy_results if r.get("ip")]
+        cc_map = get_country_codes_batch(batch_ips, timeout=3.0) if batch_ips else {}
+    else:
+        cc_map = {}
+
+    # Phase 3: Fronting check
+    with _WEB_LOCK: _WEB_STATE.update({"phase":"fronting","phase_detail":"Testing fronting"})
+    _web_log(f"[Phase 3/4] Checking CDN fronting for {len(healthy_results)} IPs...")
+    fronting_results = check_psiphon_fronting(healthy_results, timeout) if healthy_results else []
+    fronting_map = {r["ip"]: r for r in fronting_results}
+
+    # Phase 4: Throughput
+    fronting_ok_list = [r for r in fronting_results if r.get("fronting_ok")]
+    if fronting_ok_list:
+        with _WEB_LOCK: _WEB_STATE.update({"phase":"throughput","phase_detail":"Measuring throughput"})
+        _web_log(f"[Phase 4/4] Throughput test for {len(fronting_ok_list)} fronting IPs...")
+        fronting_ok_list = run_throughput_checks(fronting_ok_list, timeout)
+        for r in fronting_ok_list:
+            fronting_map[r["ip"]] = r
+    else:
+        _web_log(f"[Phase 4/4] Throughput — skipped (no fronting IPs)")
+
     for r in (result or []):
         if isinstance(r, dict):
-            cc = _get_country_code(r.get("ip",""), timeout=2.5) if r.get("ok") else ""
-            results_clean.append({"ip": r.get("ip",""), "ms": r.get("ms",9999),
+            ip = r.get("ip","")
+            cc = cc_map.get(ip, "")
+            fr = fronting_map.get(ip, {})
+            results_clean.append({"ip": ip, "ms": r.get("ms",9999),
                 "code": r.get("code",""), "ok": r.get("ok",False),
-                "fronting_ok": r.get("fronting_ok",False),
-                "cdn": r.get("cdn_type","?") or "?", "kbps": round(r.get("tp_kbps",0) or 0),
+                "fronting_ok": fr.get("fronting_ok", r.get("fronting_ok",False)),
+                "fronting_sni": fr.get("fronting_sni", r.get("fronting_sni","")) or "",
+                "fronting_host": fr.get("fronting_host", r.get("fronting_host","")) or "",
+                "cdn": fr.get("cdn_type", r.get("cdn_type","?")) or "?",
+                "kbps": round(fr.get("tp_kbps",0) or r.get("tp_kbps",0) or 0),
                 "country": cc})
-            if r.get("ok"): _web_log(f"OK  {r.get('ip','')}  {r.get('ms','')}ms  {cc}")
+            if r.get("ok"): _web_log(f"OK  {ip}  {r.get('ms','')}ms  {cc}  sni={fr.get('fronting_sni','—')}")
+
     with _WEB_LOCK:
         _WEB_STATE.update({"running":False,"pct":100,"scanned":len(ips),
             "healthy":len([r for r in results_clean if r["ok"]]),
             "failed":len([r for r in results_clean if not r["ok"]]),
-            "results":results_clean})
-    _web_log(f"Done — {len([r for r in results_clean if r['ok']])} healthy / {len(ips)} scanned")
+            "results":results_clean,"phase":"done","phase_detail":"Complete"})
+    fronting_count = len([r for r in results_clean if r.get("fronting_ok")])
+    _web_log(f"Done — {len([r for r in results_clean if r['ok']])} healthy / {fronting_count} fronting OK / {len(ips)} scanned")
 
 
 def start_web_ui():
