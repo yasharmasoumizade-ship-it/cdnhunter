@@ -2659,7 +2659,7 @@ function copyIps() {
     showToast('No healthy IPs to copy');
     return;
   }
-  var text = ips.join('\n');
+  var text = ips.join('\\n');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function() {
       showToast(ips.length + ' IPs copied');
