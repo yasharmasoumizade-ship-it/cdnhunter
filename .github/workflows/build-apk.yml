@@ -45,13 +45,13 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk CDNHunter.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk CDN-Hunter.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CDNHunter-APK
-          path: CDNHunter.apk
+          path: CDN-Hunter.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -61,19 +61,19 @@ jobs:
           body: |
             ## CDN Hunter v2.2
 
-            **Signed release APK** — installs without Play Protect warning.
+            **Signed release APK** — no Play Protect popup.
 
             ### Install:
-            1. Download CDNHunter.apk
-            2. Open and install
-            3. Updates smoothly over previous versions
+            1. Download `CDN-Hunter.apk`
+            2. Open and install directly (no uninstall needed)
+            3. All future updates install over this version smoothly
 
-            ### What's new:
-            - Signed APK (no Play Protect popup)
-            - Updates over v2.0/v2.1 without uninstall
+            ### Features:
+            - Signed APK — no Play Protect warning
             - Better scan performance
-            - Tap any IP to copy
+            - Tap any IP to copy with haptic
             - Swipe between pages
-          files: CDNHunter.apk
+            - Glass stat cards
+          files: CDN-Hunter.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
