@@ -122,6 +122,32 @@ class GeoService {
         } catch (e: Exception) { "" }
     }
 
+    data class GeoInfo(val cc: String, val lat: Double, val lon: Double, val city: String, val isp: String)
+
+    fun lookupGeoInfo(ip: String, timeout: Float = 4.0f): GeoInfo {
+        try {
+            val url = "https://ipwho.is/$ip"
+            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+            val c = client.newBuilder()
+                .connectTimeout(java.time.Duration.ofMillis((timeout * 1000).toLong()))
+                .readTimeout(java.time.Duration.ofMillis((timeout * 1000).toLong()))
+                .build()
+            val response = c.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            response.close()
+            if (body.isNotBlank()) {
+                val obj = JSONObject(body)
+                val cc = obj.optString("country_code", "").uppercase()
+                val lat = obj.optDouble("latitude", 0.0)
+                val lon = obj.optDouble("longitude", 0.0)
+                val city = obj.optString("city", "")
+                val isp = obj.optJSONObject("connection")?.optString("isp", "") ?: obj.optString("isp", "")
+                return GeoInfo(cc, lat, lon, city, isp)
+            }
+        } catch (e: Exception) {}
+        return GeoInfo("", 0.0, 0.0, "", "")
+    }
+
     /**
      * Filter out Iranian IPs from results.
      * Returns filtered list (IPs confirmed as IR are removed).

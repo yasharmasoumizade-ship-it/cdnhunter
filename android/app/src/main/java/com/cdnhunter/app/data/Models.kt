@@ -45,10 +45,10 @@ data class ProxyConfig(
 // ── Navigation ──────────────────────────────────────────────────────────────
 enum class NavScreen(val label: String, val icon: String) {
     SCAN("Scan", "radar"),
-    RESULTS("Results", "list"),
     CONFIG_GEN("Config Generator", "code"),
     EXPORT("Export & Share", "share"),
     PROFILES("Scan Profiles", "speed"),
+    LOG("Activity Log", "log"),
     SETTINGS("Settings", "settings"),
 }
 
@@ -85,6 +85,10 @@ data class ScanResult(
     val frontingSni: String = "",
     val frontingHost: String = "",
     val kbps: Float = 0f,
+    val lat: Double = 0.0,
+    val lon: Double = 0.0,
+    val city: String = "",
+    val isp: String = "",
 )
 
 data class ScanState(
