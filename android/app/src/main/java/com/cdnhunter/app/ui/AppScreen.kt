@@ -3,6 +3,7 @@ package com.cdnhunter.app.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -193,8 +194,9 @@ fun StatCard(label: String, value: String, valueColor: Color, modifier: Modifier
 // ── Progress ────────────────────────────────────────────────────────────────
 @Composable
 fun ProgressIndicator(state: ScanState) {
+    @Suppress("DEPRECATION")
     LinearProgressIndicator(
-        progress = { state.pct / 100f },
+        progress = state.pct / 100f,
         modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
         color = AccentBlue,
         trackColor = BorderColor,
@@ -358,6 +360,7 @@ fun FrontingTab(results: List<ScanResult>) {
 }
 
 // ── Config Tab ──────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -476,6 +479,7 @@ fun LogTab(logs: List<String>) {
 }
 
 // ── FlowRow compat ──────────────────────────────────────────────────────────
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FlowRow(
     modifier: Modifier = Modifier,
