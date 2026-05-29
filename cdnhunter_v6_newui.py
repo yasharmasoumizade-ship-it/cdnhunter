@@ -2974,6 +2974,7 @@ select.cfg-input option { background: var(--surface); }
         <span id="status-text">Idle</span>
       </div>
       <button class="btn btn-sm" onclick="copyAllIPs()">Copy IPs</button>
+      <button class="btn btn-sm" id="btn-stop" onclick="stopScan()" style="display:none;color:var(--amber);border-color:rgba(245,166,35,0.3)">Stop</button>
       <button class="btn btn-sm btn-danger" onclick="exitServer()">Exit</button>
     </div>
   </nav>
@@ -3224,6 +3225,8 @@ function startScan() {
   btn.disabled = true;
   btn.textContent = 'Scanning...';
   _startTime = Date.now();
+  const stopBtn = document.getElementById('btn-stop');
+  if (stopBtn) stopBtn.style.display = '';
   fetch('/api/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -3234,11 +3237,12 @@ function startScan() {
     if (!d.ok) {
       showToast(d.msg || 'Error starting scan');
       resetBtn();
+      if (stopBtn) stopBtn.style.display = 'none';
     } else {
       startPoll();
     }
   })
-  .catch(() => { showToast('Cannot reach server'); resetBtn(); });
+  .catch(() => { showToast('Cannot reach server'); resetBtn(); if (stopBtn) stopBtn.style.display = 'none'; });
 }
 
 function stopScan() {
@@ -3302,31 +3306,40 @@ function updateUI(s) {
   // Status badge
   const dot = document.getElementById('status-dot');
   const stxt = document.getElementById('status-text');
+  const stopBtn = document.getElementById('btn-stop');
+  const startBtn = document.getElementById('btn-start');
   if (s.running) {
     dot.className = 'status-dot live';
     stxt.textContent = 'Scanning';
+    if (stopBtn) stopBtn.style.display = '';
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Scanning...'; }
+    // Speed up polling if not already fast
+    if (!_pollTimer) startPoll();
   } else if (scanned > 0) {
     dot.className = 'status-dot done';
     stxt.textContent = 'Done';
+    if (stopBtn) stopBtn.style.display = 'none';
     resetBtn();
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
   } else {
     dot.className = 'status-dot idle';
     stxt.textContent = 'Idle';
+    if (stopBtn) stopBtn.style.display = 'none';
   }
 
   // Live IPs
   if (s.live_ips && s.live_ips.length) {
     _liveIPs = s.live_ips;
-    renderLiveIPs(s.live_ips);
-    setBadge('badge-results', s.live_ips_total || s.live_ips.length);
+    renderLiveIPs(s.live_ips.filter(r => r.ok));
   }
 
   // Results
   if (s.results && s.results.length) {
     _results = s.results;
-    renderResults(s.results);
+    _liveIPs = s.results.filter(r => r.ok);
+    renderResults(s.results.filter(r => r.ok));
     renderFronting(s.results);
+    setBadge('badge-results', s.results.filter(r => r.ok).length);
   }
 
   // Log
@@ -3338,16 +3351,18 @@ function renderLiveIPs(ips) {
   const el = document.getElementById('live-ip-list');
   if (!el) return;
   const empty = document.getElementById('empty-live');
+  if (!ips.length) return;
   if (empty) empty.style.display = 'none';
 
   const html = ips.slice().reverse().slice(0, 50).map(r => {
-    const ms = r.latency || r.ms || 0;
+    const ms = r.ms || 0;
     const msCls = ms < 200 ? 'fast' : ms < 400 ? 'medium' : 'slow';
-    const isFront = r.fronting || r.front;
+    const isFront = r.fronting_ok || r.fronting || r.front;
+    const cc = r.country || r.cc || '';
     return '<div class="ip-row">' +
       '<div class="ip-addr">' + r.ip + '</div>' +
       '<div class="ip-ms ' + msCls + '">' + ms + 'ms</div>' +
-      '<div class="ip-cc">' + (r.cc || r.country || '') + '</div>' +
+      '<div class="ip-cc">' + cc + '</div>' +
       '<div class="ip-tags">' +
         '<span class="tag tag-ok">OK</span>' +
         (isFront ? '<span class="tag tag-front">FRONT</span>' : '') +
@@ -3363,15 +3378,17 @@ function renderResults(results) {
   if (!tbody) return;
 
   tbody.innerHTML = results.map(r => {
-    const ms = r.latency || r.ms || 0;
+    const ms = r.ms || 0;
     const msCls = ms < 200 ? 'col-green' : ms < 400 ? 'col-amber' : 'col-red';
     const isFront = r.fronting_ok || r.fronting || r.front;
+    const cc = r.country || r.cc || '-';
+    const cdn = r.cdn || '-';
     return '<tr>' +
-      '<td class="col-ip">' + r.ip + ' <button class="copy-btn" onclick="copyIP(\\''+r.ip+'\\')">copy</button></td>' +
+      '<td class="col-ip">' + r.ip + ' <button class="copy-btn" onclick="copyIP(\\'' + r.ip + '\\')">copy</button></td>' +
       '<td class="' + msCls + '">' + ms + 'ms</td>' +
-      '<td class="col-dim">' + (r.code || r.status || '200') + '</td>' +
-      '<td class="col-dim">' + (r.cdn || '-') + '</td>' +
-      '<td class="col-dim">' + (r.cc || r.country || '-') + '</td>' +
+      '<td class="col-dim">' + (r.code || '200') + '</td>' +
+      '<td class="col-dim">' + cdn + '</td>' +
+      '<td class="col-dim">' + cc + '</td>' +
       '<td class="' + (r.kbps > 1000 ? 'col-green' : 'col-dim') + '">' + (r.kbps ? Math.round(r.kbps) + ' kB/s' : '-') + '</td>' +
       '<td>' +
         '<span class="tag tag-ok">OK</span>' +
@@ -3412,7 +3429,7 @@ function renderFronting(results) {
           '<div class="fronting-sni-label">SNI</div>' +
           '<div class="fronting-sni-value">' + sni + '</div>' +
         '</div>' +
-        '<button class="btn btn-sm" onclick="copyIP(\\''+ips.join('\\\\n')+'\\')">Copy IPs</button>' +
+        '<button class="btn btn-sm" onclick="copyIP(\\'' + ips.join('\\n') + '\\')">Copy IPs</button>' +
       '</div>' +
       '<div>' +
         '<div class="fronting-ips-label">IPs (' + ips.length + ')</div>' +
@@ -3461,6 +3478,8 @@ function fmtTime(s) {
 // ─── Init ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   poll();
+  // Keep polling to catch in-progress scans on page reload
+  setInterval(poll, 1500);
 });
 </script>
 </body>
