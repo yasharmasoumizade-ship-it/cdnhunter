@@ -1,7 +1,5 @@
 package com.cdnhunter.app.ui
 
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -20,7 +18,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -32,7 +33,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.engine.GeoService
@@ -334,16 +334,28 @@ fun RegionTab(results: List<ScanResult>) {
                         if (loading) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally), color = AccentBlue, strokeWidth = 2.dp)
                         } else if (geo != null && geo!!.lat != 0.0) {
-                            // Map view (OpenStreetMap)
-                            Surface(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(180.dp)) {
-                                AndroidView(factory = { ctx ->
-                                    WebView(ctx).apply {
-                                        webViewClient = WebViewClient()
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        loadUrl("https://www.openstreetmap.org/export/embed.html?bbox=${geo!!.lon-0.5},${geo!!.lat-0.3},${geo!!.lon+0.5},${geo!!.lat+0.3}&layer=mapnik&marker=${geo!!.lat},${geo!!.lon}")
+                            // Native map visualization (no WebView crash)
+                            Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF0D1B2A), modifier = Modifier.fillMaxWidth().height(160.dp)) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    // Grid background
+                                    Canvas(Modifier.fillMaxSize()) {
+                                        val w = size.width; val h = size.height
+                                        val gc = Color(0xFF1A3A5C)
+                                        for (i in 1..5) { drawLine(gc, Offset(0f, h * i / 6), Offset(w, h * i / 6), strokeWidth = 0.5f) }
+                                        for (i in 1..7) { drawLine(gc, Offset(w * i / 8, 0f), Offset(w * i / 8, h), strokeWidth = 0.5f) }
                                     }
-                                }, modifier = Modifier.fillMaxSize())
+                                    // Pulsing location pin
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        val pulse by rememberInfiniteTransition(label = "p").animateFloat(0.85f, 1.15f, infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "pf")
+                                        Box(Modifier.size(48.dp).scale(pulse), contentAlignment = Alignment.Center) {
+                                            Box(Modifier.size(48.dp).clip(CircleShape).background(AccentBlue.copy(0.12f)))
+                                            Box(Modifier.size(28.dp).clip(CircleShape).background(AccentBlue.copy(0.25f)))
+                                            Box(Modifier.size(12.dp).clip(CircleShape).background(AccentBlue))
+                                        }
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("${geo!!.lat.format(2)}°, ${geo!!.lon.format(2)}°", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
                             }
                             Spacer(Modifier.height(10.dp))
                             // Location info
