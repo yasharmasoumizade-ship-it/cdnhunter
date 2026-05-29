@@ -367,11 +367,12 @@ USER_LOADED_RANGES: list = []
 
 # ── Range auto-updater ─────────────────────────────────────────────────────────
 _RANGE_SOURCES = {
-    "Cloudflare": {"url": "https://www.cloudflare.com/ips-v4", "format": "lines", "file": "cloudflare-ips.txt"},
-    "Fastly":     {"url": "https://api.fastly.com/public-ip-list", "format": "fastly_json", "file": "fastly-AS54113.json"},
-    "Akamai":     {"url": "https://raw.githubusercontent.com/lord-alfred/ipranges/main/akamai/ipv4.txt",
-                   "format": "lines", "file": "akamai-AS20940__1_.json",
-                   "fallback_url": "https://raw.githubusercontent.com/nickspaargaren/no-google/master/categories/akamai.parsed"},
+    "Cloudflare":  {"url": "https://www.cloudflare.com/ips-v4", "format": "lines", "file": "cloudflare-ips.txt"},
+    "Fastly":      {"url": "https://api.fastly.com/public-ip-list", "format": "fastly_json", "file": "fastly-AS54113.json"},
+    "Akamai":      {"url": "https://raw.githubusercontent.com/lord-alfred/ipranges/main/akamai/ipv4.txt",
+                    "format": "lines", "file": "akamai-AS20940__1_.json",
+                    "fallback_url": "https://raw.githubusercontent.com/lord-alfred/ipranges/main/akamai/ipv4_merged.txt"},
+    "CloudFront":  {"url": "https://ip-ranges.amazonaws.com/ip-ranges.json", "format": "aws_cf_json", "file": "cloudfront-ranges.json"},
 }
 _UPDATE_META_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cdnscan_range_meta.json")
 
@@ -407,6 +408,16 @@ def _parse_ranges_from_bytes(data: bytes, fmt: str) -> list:
             for item in obj.get("addresses", obj.get("ipv4Addresses", [])):
                 try: ipaddress.ip_network(item.strip(), strict=False); ranges.append(item.strip())
                 except ValueError: pass
+        except Exception: pass
+    elif fmt == "aws_cf_json":
+        try:
+            obj = json.loads(text)
+            for prefix in obj.get("prefixes", []):
+                if prefix.get("service") == "CLOUDFRONT":
+                    ip_p = prefix.get("ip_prefix", "")
+                    if ip_p:
+                        try: ipaddress.ip_network(ip_p, strict=False); ranges.append(ip_p)
+                        except ValueError: pass
         except Exception: pass
     else:
         try:
@@ -2423,6 +2434,7 @@ a{color:inherit;text-decoration:none}
   <div class="sidebar-footer">
     <button class="btn btn-primary" id="sidebar-start" type="button">Start Scan</button>
     <button class="btn btn-danger" id="sidebar-stop" type="button">Stop Scan</button>
+    <button class="btn btn-ghost" id="sidebar-update" type="button">Update Ranges</button>
   </div>
 </aside>
 
@@ -2445,7 +2457,7 @@ a{color:inherit;text-decoration:none}
     <div class="stat-card"><div class="stat-label">Healthy</div><div class="stat-value green" id="statHealthy">0</div></div>
     <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value red" id="statFailed">0</div></div>
     <div class="stat-card"><div class="stat-label">Progress</div><div class="stat-value blue" id="statPct">0%</div></div>
-    <div class="stat-card"><div class="stat-label">Source</div><div class="stat-value" id="statSource">-</div></div>
+    <div class="stat-card"><div class="stat-label">Source</div><div class="stat-value" id="statSource" style="font-size:13px">-</div></div>
   </div>
 
   <div class="progress-bar-container">
@@ -2507,10 +2519,21 @@ a{color:inherit;text-decoration:none}
           <option value="akamai">Akamai</option>
           <option value="fastly">Fastly</option>
           <option value="google">Google</option>
-          <option value="cloudfront">CloudFront</option>
+          <option value="cloudfront">CloudFront (Amazon)</option>
           <option value="gcore">Gcore</option>
           <option value="all">All CDNs</option>
+          <option value="manual">Manual IPs</option>
+          <option value="cidr">Manual CIDR Range</option>
         </select>
+      </div>
+      <div class="form-group" id="manualIpGroup" style="display:none">
+        <label class="form-label">IPs (one per line or comma separated)</label>
+        <textarea class="form-input" id="cfgManualIps" rows="4" placeholder="1.2.3.4&#10;5.6.7.8&#10;9.10.11.12"></textarea>
+      </div>
+      <div class="form-group" id="manualCidrGroup" style="display:none">
+        <label class="form-label">CIDR Ranges (one per line or comma separated)</label>
+        <textarea class="form-input" id="cfgManualCidr" rows="4" placeholder="104.16.0.0/12&#10;172.64.0.0/13"></textarea>
+      </div>
       </div>
       <div class="form-group">
         <label class="form-label">Host Header</label>
@@ -2631,6 +2654,22 @@ function loadConfig() {
   xhr.send();
 }
 
+function updateRanges() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/update', true);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      try {
+        var resp = JSON.parse(xhr.responseText);
+        if (resp.ok) showToast('Updating all ranges...');
+        else showToast(resp.msg || 'Failed');
+      } catch(e) { showToast('Error'); }
+    }
+  };
+  xhr.send(JSON.stringify({}));
+}
+
 function startScan() {
   var cfg = {
     cdn: $('cfgCdn').value,
@@ -2640,7 +2679,9 @@ function startScan() {
     timeout: parseFloat($('cfgTimeout').value) || 4,
     sample: parseInt($('cfgSample').value) || 3000,
     retries: parseInt($('cfgRetries').value) || 2,
-    out_file: $('cfgOutFile').value
+    out_file: $('cfgOutFile').value,
+    manual: $('cfgManualIps') ? $('cfgManualIps').value : '',
+    cidr: $('cfgManualCidr') ? $('cfgManualCidr').value : ''
   };
   var xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/start', true);
@@ -2915,9 +2956,16 @@ function init() {
   $('overlay').addEventListener('click', closeSidebar);
   $('sidebar-start').addEventListener('click', startScan);
   $('sidebar-stop').addEventListener('click', stopScan);
+  $('sidebar-update').addEventListener('click', updateRanges);
   $('configStartBtn').addEventListener('click', startScan);
   $('copyIpsBtn').addEventListener('click', copyIps);
   $('exitBtn').addEventListener('click', exitApp);
+
+  $('cfgCdn').addEventListener('change', function() {
+    var v = this.value;
+    $('manualIpGroup').style.display = v === 'manual' ? 'block' : 'none';
+    $('manualCidrGroup').style.display = v === 'cidr' ? 'block' : 'none';
+  });
 
   poll();
   pollTimer = setInterval(poll, 1500);
