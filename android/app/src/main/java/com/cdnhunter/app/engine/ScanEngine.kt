@@ -125,11 +125,6 @@ class ScanEngine {
             if (stopRequested) return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
             val t0 = System.currentTimeMillis()
             try {
-                val client = unsafeClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofMillis((timeoutMs * 0.65).toLong()))
-                    .readTimeout(java.time.Duration.ofMillis(timeoutMs))
-                    .build()
-
                 val reqBuilder = Request.Builder()
                     .url("https://$ip:443/")
                     .header("User-Agent", "curl/7.88")
@@ -139,7 +134,7 @@ class ScanEngine {
                     reqBuilder.header("Host", config.host)
                 }
 
-                val response = client.newCall(reqBuilder.build()).execute()
+                val response = unsafeClient.newCall(reqBuilder.build()).execute()
                 val ms = (System.currentTimeMillis() - t0).toInt()
                 val code = response.code
                 response.close()
@@ -154,7 +149,7 @@ class ScanEngine {
                 val ms = (System.currentTimeMillis() - t0).toInt()
                 bestMs = min(bestMs, ms)
             }
-            if (attempt < config.retries - 1) Thread.sleep(40)
+            if (attempt < config.retries - 1) Thread.sleep(30)
         }
 
         return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
@@ -223,8 +218,11 @@ class ScanEngine {
             .hostnameVerifier(hostnameVerifier)
             .followRedirects(false)
             .followSslRedirects(false)
-            .connectTimeout(java.time.Duration.ofSeconds(4))
-            .readTimeout(java.time.Duration.ofSeconds(4))
+            .connectTimeout(java.time.Duration.ofMillis(2600))
+            .readTimeout(java.time.Duration.ofMillis(4000))
+            .writeTimeout(java.time.Duration.ofMillis(2000))
+            .connectionPool(okhttp3.ConnectionPool(100, 30, java.util.concurrent.TimeUnit.SECONDS))
+            .retryOnConnectionFailure(false)
             .build()
     }
 }

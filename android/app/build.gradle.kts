@@ -11,8 +11,8 @@ android {
         applicationId = "com.cdnhunter.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "2.0"
+        versionCode = 2
+        versionName = "2.1"
     }
 
     buildTypes {
@@ -20,6 +20,14 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        debug {
+            isMinifyEnabled = false
+            isDebuggable = true
+        }
+    }
+
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
