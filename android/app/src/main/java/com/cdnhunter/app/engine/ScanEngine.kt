@@ -2,122 +2,119 @@ package com.cdnhunter.app.engine
 
 import com.cdnhunter.app.data.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.*
-import kotlin.random.Random
 import kotlin.math.min
+import kotlin.random.Random
 
 class ScanEngine {
 
-    private val unsafeClient: OkHttpClient by lazy { buildUnsafeClient() }
-    private var stopRequested = false
+    @Volatile private var stopRequested = false
+    private var currentClient: OkHttpClient? = null
 
-    // Progress callback
     var onProgress: ((scanned: Int, healthy: Int, total: Int) -> Unit)? = null
     var onLiveResult: ((ScanResult) -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
 
-    fun requestStop() { stopRequested = true }
+    fun requestStop() {
+        stopRequested = true
+        currentClient?.dispatcher?.cancelAll()
+    }
 
-    /**
-     * Main scan entry: expand IPs from config, then scan them all.
-     * Returns list of healthy ScanResults.
-     */
     suspend fun scan(config: ScanConfig): List<ScanResult> = withContext(Dispatchers.IO) {
         stopRequested = false
         val ips = expandIps(config)
-        if (ips.isEmpty()) {
-            onLog?.invoke("No IPs to scan")
-            return@withContext emptyList()
-        }
-        onLog?.invoke("Scanning ${ips.size} IPs (conc=${config.concurrency}, timeout=${config.timeout}s)")
+        if (ips.isEmpty()) { onLog?.invoke("No IPs to scan"); return@withContext emptyList() }
+        onLog?.invoke("Scanning ${ips.size} IPs (conc=${config.concurrency}, t=${config.timeout}s)")
+
+        // Build client with config-based timeouts
+        currentClient = buildClient(config)
         scanIps(ips, config)
     }
 
-    /**
-     * Expand IPs from config based on CDN provider selection.
-     */
-    fun expandIps(config: ScanConfig): List<String> {
-        return when (config.cdnProvider) {
-            CdnProvider.MANUAL -> parseManualIps(config.manualIps)
-            CdnProvider.CIDR -> expandCidrs(parseCidrs(config.manualCidr), config.maxIps)
-            CdnProvider.SMART -> expandSmartScan(config.maxIps)
-            CdnProvider.ALL -> expandAllCdns(config.maxIps)
-            else -> {
-                val key = config.cdnProvider.label
-                val cidrs = CdnRanges.ranges[key] ?: return emptyList()
-                val picked = cidrs.shuffled().take(min(8, cidrs.size))
-                expandCidrs(picked, config.maxIps)
-            }
+    fun expandIps(config: ScanConfig): List<String> = when (config.cdnProvider) {
+        CdnProvider.MANUAL -> parseManualIps(config.manualIps)
+        CdnProvider.CIDR -> expandCidrs(parseCidrs(config.manualCidr), config.maxIps)
+        CdnProvider.SMART -> expandSmartScan(config.maxIps)
+        CdnProvider.ALL -> expandAllCdns(config.maxIps)
+        else -> {
+            val key = config.cdnProvider.label
+            val cidrs = CdnRanges.ranges[key] ?: return emptyList()
+            expandCidrs(cidrs.shuffled().take(min(10, cidrs.size)), config.maxIps)
         }
     }
 
     private fun expandSmartScan(maxIps: Int): List<String> {
-        val allCidrs = mutableListOf<String>()
-        for ((_, cidrs) in CdnRanges.ranges) {
-            allCidrs.addAll(cidrs.shuffled().take(4))
-        }
+        val allCidrs = CdnRanges.ranges.values.flatMap { it.shuffled().take(5) }
         return expandCidrs(allCidrs.shuffled(), maxIps)
     }
 
     private fun expandAllCdns(maxIps: Int): List<String> {
         val perCdn = maxIps / CdnRanges.ranges.size
-        val ips = mutableListOf<String>()
-        for ((_, cidrs) in CdnRanges.ranges) {
-            val picked = cidrs.shuffled().take(4)
-            ips.addAll(expandCidrs(picked, perCdn))
-        }
-        return ips.shuffled().take(maxIps)
+        return CdnRanges.ranges.values.flatMap { cidrs ->
+            expandCidrs(cidrs.shuffled().take(5), perCdn)
+        }.shuffled().take(maxIps)
     }
 
     /**
-     * Scan a list of IPs concurrently using coroutines + semaphore.
+     * High-performance scan using chunked batches + semaphore.
+     * UI updates are throttled to every 50 IPs to prevent lag.
      */
     private suspend fun scanIps(ips: List<String>, config: ScanConfig): List<ScanResult> {
-        val results = mutableListOf<ScanResult>()
+        val healthy = mutableListOf<ScanResult>()
         val semaphore = Semaphore(config.concurrency)
         val total = ips.size
-        var scanned = 0
+        val scannedCount = AtomicInteger(0)
+        val healthyCount = AtomicInteger(0)
         val lock = Any()
 
+        // Throttle UI updates: batch every N results
+        val updateInterval = maxOf(1, total / 100) // ~100 UI updates total
+
         coroutineScope {
-            val jobs = ips.map { ip ->
-                launch {
+            ips.map { ip ->
+                launch(Dispatchers.IO) {
                     if (stopRequested) return@launch
                     semaphore.acquire()
                     try {
                         if (stopRequested) return@launch
                         val result = checkIp(ip, config)
-                        synchronized(lock) {
-                            scanned++
-                            if (result.ok) results.add(result)
-                            onProgress?.invoke(scanned, results.size, total)
+                        val sc = scannedCount.incrementAndGet()
+
+                        if (result.ok) {
+                            synchronized(lock) { healthy.add(result) }
+                            healthyCount.incrementAndGet()
+                            // Only emit live result for healthy IPs (less UI pressure)
                             onLiveResult?.invoke(result)
+                        }
+
+                        // Throttled progress update
+                        if (sc % updateInterval == 0 || sc == total) {
+                            onProgress?.invoke(sc, healthyCount.get(), total)
                         }
                     } finally {
                         semaphore.release()
                     }
                 }
-            }
-            jobs.joinAll()
+            }.joinAll()
         }
 
-        return results.sortedBy { it.ms }
+        // Final progress
+        onProgress?.invoke(total, healthyCount.get(), total)
+        return healthy.sortedBy { it.ms }
     }
 
-    /**
-     * Check a single IP: HTTPS GET with timeout.
-     */
     private fun checkIp(ip: String, config: ScanConfig): ScanResult {
-        val timeoutMs = (config.timeout * 1000).toLong()
+        val client = currentClient ?: return ScanResult(ip = ip, ok = false)
         var lastCode = 0
         var bestMs = 9999
 
@@ -125,37 +122,30 @@ class ScanEngine {
             if (stopRequested) return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
             val t0 = System.currentTimeMillis()
             try {
-                val reqBuilder = Request.Builder()
+                val req = Request.Builder()
                     .url("https://$ip:443/")
                     .header("User-Agent", "curl/7.88")
                     .header("Connection", "close")
+                    .apply { if (config.host.isNotBlank()) header("Host", config.host) }
+                    .build()
 
-                if (config.host.isNotBlank()) {
-                    reqBuilder.header("Host", config.host)
-                }
-
-                val response = unsafeClient.newCall(reqBuilder.build()).execute()
-                val ms = (System.currentTimeMillis() - t0).toInt()
-                val code = response.code
-                response.close()
-
-                bestMs = min(bestMs, ms)
-                lastCode = code
-
-                if (code < 500) {
-                    return ScanResult(ip = ip, ok = true, code = code, ms = ms)
+                client.newCall(req).execute().use { response ->
+                    val ms = (System.currentTimeMillis() - t0).toInt()
+                    bestMs = min(bestMs, ms)
+                    lastCode = response.code
+                    if (response.code < 500) {
+                        return ScanResult(ip = ip, ok = true, code = response.code, ms = ms)
+                    }
                 }
             } catch (e: Exception) {
-                val ms = (System.currentTimeMillis() - t0).toInt()
-                bestMs = min(bestMs, ms)
+                bestMs = min(bestMs, (System.currentTimeMillis() - t0).toInt())
             }
-            if (attempt < config.retries - 1) Thread.sleep(30)
+            if (attempt < config.retries - 1) Thread.sleep(20)
         }
-
         return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
     }
 
-    // ── IP expansion helpers ──────────────────────────────────────────────────
+    // ── IP expansion ────────────────────────────────────────────────────────
 
     fun expandCidrs(cidrs: List<String>, maxIps: Int): List<String> {
         val ips = mutableSetOf<String>()
@@ -165,63 +155,60 @@ class ScanEngine {
             if (parts.size != 2) continue
             val baseIp = CdnRanges.ipToLong(parts[0]) ?: continue
             val prefix = parts[1].toIntOrNull() ?: continue
+            if (prefix < 8 || prefix > 32) continue
             val size = 1L shl (32 - prefix)
 
             if (size <= 256) {
-                // Small range: enumerate
                 for (i in 1 until size - 1) {
                     if (ips.size >= maxIps) break
                     ips.add(CdnRanges.longToIp(baseIp + i))
                 }
             } else {
-                // Large range: sample random IPs
-                val sampleCount = min(maxIps - ips.size, min(size.toInt() - 2, 500))
-                repeat(sampleCount) {
-                    val offset = Random.nextLong(1, size - 1)
-                    ips.add(CdnRanges.longToIp(baseIp + offset))
+                val count = min(maxIps - ips.size, min(size.toInt() - 2, 300))
+                repeat(count) {
+                    ips.add(CdnRanges.longToIp(baseIp + Random.nextLong(1, size - 1)))
                 }
             }
         }
         return ips.toList().shuffled()
     }
 
-    fun parseManualIps(text: String): List<String> {
-        return text.split(Regex("[\\s,;\\n]+"))
-            .map { it.trim() }
-            .filter { it.matches(Regex("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) }
-            .distinct()
-    }
+    fun parseManualIps(text: String): List<String> =
+        text.split(Regex("[\\s,;\\n]+")).map { it.trim() }
+            .filter { it.matches(Regex("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) }.distinct()
 
-    fun parseCidrs(text: String): List<String> {
-        return text.split(Regex("[\\s,;\\n]+"))
-            .map { it.trim() }
-            .filter { it.matches(Regex("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/\\d{1,2}")) }
-            .distinct()
-    }
+    fun parseCidrs(text: String): List<String> =
+        text.split(Regex("[\\s,;\\n]+")).map { it.trim() }
+            .filter { it.matches(Regex("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/\\d{1,2}")) }.distinct()
 
-    // ── OkHttp client that trusts all certs (for IP scanning) ─────────────────
+    // ── OkHttp client ───────────────────────────────────────────────────────
 
-    private fun buildUnsafeClient(): OkHttpClient {
-        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+    private fun buildClient(config: ScanConfig): OkHttpClient {
+        val connectMs = (config.timeout * 650).toLong()  // 65% of timeout for connect
+        val readMs = (config.timeout * 1000).toLong()
+
+        val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(c: Array<out X509Certificate>?, a: String?) {}
+            override fun checkServerTrusted(c: Array<out X509Certificate>?, a: String?) {}
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
+        val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, SecureRandom()) }
 
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, trustAllCerts, SecureRandom())
-
-        val hostnameVerifier = HostnameVerifier { _, _ -> true }
+        val dispatcher = Dispatcher().apply {
+            maxRequests = config.concurrency + 50
+            maxRequestsPerHost = config.concurrency
+        }
 
         return OkHttpClient.Builder()
-            .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-            .hostnameVerifier(hostnameVerifier)
+            .sslSocketFactory(ssl.socketFactory, trustAll[0] as X509TrustManager)
+            .hostnameVerifier { _, _ -> true }
             .followRedirects(false)
             .followSslRedirects(false)
-            .connectTimeout(java.time.Duration.ofMillis(2600))
-            .readTimeout(java.time.Duration.ofMillis(4000))
-            .writeTimeout(java.time.Duration.ofMillis(2000))
-            .connectionPool(okhttp3.ConnectionPool(100, 30, java.util.concurrent.TimeUnit.SECONDS))
+            .connectTimeout(connectMs, TimeUnit.MILLISECONDS)
+            .readTimeout(readMs, TimeUnit.MILLISECONDS)
+            .writeTimeout(2, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(config.concurrency, 20, TimeUnit.SECONDS))
+            .dispatcher(dispatcher)
             .retryOnConnectionFailure(false)
             .build()
     }
