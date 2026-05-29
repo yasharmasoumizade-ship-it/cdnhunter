@@ -29,7 +29,8 @@ jobs:
 
       - name: Install SDK packages
         run: |
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Generate Gradle Wrapper
         working-directory: android
@@ -41,7 +42,13 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --info 2>&1 | tail -100
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK exists
+        run: |
+          ls -la android/app/build/outputs/apk/debug/ || echo "APK directory not found"
+          test -f android/app/build/outputs/apk/debug/app-debug.apk || exit 1
 
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk CDNHunter-v2.0.apk
