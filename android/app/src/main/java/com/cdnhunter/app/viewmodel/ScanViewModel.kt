@@ -83,9 +83,9 @@ class ScanViewModel : ViewModel() {
             _state.update { it.copy(scanned = scanned, healthy = healthy, failed = scanned - healthy, pct = pct) }
         }
         scanEngine.onLiveResult = { result ->
-            if (result.ok) { // Only show healthy in live feed
+            if (result.ok) {
                 _state.update { cur ->
-                    val live = (cur.liveIps + result).takeLast(20)
+                    val live = (cur.liveIps + result).takeLast(15)
                     cur.copy(liveIps = live)
                 }
             }
