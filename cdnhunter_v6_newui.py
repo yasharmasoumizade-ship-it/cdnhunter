@@ -2286,601 +2286,547 @@ _WEB_HTML = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CDN Hunter</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
---bg:#000;--surface:#0a0a0a;--surface2:#111;--surface3:#171717;
---border:#222;--border2:#333;--fg4:#444;--fg3:#666;--fg2:#999;--fg1:#ccc;--fg0:#fafafa;
---blue:#0070f3;--green:#46c98b;--red:#e5484d;--amber:#f5a623;
---green-s:rgba(70,201,139,0.08);--green-b:rgba(70,201,139,0.25);
---blue-s:rgba(0,112,243,0.08);--blue-b:rgba(0,112,243,0.25);
---red-s:rgba(229,72,77,0.08);--red-b:rgba(229,72,77,0.25);
---sidebar-w:240px;--radius:8px;
-}
-html,body{height:100%;background:var(--bg);color:var(--fg1);font-family:'Inter',sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#000;color:#e5e5e5;min-height:100vh;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
 
-/* ── App Layout ── */
-.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;background:#0a0a0a;border-right:1px solid #222;display:flex;flex-direction:column;z-index:1000;transition:transform 0.3s ease}
+.sidebar-header{padding:20px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}
+.sidebar-logo{width:32px;height:32px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
+.sidebar-title{font-size:15px;font-weight:600;color:#fafafa}
+.sidebar-nav{flex:1;padding:12px;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:#999;transition:all 0.15s;margin-bottom:2px}
+.nav-item:hover{background:#171717;color:#e5e5e5}
+.nav-item.active{background:#171717;color:#fff;font-weight:500}
+.nav-item .badge{margin-left:auto;background:#222;color:#999;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:500}
+.nav-item.active .badge{background:#3b82f6;color:#fff}
+.sidebar-footer{padding:16px;border-top:1px solid #222;display:flex;flex-direction:column;gap:8px}
+.btn{padding:10px 16px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all 0.15s}
+.btn-primary{background:#3b82f6;color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-danger{background:#1c1c1c;color:#ef4444;border:1px solid #333}
+.btn-danger:hover{background:#1a0a0a;border-color:#ef4444}
+.btn-ghost{background:transparent;color:#999;border:1px solid #333}
+.btn-ghost:hover{background:#171717;color:#fff}
 
-/* ── Sidebar ── */
-.sidebar{
-  width:var(--sidebar-w);height:100%;background:var(--bg);
-  border-right:1px solid var(--border);display:flex;flex-direction:column;
-  position:fixed;top:0;left:0;z-index:400;
-  transform:translateX(-100%);transition:transform .25s ease;
-}
-.sidebar.open{transform:translateX(0)}
-.sb-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;
-  opacity:0;pointer-events:none;transition:opacity .2s;
-}
-.sb-overlay.open{opacity:1;pointer-events:all}
+.topbar{position:fixed;top:0;left:260px;right:0;height:56px;background:#0a0a0a;border-bottom:1px solid #222;display:flex;align-items:center;padding:0 20px;z-index:900;gap:12px}
+.hamburger{display:none;background:none;border:none;color:#e5e5e5;font-size:20px;cursor:pointer;padding:8px}
+.topbar-title{font-size:14px;font-weight:500;color:#fafafa}
+.topbar-status{margin-left:8px;display:flex;align-items:center;gap:6px;font-size:12px;color:#666}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#333}
+.status-dot.running{background:#22c55e;box-shadow:0 0 6px #22c55e}
+.topbar-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
 
-@media(min-width:769px){
-  .sidebar{transform:translateX(0);position:relative}
-  .sb-overlay{display:none}
-  .hamburger{display:none!important}
-}
+.main{margin-left:260px;margin-top:56px;padding:20px;min-height:calc(100vh - 56px)}
 
-.sb-header{
-  height:52px;display:flex;align-items:center;gap:10px;
-  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
-}
-.sb-logo{
-  width:22px;height:22px;background:var(--fg0);
-  clip-path:polygon(50% 0%,100% 100%,0% 100%);flex-shrink:0;
-}
-.sb-title{font-size:14px;font-weight:600;color:var(--fg0)}
+.stats-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:14px 16px}
+.stat-label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.stat-value{font-size:20px;font-weight:600;color:#fafafa;font-family:'JetBrains Mono',monospace}
+.stat-value.green{color:#22c55e}
+.stat-value.red{color:#ef4444}
+.stat-value.blue{color:#3b82f6}
 
-.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
-.sb-section{margin-bottom:4px}
-.sb-section-label{
-  font-size:10px;font-weight:500;color:var(--fg4);
-  letter-spacing:.05em;text-transform:uppercase;padding:8px 16px 4px;
-}
-.sb-item{
-  display:flex;align-items:center;gap:10px;padding:8px 16px;
-  font-size:13px;color:var(--fg2);cursor:pointer;transition:all .1s;
-}
-.sb-item:hover{background:var(--surface2);color:var(--fg0)}
-.sb-item.active{background:var(--surface2);color:var(--fg0)}
-.sb-icon{width:16px;text-align:center;font-size:13px;opacity:.6}
-.sb-item.active .sb-icon{opacity:1}
-.sb-badge{
-  margin-left:auto;font-size:10px;font-family:'JetBrains Mono',monospace;
-  background:var(--green-s);border:1px solid var(--green-b);color:var(--green);
-  padding:1px 6px;border-radius:99px;
-}
-.sb-badge.amber{background:rgba(245,166,35,.08);border-color:rgba(245,166,35,.25);color:var(--amber)}
+.progress-bar-container{margin-bottom:20px;background:#111;border-radius:6px;height:6px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:6px;transition:width 0.3s ease;width:0%}
 
-.sb-footer{padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
-.sb-btn{
-  width:100%;height:34px;border:none;border-radius:6px;font-size:13px;
-  font-weight:500;cursor:pointer;font-family:inherit;transition:all .15s;
-}
-.sb-btn-start{background:var(--fg0);color:var(--bg)}
-.sb-btn-start:hover{background:#ddd}
-.sb-btn-start:disabled{opacity:.5;cursor:not-allowed}
-.sb-btn-stop{background:var(--surface2);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
-.sb-btn-stop:hover{background:rgba(245,166,35,.08)}
+.tab-bar{display:flex;gap:0;border-bottom:1px solid #222;margin-bottom:20px;overflow-x:auto}
+.tab-btn{padding:10px 18px;background:none;border:none;color:#666;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
+.tab-btn:hover{color:#ccc}
+.tab-btn.active{color:#fff;border-bottom-color:#3b82f6}
 
-/* ── Main ── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.tab-content{display:none}
+.tab-content.active{display:block}
 
-/* ── Topbar ── */
-.topbar{
-  height:48px;display:flex;align-items:center;gap:12px;
-  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
-}
-.hamburger{
-  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
-  font-size:18px;cursor:pointer;color:var(--fg2);border-radius:6px;
-}
-.hamburger:hover{background:var(--surface2);color:var(--fg0)}
-.topbar-title{font-size:14px;font-weight:600;color:var(--fg0)}
-.topbar-slash{color:var(--border2);font-size:18px;font-weight:200}
-.topbar-sub{font-size:13px;color:var(--fg2)}
-.status-pill{
-  display:inline-flex;align-items:center;gap:6px;height:26px;
-  padding:0 10px;border-radius:99px;border:1px solid var(--border);
-  font-size:12px;color:var(--fg2);margin-left:auto;
-}
-.status-dot{width:7px;height:7px;border-radius:50%;background:var(--fg4)}
-.status-dot.live{background:var(--green);animation:pulse 2s infinite}
-.status-dot.done{background:var(--blue)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.topbar-actions{display:flex;gap:6px;margin-left:8px}
-.btn-sm{
-  height:28px;padding:0 10px;font-size:12px;border-radius:6px;
-  border:1px solid var(--border);background:var(--bg);color:var(--fg1);
-  cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap;
-}
-.btn-sm:hover{background:var(--surface2);border-color:var(--border2)}
-.btn-exit{color:var(--red);border-color:rgba(229,72,77,.3)}
-.btn-exit:hover{background:var(--red-s)}
+.live-feed{max-height:400px;overflow-y:auto;background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:12px}
+.live-item{padding:8px 12px;border-bottom:1px solid #111;font-family:'JetBrains Mono',monospace;font-size:12px;color:#22c55e;display:flex;align-items:center;gap:8px}
+.live-item:last-child{border-bottom:none}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.empty-state{text-align:center;padding:60px 20px;color:#444;font-size:14px}
 
+.results-table{width:100%;border-collapse:collapse;font-size:12px}
+.results-table th{text-align:left;padding:10px 12px;color:#666;font-weight:500;border-bottom:1px solid #222;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+.results-table td{padding:10px 12px;border-bottom:1px solid #111;color:#ccc;font-family:'JetBrains Mono',monospace}
+.results-table tr:hover{background:#0a0a0a}
+.status-ok{color:#22c55e}
+.status-fail{color:#ef4444}
 
-/* ── Stats Strip ── */
-.stats-strip{
-  display:grid;grid-template-columns:repeat(6,1fr);
-  border-bottom:1px solid var(--border);flex-shrink:0;
-}
-.stat-cell{padding:14px 16px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:1px}
-.stat-cell:last-child{border-right:none}
-.stat-label{font-size:11px;color:var(--fg3)}
-.stat-val{font-size:22px;font-weight:600;color:var(--fg0);font-family:'JetBrains Mono',monospace;letter-spacing:-.02em}
-.stat-val.green{color:var(--green)}.stat-val.red{color:var(--red)}.stat-val.amber{color:var(--amber)}
-.stat-sub{font-size:10px;color:var(--fg4)}
+.fronting-group{margin-bottom:16px;background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:16px}
+.fronting-title{font-size:13px;font-weight:600;color:#fafafa;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.fronting-ips{display:flex;flex-wrap:wrap;gap:6px}
+.fronting-ip{background:#171717;border:1px solid #333;padding:4px 10px;border-radius:6px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#ccc}
 
-/* ── Progress ── */
-.progress-row{
-  height:40px;display:flex;align-items:center;gap:12px;
-  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
-}
-.prog-label{font-size:11px;font-weight:500;color:var(--fg2);text-transform:uppercase;letter-spacing:.03em;min-width:100px}
-.prog-track{flex:1;height:3px;background:var(--surface2);border-radius:99px;overflow:hidden}
-.prog-fill{height:100%;background:var(--fg0);border-radius:99px;transition:width .4s;min-width:0}
-.prog-fill.done{background:var(--green)}
-.prog-pct{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg2);min-width:36px;text-align:right}
+.config-form{max-width:600px}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;color:#999;margin-bottom:6px;font-weight:500}
+.form-input,.form-select{width:100%;padding:10px 14px;background:#0a0a0a;border:1px solid #222;border-radius:8px;color:#e5e5e5;font-size:13px;font-family:inherit;outline:none;transition:border-color 0.15s}
+.form-input:focus,.form-select:focus{border-color:#3b82f6}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
-/* ── Tab bar ── */
-.tab-bar{
-  display:flex;gap:0;border-bottom:1px solid var(--border);
-  padding:0 16px;flex-shrink:0;overflow-x:auto;
-}
-.tab{
-  font-size:12px;color:var(--fg3);padding:10px 14px;cursor:pointer;
-  border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;
-  display:flex;align-items:center;gap:6px;transition:color .15s;
-}
-.tab:hover{color:var(--fg1)}
-.tab.active{color:var(--fg0);border-bottom-color:var(--fg0)}
-.tab-count{
-  font-family:'JetBrains Mono',monospace;font-size:10px;
-  background:var(--surface3);border:1px solid var(--border);
-  color:var(--fg2);padding:1px 5px;border-radius:3px;
-}
-.tab.active .tab-count{background:var(--fg4);color:var(--fg0)}
-
-/* ── Tab pages ── */
-.tab-page{display:none;flex:1;overflow:hidden;flex-direction:column}
-.tab-page.active{display:flex}
-
-/* ── IP List ── */
-.ip-feed{display:flex;flex-direction:column;flex:1;overflow-y:auto}
-.ip-row{
-  display:grid;grid-template-columns:1fr 65px 35px auto;align-items:center;
-  gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);
-  animation:fadeIn .2s;transition:background .1s;
-}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
-.ip-row:hover{background:var(--surface)}
-.ip-addr{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)}
-.ip-ms{font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
-.ip-ms.fast{color:var(--green)}.ip-ms.med{color:var(--amber)}.ip-ms.slow{color:var(--red)}
-.ip-cc{font-size:11px;color:var(--fg3);text-align:center}
-.ip-tags{display:flex;gap:3px;justify-content:flex-end}
-.tag{font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;border:1px solid}
-.tag-ok{background:var(--green-s);border-color:var(--green-b);color:var(--green)}
-.tag-front{background:var(--blue-s);border-color:var(--blue-b);color:var(--blue)}
-.tag-fail{background:var(--red-s);border-color:var(--red-b);color:var(--red)}
-
-/* ── Results table ── */
-.results-wrap{flex:1;overflow:auto}
-.rtable{width:100%;border-collapse:collapse}
-.rtable th{
-  text-align:left;font-size:10px;font-weight:500;letter-spacing:.04em;
-  text-transform:uppercase;color:var(--fg3);padding:10px 14px;
-  border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:2;
-}
-.rtable td{padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg2);border-bottom:1px solid var(--border);white-space:nowrap}
-.rtable tr:hover td{background:var(--surface)}
-.c-ip{color:var(--fg0)}.c-g{color:var(--green)}.c-a{color:var(--amber)}.c-r{color:var(--red)}.c-d{color:var(--fg3)}
-.copy-btn{
-  opacity:0;font-size:10px;padding:1px 5px;background:var(--surface2);
-  border:1px solid var(--border);border-radius:3px;color:var(--fg3);
-  cursor:pointer;margin-left:6px;transition:opacity .1s;
-}
-.rtable tr:hover .copy-btn{opacity:1}
-
-/* ── Fronting cards ── */
-.front-grid{padding:16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow-y:auto}
-.front-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:14px 16px;display:flex;flex-direction:column;gap:10px;
-}
-.front-card:hover{border-color:var(--border2)}
-
-/* ── Config ── */
-.cfg-wrap{flex:1;overflow-y:auto;padding:20px 16px}
-.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:600px}
-.cfg-group{display:flex;flex-direction:column;gap:5px}
-.cfg-full{grid-column:1/-1}
-.cfg-label{font-size:12px;font-weight:500;color:var(--fg1)}
-.cfg-hint{font-size:11px;color:var(--fg4);margin-top:2px}
-.cfg-input{
-  width:100%;height:34px;background:var(--bg);border:1px solid var(--border);
-  border-radius:6px;padding:0 10px;font-family:'JetBrains Mono',monospace;
-  font-size:12px;color:var(--fg0);outline:none;transition:border-color .15s;
-}
-.cfg-input:focus{border-color:var(--fg3)}
-.cfg-input::placeholder{color:var(--fg4)}
-select.cfg-input option{background:var(--surface)}
-
-/* ── Log ── */
-.log-wrap{flex:1;overflow-y:auto;padding:10px 16px}
-.log-entry{display:flex;gap:8px;padding:3px 0;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)}
+.log-container{max-height:500px;overflow-y:auto;background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:12px}
+.log-entry{padding:4px 0;color:#999;border-bottom:1px solid #0d0d0d}
 .log-entry:last-child{border-bottom:none}
-.log-ts{color:var(--fg4);flex-shrink:0}.log-msg{color:var(--fg2);word-break:break-all}
-.log-entry.ok .log-msg{color:var(--green)}.log-entry.err .log-msg{color:var(--red)}
 
-/* ── Empty state ── */
-.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--fg3);padding:40px 16px}
-.empty-icon{font-size:28px;opacity:.3}.empty-title{font-size:14px;font-weight:500;color:var(--fg2)}.empty-desc{font-size:12px;color:var(--fg4);text-align:center}
+.toast{position:fixed;bottom:20px;right:20px;background:#171717;border:1px solid #333;border-radius:10px;padding:12px 20px;color:#fafafa;font-size:13px;z-index:9999;opacity:0;transform:translateY(10px);transition:all 0.3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
 
-/* ── Toast ── */
-.toast{
-  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);
-  background:var(--fg0);color:var(--bg);font-size:13px;font-weight:500;
-  padding:8px 18px;border-radius:6px;opacity:0;pointer-events:none;
-  transition:all .25s;z-index:9999;
-}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999}
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar{width:3px;height:3px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
-
-/* ── Responsive ── */
 @media(max-width:768px){
-  .stats-strip{grid-template-columns:repeat(3,1fr)}
-  .cfg-grid{grid-template-columns:1fr}
-  .stat-val{font-size:16px}
-  .stat-cell{padding:10px 12px}
-}
-@media(max-width:480px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .overlay.open{display:block}
+  .topbar{left:0}
+  .hamburger{display:block}
+  .main{margin-left:0}
+  .form-row{grid-template-columns:1fr}
   .stats-strip{grid-template-columns:repeat(2,1fr)}
-  .topbar-actions .btn-sm span{display:none}
 }
 </style>
 </head>
 <body>
-<div class="sb-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
-<div class="app">
 
-<!-- Sidebar -->
+<div class="overlay" id="overlay"></div>
+
 <aside class="sidebar" id="sidebar">
-  <div class="sb-header">
-    <div class="sb-logo"></div>
-    <span class="sb-title">CDN Hunter</span>
+  <div class="sidebar-header">
+    <div class="sidebar-logo">CH</div>
+    <div class="sidebar-title">CDN Hunter</div>
   </div>
-  <nav class="sb-nav">
-    <div class="sb-section">
-      <div class="sb-item active" onclick="setTab('overview');closeSidebar()">
-        <span class="sb-icon">&#9670;</span> Overview
-      </div>
-      <div class="sb-item" onclick="setTab('results');closeSidebar()">
-        <span class="sb-icon">&#8801;</span> Results
-        <span class="sb-badge" id="sb-badge-results">0</span>
-      </div>
-      <div class="sb-item" onclick="setTab('fronting');closeSidebar()">
-        <span class="sb-icon">&#9733;</span> Fronting IPs
-        <span class="sb-badge amber" id="sb-badge-fronting">0</span>
-      </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" id="nav-overview" data-tab="overview">
+      <span>Overview</span>
+      <span class="badge" id="badge-live">0</span>
     </div>
-    <div class="sb-section">
-      <div class="sb-section-label">Settings</div>
-      <div class="sb-item" onclick="setTab('config');closeSidebar()">
-        <span class="sb-icon">&#9881;</span> Scan Config
-      </div>
-      <div class="sb-item" onclick="setTab('log');closeSidebar()">
-        <span class="sb-icon">&#9783;</span> Activity Log
-      </div>
+    <div class="nav-item" id="nav-results" data-tab="results">
+      <span>Results</span>
+      <span class="badge" id="badge-results">0</span>
+    </div>
+    <div class="nav-item" id="nav-fronting" data-tab="fronting">
+      <span>Fronting IPs</span>
+      <span class="badge" id="badge-fronting">0</span>
+    </div>
+    <div class="nav-item" id="nav-config" data-tab="config">
+      <span>Scan Config</span>
+    </div>
+    <div class="nav-item" id="nav-log" data-tab="log">
+      <span>Activity Log</span>
     </div>
   </nav>
-  <div class="sb-footer">
-    <button class="sb-btn sb-btn-start" id="sb-btn-start" onclick="startScan()">&#9654; Start Scan</button>
-    <button class="sb-btn sb-btn-stop" id="sb-btn-stop" onclick="stopScan()" style="display:none">&#9632; Stop</button>
+  <div class="sidebar-footer">
+    <button class="btn btn-primary" id="sidebar-start" type="button">Start Scan</button>
+    <button class="btn btn-danger" id="sidebar-stop" type="button">Stop Scan</button>
   </div>
 </aside>
 
-<!-- Main -->
-<div class="main">
-  <!-- Topbar -->
-  <div class="topbar">
-    <div class="hamburger" onclick="openSidebar()">&#9776;</div>
-    <span class="topbar-title">CDN Hunter</span>
-    <span class="topbar-slash">/</span>
-    <span class="topbar-sub" id="topbar-sub">Overview</span>
-    <div class="status-pill">
-      <div class="status-dot" id="status-dot"></div>
-      <span id="status-text">Idle</span>
-    </div>
-    <div class="topbar-actions">
-      <button class="btn-sm" onclick="copyAllIPs()"><span>Copy </span>IPs</button>
-      <button class="btn-sm btn-exit" onclick="exitServer()">Exit</button>
-    </div>
+<header class="topbar">
+  <button class="hamburger" id="hamburger" type="button">&#9776;</button>
+  <span class="topbar-title">CDN Hunter</span>
+  <span class="topbar-status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Idle</span>
+  </span>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost" id="copyIpsBtn" type="button">Copy IPs</button>
+    <button class="btn btn-danger" id="exitBtn" type="button">Exit</button>
   </div>
+</header>
 
-  <!-- Stats -->
+<main class="main">
   <div class="stats-strip">
-    <div class="stat-cell"><div class="stat-label">Scanned</div><div class="stat-val" id="s-scanned">0</div><div class="stat-sub">total probed</div></div>
-    <div class="stat-cell"><div class="stat-label">Healthy</div><div class="stat-val green" id="s-healthy">0</div><div class="stat-sub">responding</div></div>
-    <div class="stat-cell"><div class="stat-label">Failed</div><div class="stat-val red" id="s-failed">0</div><div class="stat-sub">no response</div></div>
-    <div class="stat-cell"><div class="stat-label">Speed</div><div class="stat-val amber" id="s-speed">0</div><div class="stat-sub">IPs/sec</div></div>
-    <div class="stat-cell"><div class="stat-label">Elapsed</div><div class="stat-val" id="s-elapsed">0s</div><div class="stat-sub" id="s-eta"></div></div>
-    <div class="stat-cell"><div class="stat-label">Source</div><div class="stat-val" id="s-source" style="font-size:14px">-</div><div class="stat-sub" id="s-cfg"></div></div>
+    <div class="stat-card"><div class="stat-label">Scanned</div><div class="stat-value" id="statScanned">0</div></div>
+    <div class="stat-card"><div class="stat-label">Healthy</div><div class="stat-value green" id="statHealthy">0</div></div>
+    <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value red" id="statFailed">0</div></div>
+    <div class="stat-card"><div class="stat-label">Progress</div><div class="stat-value blue" id="statPct">0%</div></div>
+    <div class="stat-card"><div class="stat-label">Source</div><div class="stat-value" id="statSource">-</div></div>
   </div>
 
-  <!-- Progress -->
-  <div class="progress-row">
-    <div class="prog-label" id="p-label">IDLE</div>
-    <div class="prog-track"><div class="prog-fill" id="p-fill" style="width:0%"></div></div>
-    <div class="prog-pct" id="p-pct">0%</div>
+  <div class="progress-bar-container">
+    <div class="progress-bar-fill" id="progressBar"></div>
   </div>
 
-  <!-- Tab bar -->
   <div class="tab-bar">
-    <div class="tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
-    <div class="tab" data-tab="results" onclick="setTab('results')">Results <span class="tab-count" id="tc-results">0</span></div>
-    <div class="tab" data-tab="fronting" onclick="setTab('fronting')">Fronting <span class="tab-count" id="tc-fronting">0</span></div>
-    <div class="tab" data-tab="config" onclick="setTab('config')">Config</div>
-    <div class="tab" data-tab="log" onclick="setTab('log')">Log</div>
+    <button class="tab-btn active" data-tab="overview" type="button">Overview</button>
+    <button class="tab-btn" data-tab="results" type="button">Results</button>
+    <button class="tab-btn" data-tab="fronting" type="button">Fronting</button>
+    <button class="tab-btn" data-tab="config" type="button">Config</button>
+    <button class="tab-btn" data-tab="log" type="button">Log</button>
   </div>
 
-  <!-- Tab: Overview -->
-  <div class="tab-page active" id="page-overview">
-    <div class="ip-feed" id="live-ip-list">
-      <div class="empty" id="empty-live">
-        <div class="empty-icon">&#9678;</div>
-        <div class="empty-title">No IPs found yet</div>
-        <div class="empty-desc">Start a scan to discover healthy CDN IPs</div>
-        <div style="margin-top:16px"><button class="sb-btn sb-btn-start" onclick="startScan()" style="width:180px;height:38px">&#9654; Start Scan</button></div>
+  <div class="tab-content active" id="tab-overview">
+    <div class="live-feed" id="liveFeed">
+      <div class="empty-state">No live IPs yet. Start a scan to see results.</div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-results">
+    <div style="overflow-x:auto">
+      <table class="results-table">
+        <thead>
+          <tr><th>IP</th><th>Latency</th><th>Code</th><th>CDN</th><th>Country</th><th>kB/s</th><th>Status</th></tr>
+        </thead>
+        <tbody id="resultsBody">
+          <tr><td colspan="7" style="text-align:center;color:#444;padding:40px">No results yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-fronting">
+    <div id="frontingContainer">
+      <div class="empty-state">No fronting data available yet.</div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-config">
+    <div class="config-form">
+      <div class="form-group">
+        <label class="form-label">CDN Provider</label>
+        <select class="form-select" id="cfgCdn">
+          <option value="smart">Smart (Auto-detect)</option>
+          <option value="cloudflare">Cloudflare</option>
+          <option value="akamai">Akamai</option>
+          <option value="fastly">Fastly</option>
+          <option value="google">Google</option>
+          <option value="cloudfront">CloudFront</option>
+          <option value="gcore">Gcore</option>
+          <option value="all">All CDNs</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Host Header</label>
+        <input class="form-input" id="cfgHost" type="text" placeholder="e.g. speed.cloudflare.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">SNI (Server Name Indication)</label>
+        <input class="form-input" id="cfgSni" type="text" placeholder="e.g. my.sni.domain.com">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Concurrency</label>
+          <input class="form-input" id="cfgConc" type="number" value="60" min="1" max="500">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Timeout (sec)</label>
+          <input class="form-input" id="cfgTimeout" type="number" value="4" min="1" max="30" step="0.5">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Max IPs (Sample)</label>
+          <input class="form-input" id="cfgSample" type="number" value="3000" min="10" max="100000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Retries</label>
+          <input class="form-input" id="cfgRetries" type="number" value="2" min="0" max="10">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Save Results To File</label>
+        <input class="form-input" id="cfgOutFile" type="text" placeholder="e.g. results.txt (optional)">
+      </div>
+      <div style="margin-top:20px">
+        <button class="btn btn-primary" id="configStartBtn" type="button">Start Scan</button>
       </div>
     </div>
   </div>
 
-  <!-- Tab: Results -->
-  <div class="tab-page" id="page-results">
-    <div class="results-wrap">
-      <table class="rtable"><thead><tr>
-        <th>IP Address</th><th>Latency</th><th>Code</th><th>CDN</th><th>Country</th><th>kB/s</th><th>Status</th>
-      </tr></thead><tbody id="results-tbody"></tbody></table>
+  <div class="tab-content" id="tab-log">
+    <div class="log-container" id="logContainer">
+      <div class="log-entry" style="color:#444">Waiting for activity...</div>
     </div>
   </div>
+</main>
 
-  <!-- Tab: Fronting -->
-  <div class="tab-page" id="page-fronting">
-    <div class="front-grid" id="fronting-list">
-      <div class="empty" id="empty-fronting">
-        <div class="empty-icon">&#9733;</div>
-        <div class="empty-title">No fronting IPs verified</div>
-        <div class="empty-desc">Fronting-verified IPs appear here after scan</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab: Config -->
-  <div class="tab-page" id="page-config">
-    <div class="cfg-wrap">
-      <div class="cfg-grid">
-        <div class="cfg-group cfg-full">
-          <label class="cfg-label">CDN / Source</label>
-          <select class="cfg-input" id="cfg-cdn">
-            <option value="smart">Smart Scan (recommended)</option>
-            <option value="akamai">Akamai</option>
-            <option value="fastly">Fastly</option>
-            <option value="cloudflare">Cloudflare</option>
-            <option value="google">Google</option>
-            <option value="cloudfront">CloudFront (AWS)</option>
-            <option value="gcore">Gcore</option>
-            <option value="all">All CDNs</option>
-          </select>
-        </div>
-        <div class="cfg-group cfg-full">
-          <label class="cfg-label">Host Header</label>
-          <input class="cfg-input" id="cfg-host" placeholder="Leave blank for auto SSL">
-        </div>
-        <div class="cfg-group cfg-full">
-          <label class="cfg-label">Psiphon SNI</label>
-          <input class="cfg-input" id="cfg-sni" placeholder="auto (e.g. a248.e.akamai.net)">
-        </div>
-        <div class="cfg-group">
-          <label class="cfg-label">Concurrency</label>
-          <input class="cfg-input" id="cfg-conc" type="number" value="60">
-          <div class="cfg-hint">Android: 25-60</div>
-        </div>
-        <div class="cfg-group">
-          <label class="cfg-label">Timeout (s)</label>
-          <input class="cfg-input" id="cfg-timeout" type="number" value="4" step="0.5">
-        </div>
-        <div class="cfg-group">
-          <label class="cfg-label">Max IPs</label>
-          <input class="cfg-input" id="cfg-sample" type="number" value="3000">
-        </div>
-        <div class="cfg-group">
-          <label class="cfg-label">Retries</label>
-          <input class="cfg-input" id="cfg-retries" type="number" value="2">
-        </div>
-        <div class="cfg-group cfg-full">
-          <label class="cfg-label">Save to File</label>
-          <input class="cfg-input" id="cfg-out" placeholder="results.txt (blank = off)">
-        </div>
-        <div class="cfg-group cfg-full" style="margin-top:6px">
-          <button class="sb-btn sb-btn-start" onclick="startScan()" style="max-width:180px">&#9654; Start Scan</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab: Log -->
-  <div class="tab-page" id="page-log">
-    <div class="log-wrap" id="log-list">
-      <div class="log-entry"><span class="log-ts">--:--</span><span class="log-msg">Ready</span></div>
-    </div>
-  </div>
-
-</div>
-</div>
 <div class="toast" id="toast"></div>
+
 <script>
-let _results=[],_liveIPs=[],_pollTimer=null,_startTime=null;
+var pollTimer = null;
+var scanStartTime = null;
+var lastState = {};
 
-function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sb-overlay').classList.add('open')}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sb-overlay').classList.remove('open')}
+function $(id) { return document.getElementById(id); }
 
-function setTab(name){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
-  document.querySelectorAll('.tab-page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
-  document.querySelectorAll('.sb-item').forEach(item=>{
-    const onclick=item.getAttribute('onclick')||'';
-    item.classList.toggle('active',onclick.includes("'"+name+"'"));
+function showToast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show';
+  setTimeout(function() { t.className = 'toast'; }, 3000);
+}
+
+function switchTab(tabName) {
+  var contents = document.querySelectorAll('.tab-content');
+  var buttons = document.querySelectorAll('.tab-btn');
+  var navItems = document.querySelectorAll('.nav-item');
+  var i;
+  for (i = 0; i < contents.length; i++) {
+    contents[i].className = 'tab-content';
+  }
+  for (i = 0; i < buttons.length; i++) {
+    buttons[i].className = 'tab-btn';
+  }
+  for (i = 0; i < navItems.length; i++) {
+    navItems[i].className = 'nav-item';
+  }
+  var target = document.getElementById('tab-' + tabName);
+  if (target) target.className = 'tab-content active';
+  for (i = 0; i < buttons.length; i++) {
+    if (buttons[i].getAttribute('data-tab') === tabName) {
+      buttons[i].className = 'tab-btn active';
+    }
+  }
+  for (i = 0; i < navItems.length; i++) {
+    if (navItems[i].getAttribute('data-tab') === tabName) {
+      navItems[i].className = 'nav-item active';
+    }
+  }
+  closeSidebar();
+}
+
+function openSidebar() {
+  $('sidebar').className = 'sidebar open';
+  $('overlay').className = 'overlay open';
+}
+
+function closeSidebar() {
+  $('sidebar').className = 'sidebar';
+  $('overlay').className = 'overlay';
+}
+
+function startScan() {
+  var cfg = {
+    cdn: $('cfgCdn').value,
+    host: $('cfgHost').value,
+    sni: $('cfgSni').value,
+    conc: parseInt($('cfgConc').value) || 60,
+    timeout: parseFloat($('cfgTimeout').value) || 4,
+    sample: parseInt($('cfgSample').value) || 3000,
+    retries: parseInt($('cfgRetries').value) || 2,
+    out_file: $('cfgOutFile').value
+  };
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/start', true);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      try {
+        var resp = JSON.parse(xhr.responseText);
+        if (resp.ok) {
+          scanStartTime = Date.now();
+          showToast('Scan started');
+        } else {
+          showToast(resp.msg || 'Failed to start');
+        }
+      } catch(e) {
+        showToast('Error starting scan');
+      }
+    }
+  };
+  xhr.send(JSON.stringify(cfg));
+}
+
+function stopScan() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/stop', true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      showToast('Scan stopped');
+    }
+  };
+  xhr.send('');
+}
+
+function exitApp() {
+  if (confirm('Exit CDN Hunter?')) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/exit', true);
+    xhr.send('');
+    showToast('Shutting down...');
+  }
+}
+
+function copyIps() {
+  var results = lastState.results || [];
+  var ips = [];
+  var i;
+  for (i = 0; i < results.length; i++) {
+    if (results[i].ok) {
+      ips.push(results[i].ip);
+    }
+  }
+  if (ips.length === 0) {
+    showToast('No healthy IPs to copy');
+    return;
+  }
+  var text = ips.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast(ips.length + ' IPs copied');
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast(ips.length + ' IPs copied');
+  }
+}
+
+function updateUI(state) {
+  lastState = state;
+
+  $('statScanned').textContent = state.scanned || 0;
+  $('statHealthy').textContent = state.healthy || 0;
+  $('statFailed').textContent = state.failed || 0;
+  $('statPct').textContent = (state.pct || 0) + '%';
+  $('statSource').textContent = state.source || '-';
+  $('progressBar').style.width = (state.pct || 0) + '%';
+
+  var dot = $('statusDot');
+  var txt = $('statusText');
+  if (state.running) {
+    dot.className = 'status-dot running';
+    txt.textContent = 'Scanning...';
+  } else {
+    dot.className = 'status-dot';
+    txt.textContent = 'Idle';
+  }
+
+  var liveFeed = $('liveFeed');
+  var liveIps = state.live_ips || [];
+  $('badge-live').textContent = state.live_ips_total || liveIps.length;
+  if (liveIps.length > 0) {
+    var html = '';
+    var i;
+    for (i = liveIps.length - 1; i >= 0; i--) {
+      var ip = typeof liveIps[i] === 'string' ? liveIps[i] : (liveIps[i].ip || liveIps[i]);
+      html += '<div class="live-item"><span class="live-dot"></span>' + escHtml(String(ip)) + '</div>';
+    }
+    liveFeed.innerHTML = html;
+  } else if (!state.running && liveIps.length === 0) {
+    liveFeed.innerHTML = '<div class="empty-state">No live IPs yet. Start a scan to see results.</div>';
+  }
+
+  var results = state.results || [];
+  $('badge-results').textContent = results.length;
+  if (results.length > 0) {
+    var rhtml = '';
+    var j;
+    for (j = 0; j < results.length; j++) {
+      var r = results[j];
+      var statusCls = r.ok ? 'status-ok' : 'status-fail';
+      var statusTxt = r.ok ? 'OK' : 'FAIL';
+      rhtml += '<tr><td>' + escHtml(r.ip) + '</td><td>' + r.ms + 'ms</td><td>' + escHtml(String(r.code)) + '</td><td>' + escHtml(r.cdn || '?') + '</td><td>' + escHtml(r.country || '-') + '</td><td>' + (r.kbps || 0) + '</td><td class="' + statusCls + '">' + statusTxt + '</td></tr>';
+    }
+    $('resultsBody').innerHTML = rhtml;
+  }
+
+  var frontingIps = [];
+  var k;
+  for (k = 0; k < results.length; k++) {
+    if (results[k].ok && results[k].fronting_ok) {
+      frontingIps.push(results[k]);
+    }
+  }
+  $('badge-fronting').textContent = frontingIps.length;
+  if (frontingIps.length > 0) {
+    var groups = {};
+    var m;
+    for (m = 0; m < frontingIps.length; m++) {
+      var cdn = frontingIps[m].cdn || 'Unknown';
+      if (!groups[cdn]) groups[cdn] = [];
+      groups[cdn].push(frontingIps[m].ip);
+    }
+    var fhtml = '';
+    for (var gkey in groups) {
+      if (groups.hasOwnProperty(gkey)) {
+        fhtml += '<div class="fronting-group"><div class="fronting-title">' + escHtml(gkey) + ' <span class="badge">' + groups[gkey].length + '</span></div><div class="fronting-ips">';
+        var n;
+        for (n = 0; n < groups[gkey].length; n++) {
+          fhtml += '<span class="fronting-ip">' + escHtml(groups[gkey][n]) + '</span>';
+        }
+        fhtml += '</div></div>';
+      }
+    }
+    $('frontingContainer').innerHTML = fhtml;
+  }
+
+  var logs = state.log || [];
+  if (logs.length > 0) {
+    var lhtml = '';
+    var p;
+    for (p = logs.length - 1; p >= 0; p--) {
+      lhtml += '<div class="log-entry">' + escHtml(logs[p]) + '</div>';
+    }
+    $('logContainer').innerHTML = lhtml;
+  }
+}
+
+function escHtml(s) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(s));
+  return div.innerHTML;
+}
+
+function poll() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/state', true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4 && xhr.status === 200) {
+      try {
+        var state = JSON.parse(xhr.responseText);
+        updateUI(state);
+      } catch(e) {}
+    }
+  };
+  xhr.send();
+}
+
+function init() {
+  var tabBtns = document.querySelectorAll('.tab-btn');
+  var i;
+  for (i = 0; i < tabBtns.length; i++) {
+    tabBtns[i].addEventListener('click', function() {
+      switchTab(this.getAttribute('data-tab'));
+    });
+  }
+
+  var navItems = document.querySelectorAll('.nav-item');
+  for (i = 0; i < navItems.length; i++) {
+    navItems[i].addEventListener('click', function() {
+      var tab = this.getAttribute('data-tab');
+      if (tab) switchTab(tab);
+    });
+  }
+
+  $('hamburger').addEventListener('click', function() {
+    var sb = $('sidebar');
+    if (sb.className.indexOf('open') !== -1) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
   });
-  const labels={overview:'Overview',results:'Results',fronting:'Fronting IPs',config:'Scan Config',log:'Activity Log'};
-  document.getElementById('topbar-sub').textContent=labels[name]||name;
+
+  $('overlay').addEventListener('click', closeSidebar);
+  $('sidebar-start').addEventListener('click', startScan);
+  $('sidebar-stop').addEventListener('click', stopScan);
+  $('configStartBtn').addEventListener('click', startScan);
+  $('copyIpsBtn').addEventListener('click', copyIps);
+  $('exitBtn').addEventListener('click', exitApp);
+
+  poll();
+  pollTimer = setInterval(poll, 1500);
 }
 
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
-
-function copyAllIPs(){
-  const ips=_liveIPs.map(r=>r.ip||r).filter(Boolean);
-  if(!ips.length){showToast('No IPs yet');return}
-  navigator.clipboard.writeText(ips.join('\n')).then(()=>showToast(ips.length+' IPs copied')).catch(()=>showToast('Copy failed'));
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
 }
-function copyIP(ip){navigator.clipboard.writeText(ip).then(()=>showToast('Copied: '+ip)).catch(()=>showToast('Copy failed'))}
-function exitServer(){if(!confirm('Close web server?'))return;fetch('/api/exit',{method:'POST'}).finally(()=>showToast('Server closed'))}
-
-function getCfg(){return{
-  cdn:document.getElementById('cfg-cdn').value,
-  host:document.getElementById('cfg-host').value,
-  sni:document.getElementById('cfg-sni').value,
-  conc:document.getElementById('cfg-conc').value||60,
-  timeout:document.getElementById('cfg-timeout').value||4,
-  sample:document.getElementById('cfg-sample').value||3000,
-  retries:document.getElementById('cfg-retries').value||2,
-  out_file:document.getElementById('cfg-out').value||'',
-}}
-
-function startScan(){
-  const btn=document.getElementById('sb-btn-start');
-  btn.disabled=true;btn.textContent='Scanning...';
-  document.getElementById('sb-btn-stop').style.display='';
-  _startTime=Date.now();
-  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getCfg())})
-  .then(r=>r.json()).then(d=>{
-    if(!d.ok){showToast(d.msg||'Error');resetBtn()}
-    else{startPoll()}
-  }).catch(()=>{showToast('Cannot reach server');resetBtn()});
-}
-function stopScan(){fetch('/api/stop',{method:'POST'}).catch(()=>{})}
-function resetBtn(){
-  const btn=document.getElementById('sb-btn-start');
-  btn.disabled=false;btn.textContent='\u25B6 Start Scan';
-  document.getElementById('sb-btn-stop').style.display='none';
-}
-
-function startPoll(){if(_pollTimer)clearInterval(_pollTimer);_pollTimer=setInterval(poll,800);poll()}
-function poll(){fetch('/api/state').then(r=>r.json()).then(updateUI).catch(()=>{})}
-
-function updateUI(s){
-  const scanned=s.scanned||0,healthy=s.healthy||0,failed=s.failed||0;
-  setText('s-scanned',fmtNum(scanned));
-  setText('s-healthy',fmtNum(healthy));
-  setText('s-failed',fmtNum(failed));
-  const elapsed=_startTime&&s.running?(Date.now()-_startTime)/1000:0;
-  setText('s-elapsed',fmtTime(elapsed));
-  if(scanned>0&&elapsed>0){
-    const speed=Math.round(scanned/elapsed);
-    setText('s-speed',fmtNum(speed));
-  }
-  setText('s-source',s.source||'-');
-
-  const pct=Math.round(s.pct||0);
-  const fill=document.getElementById('p-fill');
-  if(fill){fill.style.width=pct+'%';fill.classList.toggle('done',pct>=100&&!s.running)}
-  setText('p-pct',pct+'%');
-  setText('p-label',s.running?'SCANNING':(scanned>0?'COMPLETE':'IDLE'));
-
-  const dot=document.getElementById('status-dot');
-  const stxt=document.getElementById('status-text');
-  if(s.running){
-    dot.className='status-dot live';stxt.textContent='Scanning';
-    document.getElementById('sb-btn-stop').style.display='';
-    document.getElementById('sb-btn-start').disabled=true;
-    if(!_pollTimer)startPoll();
-  }else if(scanned>0){
-    dot.className='status-dot done';stxt.textContent='Done';
-    resetBtn();if(_pollTimer){clearInterval(_pollTimer);_pollTimer=null}
-  }else{
-    dot.className='status-dot';stxt.textContent='Idle';
-  }
-
-  if(s.live_ips&&s.live_ips.length){
-    const okIPs=s.live_ips.filter(r=>r.ok);
-    if(okIPs.length){_liveIPs=okIPs;renderLiveIPs(okIPs)}
-  }
-  if(s.results&&s.results.length){
-    const ok=s.results.filter(r=>r.ok);
-    _results=s.results;_liveIPs=ok;
-    renderResults(ok);renderFronting(s.results);
-    setBadge('tc-results',ok.length);setBadge('sb-badge-results',ok.length);
-  }
-  if(s.log&&s.log.length)renderLog(s.log);
-}
-
-function renderLiveIPs(ips){
-  const el=document.getElementById('live-ip-list');if(!el)return;
-  const empty=document.getElementById('empty-live');
-  if(!ips.length)return;
-  if(empty)empty.style.display='none';
-  el.innerHTML=ips.slice().reverse().slice(0,50).map(r=>{
-    const ms=r.ms||0;const cls=ms<200?'fast':ms<400?'med':'slow';
-    const fr=r.fronting_ok||r.fronting;
-    return '<div class="ip-row"><div class="ip-addr">'+r.ip+'</div><div class="ip-ms '+cls+'">'+ms+'ms</div><div class="ip-cc">'+(r.country||r.cc||'')+'</div><div class="ip-tags"><span class="tag tag-ok">OK</span>'+(fr?'<span class="tag tag-front">FRONT</span>':'')+'</div></div>';
-  }).join('');
-}
-
-function renderResults(results){
-  const tbody=document.getElementById('results-tbody');if(!tbody)return;
-  tbody.innerHTML=results.map(r=>{
-    const ms=r.ms||0;const cls=ms<200?'c-g':ms<400?'c-a':'c-r';
-    const fr=r.fronting_ok||r.fronting;
-    return '<tr><td class="c-ip">'+r.ip+' <button class="copy-btn" onclick="copyIP(\''+r.ip+'\')">copy</button></td><td class="'+cls+'">'+ms+'ms</td><td class="c-d">'+(r.code||'200')+'</td><td class="c-d">'+(r.cdn||'-')+'</td><td class="c-d">'+(r.country||r.cc||'-')+'</td><td class="'+(r.kbps>1000?'c-g':'c-d')+'">'+(r.kbps?Math.round(r.kbps):'- ')+'</td><td><span class="tag tag-ok">OK</span>'+(fr?' <span class="tag tag-front">FRONT</span>':'')+'</td></tr>';
-  }).join('');
-}
-
-function renderFronting(results){
-  const front=results.filter(r=>r.fronting_ok||r.fronting);
-  setBadge('tc-fronting',front.length);setBadge('sb-badge-fronting',front.length);
-  const el=document.getElementById('fronting-list');if(!el)return;
-  const empty=document.getElementById('empty-fronting');
-  if(!front.length){if(empty)empty.style.display='flex';return}
-  if(empty)empty.style.display='none';
-  const groups={};
-  front.forEach(r=>{const sni=r.sni||r.fronting_sni||r.host||'Unknown';if(!groups[sni])groups[sni]=[];groups[sni].push(r.ip)});
-  el.innerHTML=Object.entries(groups).map(([sni,ips])=>'<div class="front-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:10px;color:var(--fg3);text-transform:uppercase">SNI</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--fg0);margin-top:2px">'+sni+'</div></div><button class="btn-sm" onclick="copyIP(\''+ips.join('\\n')+'\')">Copy IPs</button></div><div><div style="font-size:10px;color:var(--fg3);margin-bottom:3px">IPs ('+ips.length+')</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--green)">'+ips.join(' &middot; ')+'</div></div></div>').join('');
-}
-
-function renderLog(logs){
-  const el=document.getElementById('log-list');if(!el)return;
-  el.innerHTML=logs.slice(-40).map(msg=>{
-    const cls=msg.startsWith('OK')?'ok':(msg.includes('ERR')||msg.includes('error')?'err':'');
-    const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    return '<div class="log-entry '+cls+'"><span class="log-ts">'+ts+'</span><span class="log-msg">'+msg+'</span></div>';
-  }).join('');
-  el.scrollTop=el.scrollHeight;
-}
-
-function setText(id,v){const el=document.getElementById(id);if(el)el.innerHTML=String(v)}
-function setBadge(id,n){const el=document.getElementById(id);if(el)el.textContent=n}
-function fmtNum(n){return n>=10000?(n/1000).toFixed(1)+'k':n>=1000?n.toLocaleString():String(n||0)}
-function fmtTime(s){s=Math.round(s);return s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'}
-
-document.addEventListener('DOMContentLoaded',()=>{poll();setInterval(poll,1500)});
 </script>
 </body>
 </html>
