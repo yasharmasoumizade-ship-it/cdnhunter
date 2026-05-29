@@ -2421,6 +2421,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 /* ─── Buttons ─── */
@@ -2933,17 +2934,62 @@ select.cfg-input option { background: var(--surface); }
 ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
 
 /* ─── Responsive ─── */
+.mobile-tabs {
+  display: none;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.mtab {
+  display: inline-block;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--fg3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.mtab.active { color: var(--fg0); border-bottom-color: var(--fg0); }
+.mtab:hover { color: var(--fg1); }
+
 @media (max-width: 768px) {
   .metrics-bar { grid-template-columns: repeat(3, 1fr); }
   .overview-grid { grid-template-columns: 1fr; }
   .config-grid { grid-template-columns: 1fr; }
   .nav-tabs { display: none; }
-  .navbar { padding: 0 16px; }
-  .metric-cell { padding: 12px 14px; }
+  .mobile-tabs { display: flex; }
+  .navbar {
+    padding: 0 12px;
+    gap: 8px;
+    height: auto;
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .nav-brand { flex-shrink: 0; }
+  .nav-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-left: auto;
+    overflow-x: auto;
+  }
+  .nav-slash, .nav-project { display: none; }
+  .metric-cell { padding: 10px 12px; }
   .metric-value { font-size: 18px; }
+  .progress-section { padding: 0 12px; }
+  .panel-header { padding: 12px 14px; }
+  .ip-row { padding: 8px 14px; gap: 8px; grid-template-columns: 1fr 60px 30px auto; }
+  .fronting-grid { padding: 16px; }
+  .config-wrapper { padding: 16px; }
 }
 @media (max-width: 480px) {
   .metrics-bar { grid-template-columns: repeat(2, 1fr); }
+  .navbar { gap: 6px; }
+  .nav-actions { width: auto; }
+  .status-badge { font-size: 11px; padding: 0 8px; }
+  .btn-sm { font-size: 11px; height: 26px; padding: 0 8px; }
 }
 </style>
 </head>
@@ -3024,6 +3070,14 @@ select.cfg-input option { background: var(--surface); }
         <div class="progress-fill" id="p-fill" style="width:0%"></div>
       </div>
       <div class="progress-pct" id="p-pct">0%</div>
+    </div>
+
+    <!-- Mobile tab bar (visible only on small screens) -->
+    <div class="mobile-tabs" id="mobile-tabs">
+      <div class="mtab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
+      <div class="mtab" data-tab="results" onclick="setTab('results')">Results</div>
+      <div class="mtab" data-tab="fronting" onclick="setTab('fronting')">Fronting</div>
+      <div class="mtab" data-tab="config" onclick="setTab('config')">Settings</div>
     </div>
 
     <!-- Tab content -->
@@ -3168,6 +3222,9 @@ let _startTime = null;
 // ─── Tabs ────────────────────────────────────────────────
 function setTab(name) {
   document.querySelectorAll('.nav-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === name)
+  );
+  document.querySelectorAll('.mtab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === name)
   );
   document.querySelectorAll('.tab-page').forEach(p =>
