@@ -2401,8 +2401,7 @@ html,body{height:100%;background:var(--bg);color:var(--fg1);font-family:'Inter',
 .btn-sm:hover{background:var(--surface2);border-color:var(--border2)}
 .btn-exit{color:var(--red);border-color:rgba(229,72,77,.3)}
 .btn-exit:hover{background:var(--red-s)}
-</style>
-</head>
+
 
 /* ── Stats Strip ── */
 .stats-strip{
