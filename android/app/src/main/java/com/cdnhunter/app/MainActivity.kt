@@ -50,6 +50,9 @@ fun MainContent() {
                 Toast.makeText(context, "No IPs to copy", Toast.LENGTH_SHORT).show()
             }
         },
+        onUpdateRanges = {
+            Toast.makeText(context, "Updating ranges...", Toast.LENGTH_SHORT).show()
+        },
     )
 }
 
