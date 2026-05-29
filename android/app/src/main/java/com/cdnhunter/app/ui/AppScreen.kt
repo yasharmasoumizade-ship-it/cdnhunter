@@ -304,7 +304,7 @@ fun FrontingTab(results: List<ScanResult>) {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  REGION TAB — tap IP to show map (like ExpressVPN)
+//  REGION TAB — inline map below IP on tap
 // ══════════════════════════════════════════════════════════════════════════════
 @Composable
 fun RegionTab(results: List<ScanResult>) {
@@ -382,7 +382,7 @@ fun RegionTab(results: List<ScanResult>) {
                 val isSelected = selectedIp?.ip == r.ip
                 Surface(color = if (isSelected) AccentBlue.copy(0.08f) else CardBg, shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(0.5.dp, if (isSelected) AccentBlue.copy(0.4f) else BorderColor),
-                    onClick = { selectedIp = if (isSelected) null else r }) {
+                    modifier = Modifier.clickable { selectedIp = if (isSelected) null else r }) {
                     Row(Modifier.fillMaxWidth().padding(12.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.LocationOn, null, tint = if (r.country == "IR") RedFail else AccentBlue, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
