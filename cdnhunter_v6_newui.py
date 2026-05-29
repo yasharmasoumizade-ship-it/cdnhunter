@@ -2639,6 +2639,7 @@ select.cfg-input option{background:var(--surface)}
         <div class="empty-icon">&#9678;</div>
         <div class="empty-title">No IPs found yet</div>
         <div class="empty-desc">Start a scan to discover healthy CDN IPs</div>
+        <div style="margin-top:16px"><button class="sb-btn sb-btn-start" onclick="startScan()" style="width:180px;height:38px">&#9654; Start Scan</button></div>
       </div>
     </div>
   </div>
