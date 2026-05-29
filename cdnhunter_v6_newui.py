@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CDN-SCANNER v2 — async, Termux-optimized, Psiphon/ShirOKhorshid ready"""
 
-import asyncio, ipaddress, ssl, sys, os, time, random, math, io
+import asyncio, ipaddress, ssl, sys, os, time, random
 import socket, threading, subprocess, re, json, signal, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -755,23 +755,6 @@ def check_sync(ip, host, port, path, timeout, retries=2):
     return {"ip": ip, "ok": False, "code": last_code, "ms": avg_ms, "host": host}
 
 
-# ── CDN Ranges — extra providers ──────────────────────────────────────────────
-_AMAZON_CF_RANGES = [
-    # Amazon CloudFront
-    "13.32.0.0/15","13.35.0.0/16","52.84.0.0/15","52.222.128.0/17",
-    "54.182.0.0/16","54.192.0.0/16","54.230.0.0/16","54.239.128.0/18",
-    "64.252.64.0/18","64.252.128.0/18","70.132.0.0/18","99.84.0.0/16",
-    "99.86.0.0/16","108.138.0.0/15","108.160.0.0/15","143.204.0.0/16",
-    "204.246.164.0/22","204.246.168.0/22","204.246.174.0/23",
-    "205.251.192.0/19","205.251.249.0/24","216.137.32.0/19",
-]
-_GCORE_RANGES = [
-    "2.56.24.0/22","5.188.86.0/23","5.188.88.0/22","92.223.64.0/18",
-    "93.123.16.0/21","95.85.0.0/17","146.19.183.0/24","185.79.76.0/22",
-    "185.234.218.0/23","188.114.96.0/20",
-]
-
-
 def _detect_cdn_for_ip(ip: str) -> str | None:
     try:
         ip_obj = ipaddress.ip_address(ip)
@@ -1168,6 +1151,8 @@ def run_scan(ips, host, port, path, concurrency, timeout, out_file,
 
         # Phase 2: Iran filter (live geo check)
         _show_status("Checking regions (ipwho.is)...")
+        if _web_mode:
+            with _WEB_LOCK: _WEB_STATE.update({"phase":"ipcheck","phase_detail":"Checking regions"})
         _iran_check_map = get_country_codes_batch([r["ip"] for r in healthy], timeout=4.0)
         _clear_status(); iran_clean = []
         for _r in healthy:
@@ -1186,6 +1171,8 @@ def run_scan(ips, host, port, path, concurrency, timeout, out_file,
 
         # Phase 3: Fronting verification
         _show_status("Checking CDN fronting...")
+        if _web_mode:
+            with _WEB_LOCK: _WEB_STATE.update({"phase":"fronting","phase_detail":"Testing fronting"})
         fronting_all = check_psiphon_fronting(healthy, timeout)
         fronting_verified = [r for r in fronting_all if r.get("fronting_ok")]
         _fa_map = {r["ip"]: r for r in fronting_all}
@@ -1199,6 +1186,8 @@ def run_scan(ips, host, port, path, concurrency, timeout, out_file,
         # Phase 4: Throughput
         if fronting_verified:
             _show_status("Checking throughput...")
+            if _web_mode:
+                with _WEB_LOCK: _WEB_STATE.update({"phase":"throughput","phase_detail":"Measuring throughput"})
             fronting_verified = run_throughput_checks(fronting_verified, timeout)
             tp_ok = [r for r in fronting_verified if r.get("tp_ok")]
             if tp_ok: fronting_verified = tp_ok
@@ -3148,48 +3137,22 @@ def _run_scan_web(cfg: dict):
     if not result and _partial_healthy:
         with _partial_healthy_lock: result = list(_partial_healthy)
 
-    # Phase 2: IP Check (country lookup)
-    with _WEB_LOCK: _WEB_STATE.update({"phase":"ipcheck","phase_detail":"Checking regions","running":True})
-    _web_log(f"[Phase 2/4] Checking IP regions...")
+    # run_scan already does: region check, fronting, throughput internally
+    # We just build the final results for the web UI from its output
+    with _WEB_LOCK: _WEB_STATE.update({"phase":"done","phase_detail":"Building results","running":True})
     results_clean = []
-    healthy_results = [r for r in (result or []) if isinstance(r, dict) and r.get("ok")]
-    if healthy_results:
-        batch_ips = [r.get("ip","") for r in healthy_results if r.get("ip")]
-        cc_map = get_country_codes_batch(batch_ips, timeout=3.0) if batch_ips else {}
-    else:
-        cc_map = {}
-
-    # Phase 3: Fronting check
-    with _WEB_LOCK: _WEB_STATE.update({"phase":"fronting","phase_detail":"Testing fronting"})
-    _web_log(f"[Phase 3/4] Checking CDN fronting for {len(healthy_results)} IPs...")
-    fronting_results = check_psiphon_fronting(healthy_results, timeout) if healthy_results else []
-    fronting_map = {r["ip"]: r for r in fronting_results}
-
-    # Phase 4: Throughput
-    fronting_ok_list = [r for r in fronting_results if r.get("fronting_ok")]
-    if fronting_ok_list:
-        with _WEB_LOCK: _WEB_STATE.update({"phase":"throughput","phase_detail":"Measuring throughput"})
-        _web_log(f"[Phase 4/4] Throughput test for {len(fronting_ok_list)} fronting IPs...")
-        fronting_ok_list = run_throughput_checks(fronting_ok_list, timeout)
-        for r in fronting_ok_list:
-            fronting_map[r["ip"]] = r
-    else:
-        _web_log(f"[Phase 4/4] Throughput — skipped (no fronting IPs)")
-
     for r in (result or []):
         if isinstance(r, dict):
             ip = r.get("ip","")
-            cc = cc_map.get(ip, "")
-            fr = fronting_map.get(ip, {})
             results_clean.append({"ip": ip, "ms": r.get("ms",9999),
                 "code": r.get("code",""), "ok": r.get("ok",False),
-                "fronting_ok": fr.get("fronting_ok", r.get("fronting_ok",False)),
-                "fronting_sni": fr.get("fronting_sni", r.get("fronting_sni","")) or "",
-                "fronting_host": fr.get("fronting_host", r.get("fronting_host","")) or "",
-                "cdn": fr.get("cdn_type", r.get("cdn_type","?")) or "?",
-                "kbps": round(fr.get("tp_kbps",0) or r.get("tp_kbps",0) or 0),
-                "country": cc})
-            if r.get("ok"): _web_log(f"OK  {ip}  {r.get('ms','')}ms  {cc}  sni={fr.get('fronting_sni','—')}")
+                "fronting_ok": r.get("fronting_ok",False),
+                "fronting_sni": r.get("fronting_sni","") or "",
+                "fronting_host": r.get("fronting_host","") or "",
+                "cdn": r.get("cdn_type","?") or "?",
+                "kbps": round(r.get("tp_kbps",0) or 0),
+                "country": r.get("country","")})
+            if r.get("ok"): _web_log(f"OK  {ip}  {r.get('ms','')}ms  {r.get('country','')}  sni={r.get('fronting_sni','—')}")
 
     with _WEB_LOCK:
         _WEB_STATE.update({"running":False,"pct":100,"scanned":len(ips),
