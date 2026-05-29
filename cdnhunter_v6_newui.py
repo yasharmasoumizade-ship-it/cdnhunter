@@ -2290,1258 +2290,600 @@ _WEB_HTML = """
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg:       #000000;
-  --bg-alt:   #0a0a0a;
-  --surface:  #111111;
-  --surface2: #171717;
-  --surface3: #1a1a1a;
-  --border:   #262626;
-  --border2:  #333333;
-  --fg4:      #3b3b3b;
-  --fg3:      #666666;
-  --fg2:      #a1a1a1;
-  --fg1:      #ededed;
-  --fg0:      #fafafa;
-  --blue:     #0070f3;
-  --blue-hover: #0060d0;
-  --blue-s:   rgba(0,112,243,0.08);
-  --blue-b:   rgba(0,112,243,0.2);
-  --green:    #46c98b;
-  --green-s:  rgba(70,201,139,0.08);
-  --green-b:  rgba(70,201,139,0.2);
-  --red:      #e5484d;
-  --red-s:    rgba(229,72,77,0.08);
-  --red-b:    rgba(229,72,77,0.2);
-  --amber:    #f5a623;
-  --amber-s:  rgba(245,166,35,0.08);
-  --purple:   #8b5cf6;
-  --radius:   8px;
-  --radius-sm: 6px;
-  --radius-lg: 12px;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#000;--surface:#0a0a0a;--surface2:#111;--surface3:#171717;
+--border:#222;--border2:#333;--fg4:#444;--fg3:#666;--fg2:#999;--fg1:#ccc;--fg0:#fafafa;
+--blue:#0070f3;--green:#46c98b;--red:#e5484d;--amber:#f5a623;
+--green-s:rgba(70,201,139,0.08);--green-b:rgba(70,201,139,0.25);
+--blue-s:rgba(0,112,243,0.08);--blue-b:rgba(0,112,243,0.25);
+--red-s:rgba(229,72,77,0.08);--red-b:rgba(229,72,77,0.25);
+--sidebar-w:240px;--radius:8px;
 }
+html,body{height:100%;background:var(--bg);color:var(--fg1);font-family:'Inter',sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
 
-html, body {
-  height: 100%;
-  background: var(--bg);
-  color: var(--fg1);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
+/* ── App Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:var(--sidebar-w);height:100%;background:var(--bg);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;
+  position:fixed;top:0;left:0;z-index:400;
+  transform:translateX(-100%);transition:transform .25s ease;
+}
+.sidebar.open{transform:translateX(0)}
+.sb-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.sb-overlay.open{opacity:1;pointer-events:all}
+
+@media(min-width:769px){
+  .sidebar{transform:translateX(0);position:relative}
+  .sb-overlay{display:none}
+  .hamburger{display:none!important}
 }
 
-/* ─── Layout ─── */
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
+.sb-header{
+  height:52px;display:flex;align-items:center;gap:10px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
 }
+.sb-logo{
+  width:22px;height:22px;background:var(--fg0);
+  clip-path:polygon(50% 0%,100% 100%,0% 100%);flex-shrink:0;
+}
+.sb-title{font-size:14px;font-weight:600;color:var(--fg0)}
 
-/* ─── Navbar (Vercel-style top nav) ─── */
-.navbar {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-shrink: 0;
-  gap: 16px;
-  z-index: 100;
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.sb-section{margin-bottom:4px}
+.sb-section-label{
+  font-size:10px;font-weight:500;color:var(--fg4);
+  letter-spacing:.05em;text-transform:uppercase;padding:8px 16px 4px;
 }
-.nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.sb-item{
+  display:flex;align-items:center;gap:10px;padding:8px 16px;
+  font-size:13px;color:var(--fg2);cursor:pointer;transition:all .1s;
 }
-.nav-logo {
-  width: 26px;
-  height: 26px;
-  background: var(--fg0);
-  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+.sb-item:hover{background:var(--surface2);color:var(--fg0)}
+.sb-item.active{background:var(--surface2);color:var(--fg0)}
+.sb-icon{width:16px;text-align:center;font-size:13px;opacity:.6}
+.sb-item.active .sb-icon{opacity:1}
+.sb-badge{
+  margin-left:auto;font-size:10px;font-family:'JetBrains Mono',monospace;
+  background:var(--green-s);border:1px solid var(--green-b);color:var(--green);
+  padding:1px 6px;border-radius:99px;
 }
-.nav-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg0);
-  letter-spacing: -0.01em;
-}
+.sb-badge.amber{background:rgba(245,166,35,.08);border-color:rgba(245,166,35,.25);color:var(--amber)}
 
-.nav-slash {
-  color: var(--border2);
-  font-size: 22px;
-  font-weight: 200;
+.sb-footer{padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.sb-btn{
+  width:100%;height:34px;border:none;border-radius:6px;font-size:13px;
+  font-weight:500;cursor:pointer;font-family:inherit;transition:all .15s;
 }
-.nav-project {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--fg2);
-}
-.nav-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 32px;
-  height: 100%;
-}
-.nav-tab {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  font-size: 13px;
-  color: var(--fg3);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s;
-  user-select: none;
-}
-.nav-tab:hover { color: var(--fg1); }
-.nav-tab.active {
-  color: var(--fg0);
-  border-bottom-color: var(--fg0);
-}
-.nav-tab-badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--fg2);
-  padding: 1px 6px;
-  border-radius: 999px;
-  margin-left: 6px;
-}
-.nav-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
+.sb-btn-start{background:var(--fg0);color:var(--bg)}
+.sb-btn-start:hover{background:#ddd}
+.sb-btn-start:disabled{opacity:.5;cursor:not-allowed}
+.sb-btn-stop{background:var(--surface2);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+.sb-btn-stop:hover{background:rgba(245,166,35,.08)}
 
-/* ─── Buttons ─── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg1);
-  white-space: nowrap;
-}
-.btn:hover {
-  background: var(--surface2);
-  border-color: var(--border2);
-}
-.btn-primary {
-  background: var(--fg0);
-  color: var(--bg);
-  border-color: var(--fg0);
-}
-.btn-primary:hover {
-  background: #ccc;
-  border-color: #ccc;
-}
-.btn-danger {
-  color: var(--red);
-  border-color: rgba(229,72,77,0.3);
-}
-.btn-danger:hover {
-  background: var(--red-s);
-}
-.btn-sm {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-.btn-ghost {
-  border-color: transparent;
-  background: transparent;
-}
-.btn-ghost:hover {
-  background: var(--surface2);
-  border-color: var(--border);
-}
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
-/* ─── Status indicator ─── */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg2);
+/* ── Topbar ── */
+.topbar{
+  height:48px;display:flex;align-items:center;gap:12px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
 }
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--fg4);
+.hamburger{
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;cursor:pointer;color:var(--fg2);border-radius:6px;
 }
-.status-dot.live {
-  background: var(--green);
-  box-shadow: 0 0 6px rgba(70,201,139,0.4);
-  animation: pulse 2s infinite;
+.hamburger:hover{background:var(--surface2);color:var(--fg0)}
+.topbar-title{font-size:14px;font-weight:600;color:var(--fg0)}
+.topbar-slash{color:var(--border2);font-size:18px;font-weight:200}
+.topbar-sub{font-size:13px;color:var(--fg2)}
+.status-pill{
+  display:inline-flex;align-items:center;gap:6px;height:26px;
+  padding:0 10px;border-radius:99px;border:1px solid var(--border);
+  font-size:12px;color:var(--fg2);margin-left:auto;
 }
-.status-dot.done { background: var(--blue); }
-.status-dot.idle { background: var(--fg4); }
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--fg4)}
+.status-dot.live{background:var(--green);animation:pulse 2s infinite}
+.status-dot.done{background:var(--blue)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.topbar-actions{display:flex;gap:6px;margin-left:8px}
+.btn-sm{
+  height:28px;padding:0 10px;font-size:12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg);color:var(--fg1);
+  cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap;
 }
-
-/* ─── Main content area ─── */
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* ─── Stats bar (metrics strip) ─── */
-.metrics-bar {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.metric-cell {
-  padding: 16px 20px;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.metric-cell:last-child { border-right: none; }
-.metric-label {
-  font-size: 12px;
-  color: var(--fg3);
-  font-weight: 400;
-}
-.metric-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--fg0);
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-}
-.metric-value.green { color: var(--green); }
-.metric-value.red { color: var(--red); }
-.metric-value.amber { color: var(--amber); }
-.metric-sub {
-  font-size: 11px;
-  color: var(--fg4);
-  margin-top: 2px;
-}
-
-/* ─── Progress bar ─── */
-.progress-section {
-  padding: 0 24px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.progress-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--fg2);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  min-width: 120px;
-}
-.progress-track {
-  flex: 1;
-  height: 4px;
-  background: var(--surface2);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  background: var(--fg0);
-  border-radius: 999px;
-  transition: width 0.4s ease;
-  min-width: 0;
-}
-.progress-fill.complete { background: var(--green); }
-.progress-pct {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--fg2);
-  min-width: 40px;
-  text-align: right;
-}
-
-/* ─── Tab content area ─── */
-.tab-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.tab-page {
-  display: none;
-  flex: 1;
-  overflow: hidden;
-  flex-direction: column;
-}
-.tab-page.active {
-  display: flex;
-}
-
-/* ─── Overview / Live panel ─── */
-.overview-grid {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  flex: 1;
-  overflow: hidden;
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
-}
-.panel:last-child { border-right: none; }
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.panel-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fg0);
-}
-.panel-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0;
-}
-
-/* ─── IP List (live feed) ─── */
-.ip-feed { display: flex; flex-direction: column; }
-.ip-row {
-  display: grid;
-  grid-template-columns: 1fr 70px 40px auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
-  animation: slideIn 0.2s ease;
-}
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.ip-row:hover { background: var(--surface); }
-.ip-addr {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: var(--fg0);
-}
-.ip-ms {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  text-align: right;
-}
-.ip-ms.fast { color: var(--green); }
-.ip-ms.medium { color: var(--amber); }
-.ip-ms.slow { color: var(--red); }
-.ip-cc {
-  font-size: 12px;
-  color: var(--fg3);
-  text-align: center;
-}
-.ip-tags { display: flex; gap: 4px; justify-content: flex-end; }
-
-/* ─── Tags / badges ─── */
-.tag {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-family: 'Inter', sans-serif;
-  letter-spacing: 0.01em;
-  border: 1px solid;
-}
-.tag-ok {
-  background: var(--green-s);
-  border-color: var(--green-b);
-  color: var(--green);
-}
-.tag-front {
-  background: var(--blue-s);
-  border-color: var(--blue-b);
-  color: var(--blue);
-}
-.tag-fail {
-  background: var(--red-s);
-  border-color: var(--red-b);
-  color: var(--red);
-}
-
-/* ─── Log panel ─── */
-.log-feed { padding: 12px 20px; }
-.log-entry {
-  display: flex;
-  gap: 10px;
-  padding: 4px 0;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  border-bottom: 1px solid var(--border);
-}
-.log-entry:last-child { border-bottom: none; }
-.log-ts { color: var(--fg4); flex-shrink: 0; font-size: 11px; }
-.log-msg { color: var(--fg2); word-break: break-all; }
-.log-entry.ok .log-msg { color: var(--green); }
-.log-entry.err .log-msg { color: var(--red); }
-
-/* ─── Results table ─── */
-.results-wrapper { flex: 1; overflow: auto; }
-.results-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.results-table th {
-  text-align: left;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg3);
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-.results-table td {
-  padding: 11px 16px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: var(--fg2);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.results-table tr:hover td { background: var(--surface); }
-.results-table .col-ip { color: var(--fg0); }
-.results-table .col-green { color: var(--green); }
-.results-table .col-amber { color: var(--amber); }
-.results-table .col-red { color: var(--red); }
-.results-table .col-dim { color: var(--fg3); }
-
-.copy-btn {
-  opacity: 0;
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--fg3);
-  cursor: pointer;
-  margin-left: 8px;
-  font-family: inherit;
-  transition: opacity 0.15s, background 0.15s;
-}
-.results-table tr:hover .copy-btn { opacity: 1; }
-.copy-btn:hover { background: var(--surface3); color: var(--fg1); }
-
-/* ─── Fronting cards ─── */
-.fronting-grid {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  flex: 1;
-}
-.fronting-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: border-color 0.15s;
-}
-.fronting-card:hover { border-color: var(--border2); }
-.fronting-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.fronting-sni-label {
-  font-size: 11px;
-  color: var(--fg3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 500;
-}
-.fronting-sni-value {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: var(--fg0);
-  margin-top: 2px;
-}
-.fronting-ips-label {
-  font-size: 11px;
-  color: var(--fg3);
-  margin-bottom: 4px;
-}
-.fronting-ips-value {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--green);
-  line-height: 1.6;
-}
-
-/* ─── Config panel ─── */
-.config-wrapper {
-  flex: 1;
-  overflow-y: auto;
-  padding: 32px;
-}
-.config-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  max-width: 680px;
-}
-.cfg-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.cfg-full { grid-column: 1 / -1; }
-.cfg-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fg1);
-}
-.cfg-hint {
-  font-size: 12px;
-  color: var(--fg4);
-  margin-top: 2px;
-}
-
-.cfg-input {
-  width: 100%;
-  height: 36px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0 12px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: var(--fg0);
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.cfg-input:focus {
-  border-color: var(--fg3);
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
-}
-.cfg-input::placeholder { color: var(--fg4); }
-select.cfg-input { cursor: pointer; }
-select.cfg-input option { background: var(--surface); }
-
-/* ─── Empty state ─── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  gap: 12px;
-  color: var(--fg3);
-  padding: 60px 24px;
-}
-.empty-icon {
-  font-size: 32px;
-  opacity: 0.3;
-  margin-bottom: 4px;
-}
-.empty-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--fg2);
-}
-.empty-desc {
-  font-size: 13px;
-  color: var(--fg4);
-  text-align: center;
-  max-width: 320px;
-}
-
-/* ─── Toast ─── */
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(12px);
-  background: var(--fg0);
-  color: var(--bg);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 10px 20px;
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.25s cubic-bezier(.4,0,.2,1);
-  z-index: 9999;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-}
-.toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* ─── Scrollbar ─── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border2); }
-
-/* ─── Responsive ─── */
-.mobile-tabs {
-  display: none;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  flex-shrink: 0;
-  -webkit-overflow-scrolling: touch;
-}
-.mtab {
-  display: inline-block;
-  padding: 10px 16px;
-  font-size: 13px;
-  color: var(--fg3);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-}
-.mtab.active { color: var(--fg0); border-bottom-color: var(--fg0); }
-.mtab:hover { color: var(--fg1); }
-
-@media (max-width: 768px) {
-  .metrics-bar { grid-template-columns: repeat(3, 1fr); }
-  .overview-grid { grid-template-columns: 1fr; }
-  .config-grid { grid-template-columns: 1fr; }
-  .nav-tabs { display: none; }
-  .mobile-tabs { display: flex; }
-  .navbar {
-    padding: 0 12px;
-    gap: 8px;
-    height: auto;
-    min-height: 48px;
-    padding-top: 8px;
-    padding-bottom: 8px;
-  }
-  .nav-brand { flex-shrink: 0; }
-  .nav-actions {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    margin-left: auto;
-    overflow-x: auto;
-  }
-  .nav-slash, .nav-project { display: none; }
-  .metric-cell { padding: 10px 12px; }
-  .metric-value { font-size: 18px; }
-  .progress-section { padding: 0 12px; }
-  .panel-header { padding: 12px 14px; }
-  .ip-row { padding: 8px 14px; gap: 8px; grid-template-columns: 1fr 60px 30px auto; }
-  .fronting-grid { padding: 16px; }
-  .config-wrapper { padding: 16px; }
-}
-@media (max-width: 480px) {
-  .metrics-bar { grid-template-columns: repeat(2, 1fr); }
-  .navbar { gap: 6px; }
-  .nav-actions { width: auto; }
-  .status-badge { font-size: 11px; padding: 0 8px; }
-  .btn-sm { font-size: 11px; height: 26px; padding: 0 8px; }
-}
+.btn-sm:hover{background:var(--surface2);border-color:var(--border2)}
+.btn-exit{color:var(--red);border-color:rgba(229,72,77,.3)}
+.btn-exit:hover{background:var(--red-s)}
 </style>
 </head>
 
-<body>
+/* ── Stats Strip ── */
+.stats-strip{
+  display:grid;grid-template-columns:repeat(6,1fr);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.stat-cell{padding:14px 16px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:1px}
+.stat-cell:last-child{border-right:none}
+.stat-label{font-size:11px;color:var(--fg3)}
+.stat-val{font-size:22px;font-weight:600;color:var(--fg0);font-family:'JetBrains Mono',monospace;letter-spacing:-.02em}
+.stat-val.green{color:var(--green)}.stat-val.red{color:var(--red)}.stat-val.amber{color:var(--amber)}
+.stat-sub{font-size:10px;color:var(--fg4)}
 
+/* ── Progress ── */
+.progress-row{
+  height:40px;display:flex;align-items:center;gap:12px;
+  padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.prog-label{font-size:11px;font-weight:500;color:var(--fg2);text-transform:uppercase;letter-spacing:.03em;min-width:100px}
+.prog-track{flex:1;height:3px;background:var(--surface2);border-radius:99px;overflow:hidden}
+.prog-fill{height:100%;background:var(--fg0);border-radius:99px;transition:width .4s;min-width:0}
+.prog-fill.done{background:var(--green)}
+.prog-pct{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg2);min-width:36px;text-align:right}
+
+/* ── Tab bar ── */
+.tab-bar{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  padding:0 16px;flex-shrink:0;overflow-x:auto;
+}
+.tab{
+  font-size:12px;color:var(--fg3);padding:10px 14px;cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;transition:color .15s;
+}
+.tab:hover{color:var(--fg1)}
+.tab.active{color:var(--fg0);border-bottom-color:var(--fg0)}
+.tab-count{
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:var(--surface3);border:1px solid var(--border);
+  color:var(--fg2);padding:1px 5px;border-radius:3px;
+}
+.tab.active .tab-count{background:var(--fg4);color:var(--fg0)}
+
+/* ── Tab pages ── */
+.tab-page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tab-page.active{display:flex}
+
+/* ── IP List ── */
+.ip-feed{display:flex;flex-direction:column;flex:1;overflow-y:auto}
+.ip-row{
+  display:grid;grid-template-columns:1fr 65px 35px auto;align-items:center;
+  gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);
+  animation:fadeIn .2s;transition:background .1s;
+}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+.ip-row:hover{background:var(--surface)}
+.ip-addr{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg0)}
+.ip-ms{font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
+.ip-ms.fast{color:var(--green)}.ip-ms.med{color:var(--amber)}.ip-ms.slow{color:var(--red)}
+.ip-cc{font-size:11px;color:var(--fg3);text-align:center}
+.ip-tags{display:flex;gap:3px;justify-content:flex-end}
+.tag{font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;border:1px solid}
+.tag-ok{background:var(--green-s);border-color:var(--green-b);color:var(--green)}
+.tag-front{background:var(--blue-s);border-color:var(--blue-b);color:var(--blue)}
+.tag-fail{background:var(--red-s);border-color:var(--red-b);color:var(--red)}
+
+/* ── Results table ── */
+.results-wrap{flex:1;overflow:auto}
+.rtable{width:100%;border-collapse:collapse}
+.rtable th{
+  text-align:left;font-size:10px;font-weight:500;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--fg3);padding:10px 14px;
+  border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:2;
+}
+.rtable td{padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg2);border-bottom:1px solid var(--border);white-space:nowrap}
+.rtable tr:hover td{background:var(--surface)}
+.c-ip{color:var(--fg0)}.c-g{color:var(--green)}.c-a{color:var(--amber)}.c-r{color:var(--red)}.c-d{color:var(--fg3)}
+.copy-btn{
+  opacity:0;font-size:10px;padding:1px 5px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:3px;color:var(--fg3);
+  cursor:pointer;margin-left:6px;transition:opacity .1s;
+}
+.rtable tr:hover .copy-btn{opacity:1}
+
+/* ── Fronting cards ── */
+.front-grid{padding:16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow-y:auto}
+.front-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;display:flex;flex-direction:column;gap:10px;
+}
+.front-card:hover{border-color:var(--border2)}
+
+/* ── Config ── */
+.cfg-wrap{flex:1;overflow-y:auto;padding:20px 16px}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:600px}
+.cfg-group{display:flex;flex-direction:column;gap:5px}
+.cfg-full{grid-column:1/-1}
+.cfg-label{font-size:12px;font-weight:500;color:var(--fg1)}
+.cfg-hint{font-size:11px;color:var(--fg4);margin-top:2px}
+.cfg-input{
+  width:100%;height:34px;background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;padding:0 10px;font-family:'JetBrains Mono',monospace;
+  font-size:12px;color:var(--fg0);outline:none;transition:border-color .15s;
+}
+.cfg-input:focus{border-color:var(--fg3)}
+.cfg-input::placeholder{color:var(--fg4)}
+select.cfg-input option{background:var(--surface)}
+
+/* ── Log ── */
+.log-wrap{flex:1;overflow-y:auto;padding:10px 16px}
+.log-entry{display:flex;gap:8px;padding:3px 0;font-family:'JetBrains Mono',monospace;font-size:11px;border-bottom:1px solid var(--border)}
+.log-entry:last-child{border-bottom:none}
+.log-ts{color:var(--fg4);flex-shrink:0}.log-msg{color:var(--fg2);word-break:break-all}
+.log-entry.ok .log-msg{color:var(--green)}.log-entry.err .log-msg{color:var(--red)}
+
+/* ── Empty state ── */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--fg3);padding:40px 16px}
+.empty-icon{font-size:28px;opacity:.3}.empty-title{font-size:14px;font-weight:500;color:var(--fg2)}.empty-desc{font-size:12px;color:var(--fg4);text-align:center}
+
+/* ── Toast ── */
+.toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);
+  background:var(--fg0);color:var(--bg);font-size:13px;font-weight:500;
+  padding:8px 18px;border-radius:6px;opacity:0;pointer-events:none;
+  transition:all .25s;z-index:9999;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .stats-strip{grid-template-columns:repeat(3,1fr)}
+  .cfg-grid{grid-template-columns:1fr}
+  .stat-val{font-size:16px}
+  .stat-cell{padding:10px 12px}
+}
+@media(max-width:480px){
+  .stats-strip{grid-template-columns:repeat(2,1fr)}
+  .topbar-actions .btn-sm span{display:none}
+}
+</style>
+</head>
+<body>
+<div class="sb-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
 <div class="app">
 
-  <!-- ─── Navbar ─── -->
-  <nav class="navbar">
-    <div class="nav-brand">
-      <div class="nav-logo"></div>
-      <span class="nav-title">CDN Hunter</span>
-      <span class="nav-slash">/</span>
-      <span class="nav-project" id="topbar-sub">Overview</span>
-    </div>
-
-    <div class="nav-tabs">
-      <div class="nav-tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
-      <div class="nav-tab" data-tab="results" onclick="setTab('results')">Results <span class="nav-tab-badge" id="badge-results">0</span></div>
-      <div class="nav-tab" data-tab="fronting" onclick="setTab('fronting')">Fronting <span class="nav-tab-badge" id="badge-fronting">0</span></div>
-      <div class="nav-tab" data-tab="config" onclick="setTab('config')">Settings</div>
-    </div>
-
-    <div class="nav-actions">
-      <div class="status-badge" id="status-badge">
-        <div class="status-dot idle" id="status-dot"></div>
-        <span id="status-text">Idle</span>
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-header">
+    <div class="sb-logo"></div>
+    <span class="sb-title">CDN Hunter</span>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-section">
+      <div class="sb-item active" onclick="setTab('overview');closeSidebar()">
+        <span class="sb-icon">&#9670;</span> Overview
       </div>
-      <button class="btn btn-sm" onclick="copyAllIPs()">Copy IPs</button>
-      <button class="btn btn-sm" id="btn-stop" onclick="stopScan()" style="display:none;color:var(--amber);border-color:rgba(245,166,35,0.3)">Stop</button>
-      <button class="btn btn-sm btn-danger" onclick="exitServer()">Exit</button>
+      <div class="sb-item" onclick="setTab('results');closeSidebar()">
+        <span class="sb-icon">&#8801;</span> Results
+        <span class="sb-badge" id="sb-badge-results">0</span>
+      </div>
+      <div class="sb-item" onclick="setTab('fronting');closeSidebar()">
+        <span class="sb-icon">&#9733;</span> Fronting IPs
+        <span class="sb-badge amber" id="sb-badge-fronting">0</span>
+      </div>
+    </div>
+    <div class="sb-section">
+      <div class="sb-section-label">Settings</div>
+      <div class="sb-item" onclick="setTab('config');closeSidebar()">
+        <span class="sb-icon">&#9881;</span> Scan Config
+      </div>
+      <div class="sb-item" onclick="setTab('log');closeSidebar()">
+        <span class="sb-icon">&#9783;</span> Activity Log
+      </div>
     </div>
   </nav>
+  <div class="sb-footer">
+    <button class="sb-btn sb-btn-start" id="sb-btn-start" onclick="startScan()">&#9654; Start Scan</button>
+    <button class="sb-btn sb-btn-stop" id="sb-btn-stop" onclick="stopScan()" style="display:none">&#9632; Stop</button>
+  </div>
+</aside>
 
-  <!-- ─── Main Content ─── -->
-  <div class="main-content">
-
-    <!-- Metrics bar -->
-    <div class="metrics-bar">
-      <div class="metric-cell">
-        <div class="metric-label">Scanned</div>
-        <div class="metric-value" id="m-scanned">0</div>
-        <div class="metric-sub">total probed</div>
-      </div>
-      <div class="metric-cell">
-        <div class="metric-label">Healthy</div>
-        <div class="metric-value green" id="m-healthy">0</div>
-        <div class="metric-sub">responding</div>
-      </div>
-      <div class="metric-cell">
-        <div class="metric-label">Failed</div>
-        <div class="metric-value red" id="m-failed">0</div>
-        <div class="metric-sub">no response</div>
-      </div>
-
-      <div class="metric-cell">
-        <div class="metric-label">Speed</div>
-        <div class="metric-value amber" id="m-speed">0</div>
-        <div class="metric-sub">IPs/sec</div>
-      </div>
-      <div class="metric-cell">
-        <div class="metric-label">Elapsed</div>
-        <div class="metric-value" id="m-elapsed">0s</div>
-        <div class="metric-sub" id="m-eta"></div>
-      </div>
-      <div class="metric-cell">
-        <div class="metric-label">Source</div>
-        <div class="metric-value" id="m-source" style="font-size:16px">-</div>
-        <div class="metric-sub" id="m-cfg-info"></div>
-      </div>
+<!-- Main -->
+<div class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="hamburger" onclick="openSidebar()">&#9776;</div>
+    <span class="topbar-title">CDN Hunter</span>
+    <span class="topbar-slash">/</span>
+    <span class="topbar-sub" id="topbar-sub">Overview</span>
+    <div class="status-pill">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Idle</span>
     </div>
-
-    <!-- Progress -->
-    <div class="progress-section">
-      <div class="progress-label" id="p-label">IDLE</div>
-      <div class="progress-track">
-        <div class="progress-fill" id="p-fill" style="width:0%"></div>
-      </div>
-      <div class="progress-pct" id="p-pct">0%</div>
-    </div>
-
-    <!-- Mobile tab bar (visible only on small screens) -->
-    <div class="mobile-tabs" id="mobile-tabs">
-      <div class="mtab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
-      <div class="mtab" data-tab="results" onclick="setTab('results')">Results</div>
-      <div class="mtab" data-tab="fronting" onclick="setTab('fronting')">Fronting</div>
-      <div class="mtab" data-tab="config" onclick="setTab('config')">Settings</div>
-    </div>
-
-    <!-- Tab content -->
-    <div class="tab-content">
-
-      <!-- ── Overview tab ── -->
-      <div class="tab-page active" id="page-overview">
-        <div class="overview-grid">
-          <div class="panel">
-            <div class="panel-header">
-              <span class="panel-title">Live IPs</span>
-              <button class="btn btn-sm btn-ghost" onclick="copyAllIPs()">Copy All</button>
-            </div>
-            <div class="panel-body">
-              <div class="ip-feed" id="live-ip-list">
-                <div class="empty-state" id="empty-live">
-                  <div class="empty-icon">&#9678;</div>
-                  <div class="empty-title">No IPs found yet</div>
-                  <div class="empty-desc">Start a scan to discover healthy CDN IPs</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="panel">
-            <div class="panel-header">
-              <span class="panel-title">Activity Log</span>
-            </div>
-            <div class="panel-body">
-              <div class="log-feed" id="log-list">
-                <div class="log-entry sys">
-                  <span class="log-ts">--:--</span>
-                  <span class="log-msg">Ready. Configure and start a scan.</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Results tab ── -->
-      <div class="tab-page" id="page-results">
-        <div class="results-wrapper">
-          <table class="results-table">
-            <thead>
-              <tr>
-                <th>IP Address</th>
-                <th>Latency</th>
-                <th>Status</th>
-                <th>CDN</th>
-                <th>Country</th>
-                <th>Throughput</th>
-                <th>Fronting</th>
-              </tr>
-            </thead>
-            <tbody id="results-tbody">
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ── Fronting tab ── -->
-      <div class="tab-page" id="page-fronting">
-        <div class="fronting-grid" id="fronting-list">
-          <div class="empty-state" id="empty-fronting">
-            <div class="empty-icon">&#9733;</div>
-            <div class="empty-title">No fronting IPs verified</div>
-            <div class="empty-desc">Fronting-verified IPs will appear here after scan completes</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Config tab ── -->
-      <div class="tab-page" id="page-config">
-        <div class="config-wrapper">
-          <div class="config-grid">
-            <div class="cfg-group cfg-full">
-              <label class="cfg-label">CDN / Source</label>
-              <select class="cfg-input" id="cfg-cdn">
-                <option value="smart">Smart Scan (recommended)</option>
-                <option value="akamai">Akamai</option>
-                <option value="fastly">Fastly</option>
-                <option value="cloudflare">Cloudflare</option>
-                <option value="google">Google</option>
-                <option value="cloudfront">CloudFront (AWS)</option>
-                <option value="gcore">Gcore</option>
-                <option value="all">All CDNs</option>
-              </select>
-              <div class="cfg-hint">Smart Scan probes all CDN ranges and picks the best responding ones</div>
-            </div>
-            <div class="cfg-group cfg-full">
-              <label class="cfg-label">Host Header</label>
-              <input class="cfg-input" id="cfg-host" placeholder="Leave blank for auto SSL detection">
-            </div>
-            <div class="cfg-group cfg-full">
-              <label class="cfg-label">Psiphon SNI Override</label>
-              <input class="cfg-input" id="cfg-sni" placeholder="auto (e.g. a248.e.akamai.net)">
-            </div>
-
-            <div class="cfg-group">
-              <label class="cfg-label">Concurrency</label>
-              <input class="cfg-input" id="cfg-conc" type="number" value="60" min="1" max="500">
-              <div class="cfg-hint">Android: 25-60 / Desktop: 100-200</div>
-            </div>
-            <div class="cfg-group">
-              <label class="cfg-label">Timeout (seconds)</label>
-              <input class="cfg-input" id="cfg-timeout" type="number" value="4" step="0.5" min="1" max="30">
-            </div>
-            <div class="cfg-group">
-              <label class="cfg-label">Max IPs</label>
-              <input class="cfg-input" id="cfg-sample" type="number" value="3000" min="10" max="100000">
-            </div>
-            <div class="cfg-group">
-              <label class="cfg-label">Retries</label>
-              <input class="cfg-input" id="cfg-retries" type="number" value="2" min="1" max="5">
-            </div>
-            <div class="cfg-group cfg-full">
-              <label class="cfg-label">Save Results to File</label>
-              <input class="cfg-input" id="cfg-out" placeholder="results.txt (leave blank to disable)">
-            </div>
-            <div class="cfg-group cfg-full" style="margin-top:8px">
-              <button class="btn btn-primary" id="btn-start" onclick="startScan()" style="width:180px;height:40px;font-size:14px">
-                Start Scan
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div class="topbar-actions">
+      <button class="btn-sm" onclick="copyAllIPs()"><span>Copy </span>IPs</button>
+      <button class="btn-sm btn-exit" onclick="exitServer()">Exit</button>
     </div>
   </div>
+
+  <!-- Stats -->
+  <div class="stats-strip">
+    <div class="stat-cell"><div class="stat-label">Scanned</div><div class="stat-val" id="s-scanned">0</div><div class="stat-sub">total probed</div></div>
+    <div class="stat-cell"><div class="stat-label">Healthy</div><div class="stat-val green" id="s-healthy">0</div><div class="stat-sub">responding</div></div>
+    <div class="stat-cell"><div class="stat-label">Failed</div><div class="stat-val red" id="s-failed">0</div><div class="stat-sub">no response</div></div>
+    <div class="stat-cell"><div class="stat-label">Speed</div><div class="stat-val amber" id="s-speed">0</div><div class="stat-sub">IPs/sec</div></div>
+    <div class="stat-cell"><div class="stat-label">Elapsed</div><div class="stat-val" id="s-elapsed">0s</div><div class="stat-sub" id="s-eta"></div></div>
+    <div class="stat-cell"><div class="stat-label">Source</div><div class="stat-val" id="s-source" style="font-size:14px">-</div><div class="stat-sub" id="s-cfg"></div></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-row">
+    <div class="prog-label" id="p-label">IDLE</div>
+    <div class="prog-track"><div class="prog-fill" id="p-fill" style="width:0%"></div></div>
+    <div class="prog-pct" id="p-pct">0%</div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
+    <div class="tab" data-tab="results" onclick="setTab('results')">Results <span class="tab-count" id="tc-results">0</span></div>
+    <div class="tab" data-tab="fronting" onclick="setTab('fronting')">Fronting <span class="tab-count" id="tc-fronting">0</span></div>
+    <div class="tab" data-tab="config" onclick="setTab('config')">Config</div>
+    <div class="tab" data-tab="log" onclick="setTab('log')">Log</div>
+  </div>
+
+  <!-- Tab: Overview -->
+  <div class="tab-page active" id="page-overview">
+    <div class="ip-feed" id="live-ip-list">
+      <div class="empty" id="empty-live">
+        <div class="empty-icon">&#9678;</div>
+        <div class="empty-title">No IPs found yet</div>
+        <div class="empty-desc">Start a scan to discover healthy CDN IPs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Results -->
+  <div class="tab-page" id="page-results">
+    <div class="results-wrap">
+      <table class="rtable"><thead><tr>
+        <th>IP Address</th><th>Latency</th><th>Code</th><th>CDN</th><th>Country</th><th>kB/s</th><th>Status</th>
+      </tr></thead><tbody id="results-tbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Tab: Fronting -->
+  <div class="tab-page" id="page-fronting">
+    <div class="front-grid" id="fronting-list">
+      <div class="empty" id="empty-fronting">
+        <div class="empty-icon">&#9733;</div>
+        <div class="empty-title">No fronting IPs verified</div>
+        <div class="empty-desc">Fronting-verified IPs appear here after scan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Config -->
+  <div class="tab-page" id="page-config">
+    <div class="cfg-wrap">
+      <div class="cfg-grid">
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">CDN / Source</label>
+          <select class="cfg-input" id="cfg-cdn">
+            <option value="smart">Smart Scan (recommended)</option>
+            <option value="akamai">Akamai</option>
+            <option value="fastly">Fastly</option>
+            <option value="cloudflare">Cloudflare</option>
+            <option value="google">Google</option>
+            <option value="cloudfront">CloudFront (AWS)</option>
+            <option value="gcore">Gcore</option>
+            <option value="all">All CDNs</option>
+          </select>
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Host Header</label>
+          <input class="cfg-input" id="cfg-host" placeholder="Leave blank for auto SSL">
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Psiphon SNI</label>
+          <input class="cfg-input" id="cfg-sni" placeholder="auto (e.g. a248.e.akamai.net)">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Concurrency</label>
+          <input class="cfg-input" id="cfg-conc" type="number" value="60">
+          <div class="cfg-hint">Android: 25-60</div>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Timeout (s)</label>
+          <input class="cfg-input" id="cfg-timeout" type="number" value="4" step="0.5">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Max IPs</label>
+          <input class="cfg-input" id="cfg-sample" type="number" value="3000">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Retries</label>
+          <input class="cfg-input" id="cfg-retries" type="number" value="2">
+        </div>
+        <div class="cfg-group cfg-full">
+          <label class="cfg-label">Save to File</label>
+          <input class="cfg-input" id="cfg-out" placeholder="results.txt (blank = off)">
+        </div>
+        <div class="cfg-group cfg-full" style="margin-top:6px">
+          <button class="sb-btn sb-btn-start" onclick="startScan()" style="max-width:180px">&#9654; Start Scan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Log -->
+  <div class="tab-page" id="page-log">
+    <div class="log-wrap" id="log-list">
+      <div class="log-entry"><span class="log-ts">--:--</span><span class="log-msg">Ready</span></div>
+    </div>
+  </div>
+
 </div>
-
+</div>
 <div class="toast" id="toast"></div>
-
 <script>
-// ─── State ───────────────────────────────────────────────
-let _results = [];
-let _liveIPs = [];
-let _pollTimer = null;
-let _startTime = null;
+let _results=[],_liveIPs=[],_pollTimer=null,_startTime=null;
 
-// ─── Tabs ────────────────────────────────────────────────
-function setTab(name) {
-  document.querySelectorAll('.nav-tab').forEach(t =>
-    t.classList.toggle('active', t.dataset.tab === name)
-  );
-  document.querySelectorAll('.mtab').forEach(t =>
-    t.classList.toggle('active', t.dataset.tab === name)
-  );
-  document.querySelectorAll('.tab-page').forEach(p =>
-    p.classList.toggle('active', p.id === 'page-' + name)
-  );
-  const labels = {overview:'Overview', results:'Results', fronting:'Fronting', config:'Settings'};
-  document.getElementById('topbar-sub').textContent = labels[name] || name;
-}
+function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sb-overlay').classList.add('open')}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sb-overlay').classList.remove('open')}
 
-// ─── Toast ───────────────────────────────────────────────
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
-}
-
-// ─── Copy functions ──────────────────────────────────────
-function copyAllIPs() {
-  const ips = _liveIPs.map(r => r.ip || r).filter(Boolean);
-  if (!ips.length) { showToast('No IPs available'); return; }
-  navigator.clipboard.writeText(ips.join('\\n'))
-    .then(() => showToast(ips.length + ' IPs copied'))
-    .catch(() => showToast('Copy failed'));
-}
-
-function copyIP(ip) {
-  navigator.clipboard.writeText(ip)
-    .then(() => showToast('Copied: ' + ip))
-    .catch(() => showToast('Copy failed'));
-}
-
-function exitServer() {
-  if (!confirm('Close the web server?')) return;
-  fetch('/api/exit', {method:'POST'}).finally(() => showToast('Server shutting down'));
-}
-
-// ─── Get config from UI ──────────────────────────────────
-function getCfg() {
-  return {
-    cdn:     document.getElementById('cfg-cdn').value,
-    host:    document.getElementById('cfg-host').value,
-    sni:     document.getElementById('cfg-sni').value,
-    conc:    document.getElementById('cfg-conc').value || 60,
-    timeout: document.getElementById('cfg-timeout').value || 4,
-    sample:  document.getElementById('cfg-sample').value || 3000,
-    retries: document.getElementById('cfg-retries').value || 2,
-    out:     document.getElementById('cfg-out').value || '',
-  };
-}
-
-// ─── Start / Stop scan ───────────────────────────────────
-function startScan() {
-  const btn = document.getElementById('btn-start');
-  btn.disabled = true;
-  btn.textContent = 'Scanning...';
-  _startTime = Date.now();
-  const stopBtn = document.getElementById('btn-stop');
-  if (stopBtn) stopBtn.style.display = '';
-  fetch('/api/start', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(getCfg())
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (!d.ok) {
-      showToast(d.msg || 'Error starting scan');
-      resetBtn();
-      if (stopBtn) stopBtn.style.display = 'none';
-    } else {
-      startPoll();
-    }
-  })
-  .catch(() => { showToast('Cannot reach server'); resetBtn(); if (stopBtn) stopBtn.style.display = 'none'; });
-}
-
-function stopScan() {
-  fetch('/api/stop', {method:'POST'}).catch(() => {});
-}
-
-function resetBtn() {
-  const btn = document.getElementById('btn-start');
-  if (btn) { btn.disabled = false; btn.textContent = 'Start Scan'; }
-}
-
-// ─── Polling ─────────────────────────────────────────────
-function startPoll() {
-  if (_pollTimer) clearInterval(_pollTimer);
-  _pollTimer = setInterval(poll, 900);
-  poll();
-}
-
-function poll() {
-  fetch('/api/state')
-    .then(r => r.json())
-    .then(updateUI)
-    .catch(() => {});
-}
-
-// ─── Update UI from server state ─────────────────────────
-function updateUI(s) {
-  // Metrics
-  const scanned = s.scanned || 0;
-  const healthy = s.healthy || 0;
-  const failed = s.failed || 0;
-  setText('m-scanned', fmtNum(scanned));
-  setText('m-healthy', fmtNum(healthy));
-  setText('m-failed', fmtNum(failed));
-
-  const elapsed = s.elapsed || (s.running && _startTime ? (Date.now() - _startTime) / 1000 : 0);
-  setText('m-elapsed', fmtTime(elapsed));
-
-  if (scanned > 0 && elapsed > 0) {
-    const speed = Math.round(scanned / elapsed);
-    setText('m-speed', fmtNum(speed));
-    const total = s.total || 0;
-    const remaining = total > scanned ? total - scanned : 0;
-    const eta = speed > 0 && remaining > 0 ? Math.round(remaining / speed) : 0;
-    setText('m-eta', eta > 0 ? 'ETA ' + fmtTime(eta) : '');
-  }
-
-  const src = (s.source || '-');
-  setText('m-source', src);
-
-  // Progress
-  const pct = Math.round(s.pct || 0);
-  const fill = document.getElementById('p-fill');
-  if (fill) {
-    fill.style.width = pct + '%';
-    fill.classList.toggle('complete', pct >= 100 && !s.running);
-  }
-  setText('p-pct', pct + '%');
-  setText('p-label', s.running ? 'SCANNING' : (scanned > 0 ? 'COMPLETE' : 'IDLE'));
-
-  // Status badge
-  const dot = document.getElementById('status-dot');
-  const stxt = document.getElementById('status-text');
-  const stopBtn = document.getElementById('btn-stop');
-  const startBtn = document.getElementById('btn-start');
-  if (s.running) {
-    dot.className = 'status-dot live';
-    stxt.textContent = 'Scanning';
-    if (stopBtn) stopBtn.style.display = '';
-    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Scanning...'; }
-    // Speed up polling if not already fast
-    if (!_pollTimer) startPoll();
-  } else if (scanned > 0) {
-    dot.className = 'status-dot done';
-    stxt.textContent = 'Done';
-    if (stopBtn) stopBtn.style.display = 'none';
-    resetBtn();
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-  } else {
-    dot.className = 'status-dot idle';
-    stxt.textContent = 'Idle';
-    if (stopBtn) stopBtn.style.display = 'none';
-  }
-
-  // Live IPs
-  if (s.live_ips && s.live_ips.length) {
-    _liveIPs = s.live_ips;
-    renderLiveIPs(s.live_ips.filter(r => r.ok));
-  }
-
-  // Results
-  if (s.results && s.results.length) {
-    _results = s.results;
-    _liveIPs = s.results.filter(r => r.ok);
-    renderResults(s.results.filter(r => r.ok));
-    renderFronting(s.results);
-    setBadge('badge-results', s.results.filter(r => r.ok).length);
-  }
-
-  // Log
-  if (s.log && s.log.length) renderLog(s.log);
-}
-
-// ─── Render: Live IPs ────────────────────────────────────
-function renderLiveIPs(ips) {
-  const el = document.getElementById('live-ip-list');
-  if (!el) return;
-  const empty = document.getElementById('empty-live');
-  if (!ips.length) return;
-  if (empty) empty.style.display = 'none';
-
-  const html = ips.slice().reverse().slice(0, 50).map(r => {
-    const ms = r.ms || 0;
-    const msCls = ms < 200 ? 'fast' : ms < 400 ? 'medium' : 'slow';
-    const isFront = r.fronting_ok || r.fronting || r.front;
-    const cc = r.country || r.cc || '';
-    return '<div class="ip-row">' +
-      '<div class="ip-addr">' + r.ip + '</div>' +
-      '<div class="ip-ms ' + msCls + '">' + ms + 'ms</div>' +
-      '<div class="ip-cc">' + cc + '</div>' +
-      '<div class="ip-tags">' +
-        '<span class="tag tag-ok">OK</span>' +
-        (isFront ? '<span class="tag tag-front">FRONT</span>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
-  el.innerHTML = html;
-}
-
-// ─── Render: Results table ───────────────────────────────
-function renderResults(results) {
-  const tbody = document.getElementById('results-tbody');
-  if (!tbody) return;
-
-  tbody.innerHTML = results.map(r => {
-    const ms = r.ms || 0;
-    const msCls = ms < 200 ? 'col-green' : ms < 400 ? 'col-amber' : 'col-red';
-    const isFront = r.fronting_ok || r.fronting || r.front;
-    const cc = r.country || r.cc || '-';
-    const cdn = r.cdn || '-';
-    return '<tr>' +
-      '<td class="col-ip">' + r.ip + ' <button class="copy-btn" onclick="copyIP(\\'' + r.ip + '\\')">copy</button></td>' +
-      '<td class="' + msCls + '">' + ms + 'ms</td>' +
-      '<td class="col-dim">' + (r.code || '200') + '</td>' +
-      '<td class="col-dim">' + cdn + '</td>' +
-      '<td class="col-dim">' + cc + '</td>' +
-      '<td class="' + (r.kbps > 1000 ? 'col-green' : 'col-dim') + '">' + (r.kbps ? Math.round(r.kbps) + ' kB/s' : '-') + '</td>' +
-      '<td>' +
-        '<span class="tag tag-ok">OK</span>' +
-        (isFront ? ' <span class="tag tag-front">FRONT</span>' : '') +
-      '</td>' +
-    '</tr>';
-  }).join('');
-
-  setBadge('badge-results', results.length);
-}
-
-// ─── Render: Fronting ────────────────────────────────────
-function renderFronting(results) {
-  const front = results.filter(r => r.fronting_ok || r.fronting || r.front);
-  setBadge('badge-fronting', front.length);
-  const el = document.getElementById('fronting-list');
-  if (!el) return;
-
-  const empty = document.getElementById('empty-fronting');
-  if (!front.length) {
-    if (empty) empty.style.display = 'flex';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  // Group by SNI
-  const groups = {};
-  front.forEach(r => {
-    const sni = r.sni || r.fronting_sni || r.host || 'Unknown';
-    if (!groups[sni]) groups[sni] = [];
-    groups[sni].push(r.ip);
+function setTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.tab-page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
+  document.querySelectorAll('.sb-item').forEach(item=>{
+    const onclick=item.getAttribute('onclick')||'';
+    item.classList.toggle('active',onclick.includes("'"+name+"'"));
   });
-
-  el.innerHTML = Object.entries(groups).map(([sni, ips]) =>
-    '<div class="fronting-card">' +
-      '<div class="fronting-card-header">' +
-        '<div>' +
-          '<div class="fronting-sni-label">SNI</div>' +
-          '<div class="fronting-sni-value">' + sni + '</div>' +
-        '</div>' +
-        '<button class="btn btn-sm" onclick="copyIP(\\'' + ips.join('\\n') + '\\')">Copy IPs</button>' +
-      '</div>' +
-      '<div>' +
-        '<div class="fronting-ips-label">IPs (' + ips.length + ')</div>' +
-        '<div class="fronting-ips-value">' + ips.join(' &middot; ') + '</div>' +
-      '</div>' +
-    '</div>'
-  ).join('');
+  const labels={overview:'Overview',results:'Results',fronting:'Fronting IPs',config:'Scan Config',log:'Activity Log'};
+  document.getElementById('topbar-sub').textContent=labels[name]||name;
 }
 
-// ─── Render: Log ─────────────────────────────────────────
-function renderLog(logs) {
-  const el = document.getElementById('log-list');
-  if (!el) return;
-  const now = new Date();
-  el.innerHTML = logs.slice(-30).map(msg => {
-    const cls = msg.startsWith('OK') ? 'ok' : (msg.startsWith('ERR') || msg.includes('error') ? 'err' : '');
-    const ts = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    return '<div class="log-entry ' + cls + '">' +
-      '<span class="log-ts">' + ts + '</span>' +
-      '<span class="log-msg">' + msg + '</span>' +
-    '</div>';
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+
+function copyAllIPs(){
+  const ips=_liveIPs.map(r=>r.ip||r).filter(Boolean);
+  if(!ips.length){showToast('No IPs yet');return}
+  navigator.clipboard.writeText(ips.join('\n')).then(()=>showToast(ips.length+' IPs copied')).catch(()=>showToast('Copy failed'));
+}
+function copyIP(ip){navigator.clipboard.writeText(ip).then(()=>showToast('Copied: '+ip)).catch(()=>showToast('Copy failed'))}
+function exitServer(){if(!confirm('Close web server?'))return;fetch('/api/exit',{method:'POST'}).finally(()=>showToast('Server closed'))}
+
+function getCfg(){return{
+  cdn:document.getElementById('cfg-cdn').value,
+  host:document.getElementById('cfg-host').value,
+  sni:document.getElementById('cfg-sni').value,
+  conc:document.getElementById('cfg-conc').value||60,
+  timeout:document.getElementById('cfg-timeout').value||4,
+  sample:document.getElementById('cfg-sample').value||3000,
+  retries:document.getElementById('cfg-retries').value||2,
+  out_file:document.getElementById('cfg-out').value||'',
+}}
+
+function startScan(){
+  const btn=document.getElementById('sb-btn-start');
+  btn.disabled=true;btn.textContent='Scanning...';
+  document.getElementById('sb-btn-stop').style.display='';
+  _startTime=Date.now();
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getCfg())})
+  .then(r=>r.json()).then(d=>{
+    if(!d.ok){showToast(d.msg||'Error');resetBtn()}
+    else{startPoll()}
+  }).catch(()=>{showToast('Cannot reach server');resetBtn()});
+}
+function stopScan(){fetch('/api/stop',{method:'POST'}).catch(()=>{})}
+function resetBtn(){
+  const btn=document.getElementById('sb-btn-start');
+  btn.disabled=false;btn.textContent='\u25B6 Start Scan';
+  document.getElementById('sb-btn-stop').style.display='none';
+}
+
+function startPoll(){if(_pollTimer)clearInterval(_pollTimer);_pollTimer=setInterval(poll,800);poll()}
+function poll(){fetch('/api/state').then(r=>r.json()).then(updateUI).catch(()=>{})}
+
+function updateUI(s){
+  const scanned=s.scanned||0,healthy=s.healthy||0,failed=s.failed||0;
+  setText('s-scanned',fmtNum(scanned));
+  setText('s-healthy',fmtNum(healthy));
+  setText('s-failed',fmtNum(failed));
+  const elapsed=_startTime&&s.running?(Date.now()-_startTime)/1000:0;
+  setText('s-elapsed',fmtTime(elapsed));
+  if(scanned>0&&elapsed>0){
+    const speed=Math.round(scanned/elapsed);
+    setText('s-speed',fmtNum(speed));
+  }
+  setText('s-source',s.source||'-');
+
+  const pct=Math.round(s.pct||0);
+  const fill=document.getElementById('p-fill');
+  if(fill){fill.style.width=pct+'%';fill.classList.toggle('done',pct>=100&&!s.running)}
+  setText('p-pct',pct+'%');
+  setText('p-label',s.running?'SCANNING':(scanned>0?'COMPLETE':'IDLE'));
+
+  const dot=document.getElementById('status-dot');
+  const stxt=document.getElementById('status-text');
+  if(s.running){
+    dot.className='status-dot live';stxt.textContent='Scanning';
+    document.getElementById('sb-btn-stop').style.display='';
+    document.getElementById('sb-btn-start').disabled=true;
+    if(!_pollTimer)startPoll();
+  }else if(scanned>0){
+    dot.className='status-dot done';stxt.textContent='Done';
+    resetBtn();if(_pollTimer){clearInterval(_pollTimer);_pollTimer=null}
+  }else{
+    dot.className='status-dot';stxt.textContent='Idle';
+  }
+
+  if(s.live_ips&&s.live_ips.length){
+    const okIPs=s.live_ips.filter(r=>r.ok);
+    if(okIPs.length){_liveIPs=okIPs;renderLiveIPs(okIPs)}
+  }
+  if(s.results&&s.results.length){
+    const ok=s.results.filter(r=>r.ok);
+    _results=s.results;_liveIPs=ok;
+    renderResults(ok);renderFronting(s.results);
+    setBadge('tc-results',ok.length);setBadge('sb-badge-results',ok.length);
+  }
+  if(s.log&&s.log.length)renderLog(s.log);
+}
+
+function renderLiveIPs(ips){
+  const el=document.getElementById('live-ip-list');if(!el)return;
+  const empty=document.getElementById('empty-live');
+  if(!ips.length)return;
+  if(empty)empty.style.display='none';
+  el.innerHTML=ips.slice().reverse().slice(0,50).map(r=>{
+    const ms=r.ms||0;const cls=ms<200?'fast':ms<400?'med':'slow';
+    const fr=r.fronting_ok||r.fronting;
+    return '<div class="ip-row"><div class="ip-addr">'+r.ip+'</div><div class="ip-ms '+cls+'">'+ms+'ms</div><div class="ip-cc">'+(r.country||r.cc||'')+'</div><div class="ip-tags"><span class="tag tag-ok">OK</span>'+(fr?'<span class="tag tag-front">FRONT</span>':'')+'</div></div>';
   }).join('');
-  el.scrollTop = el.scrollHeight;
 }
 
-// ─── Helpers ─────────────────────────────────────────────
-function setText(id, html) {
-  const el = document.getElementById(id);
-  if (el) el.innerHTML = String(html);
-}
-function setBadge(id, count) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = count;
-}
-function fmtNum(n) {
-  if (n >= 10000) return (n/1000).toFixed(1) + 'k';
-  if (n >= 1000) return n.toLocaleString();
-  return String(n || 0);
-}
-function fmtTime(s) {
-  s = Math.round(s);
-  if (s < 60) return s + 's';
-  return Math.floor(s/60) + 'm ' + (s%60) + 's';
+function renderResults(results){
+  const tbody=document.getElementById('results-tbody');if(!tbody)return;
+  tbody.innerHTML=results.map(r=>{
+    const ms=r.ms||0;const cls=ms<200?'c-g':ms<400?'c-a':'c-r';
+    const fr=r.fronting_ok||r.fronting;
+    return '<tr><td class="c-ip">'+r.ip+' <button class="copy-btn" onclick="copyIP(\''+r.ip+'\')">copy</button></td><td class="'+cls+'">'+ms+'ms</td><td class="c-d">'+(r.code||'200')+'</td><td class="c-d">'+(r.cdn||'-')+'</td><td class="c-d">'+(r.country||r.cc||'-')+'</td><td class="'+(r.kbps>1000?'c-g':'c-d')+'">'+(r.kbps?Math.round(r.kbps):'- ')+'</td><td><span class="tag tag-ok">OK</span>'+(fr?' <span class="tag tag-front">FRONT</span>':'')+'</td></tr>';
+  }).join('');
 }
 
-// ─── Init ────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  poll();
-  // Keep polling to catch in-progress scans on page reload
-  setInterval(poll, 1500);
-});
+function renderFronting(results){
+  const front=results.filter(r=>r.fronting_ok||r.fronting);
+  setBadge('tc-fronting',front.length);setBadge('sb-badge-fronting',front.length);
+  const el=document.getElementById('fronting-list');if(!el)return;
+  const empty=document.getElementById('empty-fronting');
+  if(!front.length){if(empty)empty.style.display='flex';return}
+  if(empty)empty.style.display='none';
+  const groups={};
+  front.forEach(r=>{const sni=r.sni||r.fronting_sni||r.host||'Unknown';if(!groups[sni])groups[sni]=[];groups[sni].push(r.ip)});
+  el.innerHTML=Object.entries(groups).map(([sni,ips])=>'<div class="front-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:10px;color:var(--fg3);text-transform:uppercase">SNI</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--fg0);margin-top:2px">'+sni+'</div></div><button class="btn-sm" onclick="copyIP(\''+ips.join('\\n')+'\')">Copy IPs</button></div><div><div style="font-size:10px;color:var(--fg3);margin-bottom:3px">IPs ('+ips.length+')</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--green)">'+ips.join(' &middot; ')+'</div></div></div>').join('');
+}
+
+function renderLog(logs){
+  const el=document.getElementById('log-list');if(!el)return;
+  el.innerHTML=logs.slice(-40).map(msg=>{
+    const cls=msg.startsWith('OK')?'ok':(msg.includes('ERR')||msg.includes('error')?'err':'');
+    const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    return '<div class="log-entry '+cls+'"><span class="log-ts">'+ts+'</span><span class="log-msg">'+msg+'</span></div>';
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+function setText(id,v){const el=document.getElementById(id);if(el)el.innerHTML=String(v)}
+function setBadge(id,n){const el=document.getElementById(id);if(el)el.textContent=n}
+function fmtNum(n){return n>=10000?(n/1000).toFixed(1)+'k':n>=1000?n.toLocaleString():String(n||0)}
+function fmtTime(s){s=Math.round(s);return s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'}
+
+document.addEventListener('DOMContentLoaded',()=>{poll();setInterval(poll,1500)});
 </script>
 </body>
 </html>
-
 
 """
 
