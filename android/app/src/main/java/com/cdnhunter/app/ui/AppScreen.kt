@@ -1,6 +1,7 @@
 package com.cdnhunter.app.ui
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,8 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,9 +33,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.data.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ── Colors (clean, no purple) ───────────────────────────────────────────────
+// ── Colors ──────────────────────────────────────────────────────────────────
 val DarkBg = Color(0xFF000000)
 val CardBg = Color(0xFF1C1C1E)
 val CardBg2 = Color(0xFF2C2C2E)
@@ -42,17 +50,13 @@ val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8E8E93)
 val TextMuted = Color(0xFF48484A)
 
+
 // ── Main App Screen ─────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppScreen(
-    state: ScanState,
-    config: ScanConfig,
-    onConfigChange: (ScanConfig) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onCopyIps: () -> Unit,
-    onUpdateRanges: () -> Unit = {},
+    state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
+    onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit = {},
 ) {
     val tabs = listOf("Results", "Fronting", "Live", "Config")
     val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
@@ -60,53 +64,42 @@ fun AppScreen(
 
     Scaffold(
         containerColor = DarkBg,
-        topBar = { TopBar(state = state, onCopyIps = onCopyIps, onUpdateRanges = onUpdateRanges) },
-        bottomBar = { BottomActions(running = state.running, onStart = onStart, onStop = onStop) }
+        topBar = { TopBar(state, onCopyIps, onUpdateRanges) },
+        bottomBar = { BottomActions(state.running, onStart, onStop) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(10.dp))
-            StatsStrip(state)
+            GlassStatsStrip(state)
             Spacer(Modifier.height(10.dp))
             ProgressIndicator(state)
             Spacer(Modifier.height(8.dp))
             PhaseSteps(state.phase)
             Spacer(Modifier.height(14.dp))
-
-            // Segmented tab bar
+            // Segmented control
             Surface(color = CardBg, shape = RoundedCornerShape(10.dp)) {
                 Row(Modifier.fillMaxWidth().padding(3.dp)) {
                     tabs.forEachIndexed { idx, title ->
                         val selected = pagerState.currentPage == idx
                         Surface(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
                             color = if (selected) CardBg2 else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp),
                             onClick = { coroutineScope.launch { pagerState.animateScrollToPage(idx) } }
                         ) {
-                            Text(
-                                title, modifier = Modifier.padding(vertical = 9.dp),
-                                fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) TextPrimary else TextSecondary, textAlign = TextAlign.Center
-                            )
+                            Text(title, Modifier.padding(vertical = 9.dp), fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) TextPrimary else TextSecondary, textAlign = TextAlign.Center)
                         }
                     }
                 }
             }
-
             Spacer(Modifier.height(14.dp))
-
-            // Swipeable pages
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                when (page) {
-                    0 -> ResultsTab(state.results)
-                    1 -> FrontingTab(state.results)
-                    2 -> OverviewTab(state)
-                    3 -> ConfigTab(config, onConfigChange)
-                }
+                when (page) { 0 -> ResultsTab(state.results); 1 -> FrontingTab(state.results); 2 -> OverviewTab(state); 3 -> ConfigTab(config, onConfigChange) }
             }
         }
     }
 }
+
 
 // ── Top Bar ─────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,32 +109,22 @@ fun TopBar(state: ScanState, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit) 
         colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AccentBlue),
-                    contentAlignment = Alignment.Center
-                ) { Text("CH", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AccentBlue), contentAlignment = Alignment.Center) {
+                    Text("CH", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
                 Column {
                     Text("CDN Hunter", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         StatusDot(state.running)
-                        Text(
-                            when {
-                                state.running -> state.phaseDetail.ifBlank { "Scanning..." }
-                                state.pct >= 100 -> "Complete"
-                                else -> "Ready"
-                            }, fontSize = 12.sp, color = TextSecondary
-                        )
+                        Text(when { state.running -> state.phaseDetail.ifBlank { "Scanning..." }; state.pct >= 100 -> "Complete"; else -> "Ready" },
+                            fontSize = 12.sp, color = TextSecondary)
                     }
                 }
             }
         },
         actions = {
-            IconButton(onClick = onUpdateRanges) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Update", tint = AccentBlue, modifier = Modifier.size(22.dp))
-            }
-            IconButton(onClick = onCopyIps) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = TextSecondary, modifier = Modifier.size(20.dp))
-            }
+            IconButton(onClick = onUpdateRanges) { Icon(Icons.Rounded.Refresh, "Update", tint = AccentBlue, modifier = Modifier.size(22.dp)) }
+            IconButton(onClick = onCopyIps) { Icon(Icons.Rounded.ContentCopy, "Copy", tint = TextSecondary, modifier = Modifier.size(20.dp)) }
         }
     )
 }
@@ -149,45 +132,49 @@ fun TopBar(state: ScanState, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit) 
 @Composable
 fun StatusDot(running: Boolean) {
     val color by animateColorAsState(if (running) GreenOk else TextMuted, label = "dot")
-    Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+    // Pulsing animation when running
+    val scale by animateFloatAsState(if (running) 1f else 0.8f, animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse")
+    Box(Modifier.size(7.dp).scale(if (running) scale else 1f).clip(CircleShape).background(color))
 }
 
 // ── Bottom Actions ──────────────────────────────────────────────────────────
 @Composable
 fun BottomActions(running: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
     Surface(color = DarkBg) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = onStart, enabled = !running,
-                modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
+        Row(Modifier.fillMaxWidth().padding(16.dp, 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onStart, enabled = !running, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, disabledContainerColor = AccentBlue.copy(0.3f))
             ) { Text("Start Scan", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
-            OutlinedButton(
-                onClick = onStop, enabled = running,
-                modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
+            OutlinedButton(onClick = onStop, enabled = running, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.5.dp, if (running) RedFail else BorderColor)
             ) { Text("Stop", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = if (running) RedFail else TextMuted) }
         }
     }
 }
 
-// ── Stats ───────────────────────────────────────────────────────────────────
+
+// ── Glass Stats (premium look) ──────────────────────────────────────────────
 @Composable
-fun StatsStrip(state: ScanState) {
+fun GlassStatsStrip(state: ScanState) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatCard("Scanned", "${state.scanned}", TextPrimary, Modifier.weight(1f))
-        StatCard("Healthy", "${state.healthy}", GreenOk, Modifier.weight(1f))
-        StatCard("Failed", "${state.failed}", RedFail, Modifier.weight(1f))
-        StatCard("${state.pct}%", state.source, AccentBlue, Modifier.weight(1f))
+        GlassStatCard(Icons.Rounded.Radar, "Scanned", "${state.scanned}", TextPrimary, Modifier.weight(1f))
+        GlassStatCard(Icons.Rounded.CheckCircle, "Healthy", "${state.healthy}", GreenOk, Modifier.weight(1f))
+        GlassStatCard(Icons.Rounded.Cancel, "Failed", "${state.failed}", RedFail, Modifier.weight(1f))
+        GlassStatCard(Icons.Rounded.Speed, "${state.pct}%", state.source, AccentBlue, Modifier.weight(1f))
     }
 }
 
 @Composable
-fun StatCard(label: String, value: String, valueColor: Color, modifier: Modifier) {
-    Surface(modifier = modifier, color = CardBg, shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(10.dp, 8.dp)) {
+fun GlassStatCard(icon: ImageVector, label: String, value: String, color: Color, modifier: Modifier) {
+    Surface(
+        modifier = modifier, shape = RoundedCornerShape(14.dp),
+        color = color.copy(alpha = 0.08f), border = BorderStroke(0.5.dp, color.copy(alpha = 0.2f))
+    ) {
+        Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = color.copy(0.7f), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.height(4.dp))
             Text(label, fontSize = 10.sp, color = TextSecondary)
-            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = valueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -196,11 +183,8 @@ fun StatCard(label: String, value: String, valueColor: Color, modifier: Modifier
 @Composable
 fun ProgressIndicator(state: ScanState) {
     @Suppress("DEPRECATION")
-    LinearProgressIndicator(
-        progress = state.pct / 100f,
-        modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-        color = AccentBlue, trackColor = CardBg,
-    )
+    LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
+        color = AccentBlue, trackColor = CardBg)
 }
 
 // ── Phase Steps ─────────────────────────────────────────────────────────────
@@ -208,17 +192,13 @@ fun ProgressIndicator(state: ScanState) {
 fun PhaseSteps(current: ScanPhase) {
     val phases = listOf(ScanPhase.SCANNING, ScanPhase.IP_CHECK, ScanPhase.FRONTING, ScanPhase.THROUGHPUT, ScanPhase.DONE)
     val currentIdx = phases.indexOf(current)
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         phases.forEachIndexed { idx, phase ->
-            val isDone = idx < currentIdx
-            val isActive = idx == currentIdx
+            val isDone = idx < currentIdx; val isActive = idx == currentIdx
             val bg = when { isDone -> GreenOk.copy(0.12f); isActive -> AccentBlue.copy(0.12f); else -> CardBg }
             val fg = when { isDone -> GreenOk; isActive -> AccentBlue; else -> TextMuted }
             Surface(shape = RoundedCornerShape(16.dp), color = bg) {
-                Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.padding(10.dp, 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (isDone) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(13.dp))
                     Text(phase.label, fontSize = 11.sp, color = fg, fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
                 }
@@ -227,27 +207,25 @@ fun PhaseSteps(current: ScanPhase) {
     }
 }
 
+
 // ── Overview/Live Tab ───────────────────────────────────────────────────────
 @Composable
 fun OverviewTab(state: ScanState) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.running && state.phase != ScanPhase.IDLE) {
-            item(key = "phase_banner") {
-                Surface(color = AccentBlue.copy(0.08f), shape = RoundedCornerShape(8.dp)) {
+            item(key = "banner") {
+                Surface(color = AccentBlue.copy(0.08f), shape = RoundedCornerShape(10.dp)) {
                     Text("${state.phase.label} — ${state.phaseDetail}", fontSize = 13.sp, color = AccentBlue,
                         fontWeight = FontWeight.Medium, modifier = Modifier.padding(12.dp, 8.dp))
                 }
             }
         }
         items(state.logs.takeLast(6).reversed(), key = { it.hashCode() }) { log ->
-            val color = when {
-                log.startsWith("OK ") -> GreenOk; log.contains("ERR") || log.contains("STOP") -> RedFail
-                log.contains("Done") -> GreenOk; else -> TextSecondary
-            }
+            val color = when { log.startsWith("OK ") -> GreenOk; log.contains("ERR") || log.contains("STOP") -> RedFail; log.contains("Done") -> GreenOk; else -> TextSecondary }
             Text(log, fontSize = 12.sp, color = color, fontFamily = FontFamily.Monospace)
         }
         if (state.liveIps.isNotEmpty()) {
-            item(key = "live_header") { Text("Live Results", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 8.dp)) }
+            item(key = "hdr") { Text("Live Results", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 8.dp)) }
             items(state.liveIps.takeLast(12).reversed(), key = { it.ip }) { r ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
@@ -269,9 +247,13 @@ fun OverviewTab(state: ScanState) {
     }
 }
 
-// ── Results Tab ─────────────────────────────────────────────────────────────
+
+// ── Results Tab (tap to copy IP) ────────────────────────────────────────────
 @Composable
 fun ResultsTab(results: List<ScanResult>) {
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+
     if (results.isEmpty()) {
         Column(Modifier.fillMaxWidth().padding(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.Search, null, tint = TextMuted, modifier = Modifier.size(36.dp))
@@ -282,7 +264,21 @@ fun ResultsTab(results: List<ScanResult>) {
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items(results, key = { it.ip }) { r ->
-            Surface(color = CardBg, shape = RoundedCornerShape(12.dp)) {
+            var copied by remember { mutableStateOf(false) }
+            val borderColor by animateColorAsState(if (copied) GreenOk else Color.Transparent, tween(300), label = "brd")
+            val bgColor by animateColorAsState(if (copied) GreenOk.copy(0.08f) else CardBg, tween(300), label = "bg")
+
+            LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
+
+            Surface(
+                color = bgColor, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, borderColor),
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(r.ip))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    copied = true
+                }
+            ) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
                     Spacer(Modifier.width(12.dp))
@@ -295,15 +291,20 @@ fun ResultsTab(results: List<ScanResult>) {
                         }
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                            color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
-                        if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
+                        if (copied) {
+                            Text("Copied!", fontSize = 12.sp, color = GreenOk, fontWeight = FontWeight.Medium)
+                        } else {
+                            Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
+                            if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
+                        }
                     }
                 }
             }
         }
     }
 }
+
 
 // ── Fronting Tab ────────────────────────────────────────────────────────────
 @Composable
@@ -326,7 +327,7 @@ fun FrontingTab(results: List<ScanResult>) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(first.cdn, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                         Surface(shape = RoundedCornerShape(10.dp), color = AccentBlue.copy(0.12f)) {
-                            Text("${ips.size}", fontSize = 11.sp, color = AccentBlue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp))
+                            Text("${ips.size}", fontSize = 11.sp, color = AccentBlue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(7.dp, 2.dp))
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -347,11 +348,7 @@ fun FrontingTab(results: List<ScanResult>) {
                     }
                     Spacer(Modifier.height(10.dp))
                     IosFlowRow(horizontalSpacing = 6.dp, verticalSpacing = 6.dp) {
-                        ips.forEach { ip ->
-                            Surface(shape = RoundedCornerShape(8.dp), color = CardBg2) {
-                                Text(ip.ip, fontSize = 13.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(10.dp, 6.dp))
-                            }
-                        }
+                        ips.forEach { ip -> CopyChip(ip.ip) }
                     }
                 }
             }
@@ -359,40 +356,48 @@ fun FrontingTab(results: List<ScanResult>) {
     }
 }
 
+@Composable
+fun CopyChip(ip: String) {
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    var copied by remember { mutableStateOf(false) }
+    val bg by animateColorAsState(if (copied) GreenOk.copy(0.15f) else CardBg2, tween(300), label = "chip")
+    LaunchedEffect(copied) { if (copied) { delay(1000); copied = false } }
+    Surface(
+        shape = RoundedCornerShape(8.dp), color = bg,
+        border = BorderStroke(0.5.dp, if (copied) GreenOk.copy(0.4f) else BorderColor),
+        onClick = { clipboardManager.setText(AnnotatedString(ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
+    ) {
+        Text(if (copied) "✓ $ip" else ip, fontSize = 13.sp, color = if (copied) GreenOk else TextPrimary,
+            fontFamily = FontFamily.Monospace, modifier = Modifier.padding(10.dp, 6.dp))
+    }
+}
+
+
 // ── Config Tab ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item(key = "cdn_section") {
+        item(key = "cdn") {
             IosSection("SCAN TYPE") {
                 var expanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                     IosField(value = config.cdnProvider.label, modifier = Modifier.menuAnchor(), readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) })
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        CdnProvider.entries.forEach { p ->
-                            DropdownMenuItem(text = { Text(p.label) }, onClick = { onConfigChange(config.copy(cdnProvider = p)); expanded = false })
-                        }
+                        CdnProvider.entries.forEach { p -> DropdownMenuItem(text = { Text(p.label) }, onClick = { onConfigChange(config.copy(cdnProvider = p)); expanded = false }) }
                     }
                 }
             }
         }
         if (config.cdnProvider == CdnProvider.MANUAL) {
-            item(key = "manual_ips") {
-                IosSection("MANUAL IPs") {
-                    IosField(value = config.manualIps, onValueChange = { onConfigChange(config.copy(manualIps = it)) }, placeholder = "1.2.3.4\n5.6.7.8", lines = 4)
-                }
-            }
+            item(key = "m_ips") { IosSection("MANUAL IPs") { IosField(value = config.manualIps, onValueChange = { onConfigChange(config.copy(manualIps = it)) }, placeholder = "1.2.3.4\n5.6.7.8", lines = 4) } }
         }
         if (config.cdnProvider == CdnProvider.CIDR) {
-            item(key = "manual_cidr") {
-                IosSection("CIDR RANGES") {
-                    IosField(value = config.manualCidr, onValueChange = { onConfigChange(config.copy(manualCidr = it)) }, placeholder = "104.16.0.0/12", lines = 4)
-                }
-            }
+            item(key = "m_cidr") { IosSection("CIDR RANGES") { IosField(value = config.manualCidr, onValueChange = { onConfigChange(config.copy(manualCidr = it)) }, placeholder = "104.16.0.0/12", lines = 4) } }
         }
-        item(key = "connection") {
+        item(key = "conn") {
             IosSection("CONNECTION") {
                 IosField(value = config.host, onValueChange = { onConfigChange(config.copy(host = it)) }, label = "Host Header", placeholder = "speed.cloudflare.com")
                 Spacer(Modifier.height(10.dp))
@@ -403,7 +408,7 @@ fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
             IosSection("PERFORMANCE") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Column(Modifier.weight(1f)) { IosField(value = "${config.concurrency}", onValueChange = { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v.coerceIn(1, 300))) } }, label = "Concurrency") }
-                    Column(Modifier.weight(1f)) { IosField(value = "${config.timeout}", onValueChange = { it.toFloatOrNull()?.let { v -> onConfigChange(config.copy(timeout = v.coerceIn(1f, 20f))) } }, label = "Timeout (s)") }
+                    Column(Modifier.weight(1f)) { IosField(value = "${config.timeout}", onValueChange = { it.toFloatOrNull()?.let { v -> onConfigChange(config.copy(timeout = v.coerceIn(1f, 20f))) } }, label = "Timeout") }
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -412,7 +417,7 @@ fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
                 }
             }
         }
-        item(key = "spacer") { Spacer(Modifier.height(30.dp)) }
+        item(key = "sp") { Spacer(Modifier.height(30.dp)) }
     }
 }
 
@@ -421,9 +426,7 @@ fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
 fun IosSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
         Text(title, fontSize = 12.sp, color = TextSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
-        Surface(color = CardBg, shape = RoundedCornerShape(12.dp)) {
-            Column(Modifier.fillMaxWidth().padding(14.dp)) { content() }
-        }
+        Surface(color = CardBg, shape = RoundedCornerShape(12.dp)) { Column(Modifier.fillMaxWidth().padding(14.dp)) { content() } }
     }
 }
 
@@ -431,15 +434,13 @@ fun IosSection(title: String, content: @Composable ColumnScope.() -> Unit) {
 @Composable
 fun IosField(value: String, onValueChange: (String) -> Unit = {}, label: String = "", placeholder: String = "", readOnly: Boolean = false, lines: Int = 1, modifier: Modifier = Modifier, trailingIcon: @Composable (() -> Unit)? = null) {
     if (label.isNotBlank()) Text(label, fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(bottom = 4.dp))
-    OutlinedTextField(
-        value = value, onValueChange = onValueChange, readOnly = readOnly,
+    OutlinedTextField(value = value, onValueChange = onValueChange, readOnly = readOnly,
         modifier = modifier.fillMaxWidth().then(if (lines > 1) Modifier.height((lines * 28 + 24).dp) else Modifier),
         placeholder = { Text(placeholder, color = TextMuted, fontSize = 14.sp) }, trailingIcon = trailingIcon,
         shape = RoundedCornerShape(10.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentBlue, unfocusedBorderColor = BorderColor,
             focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = AccentBlue,
-            focusedContainerColor = CardBg2, unfocusedContainerColor = CardBg2)
-    )
+            focusedContainerColor = CardBg2, unfocusedContainerColor = CardBg2))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
