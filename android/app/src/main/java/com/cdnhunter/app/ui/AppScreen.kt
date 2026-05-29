@@ -83,7 +83,7 @@ fun AppScreen(
                     Text("v3.0 • Scan & Config", fontSize = 13.sp, color = TextSecondary)
                 }
             }
-            HorizontalDivider(color = BorderColor)
+            Divider(color = BorderColor)
             Spacer(Modifier.height(8.dp))
             NavScreen.entries.forEach { screen ->
                 val icon = when (screen) {
@@ -177,7 +177,7 @@ fun ScanMainScreen(state: ScanState, config: ScanConfig, onConfigChange: (ScanCo
             Row(Modifier.fillMaxWidth().padding(3.dp)) {
                 tabs.forEachIndexed { idx, t ->
                     val sel = pagerState.currentPage == idx
-                    Surface(Modifier.weight(1f), color = if (sel) CardBg2 else Color.Transparent, shape = RoundedCornerShape(8.dp),
+                    Surface(modifier = Modifier.weight(1f), color = if (sel) CardBg2 else Color.Transparent, shape = RoundedCornerShape(8.dp),
                         onClick = { scope.launch { pagerState.animateScrollToPage(idx) } }) {
                         Text(t, Modifier.padding(vertical = 9.dp), fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (sel) TextPrimary else TextSecondary, textAlign = TextAlign.Center)
