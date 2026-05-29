@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -22,17 +22,21 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.5'
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Generate Gradle Wrapper
+        working-directory: android
+        run: |
+          mkdir -p gradle/wrapper
+          curl -sL "https://services.gradle.org/distributions/gradle-8.5-bin.zip" -o /tmp/gradle.zip
+          unzip -qo /tmp/gradle.zip -d /tmp
+          /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk CDNHunter-v2.0.apk
@@ -43,31 +47,28 @@ jobs:
           name: CDNHunter-APK
           path: CDNHunter-v2.0.apk
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0-build${{ github.run_number }}
           name: CDN Hunter v2.0 (Build ${{ github.run_number }})
           body: |
-            ## 📱 CDN Hunter - Android APK
-            
-            Native Android app — **no Termux needed**.
-            
-            ### Download & Install:
-            1. Download `CDNHunter-v2.0.apk` below
-            2. Enable "Install from unknown sources" on your phone
-            3. Open the APK and install
-            
+            ## CDN Hunter - Android APK
+
+            Native Android app. No Termux needed.
+
+            ### Install:
+            1. Download CDNHunter-v2.0.apk
+            2. Enable install from unknown sources
+            3. Install and open
+
             ### Features:
-            - Smart scan / Manual IP / Manual CIDR
-            - All CDNs: Akamai, Fastly, Cloudflare, Google, CloudFront, Gcore
-            - CDN Fronting verification (SNI/Host)
-            - Iran IP auto-filter
-            - Throughput measurement
-            - Copy IPs to clipboard
-            - Dark UI with real-time progress
+            - Smart / Manual IP / CIDR scan
+            - Akamai, Fastly, Cloudflare, Google, CloudFront, Gcore
+            - Fronting verification
+            - Iran IP filter
+            - Throughput test
+            - Dark UI
           files: CDNHunter-v2.0.apk
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
