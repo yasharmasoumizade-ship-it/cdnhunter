@@ -2310,6 +2310,12 @@ a{color:inherit;text-decoration:none}
 .btn-danger:hover{background:#1a0a0a;border-color:#ef4444}
 .btn-ghost{background:transparent;color:#999;border:1px solid #333}
 .btn-ghost:hover{background:#171717;color:#fff}
+.btn-copy{background:#171717;color:#a3a3a3;border:1px solid #2a2a2a;gap:5px;padding:7px 14px;font-size:12px;border-radius:6px}
+.btn-copy:hover{background:#222;color:#fff;border-color:#3b82f6}
+.btn-copy.copied{background:#052e16;color:#22c55e;border-color:#166534}
+.btn-copy svg{flex-shrink:0}
+.btn-exit{background:transparent;color:#666;border:1px solid #2a2a2a;padding:7px 9px;border-radius:6px}
+.btn-exit:hover{background:#1a0a0a;color:#ef4444;border-color:#7f1d1d}
 
 .topbar{position:fixed;top:0;left:260px;right:0;height:56px;background:#0a0a0a;border-bottom:1px solid #222;display:flex;align-items:center;padding:0 20px;z-index:900;gap:12px}
 .hamburger{display:none;background:none;border:none;color:#e5e5e5;font-size:20px;cursor:pointer;padding:8px}
@@ -2438,8 +2444,8 @@ a{color:inherit;text-decoration:none}
     <span id="statusText">Idle</span>
   </span>
   <div class="topbar-actions">
-    <button class="btn btn-ghost" id="copyIpsBtn" type="button">Copy IPs</button>
-    <button class="btn btn-danger" id="exitBtn" type="button">Exit</button>
+    <button class="btn btn-copy" id="copyIpsBtn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span id="copyBtnLabel">Copy</span></button>
+    <button class="btn btn-exit" id="exitBtn" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   </div>
 </header>
 
@@ -2692,27 +2698,32 @@ function copyIps() {
   var ips = [];
   var i;
   for (i = 0; i < results.length; i++) {
-    if (results[i].ok) {
-      ips.push(results[i].ip);
+    if (results[i].ok && results[i].fronting_ok) ips.push(results[i].ip);
+  }
+  if (ips.length === 0) {
+    for (i = 0; i < results.length; i++) {
+      if (results[i].ok) ips.push(results[i].ip);
     }
   }
   if (ips.length === 0) {
-    showToast('No healthy IPs to copy');
+    showToast('No IPs to copy');
     return;
   }
   var text = ips.join('\\n');
+  var btn = $('copyIpsBtn');
+  var label = $('copyBtnLabel');
+  function onCopied() {
+    btn.classList.add('copied');
+    label.textContent = ips.length + ' copied!';
+    setTimeout(function() { btn.classList.remove('copied'); label.textContent = 'Copy'; }, 2000);
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function() {
-      showToast(ips.length + ' IPs copied');
-    });
+    navigator.clipboard.writeText(text).then(onCopied);
   } else {
     var ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast(ips.length + ' IPs copied');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); onCopied();
   }
 }
 
@@ -2795,6 +2806,12 @@ function updateUI(state) {
 
   var results = state.results || [];
   $('badge-results').textContent = results.length;
+  var healthyCount = 0;
+  for (var hc = 0; hc < results.length; hc++) { if (results[hc].ok) healthyCount++; }
+  var copyLabel = $('copyBtnLabel');
+  if (copyLabel && !$('copyIpsBtn').classList.contains('copied')) {
+    copyLabel.textContent = healthyCount > 0 ? 'Copy ' + healthyCount : 'Copy';
+  }
   if (results.length > 0) {
     var rhtml = '';
     var j;
