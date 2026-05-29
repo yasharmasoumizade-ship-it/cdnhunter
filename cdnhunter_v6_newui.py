@@ -2310,10 +2310,11 @@ a{color:inherit;text-decoration:none}
 .btn-danger:hover{background:#1a0a0a;border-color:#ef4444}
 .btn-ghost{background:transparent;color:#999;border:1px solid #333}
 .btn-ghost:hover{background:#171717;color:#fff}
-.btn-copy{background:#171717;color:#a3a3a3;border:1px solid #2a2a2a;gap:5px;padding:7px 14px;font-size:12px;border-radius:6px}
+.btn-copy{background:#171717;color:#a3a3a3;border:1px solid #2a2a2a;gap:5px;padding:7px 14px;font-size:12px;border-radius:6px;min-width:82px;width:82px}
 .btn-copy:hover{background:#222;color:#fff;border-color:#3b82f6}
 .btn-copy.copied{background:#052e16;color:#22c55e;border-color:#166534}
 .btn-copy svg{flex-shrink:0}
+.btn-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn-exit{background:transparent;color:#666;border:1px solid #2a2a2a;padding:7px 9px;border-radius:6px}
 .btn-exit:hover{background:#1a0a0a;color:#ef4444;border-color:#7f1d1d}
 
@@ -2714,8 +2715,8 @@ function copyIps() {
   var label = $('copyBtnLabel');
   function onCopied() {
     btn.classList.add('copied');
-    label.textContent = ips.length + ' copied!';
-    setTimeout(function() { btn.classList.remove('copied'); label.textContent = 'Copy'; }, 2000);
+    label.textContent = '\\u2713 ' + ips.length;
+    setTimeout(function() { btn.classList.remove('copied'); label.textContent = 'Copy'; }, 1500);
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(onCopied);
@@ -2806,12 +2807,6 @@ function updateUI(state) {
 
   var results = state.results || [];
   $('badge-results').textContent = results.length;
-  var healthyCount = 0;
-  for (var hc = 0; hc < results.length; hc++) { if (results[hc].ok) healthyCount++; }
-  var copyLabel = $('copyBtnLabel');
-  if (copyLabel && !$('copyIpsBtn').classList.contains('copied')) {
-    copyLabel.textContent = healthyCount > 0 ? 'Copy ' + healthyCount : 'Copy';
-  }
   if (results.length > 0) {
     var rhtml = '';
     var j;
