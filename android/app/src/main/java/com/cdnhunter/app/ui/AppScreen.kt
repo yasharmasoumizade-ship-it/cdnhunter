@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -33,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.data.*
+import com.cdnhunter.app.engine.ConfigGenerator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -51,93 +51,112 @@ val TextSecondary = Color(0xFF8E8E93)
 val TextMuted = Color(0xFF48484A)
 
 
-// ── Main App Screen ─────────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+// ── Main App with Drawer ────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(
     state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
-    onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit = {},
+    onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
+    onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
-    val tabs = listOf("Results", "Fronting", "Live", "Config")
-    val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
-    val coroutineScope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var currentScreen by remember { mutableStateOf(NavScreen.SCAN) }
 
-    Scaffold(
-        containerColor = DarkBg,
-        topBar = { TopBar(state, onCopyIps, onUpdateRanges) },
-        bottomBar = { BottomActions(state.running, onStart, onStop) }
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(10.dp))
-            GlassStatsStrip(state)
-            Spacer(Modifier.height(10.dp))
-            ProgressIndicator(state)
-            Spacer(Modifier.height(8.dp))
-            PhaseSteps(state.phase)
-            Spacer(Modifier.height(14.dp))
-            // Segmented control
-            Surface(color = CardBg, shape = RoundedCornerShape(10.dp)) {
-                Row(Modifier.fillMaxWidth().padding(3.dp)) {
-                    tabs.forEachIndexed { idx, title ->
-                        val selected = pagerState.currentPage == idx
-                        Surface(
-                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
-                            color = if (selected) CardBg2 else Color.Transparent,
-                            onClick = { coroutineScope.launch { pagerState.animateScrollToPage(idx) } }
-                        ) {
-                            Text(title, Modifier.padding(vertical = 9.dp), fontSize = 13.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) TextPrimary else TextSecondary, textAlign = TextAlign.Center)
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = CardBg) {
+                // Drawer header
+                Box(Modifier.fillMaxWidth().padding(24.dp, 32.dp, 24.dp, 16.dp)) {
+                    Column {
+                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentBlue), contentAlignment = Alignment.Center) {
+                            Text("CH", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
+                        Spacer(Modifier.height(12.dp))
+                        Text("CDN Hunter", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("v2.2 • Scan & Fronting", fontSize = 13.sp, color = TextSecondary)
                     }
                 }
+                Divider(color = BorderColor)
+                Spacer(Modifier.height(8.dp))
+
+                // Nav items
+                NavScreen.entries.forEach { screen ->
+                    val icon = when (screen) {
+                        NavScreen.SCAN -> Icons.Rounded.Radar
+                        NavScreen.RESULTS -> Icons.Rounded.List
+                        NavScreen.CONFIG_GEN -> Icons.Rounded.Code
+                        NavScreen.EXPORT -> Icons.Rounded.Share
+                        NavScreen.PROFILES -> Icons.Rounded.Speed
+                        NavScreen.SETTINGS -> Icons.Rounded.Settings
+                    }
+                    NavigationDrawerItem(
+                        icon = { Icon(icon, null, modifier = Modifier.size(20.dp)) },
+                        label = { Text(screen.label, fontSize = 14.sp) },
+                        selected = currentScreen == screen,
+                        onClick = { currentScreen = screen; scope.launch { drawerState.close() } },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = AccentBlue.copy(0.12f),
+                            selectedTextColor = AccentBlue, selectedIconColor = AccentBlue,
+                            unselectedTextColor = TextSecondary, unselectedIconColor = TextSecondary
+                        )
+                    )
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                when (page) { 0 -> ResultsTab(state.results); 1 -> FrontingTab(state.results); 2 -> OverviewTab(state); 3 -> ConfigTab(config, onConfigChange) }
+        }
+    ) {
+        Scaffold(
+            containerColor = DarkBg,
+            topBar = {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg),
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Rounded.Menu, "Menu", tint = TextPrimary)
+                        }
+                    },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(currentScreen.label, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            if (state.running) {
+                                StatusDot(true)
+                                Text(state.phaseDetail.ifBlank { "..." }, fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    },
+                    actions = {
+                        if (currentScreen == NavScreen.SCAN || currentScreen == NavScreen.RESULTS) {
+                            IconButton(onClick = onCopyIps) { Icon(Icons.Rounded.ContentCopy, "Copy", tint = TextSecondary, modifier = Modifier.size(20.dp)) }
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                if (currentScreen == NavScreen.SCAN) BottomActions(state.running, onStart, onStop)
+            }
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+                when (currentScreen) {
+                    NavScreen.SCAN -> ScanScreen(state, config, onConfigChange)
+                    NavScreen.RESULTS -> ResultsScreen(state.results)
+                    NavScreen.CONFIG_GEN -> ConfigGenScreen(state.results)
+                    NavScreen.EXPORT -> ExportScreen(state.results, onExport)
+                    NavScreen.PROFILES -> ProfilesScreen(onConfigChange, onStart)
+                    NavScreen.SETTINGS -> SettingsScreen(config, onConfigChange, onUpdateRanges)
+                }
             }
         }
     }
 }
 
-
-// ── Top Bar ─────────────────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TopBar(state: ScanState, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit) {
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg),
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AccentBlue), contentAlignment = Alignment.Center) {
-                    Text("CH", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-                Column {
-                    Text("CDN Hunter", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        StatusDot(state.running)
-                        Text(when { state.running -> state.phaseDetail.ifBlank { "Scanning..." }; state.pct >= 100 -> "Complete"; else -> "Ready" },
-                            fontSize = 12.sp, color = TextSecondary)
-                    }
-                }
-            }
-        },
-        actions = {
-            IconButton(onClick = onUpdateRanges) { Icon(Icons.Rounded.Refresh, "Update", tint = AccentBlue, modifier = Modifier.size(22.dp)) }
-            IconButton(onClick = onCopyIps) { Icon(Icons.Rounded.ContentCopy, "Copy", tint = TextSecondary, modifier = Modifier.size(20.dp)) }
-        }
-    )
-}
-
 @Composable
 fun StatusDot(running: Boolean) {
-    val color by animateColorAsState(if (running) GreenOk else TextMuted, label = "dot")
-    // Pulsing animation when running
-    val scale by animateFloatAsState(if (running) 1f else 0.8f, animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse")
-    Box(Modifier.size(7.dp).scale(if (running) scale else 1f).clip(CircleShape).background(color))
+    val color by animateColorAsState(if (running) GreenOk else TextMuted, label = "d")
+    Box(Modifier.size(7.dp).clip(CircleShape).background(color))
 }
 
-// ── Bottom Actions ──────────────────────────────────────────────────────────
 @Composable
 fun BottomActions(running: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
     Surface(color = DarkBg) {
@@ -153,65 +172,16 @@ fun BottomActions(running: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
 }
 
 
-// ── Glass Stats (premium look) ──────────────────────────────────────────────
+// ── Scan Screen ─────────────────────────────────────────────────────────────
 @Composable
-fun GlassStatsStrip(state: ScanState) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        GlassStatCard(Icons.Rounded.Radar, "Scanned", "${state.scanned}", TextPrimary, Modifier.weight(1f))
-        GlassStatCard(Icons.Rounded.CheckCircle, "Healthy", "${state.healthy}", GreenOk, Modifier.weight(1f))
-        GlassStatCard(Icons.Rounded.Cancel, "Failed", "${state.failed}", RedFail, Modifier.weight(1f))
-        GlassStatCard(Icons.Rounded.Speed, "${state.pct}%", state.source, AccentBlue, Modifier.weight(1f))
-    }
-}
+fun ScanScreen(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Stats
+        item(key = "stats") { GlassStatsStrip(state) }
+        item(key = "progress") { ProgressIndicator(state) }
+        item(key = "phases") { PhaseSteps(state.phase) }
 
-@Composable
-fun GlassStatCard(icon: ImageVector, label: String, value: String, color: Color, modifier: Modifier) {
-    Surface(
-        modifier = modifier, shape = RoundedCornerShape(14.dp),
-        color = color.copy(alpha = 0.08f), border = BorderStroke(0.5.dp, color.copy(alpha = 0.2f))
-    ) {
-        Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = color.copy(0.7f), modifier = Modifier.size(16.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(label, fontSize = 10.sp, color = TextSecondary)
-            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-// ── Progress ────────────────────────────────────────────────────────────────
-@Composable
-fun ProgressIndicator(state: ScanState) {
-    @Suppress("DEPRECATION")
-    LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-        color = AccentBlue, trackColor = CardBg)
-}
-
-// ── Phase Steps ─────────────────────────────────────────────────────────────
-@Composable
-fun PhaseSteps(current: ScanPhase) {
-    val phases = listOf(ScanPhase.SCANNING, ScanPhase.IP_CHECK, ScanPhase.FRONTING, ScanPhase.THROUGHPUT, ScanPhase.DONE)
-    val currentIdx = phases.indexOf(current)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        phases.forEachIndexed { idx, phase ->
-            val isDone = idx < currentIdx; val isActive = idx == currentIdx
-            val bg = when { isDone -> GreenOk.copy(0.12f); isActive -> AccentBlue.copy(0.12f); else -> CardBg }
-            val fg = when { isDone -> GreenOk; isActive -> AccentBlue; else -> TextMuted }
-            Surface(shape = RoundedCornerShape(16.dp), color = bg) {
-                Row(Modifier.padding(10.dp, 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (isDone) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(13.dp))
-                    Text(phase.label, fontSize = 11.sp, color = fg, fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
-                }
-            }
-        }
-    }
-}
-
-
-// ── Overview/Live Tab ───────────────────────────────────────────────────────
-@Composable
-fun OverviewTab(state: ScanState) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Live feed
         if (state.running && state.phase != ScanPhase.IDLE) {
             item(key = "banner") {
                 Surface(color = AccentBlue.copy(0.08f), shape = RoundedCornerShape(10.dp)) {
@@ -220,14 +190,14 @@ fun OverviewTab(state: ScanState) {
                 }
             }
         }
-        items(state.logs.takeLast(6).reversed(), key = { it.hashCode() }) { log ->
-            val color = when { log.startsWith("OK ") -> GreenOk; log.contains("ERR") || log.contains("STOP") -> RedFail; log.contains("Done") -> GreenOk; else -> TextSecondary }
-            Text(log, fontSize = 12.sp, color = color, fontFamily = FontFamily.Monospace)
+        items(state.logs.takeLast(5).reversed(), key = { it.hashCode() }) { log ->
+            val c = when { log.startsWith("OK ") -> GreenOk; log.contains("ERR") -> RedFail; log.contains("Done") -> GreenOk; else -> TextSecondary }
+            Text(log, fontSize = 12.sp, color = c, fontFamily = FontFamily.Monospace)
         }
         if (state.liveIps.isNotEmpty()) {
-            item(key = "hdr") { Text("Live Results", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 8.dp)) }
-            items(state.liveIps.takeLast(12).reversed(), key = { it.ip }) { r ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            item(key = "lhdr") { Text("Live Results (${state.liveIps.size})", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium) }
+            items(state.liveIps.takeLast(10).reversed(), key = { it.ip }) { r ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
                     Spacer(Modifier.width(10.dp))
                     Text(r.ip, fontSize = 13.sp, color = if (r.ok) TextPrimary else TextMuted, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
@@ -235,12 +205,59 @@ fun OverviewTab(state: ScanState) {
                 }
             }
         }
-        if (!state.running && state.logs.isEmpty() && state.liveIps.isEmpty()) {
+        if (!state.running && state.liveIps.isEmpty() && state.logs.isEmpty()) {
             item(key = "empty") {
-                Column(Modifier.fillMaxWidth().padding(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.fillMaxWidth().padding(50.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.Wifi, null, tint = TextMuted, modifier = Modifier.size(36.dp))
                     Spacer(Modifier.height(10.dp))
-                    Text("Start a scan to see results", fontSize = 14.sp, color = TextSecondary)
+                    Text("Tap Start Scan", fontSize = 14.sp, color = TextSecondary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun GlassStatsStrip(state: ScanState) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GlassCard(Icons.Rounded.Radar, "Scanned", "${state.scanned}", TextPrimary, Modifier.weight(1f))
+        GlassCard(Icons.Rounded.CheckCircle, "Healthy", "${state.healthy}", GreenOk, Modifier.weight(1f))
+        GlassCard(Icons.Rounded.Cancel, "Failed", "${state.failed}", RedFail, Modifier.weight(1f))
+        GlassCard(Icons.Rounded.Speed, "${state.pct}%", state.source, AccentBlue, Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun GlassCard(icon: ImageVector, label: String, value: String, color: Color, modifier: Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(14.dp), color = color.copy(0.08f), border = BorderStroke(0.5.dp, color.copy(0.2f))) {
+        Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = color.copy(0.7f), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(label, fontSize = 10.sp, color = TextSecondary)
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun ProgressIndicator(state: ScanState) {
+    @Suppress("DEPRECATION")
+    LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = AccentBlue, trackColor = CardBg)
+}
+
+@Composable
+fun PhaseSteps(current: ScanPhase) {
+    val phases = listOf(ScanPhase.SCANNING, ScanPhase.IP_CHECK, ScanPhase.FRONTING, ScanPhase.THROUGHPUT, ScanPhase.DONE)
+    val currentIdx = phases.indexOf(current)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        phases.forEachIndexed { idx, phase ->
+            val done = idx < currentIdx; val active = idx == currentIdx
+            val bg = when { done -> GreenOk.copy(0.12f); active -> AccentBlue.copy(0.12f); else -> CardBg }
+            val fg = when { done -> GreenOk; active -> AccentBlue; else -> TextMuted }
+            Surface(shape = RoundedCornerShape(16.dp), color = bg) {
+                Row(Modifier.padding(10.dp, 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (done) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(13.dp))
+                    Text(phase.label, fontSize = 11.sp, color = fg, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
@@ -248,36 +265,20 @@ fun OverviewTab(state: ScanState) {
 }
 
 
-// ── Results Tab (tap to copy IP) ────────────────────────────────────────────
+// ── Results Screen (tap to copy) ────────────────────────────────────────────
 @Composable
-fun ResultsTab(results: List<ScanResult>) {
+fun ResultsScreen(results: List<ScanResult>) {
     val clipboardManager = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
-
-    if (results.isEmpty()) {
-        Column(Modifier.fillMaxWidth().padding(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Rounded.Search, null, tint = TextMuted, modifier = Modifier.size(36.dp))
-            Spacer(Modifier.height(10.dp))
-            Text("No results yet", fontSize = 14.sp, color = TextSecondary)
-        }
-        return
-    }
+    if (results.isEmpty()) { EmptyState(Icons.Rounded.Search, "No results yet"); return }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items(results, key = { it.ip }) { r ->
             var copied by remember { mutableStateOf(false) }
-            val borderColor by animateColorAsState(if (copied) GreenOk else Color.Transparent, tween(300), label = "brd")
-            val bgColor by animateColorAsState(if (copied) GreenOk.copy(0.08f) else CardBg, tween(300), label = "bg")
-
+            val bg by animateColorAsState(if (copied) GreenOk.copy(0.08f) else CardBg, tween(300), label = "bg")
+            val border by animateColorAsState(if (copied) GreenOk else Color.Transparent, tween(300), label = "br")
             LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
-
-            Surface(
-                color = bgColor, shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, borderColor),
-                onClick = {
-                    clipboardManager.setText(AnnotatedString(r.ip))
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    copied = true
-                }
+            Surface(color = bg, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, border),
+                onClick = { clipboardManager.setText(AnnotatedString(r.ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
             ) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
@@ -290,14 +291,10 @@ fun ResultsTab(results: List<ScanResult>) {
                             if (r.country.isNotBlank()) Text(r.country, fontSize = 11.sp, color = if (r.country == "IR") RedFail else TextSecondary)
                         }
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (copied) {
-                            Text("Copied!", fontSize = 12.sp, color = GreenOk, fontWeight = FontWeight.Medium)
-                        } else {
-                            Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                                color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
-                            if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
-                        }
+                    if (copied) Text("Copied!", fontSize = 12.sp, color = GreenOk, fontWeight = FontWeight.Medium)
+                    else Column(horizontalAlignment = Alignment.End) {
+                        Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
+                        if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
                     }
                 }
             }
@@ -305,82 +302,235 @@ fun ResultsTab(results: List<ScanResult>) {
     }
 }
 
-
-// ── Fronting Tab ────────────────────────────────────────────────────────────
-@Composable
-fun FrontingTab(results: List<ScanResult>) {
-    val frontingIps = results.filter { it.ok && it.frontingOk }
-    if (frontingIps.isEmpty()) {
-        Column(Modifier.fillMaxWidth().padding(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Rounded.Shield, null, tint = TextMuted, modifier = Modifier.size(36.dp))
-            Spacer(Modifier.height(10.dp))
-            Text("No fronting data yet", fontSize = 14.sp, color = TextSecondary)
-        }
-        return
-    }
-    val groups = frontingIps.groupBy { "${it.cdn}||${it.frontingSni}" }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(groups.entries.toList(), key = { it.key }) { (_, ips) ->
-            val first = ips.first()
-            Surface(color = CardBg, shape = RoundedCornerShape(14.dp)) {
-                Column(Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(first.cdn, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        Surface(shape = RoundedCornerShape(10.dp), color = AccentBlue.copy(0.12f)) {
-                            Text("${ips.size}", fontSize = 11.sp, color = AccentBlue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(7.dp, 2.dp))
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Surface(color = CardBg2, shape = RoundedCornerShape(8.dp)) {
-                        Column(Modifier.padding(10.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("SNI", fontSize = 11.sp, color = TextMuted)
-                                Text(first.frontingSni.ifBlank { "auto" }, fontSize = 12.sp, color = AccentBlue, fontFamily = FontFamily.Monospace)
-                            }
-                            if (first.frontingHost.isNotBlank() && first.frontingHost != first.frontingSni) {
-                                Spacer(Modifier.height(3.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("Host", fontSize = 11.sp, color = TextMuted)
-                                    Text(first.frontingHost, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    IosFlowRow(horizontalSpacing = 6.dp, verticalSpacing = 6.dp) {
-                        ips.forEach { ip -> CopyChip(ip.ip) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun CopyChip(ip: String) {
-    val clipboardManager = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
-    var copied by remember { mutableStateOf(false) }
-    val bg by animateColorAsState(if (copied) GreenOk.copy(0.15f) else CardBg2, tween(300), label = "chip")
-    LaunchedEffect(copied) { if (copied) { delay(1000); copied = false } }
-    Surface(
-        shape = RoundedCornerShape(8.dp), color = bg,
-        border = BorderStroke(0.5.dp, if (copied) GreenOk.copy(0.4f) else BorderColor),
-        onClick = { clipboardManager.setText(AnnotatedString(ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
-    ) {
-        Text(if (copied) "✓ $ip" else ip, fontSize = 13.sp, color = if (copied) GreenOk else TextPrimary,
-            fontFamily = FontFamily.Monospace, modifier = Modifier.padding(10.dp, 6.dp))
-    }
-}
-
-
-// ── Config Tab ──────────────────────────────────────────────────────────────
+// ── Config Generator Screen ─────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
+fun ConfigGenScreen(results: List<ScanResult>) {
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val frontingIps = results.filter { it.ok && it.frontingOk }
+    var selectedIp by remember { mutableStateOf(frontingIps.firstOrNull()?.ip ?: "") }
+    var selectedType by remember { mutableStateOf(ProxyType.VLESS) }
+    var sni by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf("") }
+    var uuid by remember { mutableStateOf("auto") }
+    var generatedConfig by remember { mutableStateOf("") }
+    var copied by remember { mutableStateOf(false) }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item(key = "cdn") {
-            IosSection("SCAN TYPE") {
+        item {
+            Text("Config Generator", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text("Generate proxy config from scanned IPs", fontSize = 13.sp, color = TextSecondary)
+        }
+
+        if (frontingIps.isEmpty()) {
+            item { Surface(color = CardBg, shape = RoundedCornerShape(12.dp)) {
+                Text("Run a scan first to get fronting IPs", fontSize = 13.sp, color = YellowWarn, modifier = Modifier.padding(16.dp))
+            } }
+        }
+
+        item {
+            IosSection("SELECT IP") {
+                if (frontingIps.isNotEmpty()) {
+                    frontingIps.take(10).forEach { r ->
+                        Surface(
+                            color = if (selectedIp == r.ip) AccentBlue.copy(0.12f) else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (selectedIp == r.ip) AccentBlue else BorderColor),
+                            onClick = { selectedIp = r.ip; sni = r.frontingSni; host = r.frontingHost }
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(r.ip, fontSize = 13.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                Text("${r.ms}ms", fontSize = 11.sp, color = GreenOk)
+                                Spacer(Modifier.width(8.dp))
+                                Text(r.cdn, fontSize = 11.sp, color = AccentBlue)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                } else {
+                    IosField(value = selectedIp, onValueChange = { selectedIp = it }, placeholder = "Enter IP manually")
+                }
+            }
+        }
+
+        item {
+            IosSection("PROXY TYPE") {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ProxyType.entries.forEach { type ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selectedType == type) AccentBlue.copy(0.15f) else CardBg2,
+                            border = BorderStroke(1.dp, if (selectedType == type) AccentBlue else BorderColor),
+                            onClick = { selectedType = type }
+                        ) { Text(type.label, fontSize = 12.sp, color = if (selectedType == type) AccentBlue else TextSecondary, modifier = Modifier.padding(10.dp, 6.dp)) }
+                    }
+                }
+            }
+        }
+
+        item {
+            IosSection("SETTINGS") {
+                IosField(value = sni, onValueChange = { sni = it }, label = "SNI", placeholder = "a248.e.akamai.net")
+                Spacer(Modifier.height(8.dp))
+                IosField(value = host, onValueChange = { host = it }, label = "Host", placeholder = "host header")
+                Spacer(Modifier.height(8.dp))
+                IosField(value = uuid, onValueChange = { uuid = it }, label = "UUID", placeholder = "auto = random")
+            }
+        }
+
+        item {
+            Button(onClick = {
+                val cfg = ProxyConfig(type = selectedType, ip = selectedIp, sni = sni, host = host, uuid = uuid)
+                generatedConfig = ConfigGenerator.generate(cfg)
+            }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+            ) { Text("Generate Config", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+        }
+
+        if (generatedConfig.isNotBlank()) {
+            item {
+                Surface(color = CardBg, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, BorderColor)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Generated Config", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+                            Surface(shape = RoundedCornerShape(8.dp), color = if (copied) GreenOk.copy(0.15f) else AccentBlue.copy(0.12f),
+                                onClick = { clipboardManager.setText(AnnotatedString(generatedConfig)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
+                            ) { Text(if (copied) "✓ Copied" else "Copy", fontSize = 12.sp, color = if (copied) GreenOk else AccentBlue, modifier = Modifier.padding(10.dp, 5.dp)) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(generatedConfig, fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                    }
+                }
+                LaunchedEffect(copied) { if (copied) { delay(2000); copied = false } }
+            }
+        }
+        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+
+// ── Export Screen ───────────────────────────────────────────────────────────
+@Composable
+fun ExportScreen(results: List<ScanResult>, onExport: () -> Unit) {
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val healthy = results.filter { it.ok }
+    val fronting = results.filter { it.frontingOk }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Text("Export & Share", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text("${healthy.size} healthy, ${fronting.size} fronting IPs", fontSize = 13.sp, color = TextSecondary)
+        }
+        item {
+            ExportCard("Copy All Healthy IPs", "${healthy.size} IPs", Icons.Rounded.ContentCopy) {
+                clipboardManager.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+        item {
+            ExportCard("Copy Fronting IPs Only", "${fronting.size} IPs", Icons.Rounded.Shield) {
+                clipboardManager.setText(AnnotatedString(fronting.joinToString("\n") { it.ip }))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+        item {
+            ExportCard("Copy as JSON", "Full details", Icons.Rounded.Code) {
+                val json = healthy.joinToString(",\n") { """  {"ip":"${it.ip}","ms":${it.ms},"cdn":"${it.cdn}","fronting":${it.frontingOk},"sni":"${it.frontingSni}"}""" }
+                clipboardManager.setText(AnnotatedString("[\n$json\n]"))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+        item {
+            ExportCard("Copy as CSV", "For spreadsheets", Icons.Rounded.TableChart) {
+                val csv = "ip,ms,cdn,fronting,sni,country\n" + healthy.joinToString("\n") { "${it.ip},${it.ms},${it.cdn},${it.frontingOk},${it.frontingSni},${it.country}" }
+                clipboardManager.setText(AnnotatedString(csv))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+        item {
+            ExportCard("Copy v2ray Configs", "All fronting IPs", Icons.Rounded.VpnKey) {
+                val configs = fronting.joinToString("\n\n") { r ->
+                    val cfg = ProxyConfig(type = ProxyType.VLESS, ip = r.ip, sni = r.frontingSni, host = r.frontingHost)
+                    ConfigGenerator.generate(cfg)
+                }
+                clipboardManager.setText(AnnotatedString(configs))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+        if (healthy.isEmpty()) {
+            item { EmptyState(Icons.Rounded.FolderOpen, "Run a scan first") }
+        }
+        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+@Composable
+fun ExportCard(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
+    var done by remember { mutableStateOf(false) }
+    LaunchedEffect(done) { if (done) { delay(1500); done = false } }
+    Surface(color = CardBg, shape = RoundedCornerShape(12.dp), onClick = { onClick(); done = true }) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = AccentBlue, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+            }
+            if (done) Text("✓", fontSize = 16.sp, color = GreenOk, fontWeight = FontWeight.Bold)
+            else Icon(Icons.Rounded.ChevronRight, null, tint = TextMuted)
+        }
+    }
+}
+
+// ── Profiles Screen ─────────────────────────────────────────────────────────
+@Composable
+fun ProfilesScreen(onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Text("Scan Profiles", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text("One-tap presets for common scans", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+        }
+        items(ScanProfile.entries.toList()) { profile ->
+            Surface(color = CardBg, shape = RoundedCornerShape(14.dp),
+                onClick = { onConfigChange(profile.config); onStart() }
+            ) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val icon = when {
+                        profile.name.contains("QUICK") -> Icons.Rounded.FlashOn
+                        profile.name.contains("DEEP") -> Icons.Rounded.Explore
+                        profile.name.contains("CF") -> Icons.Rounded.Cloud
+                        else -> Icons.Rounded.Speed
+                    }
+                    Surface(shape = RoundedCornerShape(10.dp), color = AccentBlue.copy(0.1f)) {
+                        Icon(icon, null, tint = AccentBlue, modifier = Modifier.padding(10.dp).size(22.dp))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(profile.label, fontSize = 15.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                        Text(profile.desc, fontSize = 12.sp, color = TextSecondary)
+                        Text("${profile.config.maxIps} IPs • conc ${profile.config.concurrency}", fontSize = 11.sp, color = TextMuted)
+                    }
+                    Icon(Icons.Rounded.PlayArrow, null, tint = GreenOk, modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+// ── Settings Screen ─────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onUpdateRanges: () -> Unit) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Text("Settings", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
+        item {
+            IosSection("CDN PROVIDER") {
                 var expanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                     IosField(value = config.cdnProvider.label, modifier = Modifier.menuAnchor(), readOnly = true,
@@ -392,22 +542,22 @@ fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
             }
         }
         if (config.cdnProvider == CdnProvider.MANUAL) {
-            item(key = "m_ips") { IosSection("MANUAL IPs") { IosField(value = config.manualIps, onValueChange = { onConfigChange(config.copy(manualIps = it)) }, placeholder = "1.2.3.4\n5.6.7.8", lines = 4) } }
+            item { IosSection("MANUAL IPs") { IosField(value = config.manualIps, onValueChange = { onConfigChange(config.copy(manualIps = it)) }, placeholder = "1.2.3.4", lines = 4) } }
         }
         if (config.cdnProvider == CdnProvider.CIDR) {
-            item(key = "m_cidr") { IosSection("CIDR RANGES") { IosField(value = config.manualCidr, onValueChange = { onConfigChange(config.copy(manualCidr = it)) }, placeholder = "104.16.0.0/12", lines = 4) } }
+            item { IosSection("CIDR RANGES") { IosField(value = config.manualCidr, onValueChange = { onConfigChange(config.copy(manualCidr = it)) }, placeholder = "104.16.0.0/12", lines = 4) } }
         }
-        item(key = "conn") {
+        item {
             IosSection("CONNECTION") {
                 IosField(value = config.host, onValueChange = { onConfigChange(config.copy(host = it)) }, label = "Host Header", placeholder = "speed.cloudflare.com")
                 Spacer(Modifier.height(10.dp))
-                IosField(value = config.sni, onValueChange = { onConfigChange(config.copy(sni = it)) }, label = "SNI Override", placeholder = "a248.e.akamai.net")
+                IosField(value = config.sni, onValueChange = { onConfigChange(config.copy(sni = it)) }, label = "SNI", placeholder = "a248.e.akamai.net")
             }
         }
-        item(key = "perf") {
+        item {
             IosSection("PERFORMANCE") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column(Modifier.weight(1f)) { IosField(value = "${config.concurrency}", onValueChange = { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v.coerceIn(1, 300))) } }, label = "Concurrency") }
+                    Column(Modifier.weight(1f)) { IosField(value = "${config.concurrency}", onValueChange = { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v.coerceIn(1, 300))) } }, label = "Workers") }
                     Column(Modifier.weight(1f)) { IosField(value = "${config.timeout}", onValueChange = { it.toFloatOrNull()?.let { v -> onConfigChange(config.copy(timeout = v.coerceIn(1f, 20f))) } }, label = "Timeout") }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -417,11 +567,33 @@ fun ConfigTab(config: ScanConfig, onConfigChange: (ScanConfig) -> Unit) {
                 }
             }
         }
-        item(key = "sp") { Spacer(Modifier.height(30.dp)) }
+        item {
+            IosSection("RANGES") {
+                Surface(color = CardBg2, shape = RoundedCornerShape(10.dp), onClick = onUpdateRanges) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Refresh, null, tint = AccentBlue)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary)
+                        Spacer(Modifier.weight(1f))
+                        Icon(Icons.Rounded.ChevronRight, null, tint = TextMuted)
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(40.dp)) }
     }
 }
 
-// ── iOS Components ──────────────────────────────────────────────────────────
+// ── Shared Components ───────────────────────────────────────────────────────
+@Composable
+fun EmptyState(icon: ImageVector, text: String) {
+    Column(Modifier.fillMaxWidth().padding(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, tint = TextMuted, modifier = Modifier.size(36.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(text, fontSize = 14.sp, color = TextSecondary)
+    }
+}
+
 @Composable
 fun IosSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {

@@ -44,15 +44,13 @@ fun MainContent() {
             val ips = viewModel.copyIps()
             if (ips.isNotBlank()) {
                 clipboardManager.setText(AnnotatedString(ips))
-                val count = ips.lines().size
-                Toast.makeText(context, "$count IP(s) copied", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "${ips.lines().size} IP(s) copied", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(context, "No IPs to copy", Toast.LENGTH_SHORT).show()
             }
         },
-        onUpdateRanges = {
-            Toast.makeText(context, "Updating ranges...", Toast.LENGTH_SHORT).show()
-        },
+        onUpdateRanges = { Toast.makeText(context, "Ranges updated", Toast.LENGTH_SHORT).show() },
+        onExport = { Toast.makeText(context, "Exported", Toast.LENGTH_SHORT).show() },
     )
 }
 
