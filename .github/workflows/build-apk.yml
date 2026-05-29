@@ -40,38 +40,40 @@ jobs:
           /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
           chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk CDNHunter-v2.1.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk CDNHunter.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CDNHunter-APK
-          path: CDNHunter-v2.1.apk
+          path: CDNHunter.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1-build${{ github.run_number }}
-          name: CDN Hunter v2.1 (Build ${{ github.run_number }})
+          tag_name: v2.2-build${{ github.run_number }}
+          name: CDN Hunter v2.2
           body: |
-            ## CDN Hunter v2.1
+            ## CDN Hunter v2.2
+
+            **Signed release APK** — installs without Play Protect warning.
 
             ### Install:
-            1. Download CDNHunter-v2.1.apk
-            2. Install (updates over v2.0 without errors)
+            1. Download CDNHunter.apk
+            2. Open and install
+            3. Updates smoothly over previous versions
 
-            ### Changes from v2.0:
-            - Better scan speed (connection pooling)
-            - Tap IP to copy with haptic feedback
-            - Glass stat cards
+            ### What's new:
+            - Signed APK (no Play Protect popup)
+            - Updates over v2.0/v2.1 without uninstall
+            - Better scan performance
+            - Tap any IP to copy
             - Swipe between pages
-            - Fixed Play Protect warning
-            - Smooth update over previous version
-          files: CDNHunter-v2.1.apk
+          files: CDNHunter.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,18 +11,28 @@ android {
         applicationId = "com.cdnhunter.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.1"
+        versionCode = 3
+        versionName = "2.2"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore.jks")
+            storePassword = "cdnhunter123"
+            keyAlias = "cdnhunter"
+            keyPassword = "cdnhunter123"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             isMinifyEnabled = false
-            isDebuggable = true
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
