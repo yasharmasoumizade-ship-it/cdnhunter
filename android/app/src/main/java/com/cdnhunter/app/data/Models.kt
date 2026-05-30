@@ -104,3 +104,21 @@ data class ScanState(
     val liveIps: List<ScanResult> = emptyList(),
     val logs: List<String> = emptyList(),
 )
+
+
+// ── VPN ─────────────────────────────────────────────────────────────────────
+data class VpnState(
+    val rawConfig: String = "",
+    val ipMode: IpMode = IpMode.AUTO,
+    val manualIp: String = "",
+    val selectedIp: String = "",
+    val finalConfig: String = "",
+    val parsed: Boolean = false,
+    val protocol: String = "",
+    val summary: String = "",
+)
+
+enum class IpMode(val label: String) {
+    AUTO("Auto (best scanned IP)"),
+    MANUAL("Manual IP"),
+}
