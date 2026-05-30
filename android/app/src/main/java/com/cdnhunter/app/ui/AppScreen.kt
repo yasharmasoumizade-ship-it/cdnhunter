@@ -49,11 +49,8 @@ val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8E8E93)
 val TextMuted = Color(0xFF48484A)
 
-private enum class Tab(val label: String, val icon: @Composable () -> Unit) {
-    HOME("Home", { Icon(Icons.Rounded.Home, null, modifier = Modifier.size(22.dp)) }),
-    RESULTS("Results", { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp)) }),
-    CONFIG("Config", { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(22.dp)) }),
-    TOOLS("Tools", { Icon(Icons.Rounded.Build, null, modifier = Modifier.size(22.dp)) }),
+private enum class Tab(val label: String) {
+    HOME("Home"), RESULTS("Results"), VPN("VPN"), CONFIG("Config"), TOOLS("Tools"),
 }
 
 
@@ -74,6 +71,7 @@ fun AppScreen(
                 when (currentTab) {
                     Tab.HOME -> HomeScreen(state, config, onConfigChange, onStart, onStop)
                     Tab.RESULTS -> ResultsScreen(state.results)
+                    Tab.VPN -> VpnScreen(state.results)
                     Tab.CONFIG -> ConfigScreen(state.results)
                     Tab.TOOLS -> ToolsScreen(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
                 }
@@ -92,8 +90,8 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
                 val color = if (selected) AccentBlue else TextMuted
-                val icons = mapOf(Tab.HOME to Icons.Rounded.Home, Tab.RESULTS to Icons.Rounded.CheckCircle, Tab.CONFIG to Icons.Rounded.Code, Tab.TOOLS to Icons.Rounded.Build)
-                Column(Modifier.clickable { onSelect(tab) }.padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                val icons = mapOf(Tab.HOME to Icons.Rounded.Home, Tab.RESULTS to Icons.Rounded.CheckCircle, Tab.VPN to Icons.Rounded.VpnKey, Tab.CONFIG to Icons.Rounded.Code, Tab.TOOLS to Icons.Rounded.Build)
+                Column(Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.height(2.dp))
                     Text(tab.label, fontSize = 10.sp, color = color, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
@@ -528,3 +526,153 @@ private fun EmptyState(icon: ImageVector, message: String) {
 }
 
 private fun Double.fmt(digits: Int) = "%.${digits}f".format(this)
+
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  VPN TAB — paste config, pick IP (auto/manual), rebuild & launch v2rayNG
+// ══════════════════════════════════════════════════════════════════════════════
+@Composable
+private fun VpnScreen(results: List<ScanResult>) {
+    val clip = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+
+    var rawConfig by remember { mutableStateOf("") }
+    var ipMode by remember { mutableStateOf(IpMode.AUTO) }
+    var manualIp by remember { mutableStateOf("") }
+    var parsed by remember { mutableStateOf<com.cdnhunter.app.engine.ConfigParser.ParsedConfig?>(null) }
+    var finalConfig by remember { mutableStateOf("") }
+    var copied by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+
+    // Best IP from scan (lowest ms fronting-ok, else lowest ms healthy)
+    val bestIp = remember(results) {
+        results.filter { it.ok && it.frontingOk }.minByOrNull { it.ms }?.ip
+            ?: results.filter { it.ok }.minByOrNull { it.ms }?.ip ?: ""
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.VpnKey, null, tint = AccentBlue, modifier = Modifier.size(24.dp))
+                Text("VPN Config", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+            Text("Paste config, pick clean IP, launch", fontSize = 12.sp, color = TextSecondary)
+        }
+
+        // Step 1: paste config
+        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+            Text("1 · YOUR CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().heightIn(min = 70.dp).clip(RoundedCornerShape(10.dp)).background(CardBg2)) {
+                TextField(rawConfig, { rawConfig = it }, Modifier.fillMaxWidth(),
+                    placeholder = { Text("trojan://... or vless://... or vmess://...", fontSize = 12.sp, color = TextMuted) },
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = AccentBlue,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace))
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(12.dp)).background(CardBg2).clickable {
+                val p = com.cdnhunter.app.engine.ConfigParser.parse(rawConfig)
+                if (p != null) { parsed = p; error = ""; finalConfig = "" } else { error = "Invalid config format"; parsed = null }
+            }, contentAlignment = Alignment.Center) {
+                Text("Parse Config", fontSize = 14.sp, color = AccentTeal, fontWeight = FontWeight.Medium)
+            }
+            if (error.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(error, fontSize = 12.sp, color = RedFail) }
+        } } }
+
+        // Parsed info + IP selection
+        parsed?.let { cfg ->
+            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+                Text("DETECTED", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Text(com.cdnhunter.app.engine.ConfigParser.summary(cfg), fontSize = 13.sp, color = AccentBlue, fontFamily = FontFamily.Monospace)
+                Text("Original IP: ${cfg.address}", fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+            } } }
+
+            // Step 2: IP mode
+            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+                Text("2 · CLEAN IP", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IpMode.entries.forEach { m ->
+                        val sel = ipMode == m
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.2f) else CardBg2)
+                            .border(1.dp, if (sel) AccentBlue else Color.Transparent, RoundedCornerShape(10.dp))
+                            .clickable { ipMode = m }.padding(10.dp), contentAlignment = Alignment.Center) {
+                            Text(m.label, fontSize = 11.sp, color = if (sel) AccentBlue else TextSecondary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (ipMode == IpMode.AUTO) {
+                    if (bestIp.isNotBlank()) Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(GreenOk.copy(0.1f)).padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.AutoAwesome, null, tint = GreenOk, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Best IP: $bestIp", fontSize = 13.sp, color = GreenOk, fontFamily = FontFamily.Monospace)
+                        }
+                    } else Text("No scanned IPs yet — run a scan first", fontSize = 12.sp, color = YellowWarn)
+                } else {
+                    ConfigField(manualIp, { manualIp = it }, "Enter clean IP (e.g. 104.16.1.1)")
+                }
+            } } }
+
+            // Step 3: build + launch
+            item {
+                val chosenIp = if (ipMode == IpMode.AUTO) bestIp else manualIp
+                Box(Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                    .background(Brush.horizontalGradient(listOf(AccentBlue, Color(0xFF0050A0))))
+                    .clickable {
+                        if (chosenIp.isNotBlank()) {
+                            finalConfig = com.cdnhunter.app.engine.ConfigParser.rebuildWithIp(cfg, chosenIp)
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }, contentAlignment = Alignment.Center) {
+                    Text("Build Config with Clean IP", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                }
+            }
+        }
+
+        // Final config output
+        if (finalConfig.isNotBlank()) {
+            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+                Text("READY CONFIG", fontSize = 11.sp, color = GreenOk, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Text(finalConfig, fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(if (copied) GreenOk.copy(0.15f) else CardBg2)
+                        .clickable { clip.setText(AnnotatedString(finalConfig)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }, contentAlignment = Alignment.Center) {
+                        Text(if (copied) "✓ Copied" else "Copy", fontSize = 14.sp, color = if (copied) GreenOk else TextPrimary)
+                    }
+                    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentBlue)
+                        .clickable { launchV2ray(ctx, finalConfig) }, contentAlignment = Alignment.Center) {
+                        Text("Open in v2rayNG", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                    }
+                }
+                LaunchedEffect(copied) { if (copied) { delay(2000); copied = false } }
+            } } }
+        }
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+}
+
+/** Launch the config in v2rayNG (or any handler) via intent. */
+private fun launchV2ray(ctx: android.content.Context, config: String) {
+    try {
+        val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("config", config))
+        // Try v2rayNG deep link
+        val intent = ctx.packageManager.getLaunchIntentForPackage("com.v2ray.ang")
+        if (intent != null) {
+            ctx.startActivity(intent)
+        } else {
+            android.widget.Toast.makeText(ctx, "Config copied. Install v2rayNG to connect.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(ctx, "Config copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
