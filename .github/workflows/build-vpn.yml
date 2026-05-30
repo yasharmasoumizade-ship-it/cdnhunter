@@ -2,14 +2,27 @@ name: Build VPN APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'vpn-overlay/**'
+      - '.github/workflows/build-vpn.yml'
 
 permissions:
   contents: write
+
+env:
+  UPSTREAM_SHA: 7effa2b8bfac129141526e335775ede916f2c96e
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout our repo (overlay)
+        uses: actions/checkout@v4
+        with:
+          path: cdnhunter
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -24,11 +37,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Clone Xray VPN (with submodules)
+      - name: Clone Xray VPN base (pinned)
         run: |
           git clone https://github.com/SaeedDev94/Xray.git app-src
           cd app-src
+          git checkout $UPSTREAM_SHA
           git submodule update --init --recursive
+
+      - name: Apply CDN Hunter overlay
+        run: |
+          chmod +x cdnhunter/vpn-overlay/apply-overlay.sh
+          cdnhunter/vpn-overlay/apply-overlay.sh app-src cdnhunter/vpn-overlay
 
       - name: Build native (XrayCore.aar + XrayHelper)
         working-directory: app-src
@@ -43,14 +62,34 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug -PabiId=2 -PabiTarget=arm64-v8a --no-daemon --stacktrace
 
-      - name: Find and upload APK
+      - name: Collect APK
         run: |
-          find app-src -name "*.apk" -path "*debug*"
           mkdir -p out
-          find app-src -name "*.apk" -path "*debug*" -exec cp {} out/ \;
+          find app-src -name "*.apk" -path "*debug*" -exec cp {} out/CDN-Hunter-VPN.apk \;
+          ls -la out
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vpn-apk
+          name: cdnhunter-vpn-apk
           path: out/*.apk
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: vpn-v1
+          name: CDN Hunter VPN
+          body: |
+            ## CDN Hunter VPN
+
+            Full Xray VPN client (trojan/vless/vmess) with built-in CDN clean-IP scanner.
+
+            - Import your config (paste / QR / clipboard)
+            - Open **CDN Scanner** from the drawer menu
+            - Find clean CDN IPs, tap to copy
+            - Use the clean IP as your config server address
+
+            Based on SaeedDev94/Xray + CDN Hunter scanner.
+          files: out/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
