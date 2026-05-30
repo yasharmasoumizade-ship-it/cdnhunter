@@ -1,55 +1,59 @@
 package com.cdnhunter.app.vpn
 
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
+import libv2ray.Libv2ray
+
 /**
- * Bridge to native xray-core (libv2ray.aar).
- * Calls into the Go library via JNI.
- *
- * When libv2ray.aar is available, this calls real xray functions.
- * Until then, it's a stub that logs errors.
+ * Bridge to native xray-core (libv2ray.aar from AndroidLibXrayLite).
  */
 object XrayBridge {
 
+    private var controller: CoreController? = null
     private var running = false
 
-    fun start(assetsDir: String, configPath: String) {
-        try {
-            // Real call: libv2ray.InitCoreEnv(assetsDir, "")
-            // Real call: libv2ray.StartLoop(configContent, tunFd)
-            libv2ray.Libv2ray.initCoreEnv(assetsDir, "")
-            val config = java.io.File(configPath).readText()
-            libv2ray.Libv2ray.startLoop(config, 0)
-            running = true
-        } catch (e: Exception) {
-            throw RuntimeException("Xray start failed: ${e.message}", e)
+    private val callbackHandler = object : CoreCallbackHandler {
+        override fun startup(): Long = 0
+        override fun shutdown(): Long = 0
+        override fun onEmitStatus(status: Long, msg: String?): Long {
+            android.util.Log.d("XrayBridge", "status=$status msg=$msg")
+            return 0
         }
+    }
+
+    fun init(assetsDir: String) {
+        Libv2ray.initCoreEnv(assetsDir, "")
+        controller = Libv2ray.newCoreController(callbackHandler)
+    }
+
+    fun start(configContent: String, tunFd: Int = 0) {
+        val ctrl = controller ?: throw IllegalStateException("Call init() first")
+        ctrl.startLoop(configContent, tunFd.toLong())
+        running = true
     }
 
     fun stop() {
         if (running) {
-            try {
-                libv2ray.Libv2ray.stopLoop()
-            } catch (_: Exception) {}
+            controller?.stopLoop()
             running = false
         }
     }
 
-    fun queryStats(): Pair<Long, Long> {
-        if (!running) return 0L to 0L
-        return try {
-            val up = libv2ray.Libv2ray.queryStats("proxy", "uplink")
-            val down = libv2ray.Libv2ray.queryStats("proxy", "downlink")
-            up to down
-        } catch (_: Exception) { 0L to 0L }
+    fun queryUpload(): Long {
+        return controller?.queryStats("proxy", "uplink") ?: 0
+    }
+
+    fun queryDownload(): Long {
+        return controller?.queryStats("proxy", "downlink") ?: 0
     }
 
     fun measureDelay(url: String = "https://www.google.com/generate_204"): Long {
-        if (!running) return -1
-        return try {
-            libv2ray.Libv2ray.measureDelay(url)
-        } catch (_: Exception) { -1 }
+        return controller?.measureDelay(url) ?: -1
     }
 
     fun version(): String {
-        return try { libv2ray.Libv2ray.checkVersionX() } catch (_: Exception) { "unknown" }
+        return try { Libv2ray.checkVersionX() } catch (_: Exception) { "unknown" }
     }
+
+    fun isRunning() = running
 }
