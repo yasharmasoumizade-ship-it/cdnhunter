@@ -56,24 +56,33 @@ object AutoIpHelper {
     }
 
     /**
-     * Patch the active profile in Room database directly.
-     * This is the CORRECT way because TProxyService reads from DB each time.
+     * Patch the active profile in Room database directly using raw SQLite.
+     * No dependency on DAO method names — works with any version.
      */
     suspend fun patchActiveProfile(ctx: Context, newIp: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val db = io.github.saeeddev94.xray.database.XrayDatabase.ref(ctx)
-                val settings = io.github.saeeddev94.xray.Settings(ctx)
-                val profileId = settings.selectedProfile
+                val appPrefs = ctx.getSharedPreferences("io.github.saeeddev94.xray_preferences", Context.MODE_PRIVATE)
+                val profileId = appPrefs.getLong("selectedProfile", 0L)
                 if (profileId == 0L) return@withContext false
-                val profile = db.profile().find(profileId) ?: return@withContext false
-                val patched = patchConfigWithIp(profile.config, newIp)
-                if (patched != profile.config) {
-                    profile.config = patched
-                    db.profile().update(profile)
-                    prefs(ctx).edit().putString(KEY_LAST_IP, newIp).apply()
-                    true
-                } else false
+
+                // Open DB directly with SQLiteDatabase (no Room DAO needed)
+                val dbFile = ctx.getDatabasePath("xray")
+                if (!dbFile.exists()) return@withContext false
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+
+                val cursor = db.rawQuery("SELECT config FROM profiles WHERE id = ?", arrayOf(profileId.toString()))
+                if (!cursor.moveToFirst()) { cursor.close(); db.close(); return@withContext false }
+                val oldConfig = cursor.getString(0)
+                cursor.close()
+
+                val patched = patchConfigWithIp(oldConfig, newIp)
+                if (patched == oldConfig) { db.close(); return@withContext false }
+
+                db.execSQL("UPDATE profiles SET config = ? WHERE id = ?", arrayOf(patched, profileId.toString()))
+                db.close()
+                prefs(ctx).edit().putString(KEY_LAST_IP, newIp).apply()
+                true
             } catch (e: Exception) {
                 false
             }
