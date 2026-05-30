@@ -131,6 +131,77 @@ class ScanActivity : AppCompatActivity() {
             root.addView(lastRow)
         }
 
+        // Manual IP input
+        val manualLabel = TextView(this).apply {
+            text = "Manual IP (paste clean IP here)"
+            setTextColor(txt2); textSize = 12f
+            setPadding(dp(14), dp(8), 0, dp(4))
+        }
+        root.addView(manualLabel)
+
+        val manualRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(14), dp(8))
+        }
+        val manualInput = android.widget.EditText(this).apply {
+            hint = "e.g. 104.16.1.1"
+            setTextColor(txt); setHintTextColor(txt2); textSize = 14f
+            setBackgroundColor(card2)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            isSingleLine = true
+        }
+        val applyBtn = Button(this).apply {
+            text = "Apply"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(green)
+            textSize = 13f
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(8), 0, 0, 0); layoutParams = lp
+            setOnClickListener {
+                val ip = manualInput.text.toString().trim()
+                if (ip.matches(Regex("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"))) {
+                    lifecycleScope.launch {
+                        val ok = AutoIpHelper.patchActiveProfile(this@ScanActivity, ip)
+                        runOnUiThread {
+                            if (ok) {
+                                Toast.makeText(this@ScanActivity, "✓ IP applied: $ip", Toast.LENGTH_SHORT).show()
+                                AutoIpHelper.prefs(this@ScanActivity).edit().putString("last_best_ip", ip).apply()
+                            } else {
+                                Toast.makeText(this@ScanActivity, "Failed — tap Set Profile first", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    Toast.makeText(this@ScanActivity, "Invalid IP format", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        manualRow.addView(manualInput); manualRow.addView(applyBtn)
+        root.addView(manualRow)
+
+        // Set Profile button
+        val setProfileBtn = Button(this).apply {
+            text = "Set Current Profile for Auto-IP"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(blue)
+            textSize = 13f
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(14), 0, dp(14), dp(12)); layoutParams = lp
+            setOnClickListener {
+                val appPrefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+                val profileId = appPrefs.getLong("selectedProfile", 0L)
+                if (profileId > 0L) {
+                    AutoIpHelper.setAutoIpProfileId(this@ScanActivity, profileId)
+                    Toast.makeText(this@ScanActivity, "✓ Profile #$profileId set for Auto-IP", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@ScanActivity, "Go back and select a profile first", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        root.addView(setProfileBtn)
+
         // Results scroll
         val scroll = ScrollView(this)
         resultsLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
