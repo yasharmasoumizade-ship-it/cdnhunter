@@ -80,7 +80,7 @@ class ScanEngine {
         val lock = Any()
 
         // Throttle UI updates: batch every N results
-        val updateInterval = maxOf(1, total / 100) // ~100 UI updates total
+        val updateInterval = maxOf(1, total / 50) // ~50 UI updates total (less lag)
 
         coroutineScope {
             ips.map { ip ->
@@ -197,8 +197,8 @@ class ScanEngine {
         val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, SecureRandom()) }
 
         val dispatcher = Dispatcher().apply {
-            maxRequests = config.concurrency + 50
-            maxRequestsPerHost = config.concurrency
+            maxRequests = config.concurrency * 2
+            maxRequestsPerHost = config.concurrency * 2
         }
 
         return OkHttpClient.Builder()
