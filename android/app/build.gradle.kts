@@ -11,8 +11,8 @@ android {
         applicationId = "com.cdnhunter.scanner"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.2"
+        versionCode = 4
+        versionName = "3.0"
     }
 
     signingConfigs {
@@ -56,6 +56,9 @@ android {
 }
 
 dependencies {
+    // Local libs (libv2ray.aar built by CI)
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
