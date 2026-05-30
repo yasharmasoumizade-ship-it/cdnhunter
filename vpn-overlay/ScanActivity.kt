@@ -157,9 +157,22 @@ class ScanActivity : AppCompatActivity() {
                 statusText.text = "Done · ${results.size} clean IPs (tap to copy)"
                 // Save best IP for Auto-IP
                 if (results.isNotEmpty()) {
+                    val bestIp = results.first().ip
                     AutoIpHelper.prefs(this@ScanActivity).edit()
-                        .putString("last_best_ip", results.first().ip).apply()
+                        .putString("last_best_ip", bestIp).apply()
                     AutoIpHelper.setSelectedCdn(this@ScanActivity, cdn)
+                    // If Auto-IP enabled, directly patch config.json NOW
+                    if (AutoIpHelper.isAutoEnabled(this@ScanActivity)) {
+                        val cfgFile = java.io.File(filesDir, "config.json")
+                        if (cfgFile.exists()) {
+                            val original = cfgFile.readText()
+                            val patched = AutoIpHelper.patchConfigWithIp(original, bestIp)
+                            cfgFile.writeText(patched)
+                            Toast.makeText(this@ScanActivity, "✓ Config patched with $bestIp", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@ScanActivity, "Best IP: $bestIp (start VPN once first, then re-scan)", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
                 // Re-render sorted by speed
                 resultsLayout.removeAllViews()
