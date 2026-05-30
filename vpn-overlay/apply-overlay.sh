@@ -76,6 +76,48 @@ if "geoip.dat" not in s:
         print("WARN: onCreate anchor not found")
 PY
 
+echo "==> Injecting TLS fragmentation into LinkHelper.outbounds()"
+python3 - "$PKG/helper/LinkHelper.kt" <<'PY'
+import sys
+f = sys.argv[1]
+s = open(f).read()
+if "fragment" not in s:
+    # 1) add dialerProxy to proxy outbound right after tag is set
+    a1 = '        proxy.put("tag", "proxy")\n'
+    inj1 = a1 + ('        run {\n'
+                 '            val _ss = proxy.optJSONObject("streamSettings") ?: JSONObject()\n'
+                 '            val _so = _ss.optJSONObject("sockopt") ?: JSONObject()\n'
+                 '            _so.put("dialerProxy", "fragment")\n'
+                 '            _ss.put("sockopt", _so)\n'
+                 '            proxy.put("streamSettings", _ss)\n'
+                 '        }\n')
+    s = s.replace(a1, inj1, 1)
+    # 2) add fragment outbound right after proxy is added to list
+    a2 = '        outbounds.put(proxy)\n'
+    inj2 = a2 + ('        val fragment = JSONObject()\n'
+                 '        fragment.put("protocol", "freedom")\n'
+                 '        fragment.put("tag", "fragment")\n'
+                 '        val fragSettings = JSONObject()\n'
+                 '        fragSettings.put("domainStrategy", "AsIs")\n'
+                 '        val frag = JSONObject()\n'
+                 '        frag.put("packets", "tlshello")\n'
+                 '        frag.put("length", "100-200")\n'
+                 '        frag.put("interval", "10-20")\n'
+                 '        fragSettings.put("fragment", frag)\n'
+                 '        fragment.put("settings", fragSettings)\n'
+                 '        val fragSockopt = JSONObject()\n'
+                 '        fragSockopt.put("TcpNoDelay", true)\n'
+                 '        val fragSs = JSONObject()\n'
+                 '        fragSs.put("sockopt", fragSockopt)\n'
+                 '        fragment.put("streamSettings", fragSs)\n'
+                 '        outbounds.put(fragment)\n')
+    s = s.replace(a2, inj2, 1)
+    open(f, "w").write(s)
+    print("fragmentation injected")
+else:
+    print("fragment already present")
+PY
+
 echo "==> Patching strings.xml (appName + cdnScanner)"
 python3 - "$APP/app/src/main/res/values/strings.xml" <<'PY'
 import sys, re
