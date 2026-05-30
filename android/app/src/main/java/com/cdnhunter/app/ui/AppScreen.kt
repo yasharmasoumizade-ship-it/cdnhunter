@@ -50,7 +50,7 @@ val TextSecondary = Color(0xFF8E8E93)
 val TextMuted = Color(0xFF48484A)
 
 private enum class Tab(val label: String) {
-    HOME("Home"), RESULTS("Results"), VPN("VPN"), CONFIG("Config"), TOOLS("Tools"),
+    SCANNER("Scanner"), RESULTS("Results"), VPN("VPN"), TOOLS("Tools"),
 }
 
 
@@ -64,15 +64,14 @@ fun AppScreen(
     onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
-    var currentTab by remember { mutableStateOf(Tab.HOME) }
+    var currentTab by remember { mutableStateOf(Tab.SCANNER) }
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 when (currentTab) {
-                    Tab.HOME -> HomeScreen(state, config, onConfigChange, onStart, onStop)
+                    Tab.SCANNER -> HomeScreen(state, config, onConfigChange, onStart, onStop)
                     Tab.RESULTS -> ResultsScreen(state.results)
                     Tab.VPN -> VpnScreen(state.results)
-                    Tab.CONFIG -> ConfigScreen(state.results)
                     Tab.TOOLS -> ToolsScreen(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
                 }
             }
@@ -90,7 +89,7 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
                 val color = if (selected) AccentBlue else TextMuted
-                val icons = mapOf(Tab.HOME to Icons.Rounded.Home, Tab.RESULTS to Icons.Rounded.CheckCircle, Tab.VPN to Icons.Rounded.VpnKey, Tab.CONFIG to Icons.Rounded.Code, Tab.TOOLS to Icons.Rounded.Build)
+                val icons = mapOf(Tab.SCANNER to Icons.Rounded.Radar, Tab.RESULTS to Icons.Rounded.CheckCircle, Tab.VPN to Icons.Rounded.VpnKey, Tab.TOOLS to Icons.Rounded.Build)
                 Column(Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.height(2.dp))
