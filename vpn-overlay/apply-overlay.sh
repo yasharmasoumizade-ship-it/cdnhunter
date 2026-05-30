@@ -7,8 +7,9 @@ APP="$1"
 OVR="$2"
 PKG="$APP/app/src/main/java/io/github/saeeddev94/xray"
 
-echo "==> Copying scanner files"
+echo "==> Copying scanner + AutoIP files"
 cp "$OVR/CdnScanner.kt" "$PKG/helper/CdnScanner.kt"
+cp "$OVR/AutoIpHelper.kt" "$PKG/helper/AutoIpHelper.kt"
 cp "$OVR/ScanActivity.kt" "$PKG/activity/ScanActivity.kt"
 
 echo "==> Injecting into AndroidManifest"
@@ -116,6 +117,45 @@ if "fragment" not in s:
     print("fragmentation injected")
 else:
     print("fragment already present")
+PY
+
+echo "==> Injecting Auto-IP into TProxyService (scan before connect)"
+python3 - "$PKG/service/TProxyService.kt" <<'PY'
+import sys
+f = sys.argv[1]
+s = open(f).read()
+if "AutoIpHelper" not in s:
+    # Add import
+    if "import io.github.saeeddev94.xray.helper.AutoIpHelper" not in s:
+        s = s.replace("import io.github.saeeddev94.xray.helper.", "import io.github.saeeddev94.xray.helper.AutoIpHelper\nimport io.github.saeeddev94.xray.helper.", 1)
+    # Find where config file is written/used before xray start
+    # In TProxyService, config is written to settings.xrayConfig() then xray starts
+    # We patch: if AutoIP enabled, read config, patch IP, rewrite file
+    anchor = "        XrayCore.start(config.dir, config.file)"
+    if anchor not in s:
+        anchor = "XrayCore.start("
+        idx = s.find(anchor)
+        if idx > 0:
+            line_start = s.rfind("\n", 0, idx) + 1
+            anchor = s[line_start:s.find("\n", idx)+1]
+    
+    inj = ('        // Auto-IP: patch config with best scanned IP before starting\n'
+           '        if (AutoIpHelper.isAutoEnabled(applicationContext)) {\n'
+           '            val cfgFile = java.io.File(filesDir, "config.json")\n'
+           '            if (cfgFile.exists()) {\n'
+           '                val lastIp = AutoIpHelper.getLastIp(applicationContext)\n'
+           '                if (lastIp.isNotBlank()) {\n'
+           '                    val patched = AutoIpHelper.patchConfigWithIp(cfgFile.readText(), lastIp)\n'
+           '                    cfgFile.writeText(patched)\n'
+           '                }\n'
+           '            }\n'
+           '        }\n')
+    if "AutoIpHelper.isAutoEnabled" not in s:
+        s = s.replace(anchor, inj + anchor, 1)
+    open(f, "w").write(s)
+    print("Auto-IP injected into TProxyService")
+else:
+    print("Auto-IP already present")
 PY
 
 echo "==> Patching strings.xml (appName + cdnScanner)"
