@@ -28,7 +28,7 @@ object XrayBridge {
 
     fun start(configContent: String, tunFd: Int = 0) {
         val ctrl = controller ?: throw IllegalStateException("Call init() first")
-        ctrl.startLoop(configContent, tunFd.toLong())
+        ctrl.startLoop(configContent, tunFd)
         running = true
     }
 

@@ -73,7 +73,8 @@ class CdnVpnService : VpnService() {
                 configFile.writeText(config)
 
                 // 2. Start xray as SOCKS proxy
-                XrayBridge.start(filesDir.absolutePath, configFile.absolutePath)
+                XrayBridge.init(filesDir.absolutePath)
+                XrayBridge.start(config)
 
                 // 3. Establish TUN
                 val tun = establishTun() ?: run {
@@ -90,9 +91,8 @@ class CdnVpnService : VpnService() {
 
                 // 5. Monitor traffic stats
                 while (isActive && isRunning.get()) {
-                    val stats = XrayBridge.queryStats()
-                    uploadBytes = stats.first
-                    downloadBytes = stats.second
+                    uploadBytes += XrayBridge.queryUpload()
+                    downloadBytes += XrayBridge.queryDownload()
                     delay(1000)
                 }
             } catch (e: Exception) {
