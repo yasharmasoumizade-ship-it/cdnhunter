@@ -69,34 +69,38 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug -PabiId=2 -PabiTarget=arm64-v8a --no-daemon --stacktrace
 
-      - name: Collect APK
+      - name: Collect APK (exact output path only)
         run: |
           mkdir -p out
-          find app-src -name "*.apk" -path "*debug*" -exec cp {} out/CDN-Hunter-VPN.apk \;
+          # Only the final signed output APK, NOT intermediates
+          APK=$(find app-src/app/build/outputs/apk -name "*.apk" | head -1)
+          echo "Found APK: $APK"
+          test -n "$APK" || (echo "No APK found!" && exit 1)
+          cp "$APK" out/CDN-Hunter-VPN.apk
           ls -la out
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cdnhunter-vpn-apk
-          path: out/*.apk
+          name: CDN-Hunter-VPN
+          path: out/CDN-Hunter-VPN.apk
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: vpn-v1
-          name: CDN Hunter VPN
+          tag_name: vpn-v${{ github.run_number }}
+          name: CDN Hunter VPN (Build ${{ github.run_number }})
           body: |
-            ## CDN Hunter VPN
+            ## CDN Hunter VPN — Build ${{ github.run_number }}
 
-            Full Xray VPN client (trojan/vless/vmess) with built-in CDN clean-IP scanner.
+            Full Xray VPN client with TLS fragmentation (bypasses DPI like NPV) + CDN clean-IP scanner.
 
-            - Import your config (paste / QR / clipboard)
-            - Open **CDN Scanner** from the drawer menu
-            - Find clean CDN IPs, tap to copy
-            - Use the clean IP as your config server address
+            ### Install:
+            1. Download **CDN-Hunter-VPN.apk** below
+            2. Uninstall old version, then install
+            3. Import your config → START
 
-            Based on SaeedDev94/Xray + CDN Hunter scanner.
-          files: out/*.apk
+            Features: TLS fragmentation, trojan/vless/vmess, CDN scanner, clean-IP fronting.
+          files: out/CDN-Hunter-VPN.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
