@@ -62,7 +62,7 @@ object AutoIpHelper {
     suspend fun patchActiveProfile(ctx: Context, newIp: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val appPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+                val appPrefs = ctx.getSharedPreferences(ctx.packageName + "_preferences", Context.MODE_PRIVATE)
                 val profileId = appPrefs.getLong("selectedProfile", 0L)
                 if (profileId == 0L) return@withContext false
 
