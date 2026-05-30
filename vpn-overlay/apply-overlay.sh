@@ -119,8 +119,6 @@ else:
     print("fragment already present")
 PY
 
-echo "==> Auto-IP: ScanActivity handles patching directly (no TProxyService injection)"
-
 echo "==> Patching strings.xml (appName + cdnScanner)"
 python3 - "$APP/app/src/main/res/values/strings.xml" <<'PY'
 import sys, re
