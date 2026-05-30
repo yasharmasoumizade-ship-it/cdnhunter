@@ -40,16 +40,33 @@ object AutoIpHelper {
     }
 
     /**
-     * Patch a config JSON string: replace the FIRST "address" value with newIp.
-     * Uses robust regex to handle any whitespace variations.
+     * Patch config: replace the server address with newIp.
+     * Tries multiple patterns to handle any JSON formatting.
      */
     fun patchConfigWithIp(configJson: String, newIp: String): String {
+        if (configJson.isBlank() || newIp.isBlank()) return configJson
         return try {
-            val regex = Regex("""("address"\s*:\s*")([^"]+)(")""")
-            val match = regex.find(configJson) ?: return configJson
-            val oldAddress = match.groupValues[2]
-            if (oldAddress == "127.0.0.1" || oldAddress == "localhost") return configJson
-            regex.replaceFirst(configJson, "$1$newIp$3")
+            var result = configJson
+            // Pattern 1: "address" : "value" (any whitespace)
+            val p1 = Regex("""("address"\s*:\s*")([^"]+)(")""")
+            val m1 = p1.find(result)
+            if (m1 != null) {
+                val old = m1.groupValues[2]
+                if (old != "127.0.0.1" && old != "localhost" && old != newIp) {
+                    result = p1.replaceFirst(result, "$1$newIp$3")
+                    return result
+                }
+            }
+            // Pattern 2: first IP occurrence in the file (broader fallback)
+            val ipPattern = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})""")
+            val firstIp = ipPattern.find(result)
+            if (firstIp != null) {
+                val old = firstIp.value
+                if (old != "127.0.0.1" && old != "0.0.0.0" && old != newIp) {
+                    result = result.replaceFirst(old, newIp)
+                }
+            }
+            result
         } catch (e: Exception) {
             configJson
         }
@@ -81,7 +98,10 @@ object AutoIpHelper {
                 cursor.close()
 
                 val patched = patchConfigWithIp(oldConfig, newIp)
-                if (patched == oldConfig) { db.close(); return@withContext false }
+                if (patched == oldConfig) {
+                    db.close()
+                    return@withContext oldConfig.contains(newIp)
+                }
 
                 db.execSQL("UPDATE profiles SET config = ? WHERE id = ?", arrayOf(patched, profileId.toString()))
                 db.close()
