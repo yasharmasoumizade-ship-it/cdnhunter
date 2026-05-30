@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.github.saeeddev94.xray.helper.CdnScanner
+import io.github.saeeddev94.xray.helper.AutoIpHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -84,6 +85,41 @@ class ScanActivity : AppCompatActivity() {
         }
         root.addView(statusText)
 
+        // Auto-IP toggle
+        val autoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(card)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, dp(4), 0, dp(8)); layoutParams = lp
+        }
+        val autoLabel = TextView(this).apply {
+            text = "Auto IP (apply best to VPN)"
+            setTextColor(txt); textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val autoSwitch = android.widget.Switch(this).apply {
+            isChecked = AutoIpHelper.isAutoEnabled(this@ScanActivity)
+            setOnCheckedChangeListener { _, checked ->
+                AutoIpHelper.setAutoEnabled(this@ScanActivity, checked)
+                if (checked) Toast.makeText(this@ScanActivity, "Auto-IP enabled. Best IP will be used on VPN start.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        autoRow.addView(autoLabel); autoRow.addView(autoSwitch)
+        root.addView(autoRow)
+
+        // Last used IP
+        val lastIp = AutoIpHelper.getLastIp(this)
+        if (lastIp.isNotBlank()) {
+            val lastRow = TextView(this).apply {
+                text = "Last best IP: $lastIp"
+                setTextColor(txt2); textSize = 12f
+                setPadding(dp(14), 0, 0, dp(8))
+            }
+            root.addView(lastRow)
+        }
+
         // Results scroll
         val scroll = ScrollView(this)
         resultsLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -119,6 +155,12 @@ class ScanActivity : AppCompatActivity() {
                 running = false
                 scanButton.text = "Start Scan"
                 statusText.text = "Done · ${results.size} clean IPs (tap to copy)"
+                // Save best IP for Auto-IP
+                if (results.isNotEmpty()) {
+                    AutoIpHelper.prefs(this@ScanActivity).edit()
+                        .putString("last_best_ip", results.first().ip).apply()
+                    AutoIpHelper.setSelectedCdn(this@ScanActivity, cdn)
+                }
                 // Re-render sorted by speed
                 resultsLayout.removeAllViews()
                 results.take(50).forEach { addResultRow(it) }
@@ -144,15 +186,22 @@ class ScanActivity : AppCompatActivity() {
             lp.setMargins(0, dp(3), 0, dp(3)); layoutParams = lp
             setOnClickListener { copyIp(r.ip) }
         }
+        // Green dot
+        val dot = android.view.View(this).apply {
+            val lp = LinearLayout.LayoutParams(dp(8), dp(8))
+            lp.setMargins(0, 0, dp(10), 0); layoutParams = lp
+            setBackgroundColor(green)
+        }
         val ipText = TextView(this).apply {
             text = r.ip; setTextColor(txt); textSize = 14f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            typeface = android.graphics.Typeface.MONOSPACE
         }
         val msColor = if (r.ms < 300) green else Color.parseColor("#FFD60A")
         val msText = TextView(this).apply {
             text = "${r.ms}ms"; setTextColor(msColor); textSize = 13f
         }
-        row.addView(ipText); row.addView(msText)
+        row.addView(dot); row.addView(ipText); row.addView(msText)
         resultsLayout.addView(row)
     }
 
