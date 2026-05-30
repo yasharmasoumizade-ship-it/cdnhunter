@@ -29,8 +29,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.net.VpnService
+import androidx.compose.ui.platform.LocalContext
 import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
+import com.cdnhunter.app.vpn.CdnVpnService
+import com.cdnhunter.app.vpn.ConfigUriParser
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -117,13 +121,22 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
 // == VPN TAB ==
 @Composable
 private fun VpnTab() {
-    var connected by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val clip = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
     var configUri by remember { mutableStateOf("") }
     var autoIp by remember { mutableStateOf(true) }
-    var uploadBytes by remember { mutableStateOf(0L) }
-    var downloadBytes by remember { mutableStateOf(0L) }
-    var latencyMs by remember { mutableStateOf(0) }
+    var parsedInfo by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            connected = CdnVpnService.isRunning.get()
+            if (connected) connecting = false
+            delay(1000)
+        }
+    }
 
     val statusText = when {
         connecting -> "Connecting..."
@@ -135,6 +148,8 @@ private fun VpnTab() {
         connected -> GreenOk
         else -> AccentBlue
     }
+    val downloadBytes = if (connected) CdnVpnService.downloadBytes else 0L
+    val uploadBytes = if (connected) CdnVpnService.uploadBytes else 0L
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -144,7 +159,6 @@ private fun VpnTab() {
         Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(Modifier.height(40.dp))
 
-        // Big connect button with pulsing ring
         Box(contentAlignment = Alignment.Center) {
             if (connecting) {
                 val pulse by rememberInfiniteTransition(label = "vpn_pulse").animateFloat(
@@ -157,12 +171,21 @@ private fun VpnTab() {
                     .background(Brush.radialGradient(listOf(buttonColor, buttonColor.copy(0.7f))))
                     .clickable {
                         if (connecting) return@clickable
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (connected) {
+                            CdnVpnService.stop(context)
                             connected = false
                         } else {
-                            connecting = true
-                            connected = true
-                            connecting = false
+                            if (configUri.isBlank()) return@clickable
+                            context.getSharedPreferences("cdnhunter_vpn", 0).edit()
+                                .putString("user_config", configUri).apply()
+                            val prepareIntent = VpnService.prepare(context)
+                            if (prepareIntent != null) {
+                                context.startActivity(prepareIntent)
+                            } else {
+                                connecting = true
+                                CdnVpnService.start(context)
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center
@@ -178,17 +201,55 @@ private fun VpnTab() {
         Text(statusText, fontSize = 16.sp, color = if (connected) GreenOk else TextSecondary, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(32.dp))
 
-        // Import config field
         GlassBox(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
                 Text("IMPORT CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
-                ConfigField(configUri, { configUri = it }, "Paste trojan/vless/vmess URI")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        ConfigField(configUri, { configUri = it }, "trojan/vless/vmess URI")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).background(AccentBlue)
+                            .clickable {
+                                val text = clip.getText()?.text ?: ""
+                                if (text.startsWith("trojan://") || text.startsWith("vless://") || text.startsWith("vmess://")) {
+                                    configUri = text
+                                }
+                                if (configUri.isNotBlank()) {
+                                    val ob = ConfigUriParser.parseToOutbound(configUri)
+                                    if (ob != null) {
+                                        val proto = ob.optString("protocol", "?")
+                                        val settings = ob.optJSONObject("settings")
+                                        val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
+                                            ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
+                                        val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
+                                            ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
+                                        val ss = ob.optJSONObject("streamSettings")
+                                        val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
+                                        val net = ss?.optString("network", "tcp") ?: "tcp"
+                                        parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
+                                        context.getSharedPreferences("cdnhunter_vpn", 0).edit()
+                                            .putString("user_config", configUri).apply()
+                                    } else {
+                                        parsedInfo = "Invalid config"
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Add, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (parsedInfo.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
 
-        // Auto-IP toggle
         GlassBox(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -196,34 +257,16 @@ private fun VpnTab() {
                     Text("Use best scanned IP automatically", fontSize = 11.sp, color = TextSecondary)
                 }
                 Switch(
-                    checked = autoIp,
-                    onCheckedChange = { autoIp = it },
+                    checked = autoIp, onCheckedChange = { autoIp = it },
                     colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
                 )
             }
         }
         Spacer(Modifier.height(12.dp))
 
-        // Traffic cards
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TrafficCard("Download", downloadBytes, AccentTeal, Modifier.weight(1f))
             TrafficCard("Upload", uploadBytes, AccentBlue, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // Latency display
-        GlassBox(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Speed, null, tint = YellowWarn, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Latency", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                Text(
-                    if (latencyMs > 0) "${latencyMs} ms" else "-- ms",
-                    fontSize = 14.sp,
-                    color = when { latencyMs in 1..200 -> GreenOk; latencyMs > 200 -> YellowWarn; else -> TextMuted },
-                    fontFamily = FontFamily.Monospace
-                )
-            }
         }
         Spacer(Modifier.height(40.dp))
     }
