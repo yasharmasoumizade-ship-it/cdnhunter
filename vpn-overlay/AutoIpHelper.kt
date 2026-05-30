@@ -65,7 +65,7 @@ object AutoIpHelper {
                 // Try our saved profile ID first, fallback to app's selectedProfile
                 var profileId = prefs(ctx).getLong("auto_ip_profile_id", 0L)
                 if (profileId == 0L) {
-                    val appPrefs = ctx.getSharedPreferences(ctx.packageName + "_preferences", Context.MODE_PRIVATE)
+                    val appPrefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
                     profileId = appPrefs.getLong("selectedProfile", 0L)
                 }
                 if (profileId == 0L) return@withContext false

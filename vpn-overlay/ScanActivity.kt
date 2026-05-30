@@ -106,7 +106,7 @@ class ScanActivity : AppCompatActivity() {
                 AutoIpHelper.setAutoEnabled(this@ScanActivity, checked)
                 if (checked) {
                     // Save current selected profile ID for Auto-IP
-                    val appPrefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+                    val appPrefs = getSharedPreferences("settings", MODE_PRIVATE)
                     val profileId = appPrefs.getLong("selectedProfile", 0L)
                     if (profileId > 0L) {
                         AutoIpHelper.setAutoIpProfileId(this@ScanActivity, profileId)
@@ -190,7 +190,7 @@ class ScanActivity : AppCompatActivity() {
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(dp(14), 0, dp(14), dp(12)); layoutParams = lp
             setOnClickListener {
-                val appPrefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+                val appPrefs = getSharedPreferences("settings", MODE_PRIVATE)
                 val profileId = appPrefs.getLong("selectedProfile", 0L)
                 if (profileId > 0L) {
                     AutoIpHelper.setAutoIpProfileId(this@ScanActivity, profileId)
