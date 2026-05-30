@@ -104,7 +104,17 @@ class ScanActivity : AppCompatActivity() {
             isChecked = AutoIpHelper.isAutoEnabled(this@ScanActivity)
             setOnCheckedChangeListener { _, checked ->
                 AutoIpHelper.setAutoEnabled(this@ScanActivity, checked)
-                if (checked) Toast.makeText(this@ScanActivity, "Auto-IP enabled. Best IP will be used on VPN start.", Toast.LENGTH_SHORT).show()
+                if (checked) {
+                    // Save current selected profile ID for Auto-IP
+                    val appPrefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+                    val profileId = appPrefs.getLong("selectedProfile", 0L)
+                    if (profileId > 0L) {
+                        AutoIpHelper.setAutoIpProfileId(this@ScanActivity, profileId)
+                        Toast.makeText(this@ScanActivity, "Auto-IP ON (profile #$profileId)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@ScanActivity, "Auto-IP ON — select a profile on main screen first", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
         autoRow.addView(autoLabel); autoRow.addView(autoSwitch)
