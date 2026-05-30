@@ -49,6 +49,13 @@ jobs:
           chmod +x cdnhunter/vpn-overlay/apply-overlay.sh
           cdnhunter/vpn-overlay/apply-overlay.sh app-src cdnhunter/vpn-overlay
 
+      - name: Bundle geoip/geosite assets
+        run: |
+          mkdir -p app-src/app/src/main/assets
+          curl -sL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o app-src/app/src/main/assets/geoip.dat
+          curl -sL "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat" -o app-src/app/src/main/assets/geosite.dat
+          ls -la app-src/app/src/main/assets/
+
       - name: Build native (XrayCore.aar + XrayHelper)
         working-directory: app-src
         run: |
