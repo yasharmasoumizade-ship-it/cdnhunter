@@ -40,23 +40,43 @@ object AutoIpHelper {
     }
 
     /**
-     * Patch a config JSON to use the given IP as server address.
-     * Uses regex replacement to avoid JSON re-serialization issues.
-     * Only patches the FIRST "address" field in the proxy outbound.
+     * Patch a config JSON string: replace the FIRST "address" value with newIp.
      */
     fun patchConfigWithIp(configJson: String, newIp: String): String {
         return try {
-            // Find the first "address": "..." in the config and replace its value
-            // This is safe because the first address in outbounds[0] is always the server IP
             val regex = Regex(""""address"\s*:\s*"([^"]+)"""")
             val match = regex.find(configJson) ?: return configJson
             val oldAddress = match.groupValues[1]
-            // Only patch if it looks like an IP or domain (not localhost)
             if (oldAddress == "127.0.0.1" || oldAddress == "localhost") return configJson
-            configJson.replaceFirst(""""address": "$oldAddress"""", """"address": "$newIp"""")
-                .replaceFirst(""""address":"$oldAddress"""", """"address":"$newIp"""")
+            configJson.replace(""""address":"$oldAddress"""", """"address":"$newIp"""")
+                      .replace(""""address": "$oldAddress"""", """"address": "$newIp"""")
         } catch (e: Exception) {
             configJson
+        }
+    }
+
+    /**
+     * Patch the active profile in Room database directly.
+     * This is the CORRECT way because TProxyService reads from DB each time.
+     */
+    suspend fun patchActiveProfile(ctx: Context, newIp: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val db = io.github.saeeddev94.xray.database.XrayDatabase.ref(ctx)
+                val settings = io.github.saeeddev94.xray.Settings(ctx)
+                val profileId = settings.selectedProfile
+                if (profileId == 0L) return@withContext false
+                val profile = db.profile().find(profileId) ?: return@withContext false
+                val patched = patchConfigWithIp(profile.config, newIp)
+                if (patched != profile.config) {
+                    profile.config = patched
+                    db.profile().update(profile)
+                    prefs(ctx).edit().putString(KEY_LAST_IP, newIp).apply()
+                    true
+                } else false
+            } catch (e: Exception) {
+                false
+            }
         }
     }
 

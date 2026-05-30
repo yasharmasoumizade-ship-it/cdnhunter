@@ -18,6 +18,7 @@ import io.github.saeeddev94.xray.helper.CdnScanner
 import io.github.saeeddev94.xray.helper.AutoIpHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.launch
 
 /**
  * CDN clean-IP scanner screen. Programmatic UI (no XML binding) for robustness.
@@ -161,16 +162,14 @@ class ScanActivity : AppCompatActivity() {
                     AutoIpHelper.prefs(this@ScanActivity).edit()
                         .putString("last_best_ip", bestIp).apply()
                     AutoIpHelper.setSelectedCdn(this@ScanActivity, cdn)
-                    // If Auto-IP enabled, directly patch config.json NOW
+                    // If Auto-IP enabled, directly patch active profile in database
                     if (AutoIpHelper.isAutoEnabled(this@ScanActivity)) {
-                        val cfgFile = java.io.File(filesDir, "config.json")
-                        if (cfgFile.exists()) {
-                            val original = cfgFile.readText()
-                            val patched = AutoIpHelper.patchConfigWithIp(original, bestIp)
-                            cfgFile.writeText(patched)
-                            Toast.makeText(this@ScanActivity, "✓ Config patched with $bestIp", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(this@ScanActivity, "Best IP: $bestIp (start VPN once first, then re-scan)", Toast.LENGTH_LONG).show()
+                        lifecycleScope.launch {
+                            val ok = AutoIpHelper.patchActiveProfile(this@ScanActivity, bestIp)
+                            runOnUiThread {
+                                if (ok) Toast.makeText(this@ScanActivity, "✓ Profile patched: $bestIp", Toast.LENGTH_SHORT).show()
+                                else Toast.makeText(this@ScanActivity, "Select a profile first, then re-scan", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 }
