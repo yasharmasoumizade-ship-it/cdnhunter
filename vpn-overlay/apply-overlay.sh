@@ -57,6 +57,25 @@ if "R.id.cdnScanner" not in s:
         print("WARN: nav anchor not found")
 PY
 
+echo "==> Injecting geoip/geosite asset-copy into MainActivity.onCreate"
+python3 - "$PKG/activity/MainActivity.kt" <<'PY'
+import sys
+f = sys.argv[1]
+s = open(f).read()
+if "geoip.dat" not in s:
+    anchor = "    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n"
+    inj = anchor + ('        listOf("geoip.dat", "geosite.dat").forEach { n ->\n'
+                    '            val df = java.io.File(filesDir, n)\n'
+                    '            if (!df.exists()) try { assets.open(n).use { i -> df.outputStream().use { o -> i.copyTo(o) } } } catch (e: Exception) {}\n'
+                    '        }\n')
+    s2 = s.replace(anchor, inj, 1)
+    if s2 != s:
+        open(f, "w").write(s2)
+        print("asset-copy injected")
+    else:
+        print("WARN: onCreate anchor not found")
+PY
+
 echo "==> Patching strings.xml (appName + cdnScanner)"
 python3 - "$APP/app/src/main/res/values/strings.xml" <<'PY'
 import sys, re
