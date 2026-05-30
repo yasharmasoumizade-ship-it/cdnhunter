@@ -6,6 +6,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,13 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
-import com.cdnhunter.app.engine.GeoService
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
-
-// ── Theme Colors ────────────────────────────────────────────────────────────
+// == Theme Colors ==
 val DarkBg = Color(0xFF000000)
 val CardBg = Color(0xFF1C1C1E)
 val CardBg2 = Color(0xFF2C2C2E)
@@ -50,46 +48,62 @@ val TextSecondary = Color(0xFF8E8E93)
 val TextMuted = Color(0xFF48484A)
 
 private enum class Tab(val label: String) {
-    SCANNER("Scanner"), RESULTS("Results"), VPN("VPN"), TOOLS("Tools"),
+    VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
 }
 
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  MAIN APP — Bottom Navigation (Home / Results / Config / Tools)
-// ══════════════════════════════════════════════════════════════════════════════
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+// == MAIN APP ==
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppScreen(
     state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
     onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
-    var currentTab by remember { mutableStateOf(Tab.SCANNER) }
+    val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Auto-switch to Results tab when scan completes
+    LaunchedEffect(state.phase, state.results.size) {
+        if (state.phase == ScanPhase.DONE && state.results.isNotEmpty()) {
+            pagerState.animateScrollToPage(Tab.RESULTS.ordinal)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                when (currentTab) {
-                    Tab.SCANNER -> HomeScreen(state, config, onConfigChange, onStart, onStop)
-                    Tab.RESULTS -> ResultsScreen(state.results)
-                    Tab.VPN -> VpnScreen(state.results)
-                    Tab.TOOLS -> ToolsScreen(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
+            Box(Modifier.weight(1f)) {
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                    Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                        when (Tab.entries[page]) {
+                            Tab.VPN -> VpnTab()
+                            Tab.SCANNER -> ScannerTab(state, config, onConfigChange, onStart, onStop)
+                            Tab.RESULTS -> ResultsTab(state.results)
+                            Tab.TOOLS -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
+                        }
+                    }
                 }
             }
-            BottomNavBar(currentTab) { currentTab = it }
+            BottomNavBar(Tab.entries[pagerState.currentPage]) { tab ->
+                coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) }
+            }
         }
     }
 }
 
-
-// ── Bottom Nav Bar ──────────────────────────────────────────────────────────
+// == Bottom Nav Bar ==
 @Composable
 private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
+    val icons = mapOf(
+        Tab.VPN to Icons.Rounded.Shield,
+        Tab.SCANNER to Icons.Rounded.Radar,
+        Tab.RESULTS to Icons.Rounded.List,
+        Tab.TOOLS to Icons.Rounded.Build
+    )
     Box(Modifier.fillMaxWidth().background(CardBg.copy(0.85f))) {
         Row(Modifier.fillMaxWidth().padding(8.dp, 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
                 val color = if (selected) AccentBlue else TextMuted
-                val icons = mapOf(Tab.SCANNER to Icons.Rounded.Radar, Tab.RESULTS to Icons.Rounded.CheckCircle, Tab.VPN to Icons.Rounded.VpnKey, Tab.TOOLS to Icons.Rounded.Build)
                 Column(Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.height(2.dp))
@@ -100,12 +114,141 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     }
 }
 
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  HOME — Big circular scan button + stats + phase indicator
-// ══════════════════════════════════════════════════════════════════════════════
+// == VPN TAB ==
 @Composable
-private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
+private fun VpnTab() {
+    var connected by remember { mutableStateOf(false) }
+    var connecting by remember { mutableStateOf(false) }
+    var configUri by remember { mutableStateOf("") }
+    var autoIp by remember { mutableStateOf(true) }
+    var uploadBytes by remember { mutableStateOf(0L) }
+    var downloadBytes by remember { mutableStateOf(0L) }
+    var latencyMs by remember { mutableStateOf(0) }
+
+    val statusText = when {
+        connecting -> "Connecting..."
+        connected -> "Connected"
+        else -> "Disconnected"
+    }
+    val buttonColor = when {
+        connecting -> AccentBlue
+        connected -> GreenOk
+        else -> AccentBlue
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(32.dp))
+        Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Spacer(Modifier.height(40.dp))
+
+        // Big connect button with pulsing ring
+        Box(contentAlignment = Alignment.Center) {
+            if (connecting) {
+                val pulse by rememberInfiniteTransition(label = "vpn_pulse").animateFloat(
+                    1f, 1.3f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "vpn_pf"
+                )
+                Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(buttonColor.copy(0.15f)))
+            }
+            Box(
+                Modifier.size(120.dp).clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(buttonColor, buttonColor.copy(0.7f))))
+                    .clickable {
+                        if (connecting) return@clickable
+                        if (connected) {
+                            connected = false
+                        } else {
+                            connecting = true
+                            connected = true
+                            connecting = false
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (connected) Icons.Rounded.Shield else Icons.Rounded.PowerSettingsNew,
+                    null, tint = Color.White, modifier = Modifier.size(48.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text(statusText, fontSize = 16.sp, color = if (connected) GreenOk else TextSecondary, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(32.dp))
+
+        // Import config field
+        GlassBox(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("IMPORT CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                ConfigField(configUri, { configUri = it }, "Paste trojan/vless/vmess URI")
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Auto-IP toggle
+        GlassBox(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                    Text("Use best scanned IP automatically", fontSize = 11.sp, color = TextSecondary)
+                }
+                Switch(
+                    checked = autoIp,
+                    onCheckedChange = { autoIp = it },
+                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Traffic cards
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TrafficCard("Download", downloadBytes, AccentTeal, Modifier.weight(1f))
+            TrafficCard("Upload", uploadBytes, AccentBlue, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Latency display
+        GlassBox(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Speed, null, tint = YellowWarn, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Latency", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                Text(
+                    if (latencyMs > 0) "${latencyMs} ms" else "-- ms",
+                    fontSize = 14.sp,
+                    color = when { latencyMs in 1..200 -> GreenOk; latencyMs > 200 -> YellowWarn; else -> TextMuted },
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun TrafficCard(label: String, bytes: Long, color: Color, modifier: Modifier) {
+    GlassBox(modifier) {
+        Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, fontSize = 11.sp, color = TextSecondary)
+            Spacer(Modifier.height(6.dp))
+            Text(formatBytes(bytes), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+    else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+}
+
+// == SCANNER TAB ==
+@Composable
+private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
         Text("CDN Hunter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -138,7 +281,8 @@ private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (Sc
         }
         Spacer(Modifier.height(12.dp))
         // Progress
-        @Suppress("DEPRECATION") LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = AccentBlue, trackColor = CardBg)
+        @Suppress("DEPRECATION")
+        LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = AccentBlue, trackColor = CardBg)
         Spacer(Modifier.height(4.dp))
         Text("${state.pct}% • ${state.source}", fontSize = 11.sp, color = TextSecondary)
         Spacer(Modifier.height(16.dp))
@@ -158,17 +302,14 @@ private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (Sc
                         }
                     }
                 }
-                // Manual IP input
                 if (config.cdnProvider == CdnProvider.MANUAL) {
                     Spacer(Modifier.height(10.dp))
                     ConfigField(config.manualIps, { onConfigChange(config.copy(manualIps = it)) }, "IPs: 1.2.3.4, 5.6.7.8")
                 }
-                // Manual CIDR input
                 if (config.cdnProvider == CdnProvider.CIDR) {
                     Spacer(Modifier.height(10.dp))
                     ConfigField(config.manualCidr, { onConfigChange(config.copy(manualCidr = it)) }, "CIDR: 104.16.0.0/12")
                 }
-                // Max IPs + Workers
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.weight(1f)) { ConfigField("${config.maxIps}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v.coerceIn(10, 50000))) } }, "Max IPs") }
@@ -180,210 +321,90 @@ private fun HomeScreen(state: ScanState, config: ScanConfig, onConfigChange: (Sc
     }
 }
 
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  RESULTS — Card per IP, tap-to-copy, haptic, green flash, inline region map
-// ══════════════════════════════════════════════════════════════════════════════
+// == RESULTS TAB ==
 @Composable
-private fun ResultsScreen(results: List<ScanResult>) {
-    val clip = LocalClipboardManager.current; val haptic = LocalHapticFeedback.current
-    var selectedIp by remember { mutableStateOf<ScanResult?>(null) }
-    val geoService = remember { GeoService() }
+private fun ResultsTab(results: List<ScanResult>) {
+    val clip = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val healthy = results.filter { it.ok }
 
-    if (results.isEmpty()) { EmptyState(Icons.Rounded.Search, "No results yet. Start a scan!"); return }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-        items(results, key = { it.ip }) { r ->
-            var copied by remember { mutableStateOf(false) }
-            val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else CardBg.copy(0.7f), tween(300), label = "")
-            LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
-            val isExpanded = selectedIp?.ip == r.ip
+    if (results.isEmpty()) {
+        EmptyState(Icons.Rounded.Search, "No results yet. Start a scan!")
+        return
+    }
 
-            Column {
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg).border(1.dp, if (copied) GreenOk.copy(0.4f) else Color(0xFF38383A).copy(0.3f), RoundedCornerShape(16.dp))
-                    .clickable { clip.setText(AnnotatedString(r.ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)
+        ) {
+            items(results, key = { it.ip }) { r ->
+                var copied by remember { mutableStateOf(false) }
+                val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else CardBg.copy(0.7f), tween(300), label = "")
+                LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
+
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg)
+                        .border(1.dp, if (copied) GreenOk.copy(0.4f) else Color(0xFF38383A).copy(0.3f), RoundedCornerShape(16.dp))
+                        .clickable {
+                            clip.setText(AnnotatedString(r.ip))
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            copied = true
+                        }
                 ) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(r.ip, fontSize = 14.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(r.cdn, fontSize = 11.sp, color = AccentBlue)
-                                if (r.country.isNotBlank()) Text(r.country, fontSize = 11.sp, color = if (r.country == "IR") RedFail else TextSecondary)
+                            // Region as text only: "CDN . Country - City"
+                            val regionText = buildString {
+                                append(r.cdn)
+                                if (r.country.isNotBlank()) {
+                                    append(" \u2022 ${r.country}")
+                                    if (r.city.isNotBlank()) append(" - ${r.city}")
+                                }
+                            }
+                            Text(regionText, fontSize = 11.sp, color = AccentBlue)
+                        }
+                        if (copied) {
+                            Text("\u2713", fontSize = 18.sp, color = GreenOk, fontWeight = FontWeight.Bold)
+                        } else {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
+                                if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
                             }
                         }
-                        if (copied) Text("✓", fontSize = 18.sp, color = GreenOk, fontWeight = FontWeight.Bold)
-                        else Column(horizontalAlignment = Alignment.End) {
-                            Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
-                            if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
-                        }
                     }
                 }
+            }
+        }
 
-                // Region expand button
-                if (r.ok) {
-                    Spacer(Modifier.height(4.dp))
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2.copy(0.5f))
-                        .clickable { selectedIp = if (isExpanded) null else r }.padding(8.dp, 6.dp), contentAlignment = Alignment.Center) {
-                        Text(if (isExpanded) "▲ Hide Region" else "▼ Show Region", fontSize = 11.sp, color = AccentTeal)
-                    }
-                }
-                // Inline region map
-                AnimatedVisibility(visible = isExpanded, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                    RegionMapInline(r, geoService)
-                }
+        // FAB to copy all healthy IPs
+        if (healthy.isNotEmpty()) {
+            FloatingActionButton(
+                onClick = {
+                    clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                containerColor = AccentBlue,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs")
             }
         }
     }
 }
 
-
-// ── Region Map Inline (Canvas-based, no WebView) ────────────────────────────
-@OptIn(ExperimentalLayoutApi::class)
+// == TOOLS TAB ==
 @Composable
-private fun RegionMapInline(r: ScanResult, geoService: GeoService) {
-    var geo by remember(r.ip) { mutableStateOf<GeoService.GeoInfo?>(null) }
-    var loading by remember(r.ip) { mutableStateOf(true) }
-    LaunchedEffect(r.ip) { loading = true; geo = withContext(Dispatchers.IO) { geoService.lookupGeoInfo(r.ip) }; loading = false }
-
-    GlassBox(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Column(Modifier.padding(12.dp)) {
-            if (loading) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp), color = AccentBlue, strokeWidth = 2.dp) }
-            } else if (geo != null && geo!!.lat != 0.0) {
-                // Canvas radar map
-                Box(Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF0A1628)), contentAlignment = Alignment.Center) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val w = size.width; val h = size.height; val gc = Color(0xFF1A3A5C)
-                        for (i in 1..6) { drawLine(gc, Offset(0f, h * i / 7), Offset(w, h * i / 7), 0.5f) }
-                        for (i in 1..8) { drawLine(gc, Offset(w * i / 9, 0f), Offset(w * i / 9, h), 0.5f) }
-                        // Crosshair
-                        drawLine(AccentBlue.copy(0.3f), Offset(w / 2, 0f), Offset(w / 2, h), 1f)
-                        drawLine(AccentBlue.copy(0.3f), Offset(0f, h / 2), Offset(w, h / 2), 1f)
-                    }
-                    val pulse by rememberInfiniteTransition(label = "mp").animateFloat(0.8f, 1.2f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "mpf")
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(40.dp).scale(pulse), contentAlignment = Alignment.Center) {
-                            Box(Modifier.size(40.dp).clip(CircleShape).background(AccentBlue.copy(0.1f)))
-                            Box(Modifier.size(24.dp).clip(CircleShape).background(AccentBlue.copy(0.25f)))
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(AccentBlue))
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text("${geo!!.lat.fmt(2)}°, ${geo!!.lon.fmt(2)}°", fontSize = 10.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    InfoChip(Icons.Rounded.Flag, geo!!.cc, AccentBlue)
-                    if (geo!!.city.isNotBlank()) InfoChip(Icons.Rounded.LocationCity, geo!!.city, AccentTeal)
-                    if (geo!!.isp.isNotBlank()) InfoChip(Icons.Rounded.Dns, geo!!.isp.take(22), TextSecondary)
-                    InfoChip(Icons.Rounded.MyLocation, "${geo!!.lat.fmt(2)}, ${geo!!.lon.fmt(2)}", TextMuted)
-                }
-            } else { Text("Location unavailable", fontSize = 12.sp, color = TextMuted) }
-        }
-    }
-}
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  CONFIG TAB — Proxy config generator (VLESS/VMess/Trojan/Sing-Box/Clash)
-// ══════════════════════════════════════════════════════════════════════════════
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConfigScreen(results: List<ScanResult>) {
-    val clip = LocalClipboardManager.current; val haptic = LocalHapticFeedback.current
-    val fronting = results.filter { it.ok && it.frontingOk }
-    var selectedIp by remember { mutableStateOf(fronting.firstOrNull()?.ip ?: "") }
-    var selectedType by remember { mutableStateOf(ProxyType.VLESS) }
-    var sni by remember { mutableStateOf(fronting.firstOrNull()?.frontingSni ?: "") }
-    var host by remember { mutableStateOf(fronting.firstOrNull()?.frontingHost ?: "") }
-    var uuid by remember { mutableStateOf("auto") }
-    var config by remember { mutableStateOf("") }
-    var copied by remember { mutableStateOf(false) }
-
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-        item { Text("Config Generator", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-        // IP selection
-        if (fronting.isNotEmpty()) { item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-            Text("SELECT IP", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            fronting.take(6).forEach { r ->
-                val sel = selectedIp == r.ip
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.15f) else Color.Transparent)
-                    .border(1.dp, if (sel) AccentBlue else Color(0xFF38383A), RoundedCornerShape(10.dp))
-                    .clickable { selectedIp = r.ip; sni = r.frontingSni; host = r.frontingHost }.padding(10.dp)) {
-                    Row { Text(r.ip, fontSize = 13.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)); Text("${r.ms}ms", fontSize = 11.sp, color = GreenOk) }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-        } } } } else { item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-            Text("IP ADDRESS", fontSize = 11.sp, color = TextSecondary); Spacer(Modifier.height(6.dp))
-            ConfigField(selectedIp, { selectedIp = it }, "Enter IP address")
-        } } } }
-
-        // Type selector
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-            Text("PROTOCOL", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProxyType.entries.forEach { t ->
-                    val sel = selectedType == t
-                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.2f) else CardBg2)
-                        .border(1.dp, if (sel) AccentBlue else Color.Transparent, RoundedCornerShape(10.dp))
-                        .clickable { selectedType = t }.padding(10.dp, 7.dp)) {
-                        Text(t.label, fontSize = 12.sp, color = if (sel) AccentBlue else TextSecondary)
-                    }
-                }
-            }
-        } } }
-        // Details
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-            Text("DETAILS", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            ConfigField(sni, { sni = it }, "SNI (e.g. a248.e.akamai.net)")
-            Spacer(Modifier.height(6.dp))
-            ConfigField(host, { host = it }, "Host header (your domain)")
-            Spacer(Modifier.height(6.dp))
-            ConfigField(uuid, { uuid = it }, "UUID (auto = random)")
-            Spacer(Modifier.height(6.dp))
-            var domain by remember { mutableStateOf("") }
-            ConfigField(domain, { domain = it; if (host.isBlank()) host = it }, "Your Domain (e.g. mysite.com)")
-        } } }
-        // Generate button
-        item { Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp))
-            .background(Brush.horizontalGradient(listOf(AccentBlue, Color(0xFF0050A0))))
-            .clickable { config = ConfigGenerator.generate(ProxyConfig(selectedType, selectedIp, 443, sni, host, uuid)) }, contentAlignment = Alignment.Center) {
-            Text("Generate Config", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-        } }
-        // Output
-        if (config.isNotBlank()) { item {
-            GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Output", fontSize = 13.sp, color = TextSecondary)
-                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(if (copied) GreenOk.copy(0.15f) else AccentBlue.copy(0.12f))
-                        .clickable { clip.setText(AnnotatedString(config)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }.padding(10.dp, 5.dp)) {
-                        Text(if (copied) "✓ Copied" else "Copy", fontSize = 12.sp, color = if (copied) GreenOk else AccentBlue)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(config, fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-            } }
-            LaunchedEffect(copied) { if (copied) { delay(2000); copied = false } }
-        } }
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  TOOLS TAB — Export, Scan Profiles, Update Ranges
-// ══════════════════════════════════════════════════════════════════════════════
-@Composable
-private fun ToolsScreen(
+private fun ToolsTab(
     results: List<ScanResult>, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
     onStart: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit, onExport: () -> Unit,
 ) {
-    val clip = LocalClipboardManager.current; val haptic = LocalHapticFeedback.current
+    val clip = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
     val healthy = results.filter { it.ok }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -394,21 +415,23 @@ private fun ToolsScreen(
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ToolButton("Copy All", Icons.Rounded.ContentCopy, AccentBlue, Modifier.weight(1f)) {
-                    clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip })); haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
                 ToolButton("JSON", Icons.Rounded.DataObject, AccentTeal, Modifier.weight(1f)) {
                     val json = healthy.joinToString(",\n") { """  {"ip":"${it.ip}","ms":${it.ms},"cdn":"${it.cdn}","cc":"${it.country}"}""" }
-                    clip.setText(AnnotatedString("[\n$json\n]")); haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    clip.setText(AnnotatedString("[\n$json\n]"))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
                 ToolButton("v2ray", Icons.Rounded.Link, GreenOk, Modifier.weight(1f)) {
                     val lines = healthy.filter { it.frontingOk }.joinToString("\n") { ConfigGenerator.generate(ProxyConfig(ProxyType.VLESS, it.ip, 443, it.frontingSni, it.frontingHost)) }
-                    clip.setText(AnnotatedString(lines)); haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    clip.setText(AnnotatedString(lines))
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
             Spacer(Modifier.height(6.dp))
             Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = TextMuted)
         } } }
-
         // Scan Profiles
         item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
             Text("SCAN PROFILES", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
@@ -435,7 +458,10 @@ private fun ToolsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
-                    Column { Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary); Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = TextSecondary) }
+                    Column {
+                        Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary)
+                        Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = TextSecondary)
+                    }
                 }
             }
         } } }
@@ -443,10 +469,7 @@ private fun ToolsScreen(
     }
 }
 
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  SHARED COMPONENTS
-// ══════════════════════════════════════════════════════════════════════════════
+// == SHARED COMPONENTS ==
 @Composable
 private fun GlassCard(value: String, label: String, color: Color, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(16.dp)).background(color.copy(0.08f)).border(1.dp, color.copy(0.15f), RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
@@ -479,17 +502,6 @@ private fun PhaseIndicator(current: ScanPhase) {
     }
 }
 
-
-@Composable
-private fun InfoChip(icon: ImageVector, text: String, color: Color) {
-    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(0.08f)).padding(8.dp, 5.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
-            Text(text, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
 @Composable
 private fun ToolButton(label: String, icon: ImageVector, color: Color, modifier: Modifier, onClick: () -> Unit) {
     Box(modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(0.1f)).clickable { onClick() }.padding(12.dp, 10.dp), contentAlignment = Alignment.Center) {
@@ -501,9 +513,10 @@ private fun ToolButton(label: String, icon: ImageVector, color: Color, modifier:
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfigField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2).padding(2.dp)) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2)) {
         TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder, fontSize = 13.sp, color = TextMuted) },
             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
@@ -521,157 +534,5 @@ private fun EmptyState(icon: ImageVector, message: String) {
             Spacer(Modifier.height(12.dp))
             Text(message, fontSize = 14.sp, color = TextSecondary)
         }
-    }
-}
-
-private fun Double.fmt(digits: Int) = "%.${digits}f".format(this)
-
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  VPN TAB — paste config, pick IP (auto/manual), rebuild & launch v2rayNG
-// ══════════════════════════════════════════════════════════════════════════════
-@Composable
-private fun VpnScreen(results: List<ScanResult>) {
-    val clip = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-
-    var rawConfig by remember { mutableStateOf("") }
-    var ipMode by remember { mutableStateOf(IpMode.AUTO) }
-    var manualIp by remember { mutableStateOf("") }
-    var parsed by remember { mutableStateOf<com.cdnhunter.app.engine.ConfigParser.ParsedConfig?>(null) }
-    var finalConfig by remember { mutableStateOf("") }
-    var copied by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-
-    // Best IP from scan (lowest ms fronting-ok, else lowest ms healthy)
-    val bestIp = remember(results) {
-        results.filter { it.ok && it.frontingOk }.minByOrNull { it.ms }?.ip
-            ?: results.filter { it.ok }.minByOrNull { it.ms }?.ip ?: ""
-    }
-
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Rounded.VpnKey, null, tint = AccentBlue, modifier = Modifier.size(24.dp))
-                Text("VPN Config", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            }
-            Text("Paste config, pick clean IP, launch", fontSize = 12.sp, color = TextSecondary)
-        }
-
-        // Step 1: paste config
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-            Text("1 · YOUR CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().heightIn(min = 70.dp).clip(RoundedCornerShape(10.dp)).background(CardBg2)) {
-                TextField(rawConfig, { rawConfig = it }, Modifier.fillMaxWidth(),
-                    placeholder = { Text("trojan://... or vless://... or vmess://...", fontSize = 12.sp, color = TextMuted) },
-                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = AccentBlue,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace))
-            }
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(12.dp)).background(CardBg2).clickable {
-                val p = com.cdnhunter.app.engine.ConfigParser.parse(rawConfig)
-                if (p != null) { parsed = p; error = ""; finalConfig = "" } else { error = "Invalid config format"; parsed = null }
-            }, contentAlignment = Alignment.Center) {
-                Text("Parse Config", fontSize = 14.sp, color = AccentTeal, fontWeight = FontWeight.Medium)
-            }
-            if (error.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(error, fontSize = 12.sp, color = RedFail) }
-        } } }
-
-        // Parsed info + IP selection
-        parsed?.let { cfg ->
-            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-                Text("DETECTED", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                Text(com.cdnhunter.app.engine.ConfigParser.summary(cfg), fontSize = 13.sp, color = AccentBlue, fontFamily = FontFamily.Monospace)
-                Text("Original IP: ${cfg.address}", fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
-            } } }
-
-            // Step 2: IP mode
-            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-                Text("2 · CLEAN IP", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IpMode.entries.forEach { m ->
-                        val sel = ipMode == m
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.2f) else CardBg2)
-                            .border(1.dp, if (sel) AccentBlue else Color.Transparent, RoundedCornerShape(10.dp))
-                            .clickable { ipMode = m }.padding(10.dp), contentAlignment = Alignment.Center) {
-                            Text(m.label, fontSize = 11.sp, color = if (sel) AccentBlue else TextSecondary)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                if (ipMode == IpMode.AUTO) {
-                    if (bestIp.isNotBlank()) Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(GreenOk.copy(0.1f)).padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.AutoAwesome, null, tint = GreenOk, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Best IP: $bestIp", fontSize = 13.sp, color = GreenOk, fontFamily = FontFamily.Monospace)
-                        }
-                    } else Text("No scanned IPs yet — run a scan first", fontSize = 12.sp, color = YellowWarn)
-                } else {
-                    ConfigField(manualIp, { manualIp = it }, "Enter clean IP (e.g. 104.16.1.1)")
-                }
-            } } }
-
-            // Step 3: build + launch
-            item {
-                val chosenIp = if (ipMode == IpMode.AUTO) bestIp else manualIp
-                Box(Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
-                    .background(Brush.horizontalGradient(listOf(AccentBlue, Color(0xFF0050A0))))
-                    .clickable {
-                        if (chosenIp.isNotBlank()) {
-                            finalConfig = com.cdnhunter.app.engine.ConfigParser.rebuildWithIp(cfg, chosenIp)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    }, contentAlignment = Alignment.Center) {
-                    Text("Build Config with Clean IP", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                }
-            }
-        }
-
-        // Final config output
-        if (finalConfig.isNotBlank()) {
-            item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-                Text("READY CONFIG", fontSize = 11.sp, color = GreenOk, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Text(finalConfig, fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(if (copied) GreenOk.copy(0.15f) else CardBg2)
-                        .clickable { clip.setText(AnnotatedString(finalConfig)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }, contentAlignment = Alignment.Center) {
-                        Text(if (copied) "✓ Copied" else "Copy", fontSize = 14.sp, color = if (copied) GreenOk else TextPrimary)
-                    }
-                    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentBlue)
-                        .clickable { launchV2ray(ctx, finalConfig) }, contentAlignment = Alignment.Center) {
-                        Text("Open in v2rayNG", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Medium)
-                    }
-                }
-                LaunchedEffect(copied) { if (copied) { delay(2000); copied = false } }
-            } } }
-        }
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-/** Launch the config in v2rayNG (or any handler) via intent. */
-private fun launchV2ray(ctx: android.content.Context, config: String) {
-    try {
-        val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("config", config))
-        // Try v2rayNG deep link
-        val intent = ctx.packageManager.getLaunchIntentForPackage("com.v2ray.ang")
-        if (intent != null) {
-            ctx.startActivity(intent)
-        } else {
-            android.widget.Toast.makeText(ctx, "Config copied. Install v2rayNG to connect.", android.widget.Toast.LENGTH_LONG).show()
-        }
-    } catch (e: Exception) {
-        android.widget.Toast.makeText(ctx, "Config copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
