@@ -41,15 +41,15 @@ object AutoIpHelper {
 
     /**
      * Patch a config JSON string: replace the FIRST "address" value with newIp.
+     * Uses robust regex to handle any whitespace variations.
      */
     fun patchConfigWithIp(configJson: String, newIp: String): String {
         return try {
-            val regex = Regex(""""address"\s*:\s*"([^"]+)"""")
+            val regex = Regex("""("address"\s*:\s*")([^"]+)(")""")
             val match = regex.find(configJson) ?: return configJson
-            val oldAddress = match.groupValues[1]
+            val oldAddress = match.groupValues[2]
             if (oldAddress == "127.0.0.1" || oldAddress == "localhost") return configJson
-            configJson.replace(""""address":"$oldAddress"""", """"address":"$newIp"""")
-                      .replace(""""address": "$oldAddress"""", """"address": "$newIp"""")
+            regex.replaceFirst(configJson, "$1$newIp$3")
         } catch (e: Exception) {
             configJson
         }
@@ -62,8 +62,12 @@ object AutoIpHelper {
     suspend fun patchActiveProfile(ctx: Context, newIp: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val appPrefs = ctx.getSharedPreferences(ctx.packageName + "_preferences", Context.MODE_PRIVATE)
-                val profileId = appPrefs.getLong("selectedProfile", 0L)
+                // Try our saved profile ID first, fallback to app's selectedProfile
+                var profileId = prefs(ctx).getLong("auto_ip_profile_id", 0L)
+                if (profileId == 0L) {
+                    val appPrefs = ctx.getSharedPreferences(ctx.packageName + "_preferences", Context.MODE_PRIVATE)
+                    profileId = appPrefs.getLong("selectedProfile", 0L)
+                }
                 if (profileId == 0L) return@withContext false
 
                 // Open DB directly with SQLiteDatabase (no Room DAO needed)
@@ -87,6 +91,15 @@ object AutoIpHelper {
                 false
             }
         }
+    }
+
+    /** Save a specific profile ID as the Auto-IP target profile */
+    fun setAutoIpProfileId(ctx: Context, profileId: Long) {
+        prefs(ctx).edit().putLong("auto_ip_profile_id", profileId).apply()
+    }
+
+    fun getAutoIpProfileId(ctx: Context): Long {
+        return prefs(ctx).getLong("auto_ip_profile_id", 0L)
     }
 
     /**
