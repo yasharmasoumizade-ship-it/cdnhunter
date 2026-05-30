@@ -41,33 +41,22 @@ object AutoIpHelper {
 
     /**
      * Patch a config JSON to use the given IP as server address.
-     * Returns the patched config string.
+     * Uses regex replacement to avoid JSON re-serialization issues.
+     * Only patches the FIRST "address" field in the proxy outbound.
      */
     fun patchConfigWithIp(configJson: String, newIp: String): String {
         return try {
-            val config = JSONObject(configJson)
-            val outbounds = config.optJSONArray("outbounds") ?: return configJson
-            for (i in 0 until outbounds.length()) {
-                val ob = outbounds.optJSONObject(i) ?: continue
-                val tag = ob.optString("tag")
-                if (tag == "proxy" || i == 0) {
-                    val settings = ob.optJSONObject("settings") ?: continue
-                    // vnext (vless/vmess)
-                    val vnext = settings.optJSONArray("vnext")
-                    if (vnext != null && vnext.length() > 0) {
-                        vnext.getJSONObject(0).put("address", newIp)
-                    }
-                    // servers (trojan/shadowsocks)
-                    val servers = settings.optJSONArray("servers")
-                    if (servers != null && servers.length() > 0) {
-                        servers.getJSONObject(0).put("address", newIp)
-                    }
-                    break
-                }
-            }
-            config.toString(2)
+            // Find the first "address": "..." in the config and replace its value
+            // This is safe because the first address in outbounds[0] is always the server IP
+            val regex = Regex(""""address"\s*:\s*"([^"]+)"""")
+            val match = regex.find(configJson) ?: return configJson
+            val oldAddress = match.groupValues[1]
+            // Only patch if it looks like an IP or domain (not localhost)
+            if (oldAddress == "127.0.0.1" || oldAddress == "localhost") return configJson
+            configJson.replaceFirst(""""address": "$oldAddress"""", """"address": "$newIp"""")
+                .replaceFirst(""""address":"$oldAddress"""", """"address":"$newIp"""")
         } catch (e: Exception) {
-            configJson // return unchanged on error
+            configJson
         }
     }
 
