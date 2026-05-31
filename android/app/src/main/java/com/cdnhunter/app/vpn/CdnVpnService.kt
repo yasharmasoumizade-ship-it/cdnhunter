@@ -74,10 +74,12 @@ class CdnVpnService : VpnService() {
 
                 // 2. Init and start xray as SOCKS proxy
                 XrayBridge.init(filesDir.absolutePath)
+                android.util.Log.i("CdnVpn", "Config length: ${config.length}")
+                android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
                 XrayBridge.start(config, 0)
 
                 // 3. Small delay for xray to bind port
-                delay(500)
+                delay(800)
 
                 // 4. Establish TUN interface
                 val tun = establishTun()

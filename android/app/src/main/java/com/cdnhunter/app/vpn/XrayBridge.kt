@@ -28,8 +28,14 @@ object XrayBridge {
 
     fun start(configContent: String, tunFd: Int = 0) {
         val ctrl = controller ?: throw IllegalStateException("Call init() first")
-        ctrl.startLoop(configContent, tunFd)
-        running = true
+        try {
+            ctrl.startLoop(configContent, tunFd)
+            running = true
+            android.util.Log.i("XrayBridge", "Xray started OK")
+        } catch (e: Exception) {
+            android.util.Log.e("XrayBridge", "startLoop failed: ${e.message}")
+            throw e
+        }
     }
 
     fun stop() {
