@@ -71,20 +71,30 @@ jobs:
           find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
           find . -name "*.mk" -exec sed -i 's/-lpthread//g' {} \;
           
+          # Compile main project
           make CC="$CC" CFLAGS="-fPIC -DANDROID -O2 -Wno-typedef-redefinition" -j$(nproc) 2>&1 | tail -5 || true
           
+          # CRITICAL: Compile hev-jni.c separately with correct defines
+          $CC -c -fPIC -DANDROID -DPKGNAME=hev/htproxy -DCLSNAME=TProxyService -O2 -Wno-typedef-redefinition \
+            -I src -I src/core/include -I third-part/hev-task-system/include \
+            -I third-part/lwip/src/include -I third-part/lwip/src/ports/include \
+            -I third-part/yaml/include \
+            src/hev-jni.c -o build/hev-jni.o
+          
+          # Collect ALL .o files including hev-jni.o
           OBJS=$(find build -name "*.o" 2>/dev/null | sort | tr '\n' ' ')
           OBJ_COUNT=$(echo $OBJS | wc -w)
-          echo "Found $OBJ_COUNT object files"
+          echo "Found $OBJ_COUNT object files (includes hev-jni.o)"
           
           if [ "$OBJ_COUNT" -gt "10" ]; then
             $CC -shared -Wl,-soname,libhev-socks5-tunnel.so -o libhev-socks5-tunnel.so $OBJS -llog
             $STRIP libhev-socks5-tunnel.so
             file libhev-socks5-tunnel.so
-            ${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm -D libhev-socks5-tunnel.so | grep -i "JNI_OnLoad" || echo "WARNING: JNI_OnLoad not found!"
+            echo "=== Checking JNI_OnLoad ==="
+            ${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm -D libhev-socks5-tunnel.so | grep "JNI_OnLoad" && echo "SUCCESS" || echo "FATAL: NOT FOUND"
             cp libhev-socks5-tunnel.so ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
           else
-            echo "ERROR: Not enough objects compiled"
+            echo "ERROR: Not enough objects"
             exit 1
           fi
           
