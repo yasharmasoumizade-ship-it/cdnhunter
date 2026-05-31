@@ -9,7 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import hev.htproxy.TProxyService as Tun2Socks
+import hev.htproxy.TProxyService
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -90,24 +90,15 @@ class CdnVpnService : VpnService() {
                 tunFd = tun
 
                 // 5. Start tun2socks: route TUN traffic -> SOCKS proxy
-                val tun2socksConfig = File(filesDir, "tun2socks.yml")
-                val yml = """
-tunnel:
-  mtu: 8500
-
-socks5:
-  port: 10808
-  address: '127.0.0.1'
-  udp: 'tcp'
-
-misc:
-  task-stack-size: 81920
-  connect-timeout: 5000
-  read-write-timeout: 60000
-  log-level: warn
-""".trimIndent()
-                tun2socksConfig.writeText(yml)
-                Tun2Socks.start(tun2socksConfig, tun.fd)
+                val configPath = TProxyService.writeConfig(filesDir, "127.0.0.1", 10808)
+                if (configPath == null) {
+                    lastError = "Failed to write tun2socks config"
+                    XrayBridge.stop()
+                    tun.close()
+                    withContext(Dispatchers.Main) { stopSelf() }
+                    return@launch
+                }
+                TProxyService.startService(configPath, tun.fd)
 
                 isRunning.set(true)
                 uploadBytes = 0L
@@ -118,7 +109,7 @@ misc:
                 while (isActive && isRunning.get()) {
                     val xUp = XrayBridge.queryUpload()
                     val xDown = XrayBridge.queryDownload()
-                    val tunStats = Tun2Socks.getStats()
+                    val tunStats = TProxyService.stats()
                     uploadBytes = if (xUp > 0) xUp else tunStats[1]
                     downloadBytes = if (xDown > 0) xDown else tunStats[3]
                     delay(1000)
@@ -135,7 +126,7 @@ misc:
     private fun stopVpn() {
         isRunning.set(false)
         job?.cancel()
-        Tun2Socks.stop()
+        TProxyService.stopService()
         XrayBridge.stop()
         tunFd?.close()
         tunFd = null
