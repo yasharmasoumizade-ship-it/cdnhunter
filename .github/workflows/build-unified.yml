@@ -57,27 +57,31 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Build hev-socks5-tunnel (ndk-build)
-        env:
-          NDK: /usr/local/lib/android/sdk/ndk/26.1.10909125
+      - name: Get hev-socks5-tunnel .so from working Xray fork
         run: |
-          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git android/app/src/main/jni/hev-socks5-tunnel
-          find android/app/src/main/jni/hev-socks5-tunnel -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \;
-          ${NDK}/ndk-build -C android/app/src/main/jni NDK_PROJECT_PATH=android/app/src/main NDK_LIBS_OUT=android/app/src/main/jniLibs APP_ABI=arm64-v8a -j$(nproc) 2>&1 | tail -30 || true
-          ls -la android/app/src/main/jniLibs/arm64-v8a/ 2>/dev/null || echo "ndk-build may have failed, trying fallback"
-          if [ ! -f android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so ]; then
-            echo "Fallback: manual compile"
-            cd android/app/src/main/jni/hev-socks5-tunnel
-            find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
-            export CC="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-            make clean || true
-            make CC="$CC" CFLAGS="-fPIC -DANDROID -Wno-typedef-redefinition" -j$(nproc) || true
-            OBJS=$(find build -name "*.o" | tr '\n' ' ')
-            mkdir -p ../../jniLibs/arm64-v8a
-            $CC -shared -o ../../jniLibs/arm64-v8a/libhev-socks5-tunnel.so $OBJS -llog
-            cd ../../../../../..
+          git clone https://github.com/SaeedDev94/Xray.git xray-fork
+          cd xray-fork
+          git checkout 7effa2b8bfac129141526e335775ede916f2c96e
+          git submodule update --init --recursive
+          export PATH=$PATH:$(go env GOPATH)/bin
+          chmod +x buildGo.sh 2>/dev/null || true
+          ./buildGo.sh arm64
+          export NDK="${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk/ | head -1)"
+          if [ ! -d "$NDK" ]; then
+            sdkmanager "ndk;26.1.10909125"
+            NDK="${ANDROID_HOME}/ndk/26.1.10909125"
           fi
-          file android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          ${NDK}/ndk-build -C app/src/main/jni NDK_PROJECT_PATH=app/src/main NDK_LIBS_OUT=app/src/main/jniLibs APP_ABI=arm64-v8a -j$(nproc)
+          SO_FILE=$(find . -name "libhev-socks5-tunnel.so" -path "*arm64*" | head -1)
+          echo "Found: $SO_FILE"
+          mkdir -p ../android/app/src/main/jniLibs/arm64-v8a
+          cp "$SO_FILE" ../android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          file ../android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          cd ..
+          rm -rf xray-fork
+
+      - name: Clean jni source dir
+        run: rm -rf android/app/src/main/jni
 
       - name: Bundle geoip/geosite assets
         run: |
