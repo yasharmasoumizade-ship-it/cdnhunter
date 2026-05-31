@@ -176,16 +176,18 @@ private fun VpnTab() {
                             CdnVpnService.stop(context)
                             connected = false
                         } else {
-                            if (configUri.isBlank()) return@clickable
+                            if (configUri.isBlank()) {
+                                android.widget.Toast.makeText(context, "Paste a config first", android.widget.Toast.LENGTH_SHORT).show()
+                                return@clickable
+                            }
                             context.getSharedPreferences("cdnhunter_vpn", 0).edit()
                                 .putString("user_config", configUri).apply()
                             val prepareIntent = VpnService.prepare(context)
                             if (prepareIntent != null) {
                                 context.startActivity(prepareIntent)
-                            } else {
-                                connecting = true
-                                CdnVpnService.start(context)
                             }
+                            connecting = true
+                            CdnVpnService.start(context)
                         }
                     },
                 contentAlignment = Alignment.Center
@@ -213,9 +215,9 @@ private fun VpnTab() {
                     Box(
                         Modifier.size(40.dp).clip(CircleShape).background(AccentBlue)
                             .clickable {
-                                val text = clip.getText()?.text ?: ""
-                                if (text.startsWith("trojan://") || text.startsWith("vless://") || text.startsWith("vmess://")) {
-                                    configUri = text
+                                val clipText = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
+                                if (clipText.startsWith("trojan://") || clipText.startsWith("vless://") || clipText.startsWith("vmess://")) {
+                                    configUri = clipText
                                 }
                                 if (configUri.isNotBlank()) {
                                     val ob = ConfigUriParser.parseToOutbound(configUri)
@@ -355,8 +357,8 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) { ConfigField("${config.maxIps}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v.coerceIn(10, 50000))) } }, "Max IPs") }
-                    Box(Modifier.weight(1f)) { ConfigField("${config.concurrency}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v.coerceIn(1, 500))) } }, "Workers") }
+                    Box(Modifier.weight(1f)) { ConfigField("${config.maxIps}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v)) } }, "Max IPs") }
+                    Box(Modifier.weight(1f)) { ConfigField("${config.concurrency}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v)) } }, "Workers") }
                 }
             }
         }
