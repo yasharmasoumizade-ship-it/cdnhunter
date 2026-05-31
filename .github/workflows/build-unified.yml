@@ -61,6 +61,9 @@ jobs:
         run: |
           git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git
           cd hev-socks5-tunnel
+          # Fix typedef redefinition error with NDK 27
+          sed -i 's/typedef __kernel_fd_set fd_set;//g' third-part/lwip/src/ports/include/arch/../unix/include/cc.h || true
+          find . -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \; || true
           # Build for arm64
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk/ | head -1)"
           if [ ! -d "$ANDROID_NDK_HOME" ]; then
@@ -70,7 +73,7 @@ jobs:
           export CC="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
           export CROSS_PREFIX="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-"
           make clean || true
-          make ENABLE_STATIC=1 CC="$CC" STRIP="${CROSS_PREFIX}strip" CFLAGS="-Wno-typedef-redefinition -Wno-error" -j$(nproc)
+          make ENABLE_STATIC=1 CC="$CC" STRIP="${CROSS_PREFIX}strip" -j$(nproc)
           ls -la bin/
           cd ..
 
