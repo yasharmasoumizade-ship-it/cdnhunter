@@ -23,6 +23,21 @@ object VpnConfigBuilder {
         return buildFullConfig(outbound, fragmentEnabled, fragLength, fragInterval).toString(2)
     }
 
+    /**
+     * Convenience method: builds a full xray JSON config from a raw URI string
+     * with fragment enabled (length=100-200, interval=10-20).
+     * Useful for testing and direct URI usage without Context/SharedPreferences.
+     */
+    fun buildConfigFromUri(uri: String): String {
+        val outbound = ConfigUriParser.parseToOutbound(uri) ?: defaultOutbound()
+        return buildFullConfig(
+            proxyOutbound = outbound,
+            fragmentEnabled = true,
+            fragLength = "100-200",
+            fragInterval = "10-20"
+        ).toString(2)
+    }
+
     private fun buildFullConfig(
         proxyOutbound: JSONObject,
         fragmentEnabled: Boolean,
@@ -96,12 +111,14 @@ object VpnConfigBuilder {
         val rules = JSONArray()
         // DNS rule
         val dnsRule = JSONObject()
+        dnsRule.put("type", "field")
         dnsRule.put("ip", JSONArray().put("1.1.1.1").put("8.8.8.8"))
         dnsRule.put("port", 53)
         dnsRule.put("outboundTag", "proxy")
         rules.put(dnsRule)
-        // Private IP → direct (CRITICAL: prevents VPN traffic loop)
+        // Private IP -> direct (CRITICAL: prevents VPN traffic loop)
         val privateRule = JSONObject()
+        privateRule.put("type", "field")
         privateRule.put("ip", JSONArray()
             .put("10.0.0.0/8")
             .put("172.16.0.0/12")
@@ -109,8 +126,9 @@ object VpnConfigBuilder {
             .put("169.254.0.0/16"))
         privateRule.put("outboundTag", "direct")
         rules.put(privateRule)
-        // Localhost → direct
+        // Localhost -> direct
         val localRule = JSONObject()
+        localRule.put("type", "field")
         localRule.put("ip", JSONArray().put("127.0.0.0/8"))
         localRule.put("outboundTag", "direct")
         rules.put(localRule)
