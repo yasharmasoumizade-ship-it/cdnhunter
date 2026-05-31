@@ -86,7 +86,7 @@ class CdnVpnService : VpnService() {
                 XrayBridge.init(filesDir.absolutePath)
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                XrayBridge.start(config)
+                XrayBridge.start(config, 0)
 
                 // 3. Small delay for xray to bind port
                 delay(800)
