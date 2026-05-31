@@ -49,16 +49,12 @@ public class TProxyService {
 
     public static String writeConfig(File dir, String socksAddr, int socksPort) {
         String config = "tunnel:\n" +
+                "  name: tun0\n" +
                 "  mtu: 8500\n\n" +
                 "socks5:\n" +
+                "  address: " + socksAddr + "\n" +
                 "  port: " + socksPort + "\n" +
-                "  address: '" + socksAddr + "'\n" +
-                "  udp: 'tcp'\n\n" +
-                "misc:\n" +
-                "  task-stack-size: 81920\n" +
-                "  connect-timeout: 5000\n" +
-                "  read-write-timeout: 60000\n" +
-                "  log-level: warn\n";
+                "  udp: udp\n";
         File configFile = new File(dir, "tun2socks.yml");
         try {
             FileWriter writer = new FileWriter(configFile);
