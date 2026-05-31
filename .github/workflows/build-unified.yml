@@ -57,33 +57,38 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Get hev-socks5-tunnel .so from working Xray fork
+      - name: Build hev-socks5-tunnel .so
         run: |
-          git clone https://github.com/SaeedDev94/Xray.git xray-fork
-          cd xray-fork
-          git checkout 7effa2b8bfac129141526e335775ede916f2c96e
-          git submodule update --init --recursive
-          export PATH=$PATH:$(go env GOPATH)/bin
-          chmod +x buildGo.sh 2>/dev/null || true
-          ./buildGo.sh arm64
-          export NDK="${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk/ | head -1)"
-          if [ ! -d "$NDK" ]; then
-            sdkmanager "ndk;26.1.10909125"
-            NDK="${ANDROID_HOME}/ndk/26.1.10909125"
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
+          cd /tmp/hev
+          find . -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \;
+          NDK="${ANDROID_HOME}/ndk/26.1.10909125"
+          
+          export CC="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          export STRIP="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          
+          find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
+          find . -name "*.mk" -exec sed -i 's/-lpthread//g' {} \;
+          
+          make CC="$CC" CFLAGS="-fPIC -DANDROID -O2 -Wno-typedef-redefinition" -j$(nproc) 2>&1 | tail -5 || true
+          
+          OBJS=$(find build -name "*.o" 2>/dev/null | sort | tr '\n' ' ')
+          OBJ_COUNT=$(echo $OBJS | wc -w)
+          echo "Found $OBJ_COUNT object files"
+          
+          if [ "$OBJ_COUNT" -gt "10" ]; then
+            $CC -shared -Wl,-soname,libhev-socks5-tunnel.so -o libhev-socks5-tunnel.so $OBJS -llog
+            $STRIP libhev-socks5-tunnel.so
+            file libhev-socks5-tunnel.so
+            ${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm -D libhev-socks5-tunnel.so | grep -i "JNI_OnLoad" || echo "WARNING: JNI_OnLoad not found!"
+            cp libhev-socks5-tunnel.so ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
+          else
+            echo "ERROR: Not enough objects compiled"
+            exit 1
           fi
-          cd app/src/main/jni
-          ${NDK}/ndk-build NDK_PROJECT_PATH=$(pwd)/.. NDK_LIBS_OUT=$(pwd)/../jniLibs NDK_APPLICATION_MK=$(pwd)/Application.mk APP_BUILD_SCRIPT=$(pwd)/Android.mk APP_ABI=arm64-v8a -j$(nproc)
-          cd ../../../..
-          SO_FILE=$(find . -name "libhev-socks5-tunnel.so" -path "*arm64*" | head -1)
-          echo "Found: $SO_FILE"
-          mkdir -p ../android/app/src/main/jniLibs/arm64-v8a
-          cp "$SO_FILE" ../android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
-          file ../android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
-          cd ..
-          rm -rf xray-fork
-
-      - name: Clean jni source dir
-        run: rm -rf android/app/src/main/jni
+          
+          ls -la ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
 
       - name: Bundle geoip/geosite assets
         run: |
