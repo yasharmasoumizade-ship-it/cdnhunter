@@ -195,16 +195,14 @@ private fun VpnTab() {
                             }
                             context.getSharedPreferences("cdnhunter_vpn", 0).edit()
                                 .putString("user_config", configUri).apply()
-                            try {
-                                val prepareIntent = VpnService.prepare(context)
-                                if (prepareIntent != null) {
-                                    (context as? android.app.Activity)?.startActivityForResult(prepareIntent, 1001)
-                                        ?: context.startActivity(prepareIntent)
-                                }
-                            } catch (_: Exception) {}
                             connecting = true
                             try {
-                                CdnVpnService.start(context)
+                                val mainActivity = context as? com.cdnhunter.app.MainActivity
+                                if (mainActivity != null) {
+                                    mainActivity.requestVpnPermissionAndConnect()
+                                } else {
+                                    CdnVpnService.start(context)
+                                }
                             } catch (e: Exception) {
                                 connecting = false
                                 android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
