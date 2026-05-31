@@ -9,16 +9,16 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import com.cdnhunter.app.R
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * VPN Service that runs xray-core as a local SOCKS proxy
- * and routes traffic through a TUN interface.
+ * VPN Service: runs xray-core as SOCKS proxy on 127.0.0.1:10808
+ * and establishes a TUN interface that routes traffic through it.
  *
- * This is the bridge between Android VPN and xray-core library.
+ * Note: Without tun2socks native lib, we use xray's built-in tun support
+ * by passing the TUN file descriptor to xray-core.
  */
 class CdnVpnService : VpnService() {
 
@@ -31,6 +31,7 @@ class CdnVpnService : VpnService() {
         var isRunning = AtomicBoolean(false)
         var uploadBytes = 0L
         var downloadBytes = 0L
+        var lastError = ""
 
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
@@ -45,7 +46,7 @@ class CdnVpnService : VpnService() {
     }
 
     private var tunFd: ParcelFileDescriptor? = null
-    private var xrayJob: Job? = null
+    private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
@@ -64,66 +65,75 @@ class CdnVpnService : VpnService() {
     private fun startVpn() {
         if (isRunning.get()) return
         startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
+        lastError = ""
 
-        xrayJob = scope.launch {
+        job = scope.launch {
             try {
-                // 1. Write xray config
-                val configFile = File(filesDir, "xray_config.json")
+                // 1. Build xray config
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
+                val configFile = File(filesDir, "xray_config.json")
                 configFile.writeText(config)
 
-                // 2. Start xray as SOCKS proxy
-                XrayBridge.init(filesDir.absolutePath)
-                XrayBridge.start(config)
-
-                // 3. Establish TUN
-                val tun = establishTun() ?: run {
-                    stopVpn(); return@launch
+                // 2. Establish TUN interface
+                val tun = establishTun()
+                if (tun == null) {
+                    lastError = "Failed to establish VPN tunnel"
+                    withContext(Dispatchers.Main) { stopVpn() }
+                    return@launch
                 }
                 tunFd = tun
 
-                // 4. Start tun2socks (route TUN → SOCKS)
-                Tun2SocksBridge.start(tun.fd, "127.0.0.1", 10808)
+                // 3. Init and start xray with TUN fd
+                XrayBridge.init(filesDir.absolutePath)
+                XrayBridge.start(config, tun.fd)
 
                 isRunning.set(true)
-                uploadBytes = 0; downloadBytes = 0
+                uploadBytes = 0L
+                downloadBytes = 0L
                 updateNotification("Connected")
 
-                // 5. Monitor traffic stats
+                // 4. Monitor traffic
                 while (isActive && isRunning.get()) {
                     uploadBytes += XrayBridge.queryUpload()
                     downloadBytes += XrayBridge.queryDownload()
                     delay(1000)
                 }
             } catch (e: Exception) {
-                updateNotification("Error: ${e.message?.take(30)}")
+                lastError = e.message ?: "Unknown error"
+                updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
-                stopVpn()
+                withContext(Dispatchers.Main) { stopVpn() }
             }
         }
     }
 
     private fun stopVpn() {
         isRunning.set(false)
-        xrayJob?.cancel()
-        Tun2SocksBridge.stop()
+        job?.cancel()
         XrayBridge.stop()
-        tunFd?.close(); tunFd = null
+        tunFd?.close()
+        tunFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     private fun establishTun(): ParcelFileDescriptor? {
-        return Builder()
-            .setSession("CDN Hunter")
-            .addAddress("10.10.10.1", 30)
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
-            .setMtu(1500)
-            .setBlocking(false)
-            .establish()
+        return try {
+            Builder()
+                .setSession("CDN Hunter VPN")
+                .addAddress("10.10.10.1", 30)
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("8.8.8.8")
+                .setMtu(1500)
+                .addDisallowedApplication(packageName)
+                .setBlocking(false)
+                .establish()
+        } catch (e: Exception) {
+            lastError = "TUN error: ${e.message}"
+            null
+        }
     }
 
     private fun createNotificationChannel() {
@@ -143,8 +153,10 @@ class CdnVpnService : VpnService() {
     }
 
     private fun updateNotification(status: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(status))
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(NOTIFICATION_ID, buildNotification(status))
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {

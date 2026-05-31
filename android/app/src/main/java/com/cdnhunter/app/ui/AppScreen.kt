@@ -226,6 +226,10 @@ private fun VpnTab() {
             Spacer(Modifier.height(8.dp))
             Text("Tap to cancel", fontSize = 11.sp, color = TextMuted)
         }
+        if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
+            Spacer(Modifier.height(8.dp))
+            Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail)
+        }
         Spacer(Modifier.height(32.dp))
 
         GlassBox(Modifier.fillMaxWidth()) {
