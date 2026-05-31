@@ -138,17 +138,21 @@ class CdnVpnService : VpnService() {
 
     private fun establishTun(): ParcelFileDescriptor? {
         return try {
-            Builder()
+            val builder = Builder()
                 .setSession("CDN Hunter VPN")
                 .addAddress("10.10.10.1", 30)
-                .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setMtu(8500)
                 .addDisallowedApplication(packageName)
                 .setBlocking(false)
-                .establish()
+                // Use split routing (0/1 + 128/1) instead of 0/0
+                // This + addDisallowedApplication prevents xray traffic loop
+                .addRoute("0.0.0.0", 1)
+                .addRoute("128.0.0.0", 1)
+                .addRoute("::", 0)
+
+            builder.establish()
         } catch (e: Exception) {
             lastError = "TUN: ${e.message}"
             null
