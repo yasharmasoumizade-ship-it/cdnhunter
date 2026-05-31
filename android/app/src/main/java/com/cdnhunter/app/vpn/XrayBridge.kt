@@ -29,6 +29,7 @@ object XrayBridge {
     fun start(configContent: String, tunFd: Int = 0) {
         val ctrl = controller ?: throw IllegalStateException("Call init() first")
         try {
+            android.util.Log.i("XrayBridge", "xray version: ${version()}")
             ctrl.startLoop(configContent, tunFd)
             running = true
             android.util.Log.i("XrayBridge", "Xray started OK")
