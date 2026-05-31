@@ -86,7 +86,7 @@ class CdnVpnService : VpnService() {
                 XrayBridge.init(filesDir.absolutePath)
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                XrayBridge.start(config, 0)
+                XrayBridge.start(config)
 
                 // 3. Small delay for xray to bind port
                 delay(800)
@@ -150,7 +150,7 @@ class CdnVpnService : VpnService() {
         return try {
             val builder = Builder()
                 .setSession("CDN Hunter VPN")
-                .addAddress("10.10.10.1", 30)
+                .addAddress("10.10.10.10", 32)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setMtu(8500)

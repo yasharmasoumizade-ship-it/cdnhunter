@@ -102,7 +102,11 @@ object VpnConfigBuilder {
         rules.put(dnsRule)
         // Private IP → direct (CRITICAL: prevents VPN traffic loop)
         val privateRule = JSONObject()
-        privateRule.put("ip", JSONArray().put("geoip:private"))
+        privateRule.put("ip", JSONArray()
+            .put("10.0.0.0/8")
+            .put("172.16.0.0/12")
+            .put("192.168.0.0/16")
+            .put("169.254.0.0/16"))
         privateRule.put("outboundTag", "direct")
         rules.put(privateRule)
         // Localhost → direct

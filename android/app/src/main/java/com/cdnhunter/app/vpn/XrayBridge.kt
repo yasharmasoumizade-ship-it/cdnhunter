@@ -26,7 +26,7 @@ object XrayBridge {
         controller = Libv2ray.newCoreController(callbackHandler)
     }
 
-    fun start(configContent: String, tunFd: Int = 0) {
+    fun start(configContent: String, tunFd: Int = -1) {
         val ctrl = controller ?: throw IllegalStateException("Call init() first")
         try {
             ctrl.startLoop(configContent, tunFd)
