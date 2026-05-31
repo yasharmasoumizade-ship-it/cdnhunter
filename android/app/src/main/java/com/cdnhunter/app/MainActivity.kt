@@ -1,9 +1,12 @@
 package com.cdnhunter.app
 
+import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
@@ -12,9 +15,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cdnhunter.app.ui.AppScreen
+import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.viewmodel.ScanViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // Permission granted or denied — try to start VPN anyway
+        CdnVpnService.start(this)
+    }
+
+    fun requestVpnPermissionAndConnect() {
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
+            vpnPermissionLauncher.launch(prepareIntent)
+        } else {
+            // Already have permission
+            CdnVpnService.start(this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -26,7 +48,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainContent(activity: ComponentActivity) {
+fun MainContent(activity: MainActivity) {
     val viewModel: ScanViewModel = viewModel()
     val state by viewModel.state.collectAsState()
     val config by viewModel.config.collectAsState()
@@ -49,7 +71,6 @@ fun MainContent(activity: ComponentActivity) {
         config = config,
         onConfigChange = { newConfig ->
             viewModel.updateConfig(newConfig)
-            // Save to SharedPreferences
             val prefs = context.getSharedPreferences("cdnhunter", 0)
             prefs.edit().putInt("concurrency", newConfig.concurrency).putInt("maxIps", newConfig.maxIps)
                 .putFloat("timeout", newConfig.timeout).putString("host", newConfig.host)
@@ -71,7 +92,6 @@ fun MainContent(activity: ComponentActivity) {
     )
 }
 
-// ── Theme ───────────────────────────────────────────────────────────────────
 @Composable
 fun CDNHunterTheme(content: @Composable () -> Unit) {
     val darkColorScheme = darkColorScheme(
@@ -87,9 +107,5 @@ fun CDNHunterTheme(content: @Composable () -> Unit) {
         onError = Color.White,
         outline = Color(0xFF222222),
     )
-
-    MaterialTheme(
-        colorScheme = darkColorScheme,
-        content = content
-    )
+    MaterialTheme(colorScheme = darkColorScheme, content = content)
 }
