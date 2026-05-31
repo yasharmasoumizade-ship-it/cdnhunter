@@ -95,6 +95,13 @@ jobs:
           cp hev-socks5-tunnel/bin/libhev-socks5-tunnel.so android/app/src/main/jniLibs/arm64-v8a/
           file android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
 
+      - name: Bundle geoip/geosite assets
+        run: |
+          mkdir -p android/app/src/main/assets
+          curl -sL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o android/app/src/main/assets/geoip.dat
+          curl -sL "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat" -o android/app/src/main/assets/geosite.dat
+          ls -la android/app/src/main/assets/
+
       - name: Generate Gradle Wrapper
         working-directory: android
         run: |

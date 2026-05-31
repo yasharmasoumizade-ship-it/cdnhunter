@@ -100,6 +100,16 @@ object VpnConfigBuilder {
         dnsRule.put("port", 53)
         dnsRule.put("outboundTag", "proxy")
         rules.put(dnsRule)
+        // Private IP → direct (CRITICAL: prevents VPN traffic loop)
+        val privateRule = JSONObject()
+        privateRule.put("ip", JSONArray().put("geoip:private"))
+        privateRule.put("outboundTag", "direct")
+        rules.put(privateRule)
+        // Localhost → direct
+        val localRule = JSONObject()
+        localRule.put("ip", JSONArray().put("127.0.0.0/8"))
+        localRule.put("outboundTag", "direct")
+        rules.put(localRule)
         routing.put("rules", rules)
         config.put("routing", routing)
 

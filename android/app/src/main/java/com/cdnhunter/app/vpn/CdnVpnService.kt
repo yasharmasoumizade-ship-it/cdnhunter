@@ -67,6 +67,16 @@ class CdnVpnService : VpnService() {
 
         job = scope.launch {
             try {
+                // 0. Copy geo assets to filesDir (xray needs them for routing)
+                listOf("geoip.dat", "geosite.dat").forEach { name ->
+                    val target = File(filesDir, name)
+                    if (!target.exists()) {
+                        try {
+                            assets.open(name).use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 // 1. Build xray config (SOCKS inbound on 10808)
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
                 val configFile = File(filesDir, "xray_config.json")
