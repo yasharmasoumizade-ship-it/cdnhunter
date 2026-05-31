@@ -14,11 +14,8 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * VPN Service: runs xray-core as SOCKS proxy on 127.0.0.1:10808
- * and establishes a TUN interface that routes traffic through it.
- *
- * Note: Without tun2socks native lib, we use xray's built-in tun support
- * by passing the TUN file descriptor to xray-core.
+ * VPN Service architecture:
+ *   Android TUN <-> hev-socks5-tunnel (.so) <-> xray SOCKS5 (127.0.0.1:10808) <-> Server
  */
 class CdnVpnService : VpnService() {
 
@@ -69,30 +66,38 @@ class CdnVpnService : VpnService() {
 
         job = scope.launch {
             try {
-                // 1. Build xray config
+                // 1. Build xray config (SOCKS inbound on 10808)
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
                 val configFile = File(filesDir, "xray_config.json")
                 configFile.writeText(config)
 
-                // 2. Establish TUN interface
+                // 2. Init and start xray as SOCKS proxy (no TUN fd needed here)
+                XrayBridge.init(filesDir.absolutePath)
+                XrayBridge.start(config, 0)  // 0 = no TUN, just SOCKS proxy
+
+                // 3. Small delay for xray to bind port
+                delay(500)
+
+                // 4. Establish TUN interface
                 val tun = establishTun()
                 if (tun == null) {
-                    lastError = "Failed to establish VPN tunnel"
-                    withContext(Dispatchers.Main) { stopVpn() }
+                    lastError = "Failed to create VPN tunnel"
+                    XrayBridge.stop()
+                    withContext(Dispatchers.Main) { stopSelf() }
                     return@launch
                 }
                 tunFd = tun
 
-                // 3. Init and start xray with TUN fd
-                XrayBridge.init(filesDir.absolutePath)
-                XrayBridge.start(config, tun.fd)
+                // 5. Start tun2socks: route TUN traffic -> SOCKS proxy
+                val tun2socksConfig = File(filesDir, "tun2socks.yml")
+                Tun2SocksBridge.start(tun.fd, "127.0.0.1", 10808, tun2socksConfig)
 
                 isRunning.set(true)
                 uploadBytes = 0L
                 downloadBytes = 0L
                 updateNotification("Connected")
 
-                // 4. Monitor traffic
+                // 6. Monitor traffic stats
                 while (isActive && isRunning.get()) {
                     uploadBytes += XrayBridge.queryUpload()
                     downloadBytes += XrayBridge.queryDownload()
@@ -110,6 +115,7 @@ class CdnVpnService : VpnService() {
     private fun stopVpn() {
         isRunning.set(false)
         job?.cancel()
+        Tun2SocksBridge.stop()
         XrayBridge.stop()
         tunFd?.close()
         tunFd = null
@@ -126,19 +132,19 @@ class CdnVpnService : VpnService() {
                 .addRoute("::", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
-                .setMtu(1500)
+                .setMtu(8500)
                 .addDisallowedApplication(packageName)
                 .setBlocking(false)
                 .establish()
         } catch (e: Exception) {
-            lastError = "TUN error: ${e.message}"
+            lastError = "TUN: ${e.message}"
             null
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "VPN Service", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -154,19 +160,11 @@ class CdnVpnService : VpnService() {
 
     private fun updateNotification(status: String) {
         try {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.notify(NOTIFICATION_ID, buildNotification(status))
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, buildNotification(status))
         } catch (_: Exception) {}
     }
 
-    override fun onDestroy() {
-        stopVpn()
-        scope.cancel()
-        super.onDestroy()
-    }
-
-    override fun onRevoke() {
-        stopVpn()
-        super.onRevoke()
-    }
+    override fun onDestroy() { stopVpn(); scope.cancel(); super.onDestroy() }
+    override fun onRevoke() { stopVpn(); super.onRevoke() }
 }

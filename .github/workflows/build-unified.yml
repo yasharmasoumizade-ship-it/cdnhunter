@@ -57,6 +57,29 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
+      - name: Build hev-socks5-tunnel (.so)
+        run: |
+          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git
+          cd hev-socks5-tunnel
+          # Build for arm64
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk/ | head -1)"
+          if [ ! -d "$ANDROID_NDK_HOME" ]; then
+            sdkmanager "ndk;26.1.10909125"
+            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/26.1.10909125"
+          fi
+          export CC="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          export CROSS_PREFIX="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-"
+          make clean || true
+          make ENABLE_STATIC=1 CC="$CC" STRIP="${CROSS_PREFIX}strip" -j$(nproc)
+          ls -la bin/
+          cd ..
+
+      - name: Place .so in jniLibs
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp hev-socks5-tunnel/bin/hev-socks5-tunnel android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          ls -la android/app/src/main/jniLibs/arm64-v8a/
+
       - name: Generate Gradle Wrapper
         working-directory: android
         run: |
