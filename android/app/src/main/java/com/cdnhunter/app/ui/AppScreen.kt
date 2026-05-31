@@ -137,6 +137,14 @@ private fun VpnTab() {
             delay(1000)
         }
     }
+    LaunchedEffect(connecting) {
+        if (connecting) {
+            delay(15000)
+            if (!CdnVpnService.isRunning.get()) {
+                connecting = false
+            }
+        }
+    }
 
     val statusText = when {
         connecting -> "Connecting..."
@@ -170,8 +178,13 @@ private fun VpnTab() {
                 Modifier.size(120.dp).clip(CircleShape)
                     .background(Brush.radialGradient(listOf(buttonColor, buttonColor.copy(0.7f))))
                     .clickable {
-                        if (connecting) return@clickable
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (connecting) {
+                            CdnVpnService.stop(context)
+                            connecting = false
+                            connected = false
+                            return@clickable
+                        }
                         if (connected) {
                             CdnVpnService.stop(context)
                             connected = false
@@ -182,12 +195,20 @@ private fun VpnTab() {
                             }
                             context.getSharedPreferences("cdnhunter_vpn", 0).edit()
                                 .putString("user_config", configUri).apply()
-                            val prepareIntent = VpnService.prepare(context)
-                            if (prepareIntent != null) {
-                                context.startActivity(prepareIntent)
-                            }
+                            try {
+                                val prepareIntent = VpnService.prepare(context)
+                                if (prepareIntent != null) {
+                                    (context as? android.app.Activity)?.startActivityForResult(prepareIntent, 1001)
+                                        ?: context.startActivity(prepareIntent)
+                                }
+                            } catch (_: Exception) {}
                             connecting = true
-                            CdnVpnService.start(context)
+                            try {
+                                CdnVpnService.start(context)
+                            } catch (e: Exception) {
+                                connecting = false
+                                android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center
@@ -200,7 +221,11 @@ private fun VpnTab() {
         }
 
         Spacer(Modifier.height(16.dp))
-        Text(statusText, fontSize = 16.sp, color = if (connected) GreenOk else TextSecondary, fontWeight = FontWeight.Medium)
+        Text(statusText, fontSize = 16.sp, color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }, fontWeight = FontWeight.Medium)
+        if (connecting) {
+            Spacer(Modifier.height(8.dp))
+            Text("Tap to cancel", fontSize = 11.sp, color = TextMuted)
+        }
         Spacer(Modifier.height(32.dp))
 
         GlassBox(Modifier.fillMaxWidth()) {
