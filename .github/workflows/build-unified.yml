@@ -76,14 +76,27 @@ jobs:
           # Android libc includes pthread - no separate -lpthread needed
           find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
           find . -name "*.mk" -exec sed -i 's/-lpthread//g' {} \;
-          make ENABLE_STATIC=1 CC="$CC" STRIP="${CROSS_PREFIX}strip" -j$(nproc)
-          ls -la bin/
+          # Use the project's Android build target (produces .so)
+          make android CC="$CC" STRIP="${CROSS_PREFIX}strip" -j$(nproc) 2>/dev/null || \
+          make CC="$CC" STRIP="${CROSS_PREFIX}strip" CFLAGS="-fPIC -DANDROID" LDFLAGS="-shared -llog" -j$(nproc) 2>/dev/null || \
+          make CC="$CC" STRIP="${CROSS_PREFIX}strip" CFLAGS="-fPIC -DANDROID" -j$(nproc)
+          echo "=== Build output ==="
+          ls -la bin/ 2>/dev/null || true
+          ls -la *.so 2>/dev/null || true
+          file bin/* 2>/dev/null || true
           cd ..
 
       - name: Place .so in jniLibs
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp hev-socks5-tunnel/bin/hev-socks5-tunnel android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          # Find the built .so or executable and copy as .so
+          SO_FILE=$(find hev-socks5-tunnel/bin -type f | head -1)
+          if [ -z "$SO_FILE" ]; then
+            SO_FILE=$(find hev-socks5-tunnel -name "*.so" | head -1)
+          fi
+          echo "Copying: $SO_FILE"
+          cp "$SO_FILE" android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          file android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
           ls -la android/app/src/main/jniLibs/arm64-v8a/
 
       - name: Generate Gradle Wrapper
