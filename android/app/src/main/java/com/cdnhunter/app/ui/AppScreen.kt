@@ -297,6 +297,28 @@ private fun VpnTab() {
             TrafficCard("Download", downloadBytes, AccentTeal, Modifier.weight(1f))
             TrafficCard("Upload", uploadBytes, AccentBlue, Modifier.weight(1f))
         }
+        Spacer(Modifier.height(16.dp))
+
+        // Show Config button (for debugging)
+        var showConfig by remember { mutableStateOf(false) }
+        var generatedConfig by remember { mutableStateOf("") }
+        GlassBox(Modifier.fillMaxWidth().clickable {
+            val prefs = context.getSharedPreferences("cdnhunter_vpn", 0)
+            val saved = prefs.getString("user_config", "") ?: ""
+            if (saved.isNotBlank()) {
+                generatedConfig = com.cdnhunter.app.vpn.VpnConfigBuilder.buildConfig(context)
+            }
+            showConfig = !showConfig
+        }) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Show Generated Config", fontSize = 13.sp, color = AccentTeal, fontWeight = FontWeight.Medium)
+                if (showConfig && generatedConfig.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(generatedConfig, fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.horizontalScroll(rememberScrollState()))
+                }
+            }
+        }
         Spacer(Modifier.height(40.dp))
     }
 }
