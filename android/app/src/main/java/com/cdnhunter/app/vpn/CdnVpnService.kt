@@ -9,6 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import hev.htproxy.TProxyService as Tun2Socks
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -71,9 +72,9 @@ class CdnVpnService : VpnService() {
                 val configFile = File(filesDir, "xray_config.json")
                 configFile.writeText(config)
 
-                // 2. Init and start xray as SOCKS proxy (no TUN fd needed here)
+                // 2. Init and start xray as SOCKS proxy
                 XrayBridge.init(filesDir.absolutePath)
-                XrayBridge.start(config, 0)  // 0 = no TUN, just SOCKS proxy
+                XrayBridge.start(config, 0)
 
                 // 3. Small delay for xray to bind port
                 delay(500)
@@ -90,7 +91,23 @@ class CdnVpnService : VpnService() {
 
                 // 5. Start tun2socks: route TUN traffic -> SOCKS proxy
                 val tun2socksConfig = File(filesDir, "tun2socks.yml")
-                Tun2SocksBridge.start(tun.fd, "127.0.0.1", 10808, tun2socksConfig)
+                val yml = """
+tunnel:
+  mtu: 8500
+
+socks5:
+  port: 10808
+  address: '127.0.0.1'
+  udp: 'tcp'
+
+misc:
+  task-stack-size: 81920
+  connect-timeout: 5000
+  read-write-timeout: 60000
+  log-level: warn
+""".trimIndent()
+                tun2socksConfig.writeText(yml)
+                Tun2Socks.start(tun2socksConfig, tun.fd)
 
                 isRunning.set(true)
                 uploadBytes = 0L
@@ -99,8 +116,11 @@ class CdnVpnService : VpnService() {
 
                 // 6. Monitor traffic stats
                 while (isActive && isRunning.get()) {
-                    uploadBytes += XrayBridge.queryUpload()
-                    downloadBytes += XrayBridge.queryDownload()
+                    val xUp = XrayBridge.queryUpload()
+                    val xDown = XrayBridge.queryDownload()
+                    val tunStats = Tun2Socks.getStats()
+                    uploadBytes = if (xUp > 0) xUp else tunStats[1]
+                    downloadBytes = if (xDown > 0) xDown else tunStats[3]
                     delay(1000)
                 }
             } catch (e: Exception) {
@@ -115,7 +135,7 @@ class CdnVpnService : VpnService() {
     private fun stopVpn() {
         isRunning.set(false)
         job?.cancel()
-        Tun2SocksBridge.stop()
+        Tun2Socks.stop()
         XrayBridge.stop()
         tunFd?.close()
         tunFd = null
