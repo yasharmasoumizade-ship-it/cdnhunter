@@ -34,10 +34,10 @@ jobs:
         with:
           cmdline-tools-version: '11076708'
 
-      - name: Install SDK packages
+      - name: Install SDK + NDK
         run: |
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
 
       - name: Build libv2ray.aar (xray-core native)
         run: |
@@ -57,47 +57,43 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Build hev-socks5-tunnel (.so)
+      - name: Build hev-socks5-tunnel as shared library
+        env:
+          NDK: /usr/local/lib/android/sdk/ndk/26.1.10909125
         run: |
           git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git
           cd hev-socks5-tunnel
-          # Fix typedef redefinition error with NDK 27
-          sed -i 's/typedef __kernel_fd_set fd_set;//g' third-part/lwip/src/ports/include/arch/../unix/include/cc.h || true
-          find . -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \; || true
-          # Build for arm64
-          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk/ | head -1)"
-          if [ ! -d "$ANDROID_NDK_HOME" ]; then
-            sdkmanager "ndk;26.1.10909125"
-            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/26.1.10909125"
-          fi
-          export CC="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          export CROSS_PREFIX="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-"
-          make clean || true
-          # Android libc includes pthread - no separate -lpthread needed
+          
+          # Fix typedef conflict with newer sysroot
+          find . -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \;
+          # Remove -lpthread (Android bionic includes it)
           find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
           find . -name "*.mk" -exec sed -i 's/-lpthread//g' {} \;
-          # Use the project's Android build target (produces .so)
-          make android CC="$CC" STRIP="${CROSS_PREFIX}strip" -j$(nproc) 2>/dev/null || \
-          make CC="$CC" STRIP="${CROSS_PREFIX}strip" CFLAGS="-fPIC -DANDROID" LDFLAGS="-shared -llog" -j$(nproc) 2>/dev/null || \
-          make CC="$CC" STRIP="${CROSS_PREFIX}strip" CFLAGS="-fPIC -DANDROID" -j$(nproc)
-          echo "=== Build output ==="
-          ls -la bin/ 2>/dev/null || true
-          ls -la *.so 2>/dev/null || true
-          file bin/* 2>/dev/null || true
+          
+          export CC="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          export STRIP="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          
+          # Compile all source to objects
+          make clean || true
+          make CC="$CC" CFLAGS="-fPIC -DANDROID -O2 -Wno-typedef-redefinition" -j$(nproc) 2>&1 | tail -20 || true
+          
+          # Collect all .o files and link as shared library
+          OBJS=$(find build -name "*.o" 2>/dev/null | tr '\n' ' ')
+          echo "Object files found: $(echo $OBJS | wc -w)"
+          
+          mkdir -p bin
+          $CC -shared -fPIC -o bin/libhev-socks5-tunnel.so $OBJS -llog
+          $STRIP bin/libhev-socks5-tunnel.so
+          
+          file bin/libhev-socks5-tunnel.so
+          ls -la bin/libhev-socks5-tunnel.so
           cd ..
 
       - name: Place .so in jniLibs
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          # Find the built .so or executable and copy as .so
-          SO_FILE=$(find hev-socks5-tunnel/bin -type f | head -1)
-          if [ -z "$SO_FILE" ]; then
-            SO_FILE=$(find hev-socks5-tunnel -name "*.so" | head -1)
-          fi
-          echo "Copying: $SO_FILE"
-          cp "$SO_FILE" android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          cp hev-socks5-tunnel/bin/libhev-socks5-tunnel.so android/app/src/main/jniLibs/arm64-v8a/
           file android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
-          ls -la android/app/src/main/jniLibs/arm64-v8a/
 
       - name: Generate Gradle Wrapper
         working-directory: android
