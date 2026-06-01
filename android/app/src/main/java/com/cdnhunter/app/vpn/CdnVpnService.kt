@@ -169,6 +169,10 @@ class CdnVpnService : VpnService() {
             val builder = Builder()
                 .setSession("CDN Hunter VPN")
                 .addAddress("10.10.10.10", 32)
+                // IPv6 ULA address: required because we route ::/0 below. Without an
+                // IPv6 address on the TUN, IPv6 packets are accepted but mishandled,
+                // which makes apps that try AAAA (IPv6) first hang/timeout.
+                .addAddress("fd00:1:1:1::1", 128)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setMtu(8500)
