@@ -50,20 +50,23 @@ class ScanEngine {
             else -> {
                 val key = config.cdnProvider.label
                 val cidrs = CdnRanges.ranges[key] ?: return emptyList()
-                expandCidrs(cidrs.shuffled().take(min(10, cidrs.size)), config.maxIps)
+                // Use ALL CIDRs for this provider (no arbitrary .take(10) cap)
+                expandCidrs(cidrs.shuffled(), config.maxIps)
             }
         }
     }
 
     private fun expandSmartScan(maxIps: Int): List<String> {
-        val allCidrs = CdnRanges.ranges.values.flatMap { it.shuffled().take(5) }
+        // Use ALL CIDRs from all providers, no per-provider cap
+        val allCidrs = CdnRanges.ranges.values.flatMap { it }
         return expandCidrs(allCidrs.shuffled(), maxIps)
     }
 
     private fun expandAllCdns(maxIps: Int): List<String> {
-        val perCdn = maxIps / CdnRanges.ranges.size
+        val perCdn = maxOf(1, maxIps / CdnRanges.ranges.size)
         return CdnRanges.ranges.values.flatMap { cidrs ->
-            expandCidrs(cidrs.shuffled().take(5), perCdn)
+            // Use all CIDRs per provider, not capped at 5
+            expandCidrs(cidrs.shuffled(), perCdn)
         }.shuffled().take(maxIps)
     }
 
@@ -159,15 +162,19 @@ class ScanEngine {
             val prefix = parts[1].toIntOrNull() ?: continue
             if (prefix < 8 || prefix > 32) continue
             val size = 1L shl (32 - prefix)
+            val remaining = maxIps - ips.size
 
             if (size <= 256) {
+                // Small CIDR: enumerate all usable IPs
                 for (i in 1 until size - 1) {
                     if (ips.size >= maxIps) break
                     ips.add(CdnRanges.longToIp(baseIp + i))
                 }
             } else {
-                val count = min(maxIps - ips.size, min(size.toInt() - 2, 300))
+                // Large CIDR: random-sample up to 'remaining' IPs (no arbitrary 300 cap)
+                val count = min(remaining.toLong(), size - 2).toInt()
                 repeat(count) {
+                    if (ips.size >= maxIps) return@repeat
                     ips.add(CdnRanges.longToIp(baseIp + Random.nextLong(1, size - 1)))
                 }
             }
