@@ -35,8 +35,11 @@ import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
+import com.cdnhunter.app.vpn.XrayBridge
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // == Theme Colors ==
 val DarkBg = Color(0xFF000000)
@@ -123,6 +126,7 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
 private fun VpnTab() {
     val context = LocalContext.current
     val clip = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
@@ -322,6 +326,41 @@ private fun VpnTab() {
             TrafficCard("Upload", uploadBytes, AccentBlue, Modifier.weight(1f))
         }
         Spacer(Modifier.height(16.dp))
+
+        // Direct outbound test: makes xray dial the proxy outbound itself
+        // (bypasses SOCKS + TUN). This isolates whether the proxy/fragment/xhttp works.
+        var testResult by remember { mutableStateOf("") }
+        var testing by remember { mutableStateOf(false) }
+        GlassBox(Modifier.fillMaxWidth().clickable(enabled = !testing) {
+            if (!CdnVpnService.isRunning.get()) {
+                testResult = "Connect first, then tap to test"
+                return@clickable
+            }
+            testing = true
+            testResult = "Testing outbound..."
+            scope.launch {
+                val r = withContext(Dispatchers.IO) {
+                    try { XrayBridge.measureDelay("https://www.gstatic.com/generate_204") }
+                    catch (e: Exception) { -2L }
+                }
+                testResult = when {
+                    r >= 0L -> "OK — proxy works! delay = ${r}ms"
+                    r == -2L -> "Error running test (check Xray Log)"
+                    else -> "FAILED — proxy can't reach server (check Xray Log)"
+                }
+                testing = false
+            }
+        }) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Test Proxy (direct outbound)", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
+                Text("Dials the server directly via xray, ignoring SOCKS/TUN", fontSize = 10.sp, color = TextMuted)
+                if (testResult.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(testResult, fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
 
         // Show Config button (for debugging)
         var showConfig by remember { mutableStateOf(false) }
