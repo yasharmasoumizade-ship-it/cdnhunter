@@ -128,257 +128,258 @@ private fun VpnTab() {
     var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
     var configUri by remember { mutableStateOf("") }
-    // Auto-IP off by default — user can enable it.
     var autoIp by remember { mutableStateOf(false) }
     var fragment by remember {
         mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
     }
     var parsedInfo by remember { mutableStateOf("") }
+    var hasSavedConfig by remember {
+        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getString("user_config", "")?.isNotBlank() == true)
+    }
+    var showConfigInput by remember { mutableStateOf(!hasSavedConfig) }
+    var showConfetti by remember { mutableStateOf(false) }
+
+    // Load saved config URI on first composition
+    LaunchedEffect(Unit) {
+        val saved = context.getSharedPreferences("cdnhunter_vpn", 0).getString("user_config", "") ?: ""
+        if (saved.isNotBlank()) {
+            configUri = saved
+            hasSavedConfig = true
+            showConfigInput = false
+            val ob = ConfigUriParser.parseToOutbound(saved)
+            if (ob != null) {
+                val proto = ob.optString("protocol", "?")
+                val settings = ob.optJSONObject("settings")
+                val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
+                    ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
+                val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
+                    ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
+                val ss = ob.optJSONObject("streamSettings")
+                val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
+                val net = ss?.optString("network", "tcp") ?: "tcp"
+                parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
+            val wasConnected = connected
             connected = CdnVpnService.isRunning.get()
             if (connected) {
                 connecting = false
-                // Start Auto-IP if enabled and not already running
-                if (autoIp && !AutoIpManager.enabled.get()) {
-                    AutoIpManager.start(context)
-                }
+                if (!wasConnected) showConfetti = true
+                if (autoIp && !AutoIpManager.enabled.get()) AutoIpManager.start(context)
             }
             delay(1000)
         }
     }
     LaunchedEffect(connecting) {
-        if (connecting) {
-            delay(15000)
-            if (!CdnVpnService.isRunning.get()) {
-                connecting = false
-            }
-        }
+        if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
+    }
+    LaunchedEffect(showConfetti) {
+        if (showConfetti) { delay(2500); showConfetti = false }
     }
 
     val statusText = when {
         connecting -> "Connecting..."
-        connected -> "Connected"
+        connected -> "Protected"
         else -> "Disconnected"
     }
-    val buttonColor = when {
-        connecting -> AccentBlue
-        connected -> GreenOk
-        else -> AccentBlue
-    }
-    val downloadBytes = if (connected) CdnVpnService.downloadBytes else 0L
-    val uploadBytes = if (connected) CdnVpnService.uploadBytes else 0L
+
+    // Animated background gradient
+    val bgPhase by rememberInfiniteTransition(label = "bg").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Reverse), label = "bgf"
+    )
+    val bgColor2 = if (connected) Color(0xFF0A2A1A).copy(alpha = 0.5f + bgPhase * 0.2f) else Color(0xFF0A0E21)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF060B1A), bgColor2, Color.Transparent)))
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(32.dp))
         Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(32.dp))
 
+        // == PRO CONNECT BUTTON ==
         Box(contentAlignment = Alignment.Center) {
+            // Outer ring when connected
+            if (connected) {
+                val rotation by rememberInfiniteTransition(label = "ring").animateFloat(
+                    0f, 360f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "rot"
+                )
+                Canvas(modifier = Modifier.size(155.dp)) {
+                    drawArc(
+                        brush = Brush.sweepGradient(listOf(GreenOk.copy(0.6f), Color.Transparent, GreenOk.copy(0.3f))),
+                        startAngle = rotation, sweepAngle = 270f, useCenter = false,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+                    )
+                }
+            }
+            // Pulse when connecting
             if (connecting) {
                 val pulse by rememberInfiniteTransition(label = "vpn_pulse").animateFloat(
-                    1f, 1.3f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "vpn_pf"
+                    1f, 1.35f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "vpn_pf"
                 )
-                Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(buttonColor.copy(0.15f)))
+                Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(AccentBlue.copy(0.12f)))
+            }
+            // Confetti burst
+            if (showConfetti) {
+                repeat(12) { i ->
+                    val angle = (i * 30f)
+                    val dist by rememberInfiniteTransition(label = "conf$i").animateFloat(
+                        0f, 80f, infiniteRepeatable(tween(600), RepeatMode.Restart), label = "cd$i"
+                    )
+                    val rad = Math.toRadians(angle.toDouble())
+                    val x = (dist * kotlin.math.cos(rad)).toFloat()
+                    val y = (dist * kotlin.math.sin(rad)).toFloat()
+                    val colors = listOf(GreenOk, AccentTeal, AccentBlue, YellowWarn)
+                    Box(Modifier.offset(x.dp, y.dp).size(6.dp).clip(CircleShape)
+                        .background(colors[i % colors.size].copy(alpha = 1f - dist / 80f)))
+                }
+            }
+            // Main button
+            val btnSize by animateDpAsState(if (connected) 130.dp else 120.dp, tween(300), label = "bs")
+            val btnGradient = when {
+                connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
+                connected -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
+                else -> Brush.radialGradient(listOf(AccentBlue, Color(0xFF0050A0)))
             }
             Box(
-                Modifier.size(120.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(buttonColor, buttonColor.copy(0.7f))))
+                Modifier.size(btnSize).clip(CircleShape).background(btnGradient)
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (connecting) {
-                            CdnVpnService.stop(context)
-                            connecting = false
-                            connected = false
-                            return@clickable
-                        }
-                        if (connected) {
-                            CdnVpnService.stop(context)
-                            AutoIpManager.stop()
-                            connected = false
-                        } else {
-                            if (configUri.isBlank()) {
-                                android.widget.Toast.makeText(context, "Paste a config first", android.widget.Toast.LENGTH_SHORT).show()
-                                return@clickable
-                            }
-                            context.getSharedPreferences("cdnhunter_vpn", 0).edit()
-                                .putString("user_config", configUri).apply()
+                        if (connecting) { CdnVpnService.stop(context); connecting = false; connected = false; return@clickable }
+                        if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+                        else {
+                            if (configUri.isBlank()) { android.widget.Toast.makeText(context, "Paste a config first", android.widget.Toast.LENGTH_SHORT).show(); return@clickable }
+                            context.getSharedPreferences("cdnhunter_vpn", 0).edit().putString("user_config", configUri).apply()
                             connecting = true
                             try {
                                 val mainActivity = context as? com.cdnhunter.app.MainActivity
-                                if (mainActivity != null) {
-                                    mainActivity.requestVpnPermissionAndConnect()
-                                } else {
-                                    CdnVpnService.start(context)
-                                }
-                            } catch (e: Exception) {
-                                connecting = false
-                                android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
-                            }
+                                if (mainActivity != null) mainActivity.requestVpnPermissionAndConnect()
+                                else CdnVpnService.start(context)
+                            } catch (e: Exception) { connecting = false; android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show() }
                         }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    if (connected) Icons.Rounded.Shield else Icons.Rounded.PowerSettingsNew,
-                    null, tint = Color.White, modifier = Modifier.size(48.dp)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        when { connected -> Icons.Rounded.Shield; connecting -> Icons.Rounded.Sync; else -> Icons.Rounded.PowerSettingsNew },
+                        null, tint = Color.White, modifier = Modifier.size(40.dp)
+                    )
+                    if (connected) { Spacer(Modifier.height(4.dp)); Text("ON", fontSize = 10.sp, color = Color.White.copy(0.8f), fontWeight = FontWeight.Bold) }
+                }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text(statusText, fontSize = 16.sp, color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }, fontWeight = FontWeight.Medium)
-        if (connecting) {
-            Spacer(Modifier.height(8.dp))
-            Text("Tap to cancel", fontSize = 11.sp, color = TextMuted)
-        }
-        if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
-            Spacer(Modifier.height(8.dp))
-            Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail)
-        }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(14.dp))
+        Text(statusText, fontSize = 16.sp, color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }, fontWeight = FontWeight.SemiBold)
+        if (connecting) { Spacer(Modifier.height(6.dp)); Text("Tap to cancel", fontSize = 11.sp, color = TextMuted) }
+        if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) { Spacer(Modifier.height(6.dp)); Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail) }
+        Spacer(Modifier.height(24.dp))
 
-        GlassBox(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Text("IMPORT CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) {
-                        ConfigField(configUri, { configUri = it }, "trojan/vless/vmess URI")
+        // == TRAFFIC (cumulative total) ==
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TrafficCard("\u2193 Download", CdnVpnService.downloadBytes, AccentTeal, Modifier.weight(1f))
+            TrafficCard("\u2191 Upload", CdnVpnService.uploadBytes, AccentBlue, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(16.dp))
+
+        // == CONFIG ==
+        if (showConfigInput) {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("IMPORT CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { ConfigField(configUri, { configUri = it }, "trojan/vless/vmess URI") }
+                        Spacer(Modifier.width(8.dp))
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(AccentBlue).clickable {
+                            val clipText = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
+                            if (clipText.startsWith("trojan://") || clipText.startsWith("vless://") || clipText.startsWith("vmess://")) configUri = clipText
+                            if (configUri.isNotBlank()) {
+                                val ob = ConfigUriParser.parseToOutbound(configUri)
+                                if (ob != null) {
+                                    val proto = ob.optString("protocol", "?")
+                                    val settings = ob.optJSONObject("settings")
+                                    val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
+                                        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
+                                    val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
+                                        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
+                                    val ss = ob.optJSONObject("streamSettings")
+                                    val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
+                                    val net = ss?.optString("network", "tcp") ?: "tcp"
+                                    parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
+                                    context.getSharedPreferences("cdnhunter_vpn", 0).edit().putString("user_config", configUri).apply()
+                                    hasSavedConfig = true; showConfigInput = false
+                                } else parsedInfo = "Invalid config"
+                            }
+                        }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+                    }
+                    if (parsedInfo.isNotBlank()) { Spacer(Modifier.height(8.dp)); Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace) }
+                }
+            }
+        } else {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                        if (parsedInfo.isNotBlank()) { Spacer(Modifier.height(4.dp)); Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace) }
                     }
                     Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier.size(40.dp).clip(CircleShape).background(AccentBlue)
-                            .clickable {
-                                val clipText = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
-                                if (clipText.startsWith("trojan://") || clipText.startsWith("vless://") || clipText.startsWith("vmess://")) {
-                                    configUri = clipText
-                                }
-                                if (configUri.isNotBlank()) {
-                                    val ob = ConfigUriParser.parseToOutbound(configUri)
-                                    if (ob != null) {
-                                        val proto = ob.optString("protocol", "?")
-                                        val settings = ob.optJSONObject("settings")
-                                        val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
-                                            ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
-                                        val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
-                                            ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
-                                        val ss = ob.optJSONObject("streamSettings")
-                                        val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
-                                        val net = ss?.optString("network", "tcp") ?: "tcp"
-                                        parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
-                                        context.getSharedPreferences("cdnhunter_vpn", 0).edit()
-                                            .putString("user_config", configUri).apply()
-                                    } else {
-                                        parsedInfo = "Invalid config"
-                                    }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Add, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(AccentBlue.copy(0.15f)).clickable { showConfigInput = true }.padding(12.dp, 8.dp)) {
+                        Text("Change", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                if (parsedInfo.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                }
             }
         }
         Spacer(Modifier.height(12.dp))
 
+        // == TOGGLES ==
         GlassBox(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                    Text("Scan + pick best IP, monitor & switch if slow", fontSize = 11.sp, color = TextSecondary)
-                }
-                Switch(
-                    checked = autoIp,
-                    onCheckedChange = {
-                        autoIp = it
-                        if (it && CdnVpnService.isRunning.get()) {
-                            AutoIpManager.start(context)
-                        } else {
-                            AutoIpManager.stop()
-                        }
-                    },
-                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
-                )
+                Column(Modifier.weight(1f)) { Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium); Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = TextSecondary) }
+                Switch(checked = autoIp, onCheckedChange = { autoIp = it; if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop() },
+                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2))
             }
         }
-        Spacer(Modifier.height(12.dp))
-
+        Spacer(Modifier.height(10.dp))
         GlassBox(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                    Text("Splits TLS hello. Turn OFF for xhttp/gRPC if it won't connect", fontSize = 11.sp, color = TextSecondary)
-                }
-                Switch(
-                    checked = fragment,
-                    onCheckedChange = {
-                        fragment = it
-                        context.getSharedPreferences("cdnhunter_vpn", 0).edit()
-                            .putBoolean("fragment_enabled", it).apply()
-                    },
-                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
-                )
+                Column(Modifier.weight(1f)) { Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium); Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = TextSecondary) }
+                Switch(checked = fragment, onCheckedChange = { fragment = it; context.getSharedPreferences("cdnhunter_vpn", 0).edit().putBoolean("fragment_enabled", it).apply() },
+                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2))
             }
         }
         Spacer(Modifier.height(12.dp))
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TrafficCard("Download", downloadBytes, AccentTeal, Modifier.weight(1f))
-            TrafficCard("Upload", uploadBytes, AccentBlue, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // Show Xray runtime log (for debugging connection failures)
+        // == XRAY LOG ==
         var showLog by remember { mutableStateOf(false) }
         var xrayLogText by remember { mutableStateOf("") }
-        GlassBox(Modifier.fillMaxWidth().clickable {
-            xrayLogText = CdnVpnService.xrayLog
-            showLog = !showLog
-        }) {
+        GlassBox(Modifier.fillMaxWidth().clickable { xrayLogText = CdnVpnService.xrayLog; showLog = !showLog }) {
             Column(Modifier.padding(14.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Show Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2).clickable {
-                        clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" }))
-                    }.padding(8.dp, 4.dp)) {
-                        Text("Copy", fontSize = 11.sp, color = AccentTeal)
-                    }
+                    Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2).clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }.padding(8.dp, 4.dp)) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
                 }
-                if (showLog) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        xrayLogText.ifBlank { "No log yet. Connect first, then tap to refresh." },
-                        fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                    )
-                }
+                if (showLog) { Spacer(Modifier.height(8.dp)); Text(xrayLogText.ifBlank { "No log yet." }, fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace, modifier = Modifier.horizontalScroll(rememberScrollState())) }
             }
         }
         Spacer(Modifier.height(12.dp))
 
-        // Auto-IP status
+        // == AUTO-IP STATUS ==
         if (autoIp && AutoIpManager.enabled.get()) {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("Auto-IP", fontSize = 13.sp, color = GreenOk, fontWeight = FontWeight.Medium)
+                    Text("Auto-IP Active", fontSize = 13.sp, color = GreenOk, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     Text(AutoIpManager.status, fontSize = 11.sp, color = TextSecondary)
-                    if (AutoIpManager.currentIp.isNotBlank()) {
-                        Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                    }
-                    if (AutoIpManager.ipPool.isNotEmpty()) {
-                        Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
-                    }
+                    if (AutoIpManager.currentIp.isNotBlank()) Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                    if (AutoIpManager.ipPool.isNotEmpty()) Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
                 }
             }
             Spacer(Modifier.height(12.dp))
