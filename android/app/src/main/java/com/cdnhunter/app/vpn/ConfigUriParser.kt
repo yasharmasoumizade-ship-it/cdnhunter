@@ -119,7 +119,6 @@ object ConfigUriParser {
             if (alpn.isNotBlank()) tls.put("alpn", JSONArray().apply { alpn.split(",").forEach { put(it) } })
             val fp = params["fp"] ?: ""
             if (fp.isNotBlank()) tls.put("fingerprint", fp)
-            tls.put("allowInsecure", params["allowInsecure"] == "1" || params["insecure"] == "1")
             ss.put("tlsSettings", tls)
         }
 
