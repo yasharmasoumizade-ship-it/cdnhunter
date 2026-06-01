@@ -127,7 +127,9 @@ private fun VpnTab() {
     var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
     var configUri by remember { mutableStateOf("") }
-    var autoIp by remember { mutableStateOf(true) }
+    // Auto-IP off by default while we debug the raw connection (it does not affect
+    // the connect path yet; keeping it off avoids confusion during testing).
+    var autoIp by remember { mutableStateOf(false) }
     var fragment by remember {
         mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
     }
