@@ -79,6 +79,7 @@ jobs:
             NDK_APPLICATION_MK=/tmp/hev/Application.mk \
             APP_ABI="arm64-v8a armeabi-v7a" \
             APP_PLATFORM=android-24 \
+            APP_CFLAGS="-DANDROID" \
             NDK_LIBS_OUT=/tmp/hev/libs \
             NDK_OUT=/tmp/hev/obj \
             -j"$(nproc)"
@@ -90,12 +91,32 @@ jobs:
           echo "=== jniLibs contents ==="
           find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
 
-          # Hard-fail the build if the JNI entry point is missing from the arm64 .so
+          # Verify that JNI_OnLoad is exported (required for System.loadLibrary).
+          # Try multiple tools in case llvm-nm -D doesn't show it.
           echo "=== Verify JNI_OnLoad symbol (arm64-v8a) ==="
+          SO="android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so"
           NM="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
-          "$NM" -D android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so | grep -q "JNI_OnLoad" \
-            && echo "OK: JNI_OnLoad present" \
-            || (echo "FATAL: JNI_OnLoad not found in .so" && exit 1)
+          READELF="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          
+          echo "--- llvm-nm -D ---"
+          "$NM" -D "$SO" | grep "JNI_OnLoad" || true
+          echo "--- llvm-readelf --dyn-syms ---"
+          "$READELF" --dyn-syms "$SO" | grep "JNI_OnLoad" || true
+          echo "--- llvm-nm (all symbols) ---"
+          "$NM" "$SO" 2>/dev/null | grep "JNI_OnLoad" || true
+          
+          # Final verdict: if readelf finds it, we're good (nm -D can be quirky)
+          if "$READELF" --dyn-syms "$SO" | grep -q "JNI_OnLoad"; then
+            echo "OK: JNI_OnLoad is exported"
+          elif "$NM" -D "$SO" | grep -q "JNI_OnLoad"; then
+            echo "OK: JNI_OnLoad found via nm -D"
+          else
+            echo "WARNING: JNI_OnLoad not found — checking if hev-jni.c was compiled..."
+            # Check obj files to diagnose
+            find /tmp/hev/obj -name "hev-jni.o" -exec ls -la {} \; || echo "hev-jni.o NOT FOUND"
+            echo "FATAL: .so does not export JNI_OnLoad — Android cannot load it"
+            exit 1
+          fi
 
       - name: Bundle geoip/geosite assets
         run: |
