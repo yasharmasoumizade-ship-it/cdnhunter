@@ -1,6 +1,7 @@
 package com.cdnhunter.app.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.*
@@ -10,8 +11,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-class ScanViewModel : ViewModel() {
+class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs = application.getSharedPreferences("cdnhunter_scan", 0)
     private val scanEngine = ScanEngine()
     private val frontingEngine = FrontingEngine()
     private val throughputEngine = ThroughputEngine()
@@ -20,13 +22,42 @@ class ScanViewModel : ViewModel() {
     private val _state = MutableStateFlow(ScanState())
     val state: StateFlow<ScanState> = _state.asStateFlow()
 
-    private val _config = MutableStateFlow(ScanConfig())
+    private val _config = MutableStateFlow(loadConfig())
     val config: StateFlow<ScanConfig> = _config.asStateFlow()
 
     private var scanJob: Job? = null
 
     fun updateConfig(newConfig: ScanConfig) {
         _config.value = newConfig
+        saveConfig(newConfig)
+    }
+
+    private fun loadConfig(): ScanConfig {
+        return ScanConfig(
+            cdnProvider = CdnProvider.entries.find { it.key == prefs.getString("cdn_provider", "smart") } ?: CdnProvider.SMART,
+            maxIps = prefs.getInt("max_ips", 3000),
+            concurrency = prefs.getInt("concurrency", 60),
+            timeout = prefs.getFloat("timeout", 4.0f),
+            retries = prefs.getInt("retries", 2),
+            host = prefs.getString("host", "") ?: "",
+            sni = prefs.getString("sni", "") ?: "",
+            manualIps = prefs.getString("manual_ips", "") ?: "",
+            manualCidr = prefs.getString("manual_cidr", "") ?: "",
+        )
+    }
+
+    private fun saveConfig(c: ScanConfig) {
+        prefs.edit()
+            .putString("cdn_provider", c.cdnProvider.key)
+            .putInt("max_ips", c.maxIps)
+            .putInt("concurrency", c.concurrency)
+            .putFloat("timeout", c.timeout)
+            .putInt("retries", c.retries)
+            .putString("host", c.host)
+            .putString("sni", c.sni)
+            .putString("manual_ips", c.manualIps)
+            .putString("manual_cidr", c.manualCidr)
+            .apply()
     }
 
     fun startScan() {
