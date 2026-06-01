@@ -36,6 +36,7 @@ import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.XrayBridge
+import hev.htproxy.TProxyService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -357,6 +358,25 @@ private fun VpnTab() {
                 if (testResult.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(testResult, fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // tun2socks diagnostic: confirms the native lib loaded + is forwarding bytes.
+        // If loaded=false the hev .so didn't load (browser dead even when proxy works).
+        var tunStatus by remember { mutableStateOf("") }
+        GlassBox(Modifier.fillMaxWidth().clickable {
+            val s = TProxyService.stats()
+            tunStatus = "loaded=${TProxyService.isLoaded()}  running=${TProxyService.isRunning()}\n" +
+                    "tun ↑${s[0]}b ↓${s[2]}b   socks ↑${s[1]}b ↓${s[3]}b"
+        }) {
+            Column(Modifier.padding(14.dp)) {
+                Text("tun2socks status (tap to refresh)", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
+                Text("Browse a site, then tap. If bytes stay 0, traffic isn't reaching tun2socks", fontSize = 10.sp, color = TextMuted)
+                if (tunStatus.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(tunStatus, fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
                 }
             }
         }
