@@ -187,11 +187,11 @@ private fun VpnTab() {
         else -> "Disconnected"
     }
 
-    // Animated background gradient
+    // Subtle animated background — very slight green tint when connected
     val bgPhase by rememberInfiniteTransition(label = "bg").animateFloat(
         0f, 1f, infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Reverse), label = "bgf"
     )
-    val bgColor2 = if (connected) Color(0xFF0A2A1A).copy(alpha = 0.5f + bgPhase * 0.2f) else Color(0xFF0A0E21)
+    val bgColor2 = if (connected) Color(0xFF0A1A14).copy(alpha = 0.3f + bgPhase * 0.1f) else Color(0xFF0A0E21)
 
     Column(
         Modifier.fillMaxSize()

@@ -118,14 +118,13 @@ object AutoIpManager {
     private suspend fun scanForPool(context: Context): List<String> {
         val engine = ScanEngine()
         val scanConfig = ScanConfig(
-            cdnProvider = CdnProvider.SMART,
-            maxIps = 200, // Scan 200 to find at least 10 good ones
+            cdnProvider = CdnProvider.CLOUDFLARE, // Auto-IP only scans Cloudflare
+            maxIps = 200,
             concurrency = 80,
             timeout = 3f,
             retries = 1
         )
         val results = engine.scan(scanConfig)
-        // Return top POOL_SIZE healthy IPs sorted by latency
         return results.filter { it.ok }.sortedBy { it.ms }.take(POOL_SIZE).map { it.ip }
     }
 

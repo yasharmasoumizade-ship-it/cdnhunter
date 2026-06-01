@@ -2,7 +2,6 @@ package com.cdnhunter.app.engine
 
 import com.cdnhunter.app.data.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -10,7 +9,6 @@ import okhttp3.Request
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.*
 import kotlin.math.min
@@ -71,50 +69,49 @@ class ScanEngine {
     }
 
     /**
-     * High-performance scan using chunked batches + semaphore.
-     * UI updates are throttled to every 50 IPs to prevent lag.
+     * High-performance scan using chunked processing.
+     * Instead of launching N coroutines (which OOMs for 30k IPs), we process
+     * IPs in chunks of [concurrency] size. Each chunk runs all IPs in parallel
+     * then moves to the next chunk. This keeps memory bounded and ensures ALL
+     * IPs get scanned regardless of concurrency/maxIps ratio.
      */
     private suspend fun scanIps(ips: List<String>, config: ScanConfig): List<ScanResult> {
         val healthy = mutableListOf<ScanResult>()
-        val semaphore = Semaphore(config.concurrency)
         val total = ips.size
         val scannedCount = AtomicInteger(0)
         val healthyCount = AtomicInteger(0)
         val lock = Any()
+        val updateInterval = maxOf(1, total / 100)
 
-        // Throttle UI updates: batch every N results
-        val updateInterval = maxOf(1, total / 50) // ~50 UI updates total (less lag)
+        // Process in chunks of concurrency size
+        val chunks = ips.chunked(config.concurrency)
 
-        coroutineScope {
-            ips.map { ip ->
-                launch(Dispatchers.IO) {
-                    if (stopRequested) return@launch
-                    semaphore.acquire()
-                    try {
-                        if (stopRequested) return@launch
+        for (chunk in chunks) {
+            if (stopRequested) break
+
+            coroutineScope {
+                chunk.map { ip ->
+                    async(Dispatchers.IO) {
+                        if (stopRequested) return@async
                         val result = checkIp(ip, config)
                         val sc = scannedCount.incrementAndGet()
 
                         if (result.ok) {
                             synchronized(lock) { healthy.add(result) }
                             healthyCount.incrementAndGet()
-                            // Only emit live result for healthy IPs (less UI pressure)
                             onLiveResult?.invoke(result)
                         }
 
-                        // Throttled progress update
                         if (sc % updateInterval == 0 || sc == total) {
                             onProgress?.invoke(sc, healthyCount.get(), total)
                         }
-                    } finally {
-                        semaphore.release()
                     }
-                }
-            }.joinAll()
+                }.awaitAll()
+            }
         }
 
         // Final progress
-        onProgress?.invoke(total, healthyCount.get(), total)
+        onProgress?.invoke(scannedCount.get(), healthyCount.get(), total)
         return healthy.sortedBy { it.ms }
     }
 
