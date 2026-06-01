@@ -35,12 +35,9 @@ import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
-import com.cdnhunter.app.vpn.XrayBridge
-import hev.htproxy.TProxyService
-import kotlinx.coroutines.Dispatchers
+import com.cdnhunter.app.vpn.AutoIpManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 // == Theme Colors ==
 val DarkBg = Color(0xFF000000)
@@ -127,13 +124,11 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
 private fun VpnTab() {
     val context = LocalContext.current
     val clip = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
     var configUri by remember { mutableStateOf("") }
-    // Auto-IP off by default while we debug the raw connection (it does not affect
-    // the connect path yet; keeping it off avoids confusion during testing).
+    // Auto-IP off by default — user can enable it.
     var autoIp by remember { mutableStateOf(false) }
     var fragment by remember {
         mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
@@ -143,7 +138,13 @@ private fun VpnTab() {
     LaunchedEffect(Unit) {
         while (true) {
             connected = CdnVpnService.isRunning.get()
-            if (connected) connecting = false
+            if (connected) {
+                connecting = false
+                // Start Auto-IP if enabled and not already running
+                if (autoIp && !AutoIpManager.enabled.get()) {
+                    AutoIpManager.start(context)
+                }
+            }
             delay(1000)
         }
     }
@@ -197,6 +198,7 @@ private fun VpnTab() {
                         }
                         if (connected) {
                             CdnVpnService.stop(context)
+                            AutoIpManager.stop()
                             connected = false
                         } else {
                             if (configUri.isBlank()) {
@@ -293,10 +295,18 @@ private fun VpnTab() {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                    Text("Use best scanned IP automatically", fontSize = 11.sp, color = TextSecondary)
+                    Text("Scan + pick best IP, monitor & switch if slow", fontSize = 11.sp, color = TextSecondary)
                 }
                 Switch(
-                    checked = autoIp, onCheckedChange = { autoIp = it },
+                    checked = autoIp,
+                    onCheckedChange = {
+                        autoIp = it
+                        if (it && CdnVpnService.isRunning.get()) {
+                            AutoIpManager.start(context)
+                        } else {
+                            AutoIpManager.stop()
+                        }
+                    },
                     colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
                 )
             }
@@ -328,82 +338,6 @@ private fun VpnTab() {
         }
         Spacer(Modifier.height(16.dp))
 
-        // Direct outbound test: makes xray dial the proxy outbound itself
-        // (bypasses SOCKS + TUN). This isolates whether the proxy/fragment/xhttp works.
-        var testResult by remember { mutableStateOf("") }
-        var testing by remember { mutableStateOf(false) }
-        GlassBox(Modifier.fillMaxWidth().clickable(enabled = !testing) {
-            if (!CdnVpnService.isRunning.get()) {
-                testResult = "Connect first, then tap to test"
-                return@clickable
-            }
-            testing = true
-            testResult = "Testing outbound..."
-            scope.launch {
-                val r = withContext(Dispatchers.IO) {
-                    try { XrayBridge.measureDelay("https://www.gstatic.com/generate_204") }
-                    catch (e: Exception) { -2L }
-                }
-                testResult = when {
-                    r >= 0L -> "OK — proxy works! delay = ${r}ms"
-                    r == -2L -> "Error running test (check Xray Log)"
-                    else -> "FAILED — proxy can't reach server (check Xray Log)"
-                }
-                testing = false
-            }
-        }) {
-            Column(Modifier.padding(14.dp)) {
-                Text("Test Proxy (direct outbound)", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
-                Text("Dials the server directly via xray, ignoring SOCKS/TUN", fontSize = 10.sp, color = TextMuted)
-                if (testResult.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(testResult, fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // tun2socks diagnostic: confirms the native lib loaded + is forwarding bytes.
-        // If loaded=false the hev .so didn't load (browser dead even when proxy works).
-        var tunStatus by remember { mutableStateOf("") }
-        GlassBox(Modifier.fillMaxWidth().clickable {
-            val s = TProxyService.stats()
-            tunStatus = "loaded=${TProxyService.isLoaded()}  running=${TProxyService.isRunning()}\n" +
-                    "tun ↑${s[0]}b ↓${s[2]}b   socks ↑${s[1]}b ↓${s[3]}b"
-        }) {
-            Column(Modifier.padding(14.dp)) {
-                Text("tun2socks status (tap to refresh)", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
-                Text("Browse a site, then tap. If bytes stay 0, traffic isn't reaching tun2socks", fontSize = 10.sp, color = TextMuted)
-                if (tunStatus.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(tunStatus, fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // Show Config button (for debugging)
-        var showConfig by remember { mutableStateOf(false) }
-        var generatedConfig by remember { mutableStateOf("") }
-        GlassBox(Modifier.fillMaxWidth().clickable {
-            val prefs = context.getSharedPreferences("cdnhunter_vpn", 0)
-            val saved = prefs.getString("user_config", "") ?: ""
-            if (saved.isNotBlank()) {
-                generatedConfig = com.cdnhunter.app.vpn.VpnConfigBuilder.buildConfig(context)
-            }
-            showConfig = !showConfig
-        }) {
-            Column(Modifier.padding(14.dp)) {
-                Text("Show Generated Config", fontSize = 13.sp, color = AccentTeal, fontWeight = FontWeight.Medium)
-                if (showConfig && generatedConfig.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(generatedConfig, fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.horizontalScroll(rememberScrollState()))
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
         // Show Xray runtime log (for debugging connection failures)
         var showLog by remember { mutableStateOf(false) }
         var xrayLogText by remember { mutableStateOf("") }
@@ -430,6 +364,26 @@ private fun VpnTab() {
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+
+        // Auto-IP status
+        if (autoIp && AutoIpManager.enabled.get()) {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("Auto-IP", fontSize = 13.sp, color = GreenOk, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(AutoIpManager.status, fontSize = 11.sp, color = TextSecondary)
+                    if (AutoIpManager.currentIp.isNotBlank()) {
+                        Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                    }
+                    if (AutoIpManager.ipPool.isNotEmpty()) {
+                        Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
         Spacer(Modifier.height(40.dp))
     }
 }
@@ -447,8 +401,9 @@ private fun TrafficCard(label: String, bytes: Long, color: Color, modifier: Modi
 
 private fun formatBytes(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+    bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
+    bytes < 1024L * 1024 * 1024 -> "${"%.2f".format(bytes / (1024.0 * 1024.0))} MB"
+    else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
 }
 
 // == SCANNER TAB ==
