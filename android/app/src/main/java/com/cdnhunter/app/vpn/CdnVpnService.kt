@@ -30,6 +30,7 @@ class CdnVpnService : VpnService() {
         var uploadBytes = 0L
         var downloadBytes = 0L
         var lastError = ""
+        var xrayLog = ""
 
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
@@ -82,6 +83,10 @@ class CdnVpnService : VpnService() {
                 val configFile = File(filesDir, "xray_config.json")
                 configFile.writeText(config)
 
+                // Clear previous xray error log so we only see this session's errors
+                xrayLog = ""
+                runCatching { File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME).writeText("") }
+
                 // 2. Init and start xray as SOCKS proxy
                 XrayBridge.init(filesDir.absolutePath)
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
@@ -125,15 +130,27 @@ class CdnVpnService : VpnService() {
                     val tunStats = TProxyService.stats()
                     uploadBytes = if (xUp > 0) xUp else tunStats[1]
                     downloadBytes = if (xDown > 0) xDown else tunStats[3]
+                    xrayLog = readXrayLog()
                     delay(1000)
                 }
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
+                xrayLog = readXrayLog()
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 withContext(Dispatchers.Main) { stopVpn() }
             }
         }
+    }
+
+    /** Reads the tail of xray's error log so the UI can show why a connection failed. */
+    private fun readXrayLog(): String {
+        return try {
+            val f = File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME)
+            if (!f.exists()) return ""
+            val lines = f.readLines()
+            lines.takeLast(40).joinToString("\n")
+        } catch (_: Exception) { "" }
     }
 
     private fun stopVpn() {

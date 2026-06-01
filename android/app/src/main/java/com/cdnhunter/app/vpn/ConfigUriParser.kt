@@ -108,18 +108,35 @@ object ConfigUriParser {
         val network = params["type"] ?: "tcp"
         ss.put("network", network)
 
-        // TLS
+        // Security: TLS or REALITY
         val security = params["security"] ?: ""
-        if (security == "tls") {
-            ss.put("security", "tls")
-            val tls = JSONObject()
-            val sni = params["sni"] ?: params["host"] ?: ""
-            if (sni.isNotBlank()) tls.put("serverName", sni)
-            val alpn = params["alpn"] ?: ""
-            if (alpn.isNotBlank()) tls.put("alpn", JSONArray().apply { alpn.split(",").forEach { put(it) } })
-            val fp = params["fp"] ?: ""
-            if (fp.isNotBlank()) tls.put("fingerprint", fp)
-            ss.put("tlsSettings", tls)
+        when (security) {
+            "tls" -> {
+                ss.put("security", "tls")
+                val tls = JSONObject()
+                val sni = params["sni"] ?: params["host"] ?: ""
+                if (sni.isNotBlank()) tls.put("serverName", sni)
+                val alpn = params["alpn"] ?: ""
+                if (alpn.isNotBlank()) tls.put("alpn", JSONArray().apply { alpn.split(",").forEach { put(it) } })
+                val fp = params["fp"] ?: ""
+                if (fp.isNotBlank()) tls.put("fingerprint", fp)
+                ss.put("tlsSettings", tls)
+            }
+            "reality" -> {
+                ss.put("security", "reality")
+                val reality = JSONObject()
+                val sni = params["sni"] ?: ""
+                if (sni.isNotBlank()) reality.put("serverName", sni)
+                // fingerprint is REQUIRED for REALITY; default to chrome
+                reality.put("fingerprint", params["fp"]?.takeIf { it.isNotBlank() } ?: "chrome")
+                val pbk = params["pbk"] ?: ""
+                if (pbk.isNotBlank()) reality.put("publicKey", pbk)
+                val sid = params["sid"] ?: ""
+                if (sid.isNotBlank()) reality.put("shortId", sid)
+                val spx = params["spx"] ?: ""
+                if (spx.isNotBlank()) reality.put("spiderX", spx)
+                ss.put("realitySettings", reality)
+            }
         }
 
         // Transport

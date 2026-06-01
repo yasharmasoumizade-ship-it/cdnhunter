@@ -319,6 +319,34 @@ private fun VpnTab() {
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+
+        // Show Xray runtime log (for debugging connection failures)
+        var showLog by remember { mutableStateOf(false) }
+        var xrayLogText by remember { mutableStateOf("") }
+        GlassBox(Modifier.fillMaxWidth().clickable {
+            xrayLogText = CdnVpnService.xrayLog
+            showLog = !showLog
+        }) {
+            Column(Modifier.padding(14.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2).clickable {
+                        clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" }))
+                    }.padding(8.dp, 4.dp)) {
+                        Text("Copy", fontSize = 11.sp, color = AccentTeal)
+                    }
+                }
+                if (showLog) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        xrayLogText.ifBlank { "No log yet. Connect first, then tap to refresh." },
+                        fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(40.dp))
     }
 }

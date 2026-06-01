@@ -3,12 +3,15 @@ package com.cdnhunter.app.vpn
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Builds xray JSON config from stored user config (URI).
  * Adds fragment outbound, SOCKS inbound, DNS, routing.
  */
 object VpnConfigBuilder {
+
+    const val ERROR_LOG_NAME = "xray_error.log"
 
     fun buildConfig(ctx: Context): String {
         val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
@@ -20,7 +23,10 @@ object VpnConfigBuilder {
         // Parse user config URI to outbound
         val outbound = ConfigUriParser.parseToOutbound(userConfig) ?: defaultOutbound()
 
-        return buildFullConfig(outbound, fragmentEnabled, fragLength, fragInterval).toString(2)
+        // Write xray's own error log to a file so we can surface it in the UI
+        val errorLogPath = File(ctx.filesDir, ERROR_LOG_NAME).absolutePath
+
+        return buildFullConfig(outbound, fragmentEnabled, fragLength, fragInterval, errorLogPath).toString(2)
     }
 
     /**
@@ -34,7 +40,8 @@ object VpnConfigBuilder {
             proxyOutbound = outbound,
             fragmentEnabled = true,
             fragLength = "100-200",
-            fragInterval = "10-20"
+            fragInterval = "10-20",
+            errorLogPath = ""
         ).toString(2)
     }
 
@@ -42,12 +49,15 @@ object VpnConfigBuilder {
         proxyOutbound: JSONObject,
         fragmentEnabled: Boolean,
         fragLength: String,
-        fragInterval: String
+        fragInterval: String,
+        errorLogPath: String
     ): JSONObject {
         val config = JSONObject()
 
-        // Log
-        config.put("log", JSONObject().put("loglevel", "warning"))
+        // Log (use "info" level so we capture connection failures; write to file for UI)
+        val log = JSONObject().put("loglevel", "info")
+        if (errorLogPath.isNotBlank()) log.put("error", errorLogPath)
+        config.put("log", log)
 
         // DNS
         val dns = JSONObject()
@@ -96,7 +106,7 @@ object VpnConfigBuilder {
             fragSettings.put("fragment", frag)
             fragment.put("settings", fragSettings)
             val fragSs = JSONObject()
-            fragSs.put("sockopt", JSONObject().put("TcpNoDelay", true))
+            fragSs.put("sockopt", JSONObject().put("tcpNoDelay", true))
             fragment.put("streamSettings", fragSs)
             outbounds.put(fragment)
         }
