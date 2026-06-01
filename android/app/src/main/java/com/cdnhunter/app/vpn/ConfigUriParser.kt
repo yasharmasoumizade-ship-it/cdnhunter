@@ -157,6 +157,12 @@ object ConfigUriParser {
                 if (host.isNotBlank()) xhttp.put("host", host)
                 val mode = params["mode"] ?: ""
                 if (mode.isNotBlank()) xhttp.put("mode", mode)
+                // "extra" carries advanced xhttp settings (scMaxEachPostBytes, xPaddingBytes,
+                // xmux, downloadSettings, ...). Xray merges it over host/path/mode at build time.
+                val extra = params["extra"] ?: ""
+                if (extra.isNotBlank()) {
+                    try { xhttp.put("extra", JSONObject(extra)) } catch (_: Exception) {}
+                }
                 ss.put("xhttpSettings", xhttp)
             }
             "grpc" -> {

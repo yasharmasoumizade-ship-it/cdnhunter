@@ -128,6 +128,9 @@ private fun VpnTab() {
     var connecting by remember { mutableStateOf(false) }
     var configUri by remember { mutableStateOf("") }
     var autoIp by remember { mutableStateOf(true) }
+    var fragment by remember {
+        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
+    }
     var parsedInfo by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -287,6 +290,25 @@ private fun VpnTab() {
                 }
                 Switch(
                     checked = autoIp, onCheckedChange = { autoIp = it },
+                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        GlassBox(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                    Text("Splits TLS hello. Turn OFF for xhttp/gRPC if it won't connect", fontSize = 11.sp, color = TextSecondary)
+                }
+                Switch(
+                    checked = fragment,
+                    onCheckedChange = {
+                        fragment = it
+                        context.getSharedPreferences("cdnhunter_vpn", 0).edit()
+                            .putBoolean("fragment_enabled", it).apply()
+                    },
                     colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
                 )
             }
