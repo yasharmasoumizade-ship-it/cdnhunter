@@ -57,48 +57,43 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Build hev-socks5-tunnel .so
+      - name: Build hev-socks5-tunnel .so (official ndk-build)
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
-          cd /tmp/hev
-          find . -name "cc.h" -exec sed -i 's/typedef __kernel_fd_set fd_set;//g' {} \;
+          set -euo pipefail
           NDK="${ANDROID_HOME}/ndk/26.1.10909125"
-          
-          export CC="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          export STRIP="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
-          
-          find . -name "Makefile" -exec sed -i 's/-lpthread//g' {} \;
-          find . -name "*.mk" -exec sed -i 's/-lpthread//g' {} \;
-          
-          # Compile main project
-          make CC="$CC" CFLAGS="-fPIC -DANDROID -O2 -Wno-typedef-redefinition" -j$(nproc) 2>&1 | tail -5 || true
-          
-          # CRITICAL: Compile hev-jni.c separately with correct defines
-          $CC -c -fPIC -DANDROID -DPKGNAME=hev/htproxy -DCLSNAME=TProxyService -O2 -Wno-typedef-redefinition \
-            -I src -I src/core/include -I third-part/hev-task-system/include \
-            -I third-part/lwip/src/include -I third-part/lwip/src/ports/include \
-            -I third-part/yaml/include \
-            src/hev-jni.c -o build/hev-jni.o
-          
-          # Collect ALL .o files including hev-jni.o
-          OBJS=$(find build -name "*.o" 2>/dev/null | sort | tr '\n' ' ')
-          OBJ_COUNT=$(echo $OBJS | wc -w)
-          echo "Found $OBJ_COUNT object files (includes hev-jni.o)"
-          
-          if [ "$OBJ_COUNT" -gt "10" ]; then
-            $CC -shared -Wl,-soname,libhev-socks5-tunnel.so -o libhev-socks5-tunnel.so $OBJS -llog
-            $STRIP libhev-socks5-tunnel.so
-            file libhev-socks5-tunnel.so
-            echo "=== Checking JNI_OnLoad ==="
-            ${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm -D libhev-socks5-tunnel.so | grep "JNI_OnLoad" && echo "SUCCESS" || echo "FATAL: NOT FOUND"
-            cp libhev-socks5-tunnel.so ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
-          else
-            echo "ERROR: Not enough objects"
-            exit 1
-          fi
-          
-          ls -la ${GITHUB_WORKSPACE}/android/app/src/main/jniLibs/arm64-v8a/
+
+          # Clone with submodules (yaml, lwip, hev-task-system) — required by Android.mk
+          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
+
+          # Build with the project's OWN Android.mk/Application.mk via ndk-build.
+          # This builds the submodules as static libs, links them correctly, adds the
+          # 16KB page-size alignment flags, and compiles hev-jni.c (PKGNAME defaults to
+          # hev/htproxy, CLSNAME TProxyService — matches our Java class). The previous
+          # hand-rolled `make` build dropped submodule objects and produced a .so with
+          # unresolved symbols that failed to load at runtime (UnsatisfiedLinkError).
+          "$NDK/ndk-build" \
+            NDK_PROJECT_PATH=/tmp/hev \
+            APP_BUILD_SCRIPT=/tmp/hev/Android.mk \
+            NDK_APPLICATION_MK=/tmp/hev/Application.mk \
+            APP_ABI="arm64-v8a armeabi-v7a" \
+            APP_PLATFORM=android-24 \
+            NDK_LIBS_OUT=/tmp/hev/libs \
+            NDK_OUT=/tmp/hev/obj \
+            -j"$(nproc)"
+
+          # Copy the built .so for each ABI into jniLibs
+          mkdir -p android/app/src/main/jniLibs
+          cp -r /tmp/hev/libs/* android/app/src/main/jniLibs/
+
+          echo "=== jniLibs contents ==="
+          find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
+
+          # Hard-fail the build if the JNI entry point is missing from the arm64 .so
+          echo "=== Verify JNI_OnLoad symbol (arm64-v8a) ==="
+          NM="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          "$NM" -D android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so | grep -q "JNI_OnLoad" \
+            && echo "OK: JNI_OnLoad present" \
+            || (echo "FATAL: JNI_OnLoad not found in .so" && exit 1)
 
       - name: Bundle geoip/geosite assets
         run: |
