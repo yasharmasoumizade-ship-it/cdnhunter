@@ -66,14 +66,8 @@ val LightTextMuted = Color(0xFF999999)
 
 @Composable
 fun isDarkMode(): Boolean {
-    // Simple check: if background is dark card color, we're in dark mode
-    return try {
-        val bg = MaterialTheme.colorScheme.background
-        // Check if it's one of our dark colors (0xFF0A0E21 or similar)
-        bg.red < 0.2f && bg.green < 0.2f && bg.blue < 0.3f
-    } catch (e: Exception) {
-        true // Default to dark if error
-    }
+    val bg = MaterialTheme.colorScheme.background
+    return bg.red < 0.2f && bg.green < 0.2f && bg.blue < 0.3f
 }
 
 private enum class Tab(val label: String) {
