@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,6 +42,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── Theme ────────────────────────────────────────────────────────────────────
+import android.os.Build
+import androidx.compose.material3.isSystemInDarkTheme
+
+// Dark theme
 val DarkBg        = Color(0xFF000000)
 val CardBg        = Color(0xFF1C1C1E)
 val CardBg2       = Color(0xFF2C2C2E)
@@ -52,6 +57,20 @@ val YellowWarn    = Color(0xFFFFD60A)
 val TextPrimary   = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8E8E93)
 val TextMuted     = Color(0xFF48484A)
+
+// Light theme
+val LightBg       = Color(0xFFFAFAFA)
+val LightCardBg   = Color(0xFFFFFFFF)
+val LightCardBg2  = Color(0xFFF5F5F7)
+val LightTextPrimary = Color(0xFF000000)
+val LightTextSecondary = Color(0xFF666666)
+val LightTextMuted = Color(0xFF999999)
+
+@Composable
+fun isDarkMode(): Boolean = isSystemInDarkTheme()
+
+@Composable
+fun themeColor(dark: Color, light: Color): Color = if (isDarkMode()) dark else light
 
 private enum class Tab(val label: String) {
     VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
@@ -110,8 +129,10 @@ private fun loadConfigs(context: Context): List<SavedConfig> {
 }
 
 private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
+    // Prevent crash with max 50 configs
+    val limited = configs.take(50)
     context.getSharedPreferences("cdnhunter_vpn", 0)
-        .edit().putString("saved_configs", configs.joinToString("\n") { it.uri }).apply()
+        .edit().putString("saved_configs", limited.joinToString("\n") { it.uri }).apply()
 }
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
@@ -133,7 +154,8 @@ fun AppScreen(
 
     Box(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))
+            .background(if (isDarkMode()) Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg))
+                        else Brush.verticalGradient(listOf(Color(0xFFF5F5F7), Color(0xFFFAFAFA), LightBg)))
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
@@ -164,11 +186,15 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
         Tab.RESULTS to Icons.Rounded.List,
         Tab.TOOLS   to Icons.Rounded.Build
     )
-    Box(Modifier.fillMaxWidth().background(CardBg.copy(0.85f))) {
+    val bgColor = if (isDarkMode()) CardBg.copy(0.85f) else LightCardBg.copy(0.9f)
+    val selectedColor = AccentBlue
+    val unselectedColor = if (isDarkMode()) TextMuted else LightTextMuted
+    
+    Box(Modifier.fillMaxWidth().background(bgColor)) {
         Row(Modifier.fillMaxWidth().padding(8.dp, 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
-                val color = if (selected) AccentBlue else TextMuted
+                val color = if (selected) selectedColor else unselectedColor
                 Column(
                     Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -223,7 +249,7 @@ private fun VpnTab() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
                     val statusText = when {
                         connecting -> "Connecting..."
                         connected  -> "Protected"
@@ -231,7 +257,7 @@ private fun VpnTab() {
                     }
                     Text(
                         statusText, fontSize = 13.sp,
-                        color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }
+                        color = when { connected -> GreenOk; connecting -> YellowWarn; else -> if (isDarkMode()) TextSecondary else LightTextSecondary }
                     )
                 }
                 // Big connect/disconnect if active config exists
@@ -289,18 +315,30 @@ private fun VpnTab() {
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                when { connected -> Icons.Rounded.Shield; connecting -> Icons.Rounded.Sync; else -> Icons.Rounded.PowerSettingsNew },
-                                null, tint = Color.White, modifier = Modifier.size(26.dp)
-                            )
+                            Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                                when {
+                                    connected -> Icon(Icons.Rounded.Shield, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                                    connecting -> {
+                                        val rotation by rememberInfiniteTransition(label = "sync").animateFloat(
+                                            0f, 360f, infiniteRepeatable(tween(1500, easing = LinearEasing)), label = "syncRot"
+                                        )
+                                        Icon(Icons.Rounded.Sync, null, tint = Color.White, modifier = Modifier.size(26.dp).rotate(rotation))
+                                    }
+                                    else -> Icon(Icons.Rounded.PowerSettingsNew, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                                }
+                            }
                         }
                     }
                 }
             }
 
             // ── Error ──────────────────────────────────────────────────────
-            if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
-                Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail, modifier = Modifier.padding(bottom = 8.dp))
+            Box(
+                Modifier.fillMaxWidth().height(if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) 32.dp else 0.dp)
+            ) {
+                if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
+                    Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail, modifier = Modifier.padding(bottom = 8.dp))
+                }
             }
 
             // ── Config list ────────────────────────────────────────────────
@@ -943,17 +981,21 @@ private fun ToolsTab(
 // ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
 private fun GlassCard(value: String, label: String, color: Color, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(16.dp)).background(color.copy(0.08f)).border(1.dp, color.copy(0.15f), RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
+    val bgColor = if (isDarkMode()) color.copy(0.08f) else color.copy(0.05f)
+    val borderColor = if (isDarkMode()) color.copy(0.15f) else color.copy(0.1f)
+    Box(modifier.clip(RoundedCornerShape(16.dp)).background(bgColor).border(1.dp, borderColor, RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
-            Text(label, fontSize = 10.sp, color = TextSecondary)
+            Text(label, fontSize = 10.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
         }
     }
 }
 
 @Composable
 private fun GlassBox(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    Box(modifier.clip(RoundedCornerShape(18.dp)).background(CardBg.copy(0.7f)).border(1.dp, Color(0xFF38383A).copy(0.3f), RoundedCornerShape(18.dp)), content = content)
+    val bgColor = if (isDarkMode()) CardBg.copy(0.7f) else LightCardBg.copy(0.8f)
+    val borderColor = if (isDarkMode()) Color(0xFF38383A).copy(0.3f) else Color(0xFFDDDDDD).copy(0.3f)
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(bgColor).border(1.dp, borderColor, RoundedCornerShape(18.dp)), content = content)
 }
 
 @Composable
