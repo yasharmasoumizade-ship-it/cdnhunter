@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
 import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
 import com.cdnhunter.app.data.*
@@ -39,24 +40,81 @@ import com.cdnhunter.app.vpn.AutoIpManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// == Theme Colors ==
-val DarkBg = Color(0xFF000000)
-val CardBg = Color(0xFF1C1C1E)
-val CardBg2 = Color(0xFF2C2C2E)
-val AccentBlue = Color(0xFF0A84FF)
-val AccentTeal = Color(0xFF64D2FF)
-val GreenOk = Color(0xFF30D158)
-val RedFail = Color(0xFFFF453A)
-val YellowWarn = Color(0xFFFFD60A)
-val TextPrimary = Color(0xFFFFFFFF)
+// ── Theme ────────────────────────────────────────────────────────────────────
+val DarkBg        = Color(0xFF000000)
+val CardBg        = Color(0xFF1C1C1E)
+val CardBg2       = Color(0xFF2C2C2E)
+val AccentBlue    = Color(0xFF0A84FF)
+val AccentTeal    = Color(0xFF64D2FF)
+val GreenOk       = Color(0xFF30D158)
+val RedFail       = Color(0xFFFF453A)
+val YellowWarn    = Color(0xFFFFD60A)
+val TextPrimary   = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8E8E93)
-val TextMuted = Color(0xFF48484A)
+val TextMuted     = Color(0xFF48484A)
 
 private enum class Tab(val label: String) {
     VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
 }
 
-// == MAIN APP ==
+// ── Saved config data class ───────────────────────────────────────────────────
+data class SavedConfig(
+    val id: String,
+    val uri: String,
+    val displayName: String,
+    val proto: String,
+    val address: String,
+    val port: Int,
+    val network: String,
+    val sni: String,
+)
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+private fun parseConfig(uri: String): SavedConfig? {
+    val ob = ConfigUriParser.parseToOutbound(uri) ?: return null
+    val proto = ob.optString("protocol", "?")
+    val settings = ob.optJSONObject("settings")
+    val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
+        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
+    val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
+        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
+    val ss = ob.optJSONObject("streamSettings")
+    val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
+    val net = ss?.optString("network", "tcp") ?: "tcp"
+    val name = when (proto) {
+        "trojan"  -> "Trojan"
+        "vless"   -> "VLESS"
+        "vmess"   -> "VMess"
+        else      -> proto.replaceFirstChar { it.uppercase() }
+    } + " · $addr"
+    return SavedConfig(
+        id = uri.hashCode().toString(),
+        uri = uri, displayName = name,
+        proto = proto, address = addr, port = port, network = net, sni = sni
+    )
+}
+
+private fun loadConfigs(context: Context): List<SavedConfig> {
+    val prefs = context.getSharedPreferences("cdnhunter_vpn", 0)
+    val raw = prefs.getString("saved_configs", "") ?: ""
+    if (raw.isBlank()) {
+        // Migrate legacy single config
+        val legacy = prefs.getString("user_config", "") ?: ""
+        if (legacy.isNotBlank()) {
+            val cfg = parseConfig(legacy)
+            if (cfg != null) return listOf(cfg)
+        }
+        return emptyList()
+    }
+    return raw.split("\n").mapNotNull { parseConfig(it.trim()) }
+}
+
+private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
+    context.getSharedPreferences("cdnhunter_vpn", 0)
+        .edit().putString("saved_configs", configs.joinToString("\n") { it.uri }).apply()
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppScreen(
@@ -67,23 +125,25 @@ fun AppScreen(
     val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
     val coroutineScope = rememberCoroutineScope()
 
-    // Auto-switch to Results tab when scan completes
     LaunchedEffect(state.phase, state.results.size) {
         if (state.phase == ScanPhase.DONE && state.results.isNotEmpty()) {
             pagerState.animateScrollToPage(Tab.RESULTS.ordinal)
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))) {
+    Box(
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg)))
+    ) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                         when (Tab.entries[page]) {
-                            Tab.VPN -> VpnTab()
-                            Tab.SCANNER -> ScannerTab(state, config, onConfigChange, onStart, onStop)
-                            Tab.RESULTS -> ResultsTab(state.results)
-                            Tab.TOOLS -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
+                            Tab.VPN      -> VpnTab()
+                            Tab.SCANNER  -> ScannerTab(state, config, onConfigChange, onStart, onStop)
+                            Tab.RESULTS  -> ResultsTab(state.results)
+                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
                         }
                     }
                 }
@@ -95,319 +155,485 @@ fun AppScreen(
     }
 }
 
-// == Bottom Nav Bar ==
+// ── Bottom Nav ────────────────────────────────────────────────────────────────
 @Composable
 private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
-        Tab.VPN to Icons.Rounded.Shield,
+        Tab.VPN     to Icons.Rounded.Shield,
         Tab.SCANNER to Icons.Rounded.Radar,
         Tab.RESULTS to Icons.Rounded.List,
-        Tab.TOOLS to Icons.Rounded.Build
+        Tab.TOOLS   to Icons.Rounded.Build
     )
     Box(Modifier.fillMaxWidth().background(CardBg.copy(0.85f))) {
         Row(Modifier.fillMaxWidth().padding(8.dp, 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
                 val color = if (selected) AccentBlue else TextMuted
-                Column(Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.height(2.dp))
-                    Text(tab.label, fontSize = 10.sp, color = color, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    Text(tab.label, fontSize = 10.sp, color = color,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
     }
 }
 
-// == VPN TAB ==
+// ── VPN TAB ───────────────────────────────────────────────────────────────────
 @Composable
 private fun VpnTab() {
     val context = LocalContext.current
-    val clip = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
+    val haptic  = LocalHapticFeedback.current
+
+    var configs   by remember { mutableStateOf(loadConfigs(context)) }
     var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
-    var configUri by remember { mutableStateOf("") }
-    var autoIp by remember { mutableStateOf(false) }
-    var fragment by remember {
-        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
+    var activeId  by remember {
+        mutableStateOf(
+            context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
+        )
     }
-    var parsedInfo by remember { mutableStateOf("") }
-    var hasSavedConfig by remember {
-        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getString("user_config", "")?.isNotBlank() == true)
-    }
-    var showConfigInput by remember { mutableStateOf(!hasSavedConfig) }
-    var showConfetti by remember { mutableStateOf(false) }
+    var expandedId by remember { mutableStateOf("") }
+    var showAddDialog by remember { mutableStateOf(false) }
 
-    // Load saved config URI on first composition
-    LaunchedEffect(Unit) {
-        val saved = context.getSharedPreferences("cdnhunter_vpn", 0).getString("user_config", "") ?: ""
-        if (saved.isNotBlank()) {
-            configUri = saved
-            hasSavedConfig = true
-            showConfigInput = false
-            val ob = ConfigUriParser.parseToOutbound(saved)
-            if (ob != null) {
-                val proto = ob.optString("protocol", "?")
-                val settings = ob.optJSONObject("settings")
-                val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
-                    ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
-                val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
-                    ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
-                val ss = ob.optJSONObject("streamSettings")
-                val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
-                val net = ss?.optString("network", "tcp") ?: "tcp"
-                parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
-            }
-        }
-    }
-
+    // Poll VPN status
     LaunchedEffect(Unit) {
         while (true) {
-            val wasConnected = connected
+            val was = connected
             connected = CdnVpnService.isRunning.get()
-            if (connected) {
-                connecting = false
-                if (!wasConnected) showConfetti = true
-                if (autoIp && !AutoIpManager.enabled.get()) AutoIpManager.start(context)
-            }
+            if (connected) connecting = false
             delay(1000)
         }
     }
     LaunchedEffect(connecting) {
         if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
     }
-    LaunchedEffect(showConfetti) {
-        if (showConfetti) { delay(2500); showConfetti = false }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Spacer(Modifier.height(20.dp))
+
+            // ── Status header ──────────────────────────────────────────────
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    val statusText = when {
+                        connecting -> "Connecting..."
+                        connected  -> "Protected"
+                        else       -> "Disconnected"
+                    }
+                    Text(
+                        statusText, fontSize = 13.sp,
+                        color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }
+                    )
+                }
+                // Big connect/disconnect if active config exists
+                if (activeId.isNotBlank()) {
+                    val btnGradient = when {
+                        connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
+                        connected  -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
+                        else       -> Brush.radialGradient(listOf(AccentBlue, Color(0xFF0050A0)))
+                    }
+                    Box(contentAlignment = Alignment.Center) {
+                        if (connecting) {
+                            val pulse by rememberInfiniteTransition(label = "p").animateFloat(
+                                1f, 1.3f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pf"
+                            )
+                            Box(Modifier.size(66.dp).scale(pulse).clip(CircleShape).background(AccentBlue.copy(0.12f)))
+                        }
+                        if (connected) {
+                            val rotation by rememberInfiniteTransition(label = "ring").animateFloat(
+                                0f, 360f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "rot"
+                            )
+                            Canvas(Modifier.size(70.dp)) {
+                                drawArc(
+                                    brush = Brush.sweepGradient(listOf(GreenOk.copy(0.6f), Color.Transparent, GreenOk.copy(0.3f))),
+                                    startAngle = rotation, sweepAngle = 270f, useCenter = false,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f.dp.toPx())
+                                )
+                            }
+                        }
+                        Box(
+                            Modifier.size(56.dp).clip(CircleShape).background(btnGradient)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (connecting) {
+                                        CdnVpnService.stop(context); connecting = false; connected = false
+                                        return@clickable
+                                    }
+                                    if (connected) {
+                                        CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
+                                    } else {
+                                        val cfg = configs.find { it.id == activeId }
+                                        if (cfg != null) {
+                                            context.getSharedPreferences("cdnhunter_vpn", 0)
+                                                .edit().putString("user_config", cfg.uri).apply()
+                                            connecting = true
+                                            try {
+                                                val act = context as? com.cdnhunter.app.MainActivity
+                                                if (act != null) act.requestVpnPermissionAndConnect()
+                                                else CdnVpnService.start(context)
+                                            } catch (e: Exception) {
+                                                connecting = false
+                                                android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                when { connected -> Icons.Rounded.Shield; connecting -> Icons.Rounded.Sync; else -> Icons.Rounded.PowerSettingsNew },
+                                null, tint = Color.White, modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Error ──────────────────────────────────────────────────────
+            if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
+                Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail, modifier = Modifier.padding(bottom = 8.dp))
+            }
+
+            // ── Config list ────────────────────────────────────────────────
+            if (configs.isEmpty()) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Rounded.AddCircleOutline, null, tint = TextMuted, modifier = Modifier.size(52.dp))
+                        Spacer(Modifier.height(14.dp))
+                        Text("No configs yet", fontSize = 16.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        Text("Tap + to add a trojan/vless/vmess config", fontSize = 13.sp, color = TextMuted)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 88.dp)
+                ) {
+                    items(configs, key = { it.id }) { cfg ->
+                        val isActive   = cfg.id == activeId
+                        val isExpanded = cfg.id == expandedId
+
+                        ConfigCard(
+                            cfg         = cfg,
+                            isActive    = isActive,
+                            isExpanded  = isExpanded,
+                            connected   = connected && isActive,
+                            connecting  = connecting && isActive,
+                            onTap       = { expandedId = if (isExpanded) "" else cfg.id },
+                            onConnect   = {
+                                if (connected && isActive) {
+                                    CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
+                                } else {
+                                    if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+                                    activeId = cfg.id
+                                    context.getSharedPreferences("cdnhunter_vpn", 0)
+                                        .edit()
+                                        .putString("user_config", cfg.uri)
+                                        .putString("active_config_id", cfg.id)
+                                        .apply()
+                                    connecting = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    try {
+                                        val act = context as? com.cdnhunter.app.MainActivity
+                                        if (act != null) act.requestVpnPermissionAndConnect()
+                                        else CdnVpnService.start(context)
+                                    } catch (e: Exception) {
+                                        connecting = false
+                                        android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            onDelete    = {
+                                if (isActive && connected) { CdnVpnService.stop(context); connected = false }
+                                val updated = configs.filter { it.id != cfg.id }
+                                configs = updated
+                                saveConfigs(context, updated)
+                                if (isActive) activeId = ""
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── FAB ─────────────────────────────────────────────────────────────
+        FloatingActionButton(
+            onClick = { showAddDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = AccentBlue,
+            contentColor   = Color.White,
+            shape          = CircleShape
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = "Add config")
+        }
     }
 
-    val statusText = when {
-        connecting -> "Connecting..."
-        connected -> "Protected"
-        else -> "Disconnected"
+    // ── Add config dialog ────────────────────────────────────────────────────
+    if (showAddDialog) {
+        AddConfigDialog(
+            onDismiss = { showAddDialog = false },
+            onAdd = { uri ->
+                val cfg = parseConfig(uri)
+                if (cfg != null) {
+                    val updated = configs + cfg
+                    configs = updated
+                    saveConfigs(context, updated)
+                    showAddDialog = false
+                } else {
+                    android.widget.Toast.makeText(context, "Invalid config URI", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
     }
+}
 
-    // Subtle animated background — very slight green tint when connected
-    val bgPhase by rememberInfiniteTransition(label = "bg").animateFloat(
-        0f, 1f, infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Reverse), label = "bgf"
-    )
-    val bgColor2 = if (connected) Color(0xFF0A1A14).copy(alpha = 0.3f + bgPhase * 0.1f) else Color(0xFF0A0E21)
+// ── Config Card ───────────────────────────────────────────────────────────────
+@Composable
+private fun ConfigCard(
+    cfg: SavedConfig,
+    isActive: Boolean,
+    isExpanded: Boolean,
+    connected: Boolean,
+    connecting: Boolean,
+    onTap: () -> Unit,
+    onConnect: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val borderColor = when {
+        connected  -> GreenOk.copy(0.6f)
+        connecting -> YellowWarn.copy(0.5f)
+        isActive   -> AccentBlue.copy(0.5f)
+        else       -> Color(0xFF38383A).copy(0.3f)
+    }
+    val bgColor = when {
+        connected  -> GreenOk.copy(0.08f)
+        connecting -> YellowWarn.copy(0.05f)
+        isActive   -> AccentBlue.copy(0.06f)
+        else       -> CardBg.copy(0.7f)
+    }
 
     Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF060B1A), bgColor2, Color.Transparent)))
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .clickable { onTap() }
     ) {
-        Spacer(Modifier.height(32.dp))
-        Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(32.dp))
-
-        // == PRO CONNECT BUTTON ==
-        Box(contentAlignment = Alignment.Center) {
-            // Outer ring when connected
-            if (connected) {
-                val rotation by rememberInfiniteTransition(label = "ring").animateFloat(
-                    0f, 360f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "rot"
-                )
-                Canvas(modifier = Modifier.size(155.dp)) {
-                    drawArc(
-                        brush = Brush.sweepGradient(listOf(GreenOk.copy(0.6f), Color.Transparent, GreenOk.copy(0.3f))),
-                        startAngle = rotation, sweepAngle = 270f, useCenter = false,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
-                    )
-                }
-            }
-            // Pulse when connecting
-            if (connecting) {
-                val pulse by rememberInfiniteTransition(label = "vpn_pulse").animateFloat(
-                    1f, 1.35f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "vpn_pf"
-                )
-                Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(AccentBlue.copy(0.12f)))
-            }
-            // Confetti burst
-            if (showConfetti) {
-                repeat(12) { i ->
-                    val angle = (i * 30f)
-                    val dist by rememberInfiniteTransition(label = "conf$i").animateFloat(
-                        0f, 80f, infiniteRepeatable(tween(600), RepeatMode.Restart), label = "cd$i"
-                    )
-                    val rad = Math.toRadians(angle.toDouble())
-                    val x = (dist * kotlin.math.cos(rad)).toFloat()
-                    val y = (dist * kotlin.math.sin(rad)).toFloat()
-                    val colors = listOf(GreenOk, AccentTeal, AccentBlue, YellowWarn)
-                    Box(Modifier.offset(x.dp, y.dp).size(6.dp).clip(CircleShape)
-                        .background(colors[i % colors.size].copy(alpha = 1f - dist / 80f)))
-                }
-            }
-            // Main button
-            val btnSize by animateDpAsState(if (connected) 130.dp else 120.dp, tween(300), label = "bs")
-            val btnGradient = when {
-                connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
-                connected -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
-                else -> Brush.radialGradient(listOf(AccentBlue, Color(0xFF0050A0)))
-            }
+        // ── Row 1: icon + name + status dot ──
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Protocol badge
             Box(
-                Modifier.size(btnSize).clip(CircleShape).background(btnGradient)
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (connecting) { CdnVpnService.stop(context); connecting = false; connected = false; return@clickable }
-                        if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
-                        else {
-                            if (configUri.isBlank()) { android.widget.Toast.makeText(context, "Paste a config first", android.widget.Toast.LENGTH_SHORT).show(); return@clickable }
-                            context.getSharedPreferences("cdnhunter_vpn", 0).edit().putString("user_config", configUri).apply()
-                            connecting = true
-                            try {
-                                val mainActivity = context as? com.cdnhunter.app.MainActivity
-                                if (mainActivity != null) mainActivity.requestVpnPermissionAndConnect()
-                                else CdnVpnService.start(context)
-                            } catch (e: Exception) { connecting = false; android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show() }
-                        }
-                    },
+                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (isActive) AccentBlue.copy(0.15f) else CardBg2),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        when { connected -> Icons.Rounded.Shield; connecting -> Icons.Rounded.Sync; else -> Icons.Rounded.PowerSettingsNew },
-                        null, tint = Color.White, modifier = Modifier.size(40.dp)
+                Text(
+                    cfg.proto.take(2).uppercase(),
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    color = if (isActive) AccentBlue else TextSecondary
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text(
+                    buildString {
+                        append(cfg.network.uppercase())
+                        if (cfg.sni.isNotBlank()) append(" · ${cfg.sni}")
+                        append(" · :${cfg.port}")
+                    },
+                    fontSize = 11.sp, color = TextSecondary
+                )
+            }
+            // Status indicator
+            when {
+                connecting -> {
+                    val pulse by rememberInfiniteTransition(label = "csp").animateFloat(
+                        0.4f, 1f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "cspf"
                     )
-                    if (connected) { Spacer(Modifier.height(4.dp)); Text("ON", fontSize = 10.sp, color = Color.White.copy(0.8f), fontWeight = FontWeight.Bold) }
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(YellowWarn.copy(pulse)))
                 }
+                connected  -> Box(Modifier.size(10.dp).clip(CircleShape).background(GreenOk))
+                else       -> Box(Modifier.size(10.dp).clip(CircleShape).background(TextMuted))
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-        Text(statusText, fontSize = 16.sp, color = when { connected -> GreenOk; connecting -> YellowWarn; else -> TextSecondary }, fontWeight = FontWeight.SemiBold)
-        if (connecting) { Spacer(Modifier.height(6.dp)); Text("Tap to cancel", fontSize = 11.sp, color = TextMuted) }
-        if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) { Spacer(Modifier.height(6.dp)); Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail) }
-        Spacer(Modifier.height(24.dp))
-
-        // == TRAFFIC (cumulative total) ==
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TrafficCard("\u2193 Download", CdnVpnService.downloadBytes, AccentTeal, Modifier.weight(1f))
-            TrafficCard("\u2191 Upload", CdnVpnService.uploadBytes, AccentBlue, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // == CONFIG ==
-        if (showConfigInput) {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("IMPORT CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { ConfigField(configUri, { configUri = it }, "trojan/vless/vmess URI") }
-                        Spacer(Modifier.width(8.dp))
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(AccentBlue).clickable {
-                            val clipText = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
-                            if (clipText.startsWith("trojan://") || clipText.startsWith("vless://") || clipText.startsWith("vmess://")) configUri = clipText
-                            if (configUri.isNotBlank()) {
-                                val ob = ConfigUriParser.parseToOutbound(configUri)
-                                if (ob != null) {
-                                    val proto = ob.optString("protocol", "?")
-                                    val settings = ob.optJSONObject("settings")
-                                    val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
-                                        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
-                                    val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
-                                        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
-                                    val ss = ob.optJSONObject("streamSettings")
-                                    val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
-                                    val net = ss?.optString("network", "tcp") ?: "tcp"
-                                    parsedInfo = "$proto | $net | $addr:$port" + if (sni.isNotBlank()) " | SNI: $sni" else ""
-                                    context.getSharedPreferences("cdnhunter_vpn", 0).edit().putString("user_config", configUri).apply()
-                                    hasSavedConfig = true; showConfigInput = false
-                                } else parsedInfo = "Invalid config"
-                            }
-                        }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+        // ── Row 2: expanded connect button ────────────────────────────────
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit  = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Connect / Disconnect button
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (connected) RedFail.copy(0.12f)
+                                else if (connecting) YellowWarn.copy(0.10f)
+                                else GreenOk.copy(0.12f)
+                            )
+                            .clickable { onConnect() }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                if (connected) Icons.Rounded.PowerSettingsNew else Icons.Rounded.PlayArrow,
+                                null,
+                                tint = if (connected) RedFail else if (connecting) YellowWarn else GreenOk,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                when { connected -> "Disconnect"; connecting -> "Connecting..."; else -> "Connect" },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (connected) RedFail else if (connecting) YellowWarn else GreenOk
+                            )
+                        }
                     }
-                    if (parsedInfo.isNotBlank()) { Spacer(Modifier.height(8.dp)); Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace) }
-                }
-            }
-        } else {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("CONFIG", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                        if (parsedInfo.isNotBlank()) { Spacer(Modifier.height(4.dp)); Text(parsedInfo, fontSize = 12.sp, color = AccentTeal, fontFamily = FontFamily.Monospace) }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(AccentBlue.copy(0.15f)).clickable { showConfigInput = true }.padding(12.dp, 8.dp)) {
-                        Text("Change", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.SemiBold)
+                    // Delete button
+                    Box(
+                        Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+                            .background(RedFail.copy(0.08f))
+                            .clickable { onDelete() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, tint = RedFail, modifier = Modifier.size(18.dp))
                     }
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
-
-        // == TOGGLES ==
-        GlassBox(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium); Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = TextSecondary) }
-                Switch(checked = autoIp, onCheckedChange = { autoIp = it; if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop() },
-                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2))
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        GlassBox(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium); Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = TextSecondary) }
-                Switch(checked = fragment, onCheckedChange = { fragment = it; context.getSharedPreferences("cdnhunter_vpn", 0).edit().putBoolean("fragment_enabled", it).apply() },
-                    colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // == XRAY LOG ==
-        var showLog by remember { mutableStateOf(false) }
-        var xrayLogText by remember { mutableStateOf("") }
-        GlassBox(Modifier.fillMaxWidth().clickable { xrayLogText = CdnVpnService.xrayLog; showLog = !showLog }) {
-            Column(Modifier.padding(14.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2).clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }.padding(8.dp, 4.dp)) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
-                }
-                if (showLog) { Spacer(Modifier.height(8.dp)); Text(xrayLogText.ifBlank { "No log yet." }, fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace, modifier = Modifier.horizontalScroll(rememberScrollState())) }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // == AUTO-IP STATUS ==
-        if (autoIp && AutoIpManager.enabled.get()) {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("Auto-IP Active", fontSize = 13.sp, color = GreenOk, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(4.dp))
-                    Text(AutoIpManager.status, fontSize = 11.sp, color = TextSecondary)
-                    if (AutoIpManager.currentIp.isNotBlank()) Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                    if (AutoIpManager.ipPool.isNotEmpty()) Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-
-        Spacer(Modifier.height(40.dp))
     }
 }
 
+// ── Add Config Dialog ─────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TrafficCard(label: String, bytes: Long, color: Color, modifier: Modifier) {
-    GlassBox(modifier) {
-        Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 11.sp, color = TextSecondary)
-            Spacer(Modifier.height(6.dp))
-            Text(formatBytes(bytes), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color, fontFamily = FontFamily.Monospace)
+private fun AddConfigDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+    val clip    = LocalClipboardManager.current
+    var uri     by remember { mutableStateOf("") }
+    var preview by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = CardBg,
+        shape            = RoundedCornerShape(20.dp),
+        title = {
+            Text("Add Config", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Paste a trojan://, vless://, or vmess:// URI", fontSize = 13.sp, color = TextSecondary)
+                // URI input
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg2)
+                ) {
+                    TextField(
+                        value = uri,
+                        onValueChange = {
+                            uri = it
+                            val cfg = if (it.isNotBlank()) parseConfig(it.trim()) else null
+                            preview = if (cfg != null) "${cfg.proto.uppercase()} · ${cfg.address}:${cfg.port}" else if (it.isNotBlank()) "Invalid URI" else ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("trojan://...", fontSize = 12.sp, color = TextMuted) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor   = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor        = TextPrimary,
+                            unfocusedTextColor      = TextPrimary,
+                            cursorColor             = AccentBlue,
+                            focusedIndicatorColor   = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        ),
+                        maxLines = 4
+                    )
+                }
+                // Paste from clipboard button
+                Box(
+                    Modifier.clip(RoundedCornerShape(10.dp)).background(AccentBlue.copy(0.12f))
+                        .clickable {
+                            val t = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
+                            if (t.startsWith("trojan://") || t.startsWith("vless://") || t.startsWith("vmess://")) {
+                                uri = t
+                                val cfg = parseConfig(t.trim())
+                                preview = if (cfg != null) "${cfg.proto.uppercase()} · ${cfg.address}:${cfg.port}" else "Invalid URI"
+                            } else {
+                                android.widget.Toast.makeText(
+                                    /* context via preview string hack below */ null as android.content.Context?,
+                                    "No valid URI in clipboard", android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Rounded.ContentPaste, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
+                        Text("Paste from clipboard", fontSize = 12.sp, color = AccentBlue)
+                    }
+                }
+                if (preview.isNotBlank()) {
+                    Text(
+                        preview,
+                        fontSize = 12.sp,
+                        color = if (preview == "Invalid URI") RedFail else AccentTeal,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Box(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(AccentBlue)
+                    .clickable { if (uri.isNotBlank()) onAdd(uri.trim()) }
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Text("Add", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            Box(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(CardBg2)
+                    .clickable { onDismiss() }
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Text("Cancel", fontSize = 14.sp, color = TextSecondary)
+            }
         }
-    }
+    )
 }
 
-private fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
-    bytes < 1024L * 1024 * 1024 -> "${"%.2f".format(bytes / (1024.0 * 1024.0))} MB"
-    else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
-}
-
-// == SCANNER TAB ==
+// ── SCANNER TAB ───────────────────────────────────────────────────────────────
 @Composable
 private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -415,7 +641,6 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
         Text("CDN Hunter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Text(if (state.running) state.phaseDetail.take(30) else "Ready to scan", fontSize = 13.sp, color = TextSecondary)
         Spacer(Modifier.height(32.dp))
-        // Big scan button
         Box(contentAlignment = Alignment.Center) {
             if (state.running) {
                 val pulse by rememberInfiniteTransition(label = "r").animateFloat(1f, 1.2f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "rf")
@@ -433,24 +658,19 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
         Spacer(Modifier.height(8.dp))
         Text(if (state.running) "Tap to Stop" else "Tap to Start", fontSize = 12.sp, color = TextSecondary)
         Spacer(Modifier.height(28.dp))
-
-        // Stats cards
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GlassCard("${state.scanned}", "Scanned", AccentBlue, Modifier.weight(1f))
             GlassCard("${state.healthy}", "Healthy", GreenOk, Modifier.weight(1f))
             GlassCard("${state.failed}", "Failed", RedFail, Modifier.weight(1f))
         }
         Spacer(Modifier.height(12.dp))
-        // Progress
         @Suppress("DEPRECATION")
         LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = AccentBlue, trackColor = CardBg)
         Spacer(Modifier.height(4.dp))
         Text("${state.pct}% • ${state.source}", fontSize = 11.sp, color = TextSecondary)
         Spacer(Modifier.height(16.dp))
-        // Phase indicator
         PhaseIndicator(state.phase)
         Spacer(Modifier.height(16.dp))
-        // Provider selector
         GlassBox(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
                 Text("CDN Provider", fontSize = 13.sp, color = TextSecondary)
@@ -482,155 +702,245 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
     }
 }
 
-// == RESULTS TAB ==
+// ── RESULTS TAB ───────────────────────────────────────────────────────────────
 @Composable
 private fun ResultsTab(results: List<ScanResult>) {
-    val clip = LocalClipboardManager.current
+    val clip   = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     val healthy = results.filter { it.ok }
 
-    if (results.isEmpty()) {
-        EmptyState(Icons.Rounded.Search, "No results yet. Start a scan!")
-        return
-    }
+    if (results.isEmpty()) { EmptyState(Icons.Rounded.Search, "No results yet. Start a scan!"); return }
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)
-        ) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(results, key = { it.ip }) { r ->
                 var copied by remember { mutableStateOf(false) }
                 val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else CardBg.copy(0.7f), tween(300), label = "")
                 LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
-
                 Box(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg)
                         .border(1.dp, if (copied) GreenOk.copy(0.4f) else Color(0xFF38383A).copy(0.3f), RoundedCornerShape(16.dp))
-                        .clickable {
-                            clip.setText(AnnotatedString(r.ip))
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            copied = true
-                        }
+                        .clickable { clip.setText(AnnotatedString(r.ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
                 ) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(r.ip, fontSize = 14.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
-                            // Region as text only: "CDN . Country - City"
                             val regionText = buildString {
                                 append(r.cdn)
-                                if (r.country.isNotBlank()) {
-                                    append(" \u2022 ${r.country}")
-                                    if (r.city.isNotBlank()) append(" - ${r.city}")
-                                }
+                                if (r.country.isNotBlank()) { append(" • ${r.country}"); if (r.city.isNotBlank()) append(" - ${r.city}") }
                             }
                             Text(regionText, fontSize = 11.sp, color = AccentBlue)
                         }
-                        if (copied) {
-                            Text("\u2713", fontSize = 18.sp, color = GreenOk, fontWeight = FontWeight.Bold)
-                        } else {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
-                                if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
-                            }
+                        if (copied) Text("✓", fontSize = 18.sp, color = GreenOk, fontWeight = FontWeight.Bold)
+                        else Column(horizontalAlignment = Alignment.End) {
+                            Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
+                            if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
                         }
                     }
                 }
             }
         }
-
-        // FAB to copy all healthy IPs
         if (healthy.isNotEmpty()) {
             FloatingActionButton(
-                onClick = {
-                    clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                },
+                onClick = { clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip })); haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                containerColor = AccentBlue,
-                contentColor = Color.White
-            ) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs")
-            }
+                containerColor = AccentBlue, contentColor = Color.White
+            ) { Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs") }
         }
     }
 }
 
-// == TOOLS TAB ==
+// ── TOOLS TAB ─────────────────────────────────────────────────────────────────
 @Composable
 private fun ToolsTab(
     results: List<ScanResult>, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
     onStart: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit, onExport: () -> Unit,
 ) {
-    val clip = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val clip    = LocalClipboardManager.current
+    val haptic  = LocalHapticFeedback.current
     val healthy = results.filter { it.ok }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+    // Fragment + Auto-IP state (moved here from VPN tab)
+    var fragment by remember {
+        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
+    }
+    var autoIp by remember { mutableStateOf(false) }
+    var showXrayLog by remember { mutableStateOf(false) }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
         item { Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-        // Export section
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-            Text("EXPORT", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ToolButton("Copy All", Icons.Rounded.ContentCopy, AccentBlue, Modifier.weight(1f)) {
-                    clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-                ToolButton("JSON", Icons.Rounded.DataObject, AccentTeal, Modifier.weight(1f)) {
-                    val json = healthy.joinToString(",\n") { """  {"ip":"${it.ip}","ms":${it.ms},"cdn":"${it.cdn}","cc":"${it.country}"}""" }
-                    clip.setText(AnnotatedString("[\n$json\n]"))
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-                ToolButton("v2ray", Icons.Rounded.Link, GreenOk, Modifier.weight(1f)) {
-                    val lines = healthy.filter { it.frontingOk }.joinToString("\n") { ConfigGenerator.generate(ProxyConfig(ProxyType.VLESS, it.ip, 443, it.frontingSni, it.frontingHost)) }
-                    clip.setText(AnnotatedString(lines))
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = TextMuted)
-        } } }
-        // Scan Profiles
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-            Text("SCAN PROFILES", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(10.dp))
-            listOf(ScanProfile.QUICK, ScanProfile.NORMAL, ScanProfile.DEEP).forEach { profile ->
-                val sel = config.maxIps == profile.config.maxIps && config.concurrency == profile.config.concurrency
-                Box(Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (sel) AccentBlue.copy(0.12f) else CardBg2)
-                    .border(1.dp, if (sel) AccentBlue.copy(0.5f) else Color.Transparent, RoundedCornerShape(12.dp))
-                    .clickable { onConfigChange(profile.config) }.padding(12.dp)) {
-                    Column {
-                        Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else TextPrimary)
-                        Text(profile.desc, fontSize = 11.sp, color = TextSecondary)
+
+        // ── VPN Settings ──────────────────────────────────────────────────
+        item {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("VPN SETTINGS", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                            Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = fragment,
+                            onCheckedChange = {
+                                fragment = it
+                                context.getSharedPreferences("cdnhunter_vpn", 0).edit().putBoolean("fragment_enabled", it).apply()
+                            },
+                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                            Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = autoIp,
+                            onCheckedChange = {
+                                autoIp = it
+                                if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop()
+                            },
+                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                        )
+                    }
+                    if (autoIp && AutoIpManager.enabled.get()) {
+                        Spacer(Modifier.height(8.dp))
+                        Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Auto-IP Active", fontSize = 12.sp, color = GreenOk, fontWeight = FontWeight.Medium)
+                        Text(AutoIpManager.status, fontSize = 11.sp, color = TextSecondary)
+                        if (AutoIpManager.currentIp.isNotBlank())
+                            Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                        if (AutoIpManager.ipPool.isNotEmpty())
+                            Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
                     }
                 }
             }
-        } } }
-        // Update Ranges
-        item { GlassBox(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
-            Text("MAINTENANCE", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(10.dp))
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg2)
-                .clickable { onUpdateRanges() }.padding(14.dp, 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary)
-                        Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = TextSecondary)
+        }
+
+        // ── Xray Log ──────────────────────────────────────────────────────
+        item {
+            GlassBox(
+                Modifier.fillMaxWidth().clickable { showXrayLog = !showXrayLog }
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Terminal, null, tint = YellowWarn, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Box(
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2)
+                                .clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }
+                                .padding(8.dp, 4.dp)
+                        ) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            if (showXrayLog) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            null, tint = TextSecondary, modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    AnimatedVisibility(visible = showXrayLog) {
+                        Column {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                CdnVpnService.xrayLog.ifBlank { "No log yet." },
+                                fontSize = 10.sp, color = TextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.horizontalScroll(rememberScrollState())
+                            )
+                        }
                     }
                 }
             }
-        } } }
+        }
+
+        // ── Export ────────────────────────────────────────────────────────
+        item {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("EXPORT", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ToolButton("Copy All", Icons.Rounded.ContentCopy, AccentBlue, Modifier.weight(1f)) {
+                            clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        ToolButton("JSON", Icons.Rounded.DataObject, AccentTeal, Modifier.weight(1f)) {
+                            val json = healthy.joinToString(",\n") { """  {"ip":"${it.ip}","ms":${it.ms},"cdn":"${it.cdn}","cc":"${it.country}"}""" }
+                            clip.setText(AnnotatedString("[\n$json\n]"))
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        ToolButton("v2ray", Icons.Rounded.Link, GreenOk, Modifier.weight(1f)) {
+                            val lines = healthy.filter { it.frontingOk }.joinToString("\n") { ConfigGenerator.generate(ProxyConfig(ProxyType.VLESS, it.ip, 443, it.frontingSni, it.frontingHost)) }
+                            clip.setText(AnnotatedString(lines))
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = TextMuted)
+                }
+            }
+        }
+
+        // ── Scan Profiles ─────────────────────────────────────────────────
+        item {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("SCAN PROFILES", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(10.dp))
+                    listOf(ScanProfile.QUICK, ScanProfile.NORMAL, ScanProfile.DEEP).forEach { profile ->
+                        val sel = config.maxIps == profile.config.maxIps && config.concurrency == profile.config.concurrency
+                        Box(
+                            Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) AccentBlue.copy(0.12f) else CardBg2)
+                                .border(1.dp, if (sel) AccentBlue.copy(0.5f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                .clickable { onConfigChange(profile.config) }.padding(12.dp)
+                        ) {
+                            Column {
+                                Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else TextPrimary)
+                                Text(profile.desc, fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Maintenance ───────────────────────────────────────────────────
+        item {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("MAINTENANCE", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg2)
+                            .clickable { onUpdateRanges() }.padding(14.dp, 12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary)
+                                Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item { Spacer(Modifier.height(20.dp)) }
     }
 }
 
-// == SHARED COMPONENTS ==
+// ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
 private fun GlassCard(value: String, label: String, color: Color, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(16.dp)).background(color.copy(0.08f)).border(1.dp, color.copy(0.15f), RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
