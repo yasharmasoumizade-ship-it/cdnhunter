@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,9 +43,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── Theme ────────────────────────────────────────────────────────────────────
-import android.os.Build
-import androidx.compose.material3.isSystemInDarkTheme
-
 // Dark theme
 val DarkBg        = Color(0xFF000000)
 val CardBg        = Color(0xFF1C1C1E)
@@ -67,10 +65,11 @@ val LightTextSecondary = Color(0xFF666666)
 val LightTextMuted = Color(0xFF999999)
 
 @Composable
-fun isDarkMode(): Boolean = isSystemInDarkTheme()
-
-@Composable
-fun themeColor(dark: Color, light: Color): Color = if (isDarkMode()) dark else light
+fun isDarkMode(): Boolean {
+    return MaterialTheme.colorScheme.surface == Color(0xFF000000) || 
+           MaterialTheme.colorScheme.surface == Color(0xFF1C1C1E) ||
+           MaterialTheme.colorScheme.surface.luminance() < 0.5f
+}
 
 private enum class Tab(val label: String) {
     VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
