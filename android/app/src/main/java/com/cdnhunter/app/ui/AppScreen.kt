@@ -3,6 +3,8 @@ package com.cdnhunter.app.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -271,9 +273,9 @@ private fun VpnTab() {
                         )
                     }
                 }
-                // Big connect/disconnect - fixed size prevents layout jump
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                // Big connect/disconnect
                 if (activeId.isNotBlank()) {
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     val btnGradient = when {
                         connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
                         connected  -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
