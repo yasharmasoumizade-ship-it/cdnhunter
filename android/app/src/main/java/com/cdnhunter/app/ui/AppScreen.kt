@@ -426,7 +426,7 @@ private fun VpnTab() {
         ) {
             Icon(Icons.Rounded.Add, contentDescription = "Add config")
         }
-    }
+    } // end Box(fillMaxSize)
 
     // ── Add config dialog ────────────────────────────────────────────────────
     if (showAddDialog) {
