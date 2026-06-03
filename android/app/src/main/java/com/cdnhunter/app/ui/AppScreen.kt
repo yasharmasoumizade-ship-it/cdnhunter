@@ -44,9 +44,9 @@ import kotlinx.coroutines.launch
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 // Dark theme
-val DarkBg        = Color(0xFF000000)
-val CardBg        = Color(0xFF1C1C1E)
-val CardBg2       = Color(0xFF2C2C2E)
+val DarkBg        = Color(0xFF111318)
+val CardBg        = Color(0xFF1A1D24)
+val CardBg2       = Color(0xFF23272F)
 val AccentBlue    = Color(0xFF0A84FF)
 val AccentTeal    = Color(0xFF64D2FF)
 val GreenOk       = Color(0xFF30D158)
@@ -57,9 +57,9 @@ val TextSecondary = Color(0xFF8E8E93)
 val TextMuted     = Color(0xFF48484A)
 
 // Light theme
-val LightBg       = Color(0xFFF2F2F7)
-val LightCardBg   = Color(0xFFFFFFFF)
-val LightCardBg2  = Color(0xFFEEEEF0)
+val LightBg       = Color(0xFFF5F0E8)
+val LightCardBg   = Color(0xFFFFFDF7)
+val LightCardBg2  = Color(0xFFEDE8DC)
 val LightTextPrimary = Color(0xFF1C1C1E)
 val LightTextSecondary = Color(0xFF6E6E73)
 val LightTextMuted = Color(0xFFAEAEB2)
@@ -67,14 +67,18 @@ val LightBorder   = Color(0xFFE5E5EA)
 val GreenBorder   = Color(0xFF34C759)
 
 @Composable
-fun isDarkMode(): Boolean {
-    val bg = MaterialTheme.colorScheme.background
-    return bg.red < 0.2f && bg.green < 0.2f && bg.blue < 0.3f
+fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
+    ThemeMode.DARK   -> true
+    ThemeMode.LIGHT  -> false
+    ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
 }
 
 private enum class Tab(val label: String) {
     VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
 }
+
+enum class ThemeMode { LIGHT, DARK, SYSTEM }
+val LocalThemeMode = androidx.compose.runtime.staticCompositionLocalOf { ThemeMode.LIGHT }
 
 // ── Saved config data class ───────────────────────────────────────────────────
 data class SavedConfig(
@@ -143,6 +147,9 @@ fun AppScreen(
     onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val uiPrefs = remember { context.getSharedPreferences("cdnhunter_ui", 0) }
+    var themeMode by remember { mutableStateOf(ThemeMode.valueOf(uiPrefs.getString("theme_mode", "LIGHT") ?: "LIGHT")) }
     val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
     val coroutineScope = rememberCoroutineScope()
 
@@ -152,10 +159,11 @@ fun AppScreen(
         }
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalThemeMode provides themeMode) {
     Box(
         Modifier.fillMaxSize()
-            .background(if (isDarkMode()) Brush.verticalGradient(listOf(Color(0xFF060B1A), Color(0xFF0A0E21), DarkBg))
-                        else Brush.verticalGradient(listOf(Color(0xFFEEEEF2), Color(0xFFF2F2F7), LightBg)))
+            .background(if (isDarkMode()) Brush.verticalGradient(listOf(Color(0xFF0D1018), Color(0xFF111318), DarkBg))
+                        else Brush.verticalGradient(listOf(Color(0xFFF5F0E8), Color(0xFFFAF6EE), LightBg)))
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
@@ -165,7 +173,7 @@ fun AppScreen(
                             Tab.VPN      -> VpnTab()
                             Tab.SCANNER  -> ScannerTab(state, config, onConfigChange, onStart, onStop)
                             Tab.RESULTS  -> ResultsTab(state.results)
-                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport)
+                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
                         }
                     }
                 }
@@ -175,6 +183,7 @@ fun AppScreen(
             }
         }
     }
+    } // CompositionLocalProvider
 }
 
 // ── Bottom Nav ────────────────────────────────────────────────────────────────
@@ -334,14 +343,7 @@ private fun VpnTab() {
                 }
             }
 
-            // ── Error ──────────────────────────────────────────────────────
-            Box(
-                Modifier.fillMaxWidth().height(if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) 32.dp else 0.dp)
-            ) {
-                if (CdnVpnService.lastError.isNotBlank() && !connected && !connecting) {
-                    Text(CdnVpnService.lastError, fontSize = 11.sp, color = RedFail, modifier = Modifier.padding(bottom = 8.dp))
-                }
-            }
+
 
             // ── Config list ────────────────────────────────────────────────
             if (configs.isEmpty()) {
@@ -799,6 +801,8 @@ private fun ResultsTab(results: List<ScanResult>) {
 private fun ToolsTab(
     results: List<ScanResult>, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
     onStart: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit, onExport: () -> Unit,
+    currentTheme: ThemeMode = ThemeMode.LIGHT,
+    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clip    = LocalClipboardManager.current
@@ -813,7 +817,44 @@ private fun ToolsTab(
     var showXrayLog by remember { mutableStateOf(false) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
-        item { Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
+        item { Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary) }
+
+        item {
+            GlassBox(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (isDarkMode()) TextSecondary else LightTextSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            Triple(ThemeMode.LIGHT, "Light", Icons.Rounded.LightMode),
+                            Triple(ThemeMode.DARK, "Dark", Icons.Rounded.DarkMode),
+                            Triple(ThemeMode.SYSTEM, "System", Icons.Rounded.SettingsBrightness)
+                        ).forEach { (mode, label, icon) ->
+                            val sel = currentTheme == mode
+                            Box(
+                                Modifier.weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (sel) AccentBlue.copy(0.15f) else if (isDarkMode()) CardBg2 else LightCardBg2)
+                                    .border(1.dp, if (sel) AccentBlue.copy(0.7f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                    .clickable { onThemeChange(mode) }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(icon, null,
+                                        tint = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary,
+                                        modifier = Modifier.size(18.dp))
+                                    Text(label, fontSize = 11.sp,
+                                        color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary,
+                                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // ── VPN Settings ──────────────────────────────────────────────────
         item {
