@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 val DarkBg        = Color(0xFF111318)
 val CardBg        = Color(0xFF1A1D24)
 val CardBg2       = Color(0xFF23272F)
-val AccentBlue    = Color(0xFF0A84FF)
+val AccentBlue    = Color(0xFF3B82F6)
 val AccentTeal    = Color(0xFF64D2FF)
 val GreenOk       = Color(0xFF30D158)
 val RedFail       = Color(0xFFFF453A)
@@ -198,8 +198,8 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
         Tab.TOOLS   to Icons.Rounded.Build
     )
     val bgColor = if (isDarkMode()) CardBg.copy(0.85f) else LightCardBg.copy(0.9f)
-    val selectedColor = AccentBlue
-    val unselectedColor = if (isDarkMode()) TextMuted else LightTextMuted
+    val selectedColor = if (isDarkMode()) Color(0xFF60A5FA) else Color(0xFF2563EB)
+    val unselectedColor = if (isDarkMode()) Color(0xFF4B5563) else Color(0xFFBBBBBB)
     
     Box(Modifier.fillMaxWidth().background(bgColor)) {
         Row(Modifier.fillMaxWidth().padding(8.dp, 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -275,7 +275,6 @@ private fun VpnTab() {
                 }
                 // Big connect/disconnect
                 if (activeId.isNotBlank()) {
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     val btnGradient = when {
                         connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
                         connected  -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
