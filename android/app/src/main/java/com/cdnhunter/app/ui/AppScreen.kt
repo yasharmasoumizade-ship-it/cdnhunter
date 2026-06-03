@@ -417,16 +417,21 @@ private fun VpnTab() {
         }
 
         // ── FAB ─────────────────────────────────────────────────────────────
-        FloatingActionButton(
-            onClick = { showAddDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = AccentBlue,
-            contentColor   = Color.White,
-            shape          = CircleShape
+        Box(
+            Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomEnd
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = "Add config")
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier.padding(16.dp),
+                containerColor = AccentBlue,
+                contentColor   = Color.White,
+                shape          = CircleShape
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = "Add config")
+            }
         }
-    } // end Box(fillMaxSize)
+    }
 
     // ── Add config dialog ────────────────────────────────────────────────────
     if (showAddDialog) {
