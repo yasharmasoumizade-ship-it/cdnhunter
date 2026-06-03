@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 val DarkBg        = Color(0xFF111318)
 val CardBg        = Color(0xFF1A1D24)
 val CardBg2       = Color(0xFF23272F)
-val AccentBlue    = Color(0xFF3B82F6)
+val AccentBlue    = Color(0xFF4B7BEC)
 val AccentTeal    = Color(0xFF64D2FF)
 val GreenOk       = Color(0xFF30D158)
 val RedFail       = Color(0xFFFF453A)
@@ -192,10 +192,10 @@ fun AppScreen(
 @Composable
 private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
-        Tab.VPN     to Icons.Rounded.Shield,
-        Tab.SCANNER to Icons.Rounded.Radar,
-        Tab.RESULTS to Icons.Rounded.List,
-        Tab.TOOLS   to Icons.Rounded.Build
+        Tab.VPN     to Icons.Rounded.Bolt,
+        Tab.SCANNER to Icons.Rounded.TravelExplore,
+        Tab.RESULTS to Icons.Rounded.FormatListBulleted,
+        Tab.TOOLS   to Icons.Rounded.Tune
     )
     val bgColor = if (isDarkMode()) CardBg.copy(0.85f) else LightCardBg.copy(0.9f)
     val selectedColor = if (isDarkMode()) Color(0xFF60A5FA) else Color(0xFF2563EB)
@@ -293,9 +293,9 @@ private fun VpnTab() {
                             )
                             Canvas(Modifier.size(70.dp)) {
                                 drawArc(
-                                    brush = Brush.sweepGradient(listOf(GreenOk.copy(0.6f), Color.Transparent, GreenOk.copy(0.3f))),
+                                    brush = Brush.sweepGradient(listOf(AccentBlue.copy(0.5f), Color.Transparent, AccentBlue.copy(0.2f))),
                                     startAngle = rotation, sweepAngle = 270f, useCenter = false,
-                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f.dp.toPx())
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
                                 )
                             }
                         }
@@ -330,14 +330,14 @@ private fun VpnTab() {
                         ) {
                             Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
                                 when {
-                                    connected -> Icon(Icons.Rounded.Lock, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                                    connected -> Icon(Icons.Rounded.Shield, null, tint = Color.White, modifier = Modifier.size(26.dp))
                                     connecting -> {
                                         val rotation by rememberInfiniteTransition(label = "sync").animateFloat(
                                             0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "syncRot"
                                         )
                                         Icon(Icons.Rounded.Sync, null, tint = Color.White, modifier = Modifier.size(26.dp).rotate(rotation))
                                     }
-                                    else -> Icon(Icons.Rounded.LockOpen, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                                    else -> Icon(Icons.Rounded.Bolt, null, tint = Color.White, modifier = Modifier.size(26.dp))
                                 }
                             }
                         }
@@ -868,7 +868,7 @@ private fun ResultsTab(results: List<ScanResult>) {
                 onClick = { clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip })); haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 containerColor = AccentBlue, contentColor = Color.White
-            ) { Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs") }
+            ) { Icon(Icons.Rounded.CopyAll, contentDescription = "Copy all IPs") }
         }
     }
 }
