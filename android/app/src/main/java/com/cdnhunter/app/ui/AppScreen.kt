@@ -254,12 +254,12 @@ private fun VpnTab() {
 
             // ── Status header ──────────────────────────────────────────────
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                Modifier.fillMaxWidth().height(72.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("VPN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
-                    Box(Modifier.height(18.dp)) {
+                    Box(Modifier.height(20.dp)) {
                         val statusText = when {
                             connecting -> "Connecting..."
                             connected  -> "Protected"
@@ -271,7 +271,8 @@ private fun VpnTab() {
                         )
                     }
                 }
-                // Big connect/disconnect if active config exists
+                // Big connect/disconnect - fixed size prevents layout jump
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                 if (activeId.isNotBlank()) {
                     val btnGradient = when {
                         connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
@@ -475,7 +476,7 @@ private fun ConfigCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .border(1.5.dp, borderColor, RoundedCornerShape(18.dp))
             .clickable { onTap() }
     ) {
         // ── Row 1: icon + name + status dot ──
@@ -486,7 +487,7 @@ private fun ConfigCard(
             // Protocol badge
             Box(
                 Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (isActive) AccentBlue.copy(0.15f) else CardBg2),
+                    .background(if (isActive) AccentBlue.copy(0.15f) else if (isDarkMode()) CardBg2 else LightCardBg2),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -682,8 +683,8 @@ private fun AddConfigDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
-        Text("CDN Hunter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Text(if (state.running) state.phaseDetail.take(30) else "Ready to scan", fontSize = 13.sp, color = TextSecondary)
+        Text("CDN Hunter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
+        Text(if (state.running) state.phaseDetail.take(30) else "Ready to scan", fontSize = 13.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
         Spacer(Modifier.height(32.dp))
         Box(contentAlignment = Alignment.Center) {
             if (state.running) {
@@ -700,7 +701,7 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(if (state.running) "Tap to Stop" else "Tap to Start", fontSize = 12.sp, color = TextSecondary)
+        Text(if (state.running) "Tap to Stop" else "Tap to Start", fontSize = 12.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
         Spacer(Modifier.height(28.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GlassCard("${state.scanned}", "Scanned", AccentBlue, Modifier.weight(1f))
@@ -709,21 +710,21 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
         }
         Spacer(Modifier.height(12.dp))
         @Suppress("DEPRECATION")
-        LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = AccentBlue, trackColor = CardBg)
+        LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)), color = AccentBlue, trackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
         Spacer(Modifier.height(4.dp))
-        Text("${state.pct}% • ${state.source}", fontSize = 11.sp, color = TextSecondary)
+        Text("${state.pct}% • ${state.source}", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
         Spacer(Modifier.height(16.dp))
         PhaseIndicator(state.phase)
         Spacer(Modifier.height(16.dp))
         GlassBox(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text("CDN Provider", fontSize = 13.sp, color = TextSecondary)
+                Text("CDN Provider", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CdnProvider.entries.forEach { p ->
                         val sel = config.cdnProvider == p
-                        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.2f) else CardBg2).clickable { onConfigChange(config.copy(cdnProvider = p)) }.padding(10.dp, 6.dp)) {
-                            Text(p.label, fontSize = 12.sp, color = if (sel) AccentBlue else TextSecondary)
+                        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.18f) else if (isDarkMode()) CardBg2 else LightCardBg2).border(1.5.dp, if (sel) AccentBlue.copy(0.6f) else if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp)).clickable { onConfigChange(config.copy(cdnProvider = p)) }.padding(12.dp, 7.dp)) {
+                            Text(p.label, fontSize = 12.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary)
                         }
                     }
                 }
@@ -759,18 +760,18 @@ private fun ResultsTab(results: List<ScanResult>) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(results, key = { it.ip }) { r ->
                 var copied by remember { mutableStateOf(false) }
-                val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else CardBg.copy(0.7f), tween(300), label = "")
+                val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else if (isDarkMode()) CardBg.copy(0.7f) else LightCardBg, tween(300), label = "")
                 LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
                 Box(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg)
-                        .border(1.dp, if (copied) GreenOk.copy(0.4f) else Color(0xFF38383A).copy(0.3f), RoundedCornerShape(16.dp))
+                        .border(1.5.dp, if (copied) GreenOk.copy(0.4f) else if (isDarkMode()) Color(0xFF38383A).copy(0.3f) else LightBorder, RoundedCornerShape(16.dp))
                         .clickable { clip.setText(AnnotatedString(r.ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
                 ) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(r.ip, fontSize = 14.sp, color = TextPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
+                            Text(r.ip, fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
                             val regionText = buildString {
                                 append(r.cdn)
                                 if (r.country.isNotBlank()) { append(" • ${r.country}"); if (r.city.isNotBlank()) append(" - ${r.city}") }
@@ -860,12 +861,12 @@ private fun ToolsTab(
         item {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("VPN SETTINGS", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Text("VPN SETTINGS", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Fragment (DPI bypass)", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                            Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = TextSecondary)
+                            Text("Fragment (DPI bypass)", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontWeight = FontWeight.Medium)
+                            Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                         }
                         Switch(
                             checked = fragment,
@@ -873,7 +874,7 @@ private fun ToolsTab(
                                 fragment = it
                                 context.getSharedPreferences("cdnhunter_vpn", 0).edit().putBoolean("fragment_enabled", it).apply()
                             },
-                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
                         )
                     }
                     Spacer(Modifier.height(10.dp))
@@ -881,8 +882,8 @@ private fun ToolsTab(
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Auto-IP", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                            Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = TextSecondary)
+                            Text("Auto-IP", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontWeight = FontWeight.Medium)
+                            Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                         }
                         Switch(
                             checked = autoIp,
@@ -890,7 +891,7 @@ private fun ToolsTab(
                                 autoIp = it
                                 if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop()
                             },
-                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = CardBg2)
+                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
                         )
                     }
                     if (autoIp && AutoIpManager.enabled.get()) {
@@ -919,7 +920,7 @@ private fun ToolsTab(
                         Spacer(Modifier.width(8.dp))
                         Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                         Box(
-                            Modifier.clip(RoundedCornerShape(8.dp)).background(CardBg2)
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(8.dp))
                                 .clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }
                                 .padding(8.dp, 4.dp)
                         ) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
@@ -948,7 +949,7 @@ private fun ToolsTab(
         item {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("EXPORT", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Text("EXPORT", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ToolButton("Copy All", Icons.Rounded.ContentCopy, AccentBlue, Modifier.weight(1f)) {
@@ -967,7 +968,7 @@ private fun ToolsTab(
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = TextMuted)
+                    Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
                 }
             }
         }
@@ -976,19 +977,19 @@ private fun ToolsTab(
         item {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("SCAN PROFILES", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Text("SCAN PROFILES", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(10.dp))
                     listOf(ScanProfile.QUICK, ScanProfile.NORMAL, ScanProfile.DEEP).forEach { profile ->
                         val sel = config.maxIps == profile.config.maxIps && config.concurrency == profile.config.concurrency
                         Box(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) AccentBlue.copy(0.12f) else CardBg2)
-                                .border(1.dp, if (sel) AccentBlue.copy(0.5f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                .background(if (sel) AccentBlue.copy(0.12f) else if (isDarkMode()) CardBg2 else LightCardBg2)
+                                .border(1.5.dp, if (sel) AccentBlue.copy(0.5f) else if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
                                 .clickable { onConfigChange(profile.config) }.padding(12.dp)
                         ) {
                             Column {
-                                Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else TextPrimary)
-                                Text(profile.desc, fontSize = 11.sp, color = TextSecondary)
+                                Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else if (isDarkMode()) TextPrimary else LightTextPrimary)
+                                Text(profile.desc, fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                             }
                         }
                     }
@@ -1000,18 +1001,18 @@ private fun ToolsTab(
         item {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("MAINTENANCE", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Text("MAINTENANCE", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(10.dp))
                     Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg2)
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.5.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
                             .clickable { onUpdateRanges() }.padding(14.dp, 12.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("Update CDN Ranges", fontSize = 14.sp, color = TextPrimary)
-                                Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = TextSecondary)
+                                Text("Update CDN Ranges", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
+                                Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                             }
                         }
                     }
@@ -1044,7 +1045,7 @@ private fun GlassBox(modifier: Modifier = Modifier, content: @Composable BoxScop
         modifier
             .clip(RoundedCornerShape(18.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(18.dp)),
+            .border(1.5.dp, borderColor, RoundedCornerShape(18.dp)),
         content = content
     )
 }
@@ -1056,7 +1057,7 @@ private fun PhaseIndicator(current: ScanPhase) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         phases.forEachIndexed { i, p ->
             val done = i < idx; val active = i == idx
-            Box(Modifier.clip(RoundedCornerShape(20.dp)).background(when { done -> GreenOk.copy(0.12f); active -> AccentBlue.copy(0.15f); else -> CardBg2 }).padding(10.dp, 6.dp)) {
+            Box(Modifier.clip(RoundedCornerShape(20.dp)).background(when { done -> GreenOk.copy(0.12f); active -> AccentBlue.copy(0.15f); else -> if (isDarkMode()) CardBg2 else LightCardBg2 }).border(1.dp, when { done -> GreenOk.copy(0.2f); active -> AccentBlue.copy(0.3f); else -> if (isDarkMode()) Color.Transparent else LightBorder }, RoundedCornerShape(20.dp)).padding(10.dp, 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (done) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(12.dp))
                     Text(p.label, fontSize = 11.sp, color = when { done -> GreenOk; active -> AccentBlue; else -> TextMuted })
@@ -1080,11 +1081,11 @@ private fun ToolButton(label: String, icon: ImageVector, color: Color, modifier:
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfigField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2)) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp))) {
         TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(placeholder, fontSize = 13.sp, color = TextMuted) },
+            placeholder = { Text(placeholder, fontSize = 13.sp, color = if (isDarkMode()) TextMuted else LightTextMuted) },
             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = AccentBlue,
+                focusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, unfocusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, cursorColor = AccentBlue,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace), singleLine = true)
     }
