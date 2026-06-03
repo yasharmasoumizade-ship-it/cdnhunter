@@ -450,8 +450,6 @@ private fun VpnTab() {
         )
     }
 }
-}
-
 // ── Config Card ───────────────────────────────────────────────────────────────
 @Composable
 private fun ConfigCard(
@@ -688,50 +686,104 @@ private fun AddConfigDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 // ── SCANNER TAB ───────────────────────────────────────────────────────────────
 @Composable
 private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(24.dp))
-        Text("CDN Hunter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
-        Text(if (state.running) state.phaseDetail.take(30) else "Ready to scan", fontSize = 13.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-        Spacer(Modifier.height(32.dp))
-        Box(contentAlignment = Alignment.Center) {
-            if (state.running) {
-                val pulse by rememberInfiniteTransition(label = "r").animateFloat(1f, 1.2f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "rf")
-                Box(Modifier.size(140.dp).scale(pulse).clip(CircleShape).background(AccentBlue.copy(0.1f)))
+    val dark = isDarkMode()
+
+    // Set default concurrency to 100 silently
+    LaunchedEffect(Unit) {
+        if (config.concurrency != 100) onConfigChange(config.copy(concurrency = 100))
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Spacer(Modifier.height(20.dp))
+
+        // ── Header ─────────────────────────────────────────────────────────
+        Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Scanner", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                    color = if (dark) TextPrimary else LightTextPrimary)
+                Box(Modifier.height(20.dp)) {
+                    Text(
+                        if (state.running) state.phaseDetail.take(32) else "Ready to scan",
+                        fontSize = 13.sp,
+                        color = if (state.running) AccentBlue else if (dark) TextSecondary else LightTextSecondary
+                    )
+                }
             }
-            Box(
-                Modifier.size(120.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(AccentBlue, Color(0xFF0050A0))))
-                    .clickable { if (state.running) onStop() else onStart() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.Radar, null, tint = Color.White, modifier = Modifier.size(48.dp))
+            // Scan button top-right
+            if (state.running) {
+                val pulse by rememberInfiniteTransition(label = "sp").animateFloat(
+                    1f, 1.25f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "spf"
+                )
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(64.dp).scale(pulse).clip(CircleShape).background(RedFail.copy(0.1f)))
+                    Box(
+                        Modifier.size(56.dp).clip(CircleShape)
+                            .background(Brush.radialGradient(listOf(RedFail, Color(0xFF8A1B1B))))
+                            .clickable { onStop() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Stop, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                    }
+                }
+            } else {
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.size(56.dp).clip(CircleShape)
+                            .background(Brush.radialGradient(listOf(AccentBlue, Color(0xFF1A4FAD))))
+                            .clickable { onStart() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Radar, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(if (state.running) "Tap to Stop" else "Tap to Start", fontSize = 12.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-        Spacer(Modifier.height(28.dp))
+
+        Spacer(Modifier.height(20.dp))
+
+        // ── Stats ──────────────────────────────────────────────────────────
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GlassCard("${state.scanned}", "Scanned", AccentBlue, Modifier.weight(1f))
             GlassCard("${state.healthy}", "Healthy", GreenOk, Modifier.weight(1f))
             GlassCard("${state.failed}", "Failed", RedFail, Modifier.weight(1f))
         }
-        Spacer(Modifier.height(12.dp))
-        @Suppress("DEPRECATION")
-        LinearProgressIndicator(progress = state.pct / 100f, modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)), color = AccentBlue, trackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
-        Spacer(Modifier.height(4.dp))
-        Text("${state.pct}% • ${state.source}", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
+
+        if (state.running) {
+            Spacer(Modifier.height(12.dp))
+            @Suppress("DEPRECATION")
+            LinearProgressIndicator(
+                progress = state.pct / 100f,
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = AccentBlue,
+                trackColor = if (dark) CardBg2 else LightCardBg2
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("${state.pct}%", fontSize = 11.sp,
+                color = if (dark) TextSecondary else LightTextSecondary)
+        }
+
         Spacer(Modifier.height(16.dp))
-        PhaseIndicator(state.phase)
-        Spacer(Modifier.height(16.dp))
+
+        // ── CDN Provider ───────────────────────────────────────────────────
         GlassBox(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text("CDN Provider", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("CDN PROVIDER", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (dark) TextSecondary else LightTextSecondary)
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CdnProvider.entries.forEach { p ->
                         val sel = config.cdnProvider == p
-                        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) AccentBlue.copy(0.18f) else if (isDarkMode()) CardBg2 else LightCardBg2).border(1.5.dp, if (sel) AccentBlue.copy(0.6f) else if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp)).clickable { onConfigChange(config.copy(cdnProvider = p)) }.padding(12.dp, 7.dp)) {
-                            Text(p.label, fontSize = 12.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary)
+                        Box(
+                            Modifier.clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) AccentBlue.copy(0.15f) else if (dark) CardBg2 else LightCardBg2)
+                                .border(1.5.dp, if (sel) AccentBlue.copy(0.7f) else if (dark) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
+                                .clickable { onConfigChange(config.copy(cdnProvider = p)) }
+                                .padding(14.dp, 8.dp)
+                        ) {
+                            Text(p.label, fontSize = 13.sp,
+                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (sel) AccentBlue else if (dark) TextSecondary else LightTextSecondary)
                         }
                     }
                 }
@@ -743,16 +795,33 @@ private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (Sc
                     Spacer(Modifier.height(10.dp))
                     ConfigField(config.manualCidr, { onConfigChange(config.copy(manualCidr = it)) }, "CIDR: 104.16.0.0/12")
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) { ConfigField("${config.maxIps}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v)) } }, "Max IPs") }
-                    Box(Modifier.weight(1f)) { ConfigField("${config.concurrency}", { it.toIntOrNull()?.let { v -> onConfigChange(config.copy(concurrency = v)) } }, "Workers") }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Max IPs ────────────────────────────────────────────────────────
+        GlassBox(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Max IPs to scan", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        color = if (dark) TextPrimary else LightTextPrimary)
+                    Text("Higher = slower but more results", fontSize = 11.sp,
+                        color = if (dark) TextSecondary else LightTextSecondary)
+                }
+                Spacer(Modifier.width(12.dp))
+                Box(Modifier.width(90.dp)) {
+                    ConfigField("${config.maxIps}", {
+                        it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v)) }
+                    }, "3000")
                 }
             }
         }
+
         Spacer(Modifier.height(40.dp))
     }
 }
+
 
 // ── RESULTS TAB ───────────────────────────────────────────────────────────────
 @Composable
