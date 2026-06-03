@@ -193,7 +193,7 @@ fun AppScreen(
 private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
         Tab.VPN     to Icons.Rounded.Bolt,
-        Tab.SCANNER to Icons.Rounded.TravelExplore,
+        Tab.SCANNER to Icons.Rounded.MyLocation,
         Tab.RESULTS to Icons.Rounded.FormatListBulleted,
         Tab.TOOLS   to Icons.Rounded.Tune
     )
@@ -277,7 +277,7 @@ private fun VpnTab() {
                 if (activeId.isNotBlank()) {
                     val btnGradient = when {
                         connecting -> Brush.radialGradient(listOf(AccentBlue, AccentBlue.copy(0.6f)))
-                        connected  -> Brush.radialGradient(listOf(GreenOk, Color(0xFF1B8A3E)))
+                        connected  -> Brush.radialGradient(listOf(AccentBlue, Color(0xFF1A4FAD)))
                         else       -> Brush.radialGradient(listOf(AccentBlue, Color(0xFF0050A0)))
                     }
                     Box(contentAlignment = Alignment.Center) {
@@ -330,7 +330,7 @@ private fun VpnTab() {
                         ) {
                             Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
                                 when {
-                                    connected -> Icon(Icons.Rounded.Shield, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                                    connected -> Icon(Icons.Rounded.Bolt, null, tint = Color.White, modifier = Modifier.size(26.dp))
                                     connecting -> {
                                         val rotation by rememberInfiniteTransition(label = "sync").animateFloat(
                                             0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "syncRot"
@@ -365,7 +365,7 @@ private fun VpnTab() {
                 LazyColumn(
                     Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 88.dp),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
                     userScrollEnabled = true
                 ) {
                     items(configs, key = { it.id }) { cfg ->
@@ -464,13 +464,13 @@ private fun ConfigCard(
 ) {
     val dark = isDarkMode()
     val borderColor = when {
-        connected  -> GreenOk.copy(if (dark) 0.6f else 0.8f)
+        connected  -> AccentBlue.copy(if (dark) 0.6f else 0.8f)
         connecting -> YellowWarn.copy(0.5f)
         isActive   -> AccentBlue.copy(0.5f)
         else       -> if (dark) Color(0xFF38383A).copy(0.3f) else Color(0xFFDDDDDD)
     }
     val bgColor = when {
-        connected  -> GreenOk.copy(if (dark) 0.08f else 0.05f)
+        connected  -> AccentBlue.copy(if (dark) 0.08f else 0.05f)
         connecting -> YellowWarn.copy(0.05f)
         isActive   -> AccentBlue.copy(if (dark) 0.06f else 0.04f)
         else       -> if (dark) CardBg.copy(0.7f) else LightCardBg
@@ -521,7 +521,7 @@ private fun ConfigCard(
                     )
                     Box(Modifier.size(10.dp).clip(CircleShape).background(YellowWarn.copy(pulse)))
                 }
-                connected  -> Box(Modifier.size(10.dp).clip(CircleShape).background(GreenOk))
+                connected  -> Box(Modifier.size(10.dp).clip(CircleShape).background(AccentBlue))
                 else       -> Box(Modifier.size(10.dp).clip(CircleShape).background(TextMuted))
             }
         }
@@ -868,7 +868,7 @@ private fun ResultsTab(results: List<ScanResult>) {
                 onClick = { clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip })); haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 containerColor = AccentBlue, contentColor = Color.White
-            ) { Icon(Icons.Rounded.CopyAll, contentDescription = "Copy all IPs") }
+            ) { Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs") }
         }
     }
 }
