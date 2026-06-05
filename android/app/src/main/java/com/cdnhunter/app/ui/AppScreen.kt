@@ -425,7 +425,7 @@ private fun VpnTab() {
                 modifier = Modifier.padding(16.dp),
                 containerColor = AccentBlue,
                 contentColor   = Color.White,
-                shape          = CircleShape
+                shape          = RoundedCornerShape(18.dp)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add config")
             }
@@ -540,14 +540,15 @@ private fun ConfigCard(
                 ) {
                     // Connect / Disconnect button
                     Box(
-                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
                             .background(
                                 if (connected) RedFail.copy(0.12f)
                                 else if (connecting) YellowWarn.copy(0.10f)
-                                else GreenOk.copy(0.12f)
+                                else AccentBlue.copy(0.12f)
                             )
+                            .border(1.dp, if (connected) RedFail.copy(0.3f) else if (connecting) YellowWarn.copy(0.3f) else AccentBlue.copy(0.3f), RoundedCornerShape(14.dp))
                             .clickable { onConnect() }
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
