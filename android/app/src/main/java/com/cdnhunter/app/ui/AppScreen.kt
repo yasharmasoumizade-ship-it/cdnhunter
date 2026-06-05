@@ -152,6 +152,7 @@ fun AppScreen(
     val context = LocalContext.current
     val uiPrefs = remember { context.getSharedPreferences("cdnhunter_ui", 0) }
     var themeMode by remember { mutableStateOf(ThemeMode.valueOf(uiPrefs.getString("theme_mode", "LIGHT") ?: "LIGHT")) }
+    var autoIpEnabled by remember { mutableStateOf(AutoIpManager.enabled.get()) }
     val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
     val coroutineScope = rememberCoroutineScope()
 
@@ -175,7 +176,7 @@ fun AppScreen(
                             Tab.VPN      -> VpnTab()
                             Tab.SCANNER  -> ScannerTab(state, config, onConfigChange, onStart, onStop)
                             Tab.RESULTS  -> ResultsTab(state.results)
-                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
+                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
                         }
                     }
                 }
@@ -880,6 +881,8 @@ private fun ToolsTab(
     results: List<ScanResult>, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
     onStart: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit, onExport: () -> Unit,
     currentTheme: ThemeMode = ThemeMode.LIGHT,
+    autoIpState: Boolean = false,
+    onAutoIpChange: (Boolean) -> Unit = {},
     onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -891,7 +894,7 @@ private fun ToolsTab(
     var fragment by remember {
         mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
     }
-    var autoIp by remember { mutableStateOf(false) }
+    val autoIp = autoIpState
     var showXrayLog by remember { mutableStateOf(false) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
@@ -965,7 +968,7 @@ private fun ToolsTab(
                         Switch(
                             checked = autoIp,
                             onCheckedChange = {
-                                autoIp = it
+                                onAutoIpChange(it)
                                 if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop()
                             },
                             colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
