@@ -7,31 +7,21 @@ import com.cdnhunter.app.engine.ScanEngine
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Auto-IP Manager: scans for clean IPs, picks the best, monitors speed,
- * and seamlessly switches to a new IP if the current one degrades.
- *
- * Flow:
- * 1. Scan 10 clean IPs (fast scan)
- * 2. Pick the lowest-latency one, apply it to the VPN config
- * 3. Monitor download speed every 5s
- * 4. If speed drops below threshold for 3 consecutive checks:
- *    a. Try next IP from the pool
- *    b. If all IPs exhausted, re-scan
- * 5. IP switch is seamless: restart xray with new config (hev-socks5-tunnel stays running)
- */
 object AutoIpManager {
 
     private const val TAG = "AutoIP"
     private const val POOL_SIZE = 10
-    private const val CHECK_INTERVAL_MS = 5000L
-    private const val SLOW_THRESHOLD_BYTES = 1024L // 1 KB/s minimum
-    private const val MAX_SLOW_STRIKES = 3
+    private const val CHECK_INTERVAL_MS = 15000L
+    private const val SLOW_THRESHOLD_BYTES = 10240L
+    private const val MAX_SLOW_STRIKES = 2
 
     var enabled = AtomicBoolean(false)
     var currentIp = ""
     var status = "Idle"
     var ipPool = listOf<String>()
+
+    // Set this from ViewModel before calling start()
+    var scanResultProvider: (suspend () -> List<ScanResult>)? = null
 
     private var monitorJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -44,7 +34,6 @@ object AutoIpManager {
 
         monitorJob = scope.launch {
             try {
-                // 1. Scan for clean IPs
                 val pool = scanForPool(context)
                 if (pool.isEmpty()) {
                     status = "No clean IPs found"
@@ -52,14 +41,11 @@ object AutoIpManager {
                     return@launch
                 }
                 ipPool = pool
-                status = "Found ${pool.size} clean IPs"
-                Log.i(TAG, "Pool: $pool")
+                status = "Found ${pool.size} IPs"
 
-                // 2. Apply best IP
                 var poolIndex = 0
                 applyIp(context, pool[poolIndex])
 
-                // 3. Monitor loop
                 var slowStrikes = 0
                 var lastDownload = CdnVpnService.downloadBytes
 
@@ -73,7 +59,6 @@ object AutoIpManager {
 
                     if (bytesPerSec < SLOW_THRESHOLD_BYTES && currentDown > 0) {
                         slowStrikes++
-                        Log.d(TAG, "Slow: ${bytesPerSec}B/s (strike $slowStrikes/$MAX_SLOW_STRIKES)")
                     } else {
                         slowStrikes = 0
                     }
@@ -81,20 +66,13 @@ object AutoIpManager {
                     if (slowStrikes >= MAX_SLOW_STRIKES) {
                         slowStrikes = 0
                         poolIndex++
-
-                        if (poolIndex >= pool.size) {
-                            // All IPs exhausted, re-scan
-                            status = "All IPs slow, re-scanning..."
-                            Log.i(TAG, "Pool exhausted, re-scanning")
+                        if (poolIndex >= ipPool.size) {
+                            status = "Re-scanning..."
                             val newPool = scanForPool(context)
-                            if (newPool.isEmpty()) {
-                                status = "Re-scan failed"
-                                break
-                            }
+                            if (newPool.isEmpty()) { status = "Re-scan failed"; break }
                             ipPool = newPool
                             poolIndex = 0
                         }
-
                         applyIp(context, ipPool[poolIndex])
                     }
                 }
@@ -116,24 +94,40 @@ object AutoIpManager {
     }
 
     private suspend fun scanForPool(context: Context): List<String> {
+        // Use ViewModel's scan results if available (same scan as app)
+        val provider = scanResultProvider
+        if (provider != null) {
+            status = "Using app scanner..."
+            val results = provider()
+            val best = results.filter { it.ok && it.ms < 500 }
+                .sortedBy { it.ms }
+                .take(POOL_SIZE)
+                .map { it.ip }
+            if (best.isNotEmpty()) return best
+        }
+
+        // Fallback: run own scan with same config as app
+        status = "Running quick scan..."
         val engine = ScanEngine()
+        val prefs = context.getSharedPreferences("cdnhunter_scan", 0)
+        val savedProvider = prefs.getString("cdn_provider", "smart") ?: "smart"
+        val provider2 = CdnProvider.entries.find { it.key == savedProvider } ?: CdnProvider.SMART
         val scanConfig = ScanConfig(
-            cdnProvider = CdnProvider.CLOUDFLARE, // Auto-IP only scans Cloudflare
-            maxIps = 200,
+            cdnProvider = provider2,
+            maxIps = 300,
             concurrency = 80,
             timeout = 3f,
             retries = 1
         )
         val results = engine.scan(scanConfig)
-        return results.filter { it.ok }.sortedBy { it.ms }.take(POOL_SIZE).map { it.ip }
+        return results.filter { it.ok && it.ms < 400 }
+            .sortedBy { it.ms }
+            .take(POOL_SIZE)
+            .map { it.ip }
     }
 
-    /**
-     * Applies a new IP to the VPN config and restarts xray seamlessly.
-     * The TUN + tun2socks stay running — only xray restarts, so the switch
-     * is nearly invisible to the user (< 1 second gap).
-     */
     private suspend fun applyIp(context: Context, ip: String) {
+        if (!CdnVpnService.isRunning.get()) return
         currentIp = ip
         status = "Using: $ip"
         Log.i(TAG, "Switching to IP: $ip")
@@ -142,15 +136,13 @@ object AutoIpManager {
         val originalUri = prefs.getString("user_config", "") ?: ""
         if (originalUri.isBlank()) return
 
-        // Replace the address in the URI with our clean IP
         val newUri = replaceIpInUri(originalUri, ip)
         prefs.edit().putString("user_config_active", newUri).apply()
 
-        // Restart xray with the new config (seamless — TUN stays up)
         withContext(Dispatchers.IO) {
             try {
                 XrayBridge.stop()
-                delay(200)
+                delay(300)
                 val config = VpnConfigBuilder.buildConfigFromActiveUri(context)
                 XrayBridge.init(context.filesDir.absolutePath)
                 XrayBridge.start(config, 0)
@@ -162,13 +154,10 @@ object AutoIpManager {
     }
 
     private fun replaceIpInUri(uri: String, newIp: String): String {
-        // URI format: protocol://user@ADDRESS:PORT?params#remark
-        // Replace the address between @ and : (or ? if no port explicit)
         return try {
             val atIdx = uri.indexOf('@')
             if (atIdx < 0) return uri
             val afterAt = uri.substring(atIdx + 1)
-            // Find end of address (could be : for port, or ? for params, or # for remark)
             val endIdx = afterAt.indexOfFirst { it == ':' || it == '?' || it == '#' }
             if (endIdx < 0) return uri
             uri.substring(0, atIdx + 1) + newIp + afterAt.substring(endIdx)
