@@ -135,30 +135,35 @@ object AutoIpManager {
     private suspend fun applyIp(context: Context, ip: String) {
         if (!CdnVpnService.isRunning.get()) return
         currentIp = ip
-        status = "Using: $ip"
+        status = "Applying: $ip"
         Log.i(TAG, "Switching to IP: $ip")
 
         val prefs = context.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val originalUri = prefs.getString("user_config", "") ?: ""
-        if (originalUri.isBlank()) return
+        if (originalUri.isBlank()) { Log.e(TAG, "No user_config"); return }
 
         val newUri = replaceIpInUri(originalUri, ip)
-        prefs.edit().putString("user_config_active", newUri).apply()
+        Log.i(TAG, "New URI: $newUri")
+        prefs.edit()
+            .putString("user_config_active", newUri)
+            .putString("user_config", newUri)
+            .apply()
 
         withContext(Dispatchers.IO) {
             try {
+                val config = VpnConfigBuilder.buildConfig(context)
                 XrayBridge.stop()
-                delay(300)
-                val config = VpnConfigBuilder.buildConfigFromActiveUri(context)
+                delay(500)
                 XrayBridge.init(context.filesDir.absolutePath)
                 XrayBridge.start(config, 0)
-                Log.i(TAG, "Xray restarted with IP $ip")
+                status = "Using: $ip"
+                Log.i(TAG, "Xray restarted with $ip")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to restart xray: ${e.message}")
+                Log.e(TAG, "Failed: ${e.message}")
+                status = "Error: ${e.message?.take(30)}"
             }
         }
     }
-
     private fun replaceIpInUri(uri: String, newIp: String): String {
         return try {
             val atIdx = uri.indexOf('@')
