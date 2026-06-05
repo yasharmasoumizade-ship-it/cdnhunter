@@ -899,17 +899,56 @@ private fun ToolsTab(
                             colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
                         )
                     }
-                    if (autoIp && AutoIpManager.enabled.get()) {
-                        Spacer(Modifier.height(8.dp))
+                    if (autoIp) {
+                        Spacer(Modifier.height(10.dp))
                         Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Auto-IP Active", fontSize = 12.sp, color = GreenOk, fontWeight = FontWeight.Medium)
-                        Text(AutoIpManager.status, fontSize = 11.sp, color = TextSecondary)
-                        if (AutoIpManager.currentIp.isNotBlank())
-                            Text("IP: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                        if (AutoIpManager.ipPool.isNotEmpty())
-                            Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = TextMuted)
-                    }
+                        Spacer(Modifier.height(10.dp))
+                        if (AutoIpManager.enabled.get()) {
+                            Text("Status: ${AutoIpManager.status}", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
+                            if (AutoIpManager.currentIp.isNotBlank())
+                                Text("Active: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                            if (AutoIpManager.ipPool.isNotEmpty())
+                                Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
+                        } else {
+                            var testIps by remember { mutableStateOf("") }
+                            Text("Test IPs (one per line):", fontSize = 12.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
+                            Spacer(Modifier.height(6.dp))
+                            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                .background(if (isDarkMode()) CardBg2 else LightCardBg2)
+                                .border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp))
+                            ) {
+                                androidx.compose.material3.TextField(
+                                    value = testIps, onValueChange = { testIps = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("104.16.0.1
+104.17.0.1", fontSize = 11.sp, color = if (isDarkMode()) TextMuted else LightTextMuted) },
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                        focusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary,
+                                        unfocusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary,
+                                        cursorColor = AccentBlue, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                                    maxLines = 6
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                .background(AccentBlue.copy(0.15f))
+                                .border(1.dp, AccentBlue.copy(0.4f), RoundedCornerShape(10.dp))
+                                .clickable {
+                                    val ips = testIps.lines().map { it.trim() }.filter { it.isNotBlank() }
+                                    if (ips.isNotEmpty()) {
+                                        AutoIpManager.ipPool = ips
+                                        AutoIpManager.scanResultProvider = null
+                                        AutoIpManager.start(context)
+                                    }
+                                }
+                                .padding(12.dp), contentAlignment = Alignment.Center
+                            ) {
+                                Text("Start with these IPs", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                 }
             }
         }

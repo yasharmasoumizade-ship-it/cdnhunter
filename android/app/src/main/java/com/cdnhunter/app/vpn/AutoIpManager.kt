@@ -18,7 +18,7 @@ object AutoIpManager {
     var enabled = AtomicBoolean(false)
     var currentIp = ""
     var status = "Idle"
-    var ipPool = listOf<String>()
+    var ipPool = mutableListOf<String>()
 
     // Set this from ViewModel before calling start()
     var scanResultProvider: (suspend () -> List<ScanResult>)? = null
@@ -34,14 +34,20 @@ object AutoIpManager {
 
         monitorJob = scope.launch {
             try {
-                val pool = scanForPool(context)
-                if (pool.isEmpty()) {
-                    status = "No clean IPs found"
-                    enabled.set(false)
-                    return@launch
+                val pool = if (ipPool.isNotEmpty()) {
+                    status = "Using ${ipPool.size} provided IPs"
+                    ipPool
+                } else {
+                    val scanned = scanForPool(context)
+                    if (scanned.isEmpty()) {
+                        status = "No clean IPs found"
+                        enabled.set(false)
+                        return@launch
+                    }
+                    ipPool = scanned
+                    status = "Found ${scanned.size} IPs"
+                    scanned
                 }
-                ipPool = pool
-                status = "Found ${pool.size} IPs"
 
                 var poolIndex = 0
                 applyIp(context, pool[poolIndex])
