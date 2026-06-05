@@ -939,7 +939,7 @@ private fun ToolsTab(
                                 .clickable {
                                     val ips = testIps.lines().map { it.trim() }.filter { it.isNotBlank() }
                                     if (ips.isNotEmpty()) {
-                                        AutoIpManager.ipPool = ips
+                                        AutoIpManager.ipPool = ips.toMutableList()
                                         AutoIpManager.scanResultProvider = null
                                         AutoIpManager.start(context)
                                     }

@@ -44,7 +44,7 @@ object AutoIpManager {
                         enabled.set(false)
                         return@launch
                     }
-                    ipPool = scanned
+                    ipPool = scanned.toMutableList()
                     status = "Found ${scanned.size} IPs"
                     scanned
                 }
@@ -76,7 +76,7 @@ object AutoIpManager {
                             status = "Re-scanning..."
                             val newPool = scanForPool(context)
                             if (newPool.isEmpty()) { status = "Re-scan failed"; break }
-                            ipPool = newPool
+                            ipPool = newPool.toMutableList()
                             poolIndex = 0
                         }
                         applyIp(context, ipPool[poolIndex])
