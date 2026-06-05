@@ -540,33 +540,49 @@ private fun ConfigCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Connect / Disconnect button
+                    val dark = isDarkMode()
+                    val btnBg = when {
+                        connected  -> if (dark) Color(0xFF2A0A0A) else Color(0xFFFFEEEE)
+                        connecting -> if (dark) Color(0xFF1A1800) else Color(0xFFFFF8E1)
+                        else       -> if (dark) Color(0xFF0F1A2E) else Color(0xFFEEF2FF)
+                    }
+                    val btnBorder = when {
+                        connected  -> RedFail.copy(0.4f)
+                        connecting -> YellowWarn.copy(0.4f)
+                        else       -> AccentBlue.copy(0.4f)
+                    }
+                    val btnTextColor = when {
+                        connected  -> RedFail
+                        connecting -> if (dark) Color(0xFFFFD700) else Color(0xFFB8860B)
+                        else       -> AccentBlue
+                    }
                     Box(
                         Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (connected) RedFail.copy(0.12f)
-                                else if (connecting) YellowWarn.copy(0.10f)
-                                else AccentBlue.copy(0.12f)
-                            )
-                            .border(1.dp, if (connected) RedFail.copy(0.3f) else if (connecting) YellowWarn.copy(0.3f) else AccentBlue.copy(0.3f), RoundedCornerShape(14.dp))
+                            .background(btnBg)
+                            .border(1.dp, btnBorder, RoundedCornerShape(14.dp))
                             .clickable { onConnect() }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                if (connected) Icons.Rounded.PowerSettingsNew else Icons.Rounded.PlayArrow,
-                                null,
-                                tint = if (connected) RedFail else if (connecting) YellowWarn else GreenOk,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            if (connecting) {
+                                val rot by rememberInfiniteTransition(label = "cb").animateFloat(
+                                    0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "cbr"
+                                )
+                                Icon(Icons.Rounded.Sync, null, tint = btnTextColor,
+                                    modifier = Modifier.size(16.dp).rotate(rot))
+                            } else {
+                                Icon(
+                                    if (connected) Icons.Rounded.PowerSettingsNew else Icons.Rounded.Bolt,
+                                    null, tint = btnTextColor, modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Text(
                                 when { connected -> "Disconnect"; connecting -> "Connecting..."; else -> "Connect" },
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (connected) RedFail else if (connecting) YellowWarn else GreenOk
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = btnTextColor
                             )
                         }
                     }
