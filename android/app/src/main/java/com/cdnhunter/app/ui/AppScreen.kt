@@ -913,25 +913,7 @@ private fun ToolsTab(
                             var testIps by remember { mutableStateOf("") }
                             Text("Test IPs (one per line):", fontSize = 12.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                             Spacer(Modifier.height(6.dp))
-                            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                                .background(if (isDarkMode()) CardBg2 else LightCardBg2)
-                                .border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp))
-                            ) {
-                                androidx.compose.material3.TextField(
-                                    value = testIps, onValueChange = { testIps = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    placeholder = { Text("104.16.0.1
-104.17.0.1", fontSize = 11.sp, color = if (isDarkMode()) TextMuted else LightTextMuted) },
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                                        focusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary,
-                                        unfocusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary,
-                                        cursorColor = AccentBlue, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
-                                    ),
-                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                                    maxLines = 6
-                                )
-                            }
+                            ConfigField(testIps, { testIps = it }, "104.16.0.1")
                             Spacer(Modifier.height(8.dp))
                             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                                 .background(AccentBlue.copy(0.15f))
