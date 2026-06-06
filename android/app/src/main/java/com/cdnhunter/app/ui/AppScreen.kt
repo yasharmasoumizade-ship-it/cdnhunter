@@ -931,6 +931,7 @@ private fun ToolsTab(
                                 Text("Start with these IPs", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.SemiBold)
                             }
                         }
+                    }
                 }
             }
         }
