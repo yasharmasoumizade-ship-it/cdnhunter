@@ -11,8 +11,8 @@ object AutoIpManager {
 
     private const val TAG = "AutoIP"
     private const val POOL_SIZE = 10
-    private const val CHECK_INTERVAL_MS = 15000L
-    private const val SLOW_THRESHOLD_BYTES = 10240L
+    private const val CHECK_INTERVAL_MS = 10000L
+    private const val SLOW_THRESHOLD_BYTES = 5120L
     private const val MAX_SLOW_STRIKES = 2
 
     var enabled = AtomicBoolean(false)
@@ -61,10 +61,12 @@ object AutoIpManager {
 
                     val currentDown = CdnVpnService.downloadBytes
                     val bytesPerSec = (currentDown - lastDownload) * 1000 / CHECK_INTERVAL_MS
+                    val hadTraffic = (currentDown - lastDownload) > 0
                     lastDownload = currentDown
 
-                    if (bytesPerSec < SLOW_THRESHOLD_BYTES && currentDown > 0) {
+                    if (hadTraffic && bytesPerSec < SLOW_THRESHOLD_BYTES) {
                         slowStrikes++
+                        Log.d(TAG, "Slow: ${bytesPerSec}B/s strike=$slowStrikes")
                     } else {
                         slowStrikes = 0
                     }
