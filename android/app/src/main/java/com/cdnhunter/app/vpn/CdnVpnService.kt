@@ -68,6 +68,7 @@ class CdnVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
     }
 
@@ -232,6 +233,6 @@ class CdnVpnService : VpnService() {
         } catch (_: Exception) {}
     }
 
-    override fun onDestroy() { stopVpn(); scope.cancel(); super.onDestroy() }
+    override fun onDestroy() { stopVpn(); scope.cancel(); instance = null; super.onDestroy() }
     override fun onRevoke() { stopVpn(); super.onRevoke() }
 }
