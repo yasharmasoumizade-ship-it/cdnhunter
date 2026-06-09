@@ -241,9 +241,16 @@ private fun VpnTab() {
     // Poll VPN status
     LaunchedEffect(Unit) {
         while (true) {
-            val was = connected
-            connected = CdnVpnService.isRunning.get()
+            val vpnRunning = CdnVpnService.isRunning.get()
+            connected = if (AutoIpManager.enabled.get()) {
+                vpnRunning && AutoIpManager.currentIp.isNotBlank()
+            } else {
+                vpnRunning
+            }
             if (connected) connecting = false
+            if (vpnRunning && autoIpEnabled && !AutoIpManager.enabled.get()) {
+                AutoIpManager.start(context)
+            }
             delay(1000)
         }
     }
@@ -903,36 +910,12 @@ private fun ToolsTab(
                         Spacer(Modifier.height(10.dp))
                         Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
                         Spacer(Modifier.height(10.dp))
-                        if (AutoIpManager.enabled.get()) {
-                            Text("Status: ${AutoIpManager.status}", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
-                            if (AutoIpManager.currentIp.isNotBlank())
-                                Text("Active: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                            if (AutoIpManager.ipPool.isNotEmpty())
-                                Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
-                        } else {
-                            var testIps by remember { mutableStateOf("") }
-                            Text("Test IPs (one per line):", fontSize = 12.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                            Spacer(Modifier.height(6.dp))
-                            ConfigField(testIps, { testIps = it }, "104.16.0.1")
-                            Spacer(Modifier.height(8.dp))
-                            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                                .background(AccentBlue.copy(0.15f))
-                                .border(1.dp, AccentBlue.copy(0.4f), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    val ips = testIps.lines().map { it.trim() }.filter { it.isNotBlank() }
-                                    if (ips.isNotEmpty()) {
-                                        AutoIpManager.ipPool = ips.toMutableList()
-                                        AutoIpManager.scanResultProvider = null
-                                        AutoIpManager.start(context)
-                                    }
-                                }
-                                .padding(12.dp), contentAlignment = Alignment.Center
-                            ) {
-                                Text("Start with these IPs", fontSize = 13.sp, color = AccentBlue, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
+                        Text("Status: ${AutoIpManager.status}", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
+                        if (AutoIpManager.currentIp.isNotBlank())
+                            Text("Active: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
+                        if (AutoIpManager.ipPool.isNotEmpty())
+                            Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
                     }
-                }
             }
         }
 
