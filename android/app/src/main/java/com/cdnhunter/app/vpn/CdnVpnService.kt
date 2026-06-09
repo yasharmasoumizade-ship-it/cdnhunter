@@ -38,6 +38,22 @@ class CdnVpnService : VpnService() {
             else context.startService(intent)
         }
 
+        fun restartXray(context: Context) {
+            val svc = instance ?: return
+            svc.lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    XrayBridge.stop()
+                    delay(300)
+                    val config = VpnConfigBuilder.buildConfig(context)
+                    XrayBridge.init(svc.filesDir.absolutePath)
+                    XrayBridge.start(config, 0)
+                    android.util.Log.i("CdnVpn", "Xray restarted by AutoIP")
+                } catch (e: Exception) {
+                    android.util.Log.e("CdnVpn", "restartXray failed: ${e.message}")
+                }
+            }
+        }
+
         fun stop(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_STOP }
             context.startService(intent)
