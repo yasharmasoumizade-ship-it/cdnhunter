@@ -398,7 +398,7 @@ private fun ConfigCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(bgColor)
-            .border(1.5.dp, borderColor, RoundedCornerShape(18.dp))
+            .border(2.dp, borderColor, RoundedCornerShape(18.dp))
             .clickable { onTap() }
     ) {
         // ── Row 1: icon + name + status dot ──
@@ -983,29 +983,7 @@ private fun ToolsTab(
             }
         }
 
-        // ── Scan Profiles ─────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("SCAN PROFILES", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(10.dp))
-                    listOf(ScanProfile.QUICK, ScanProfile.NORMAL, ScanProfile.DEEP).forEach { profile ->
-                        val sel = config.maxIps == profile.config.maxIps && config.concurrency == profile.config.concurrency
-                        Box(
-                            Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) AccentBlue.copy(0.12f) else if (isDarkMode()) CardBg2 else LightCardBg2)
-                                .border(1.5.dp, if (sel) AccentBlue.copy(0.5f) else if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
-                                .clickable { onConfigChange(profile.config) }.padding(12.dp)
-                        ) {
-                            Column {
-                                Text(profile.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (sel) AccentBlue else if (isDarkMode()) TextPrimary else LightTextPrimary)
-                                Text(profile.desc, fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+
 
         // ── Maintenance ───────────────────────────────────────────────────
         item {
@@ -1055,7 +1033,7 @@ private fun GlassBox(modifier: Modifier = Modifier, content: @Composable BoxScop
         modifier
             .clip(RoundedCornerShape(18.dp))
             .background(bgColor)
-            .border(1.5.dp, borderColor, RoundedCornerShape(18.dp)),
+            .border(2.dp, borderColor, RoundedCornerShape(18.dp)),
         content = content
     )
 }
