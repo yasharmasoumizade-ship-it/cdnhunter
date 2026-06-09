@@ -38,12 +38,14 @@ class CdnVpnService : VpnService() {
             else context.startService(intent)
         }
 
+        var instance: CdnVpnService? = null
+
         fun restartXray(context: Context) {
             val svc = instance ?: return
-            svc.lifecycleScope.launch(Dispatchers.IO) {
+            svc.scope.launch {
                 try {
                     XrayBridge.stop()
-                    delay(300)
+                    kotlinx.coroutines.delay(300)
                     val config = VpnConfigBuilder.buildConfig(context)
                     XrayBridge.init(svc.filesDir.absolutePath)
                     XrayBridge.start(config, 0)
