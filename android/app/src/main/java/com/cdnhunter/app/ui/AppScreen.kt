@@ -173,7 +173,7 @@ fun AppScreen(
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                         when (Tab.entries[page]) {
-                            Tab.VPN      -> VpnTab()
+                            Tab.VPN      -> VpnTab(autoIpEnabled)
                             Tab.SCANNER  -> ScannerTab(state, config, onConfigChange, onStart, onStop)
                             Tab.RESULTS  -> ResultsTab(state.results)
                             Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
@@ -223,7 +223,7 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
 
 // ── VPN TAB ───────────────────────────────────────────────────────────────────
 @Composable
-private fun VpnTab() {
+private fun VpnTab(autoIpEnabled: Boolean = false) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
 
@@ -1010,7 +1010,6 @@ private fun ToolsTab(
 
         item { Spacer(Modifier.height(20.dp)) }
     }
-}
 
 // ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
