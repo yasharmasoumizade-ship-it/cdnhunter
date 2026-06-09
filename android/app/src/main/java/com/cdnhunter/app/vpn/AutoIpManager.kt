@@ -137,6 +137,9 @@ object AutoIpManager {
         currentIp = ip
         status = "Applying: $ip"
         Log.i(TAG, "Switching to IP: $ip")
+        withContext(Dispatchers.Main) {
+            android.widget.Toast.makeText(context, "Auto-IP: switching to $ip", android.widget.Toast.LENGTH_SHORT).show()
+        }
 
         val prefs = context.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val originalUri = prefs.getString("user_config", "") ?: ""
