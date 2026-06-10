@@ -821,8 +821,6 @@ private fun ToolsTab(
     val clip    = LocalClipboardManager.current
     val haptic  = LocalHapticFeedback.current
     val healthy = results.filter { it.ok }
-
-    // Fragment + Auto-IP state (moved here from VPN tab)
     var fragment by remember {
         mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
     }
@@ -830,13 +828,14 @@ private fun ToolsTab(
     var showXrayLog by remember { mutableStateOf(false) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
+
         item { Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary) }
 
+        // ── Appearance ────────────────────────────────────────────────────
         item {
             GlassBox(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (isDarkMode()) TextSecondary else LightTextSecondary)
+                    Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -846,8 +845,7 @@ private fun ToolsTab(
                         ).forEach { (mode, label, icon) ->
                             val sel = currentTheme == mode
                             Box(
-                                Modifier.weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
+                                Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
                                     .background(if (sel) AccentBlue.copy(0.15f) else if (isDarkMode()) CardBg2 else LightCardBg2)
                                     .border(1.dp, if (sel) AccentBlue.copy(0.7f) else Color.Transparent, RoundedCornerShape(12.dp))
                                     .clickable { onThemeChange(mode) }
@@ -855,12 +853,8 @@ private fun ToolsTab(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(icon, null,
-                                        tint = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary,
-                                        modifier = Modifier.size(18.dp))
-                                    Text(label, fontSize = 11.sp,
-                                        color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary,
-                                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                                    Icon(icon, null, tint = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary, modifier = Modifier.size(18.dp))
+                                    Text(label, fontSize = 11.sp, color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
                                 }
                             }
                         }
@@ -922,16 +916,16 @@ private fun ToolsTab(
 
         // ── Xray Log ──────────────────────────────────────────────────────
         item {
-            GlassBox(
-                Modifier.fillMaxWidth().clickable { showXrayLog = !showXrayLog }
-            ) {
+            GlassBox(Modifier.fillMaxWidth().clickable { showXrayLog = !showXrayLog }) {
                 Column(Modifier.padding(14.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Terminal, null, tint = YellowWarn, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                         Box(
-                            Modifier.clip(RoundedCornerShape(8.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(8.dp))
+                            Modifier.clip(RoundedCornerShape(8.dp))
+                                .background(if (isDarkMode()) CardBg2 else LightCardBg2)
+                                .border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(8.dp))
                                 .clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }
                                 .padding(8.dp, 4.dp)
                         ) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
@@ -956,36 +950,6 @@ private fun ToolsTab(
             }
         }
 
-        // ── Export ────────────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("EXPORT", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(10.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ToolButton("Copy All", Icons.Rounded.ContentCopy, AccentBlue, Modifier.weight(1f)) {
-                            clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip }))
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                        ToolButton("JSON", Icons.Rounded.DataObject, AccentTeal, Modifier.weight(1f)) {
-                            val json = healthy.joinToString(",\n") { """  {"ip":"${it.ip}","ms":${it.ms},"cdn":"${it.cdn}","cc":"${it.country}"}""" }
-                            clip.setText(AnnotatedString("[\n$json\n]"))
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                        ToolButton("v2ray", Icons.Rounded.Link, GreenOk, Modifier.weight(1f)) {
-                            val lines = healthy.filter { it.frontingOk }.joinToString("\n") { ConfigGenerator.generate(ProxyConfig(ProxyType.VLESS, it.ip, 443, it.frontingSni, it.frontingHost)) }
-                            clip.setText(AnnotatedString(lines))
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("${healthy.size} healthy IPs available", fontSize = 11.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
-                }
-            }
-        }
-
-
-
         // ── Maintenance ───────────────────────────────────────────────────
         item {
             GlassBox(Modifier.fillMaxWidth()) {
@@ -993,8 +957,11 @@ private fun ToolsTab(
                     Text("MAINTENANCE", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(10.dp))
                     Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.5.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
-                            .clickable { onUpdateRanges() }.padding(14.dp, 12.dp)
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(if (isDarkMode()) CardBg2 else LightCardBg2)
+                            .border(1.5.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
+                            .clickable { onUpdateRanges() }
+                            .padding(14.dp, 12.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
@@ -1011,7 +978,7 @@ private fun ToolsTab(
 
         item { Spacer(Modifier.height(20.dp)) }
     }
-
+}
 
 // ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
