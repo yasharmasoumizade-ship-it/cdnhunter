@@ -916,6 +916,7 @@ private fun ToolsTab(
                         if (AutoIpManager.ipPool.isNotEmpty())
                             Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
                     }
+                }
             }
         }
 
@@ -1010,8 +1011,6 @@ private fun ToolsTab(
 
         item { Spacer(Modifier.height(20.dp)) }
     }
-}
-}
 
 // ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
