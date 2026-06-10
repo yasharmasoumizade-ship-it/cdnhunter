@@ -1007,10 +1007,10 @@ private fun ToolsTab(
                     }
                 }
             }
+    }
+        item { Spacer(Modifier.height(20.dp)) }
         }
 
-        item { Spacer(Modifier.height(20.dp)) }
-    }
 
 // ── Shared Components ─────────────────────────────────────────────────────────
 @Composable
