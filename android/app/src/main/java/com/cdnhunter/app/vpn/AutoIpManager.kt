@@ -128,10 +128,38 @@ object AutoIpManager {
             retries = 1
         )
         val results = engine.scan(scanConfig)
-        return results.filter { it.ok && it.ms < 400 }
-            .sortedBy { it.ms }
-            .take(POOL_SIZE)
-            .map { it.ip }
+        val candidates = results.filter { it.ok && it.ms < 400 }.sortedBy { it.ms }.take(30)
+        
+        // Verify with fronting check against Cloudflare-backed domains
+        val verified = mutableListOf<String>()
+        val checkDomains = listOf("chatgpt.com", "hcaptcha.com", "cdn.openai.com")
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .hostnameVerifier { _, _ -> true }
+            .build()
+        
+        for (result in candidates) {
+            if (verified.size >= POOL_SIZE) break
+            try {
+                val domain = checkDomains.random()
+                val req = okhttp3.Request.Builder()
+                    .url("https://${result.ip}/")
+                    .header("Host", domain)
+                    .header("User-Agent", "curl/7.88")
+                    .build()
+                val resp = client.newCall(req).execute()
+                resp.close()
+                if (resp.code < 530) {
+                    verified.add(result.ip)
+                    Log.i(TAG, "Verified IP: ${result.ip} via $domain (${resp.code})")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "IP ${result.ip} failed fronting: ${e.message?.take(30)}")
+            }
+        }
+        
+        return if (verified.isNotEmpty()) verified else candidates.take(POOL_SIZE).map { it.ip }
     }
 
     private suspend fun applyIp(context: Context, ip: String) {
