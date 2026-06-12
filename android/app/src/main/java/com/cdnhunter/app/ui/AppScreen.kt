@@ -249,8 +249,11 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             }
             if (connected) connecting = false
             if (vpnRunning && autoIpEnabled && !AutoIpManager.enabled.get()) {
-                AutoIpManager.start(context)
-                android.util.Log.i("VpnTab", "Auto-starting AutoIP")
+                delay(2000) // wait for VPN to fully connect
+                if (CdnVpnService.isRunning.get()) {
+                    AutoIpManager.start(context)
+                    android.util.Log.i("VpnTab", "Auto-starting AutoIP after VPN ready")
+                }
             }
             delay(1000)
         }
