@@ -242,17 +242,18 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     LaunchedEffect(Unit) {
         while (true) {
             val vpnRunning = CdnVpnService.isRunning.get()
-            connected = if (AutoIpManager.enabled.get()) {
+            // If autoIp enabled, only show connected after IP is applied
+            connected = if (autoIpEnabled) {
                 vpnRunning && AutoIpManager.currentIp.isNotBlank()
             } else {
                 vpnRunning
             }
             if (connected) connecting = false
+            // Auto-start AutoIP when VPN connects
             if (vpnRunning && autoIpEnabled && !AutoIpManager.enabled.get()) {
-                delay(2000) // wait for VPN to fully connect
-                if (CdnVpnService.isRunning.get()) {
+                delay(3000)
+                if (CdnVpnService.isRunning.get() && !AutoIpManager.enabled.get()) {
                     AutoIpManager.start(context)
-                    android.util.Log.i("VpnTab", "Auto-starting AutoIP after VPN ready")
                 }
             }
             delay(1000)
