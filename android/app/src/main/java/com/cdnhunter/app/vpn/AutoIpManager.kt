@@ -121,14 +121,14 @@ object AutoIpManager {
         val savedProvider = prefs.getString("cdn_provider", "smart") ?: "smart"
         val provider2 = CdnProvider.entries.find { it.key == savedProvider } ?: CdnProvider.SMART
         val scanConfig = ScanConfig(
-            cdnProvider = provider2,
-            maxIps = 300,
-            concurrency = 80,
-            timeout = 3f,
+            cdnProvider = CdnProvider.CLOUDFLARE,
+            maxIps = 500,
+            concurrency = 60,
+            timeout = 5f,
             retries = 1
         )
         val results = engine.scan(scanConfig)
-        val candidates = results.filter { it.ok && it.ms < 400 }.sortedBy { it.ms }.take(30)
+        val candidates = results.filter { it.ok && it.ms < 800 }.sortedBy { it.ms }.take(30)
         
         // Verify with fronting check against Cloudflare-backed domains
         val verified = mutableListOf<String>()
