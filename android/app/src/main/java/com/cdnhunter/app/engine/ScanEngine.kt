@@ -120,21 +120,30 @@ class ScanEngine {
         var lastCode = 0
         var bestMs = 9999
 
+        // Try multiple host headers for Cloudflare IPs
+        val hosts = if (config.host.isNotBlank()) {
+            listOf(config.host)
+        } else {
+            listOf("cloudflare.com", "")
+        }
+
         repeat(config.retries) { attempt ->
             if (stopRequested) return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
             val t0 = System.currentTimeMillis()
             try {
-                val req = Request.Builder()
-                    .url("https://$ip:443/")
+                val host = hosts[attempt % hosts.size]
+                val reqBuilder = Request.Builder()
+                    .url("https://$ip/")
                     .header("User-Agent", "curl/7.88")
                     .header("Connection", "close")
-                    .apply { if (config.host.isNotBlank()) header("Host", config.host) }
-                    .build()
+                if (host.isNotBlank()) reqBuilder.header("Host", host)
+                val req = reqBuilder.build()
 
                 client.newCall(req).execute().use { response ->
                     val ms = (System.currentTimeMillis() - t0).toInt()
                     bestMs = min(bestMs, ms)
                     lastCode = response.code
+                    // Accept any non-5xx as healthy (including 4xx which means server responded)
                     if (response.code < 500) {
                         return ScanResult(ip = ip, ok = true, code = response.code, ms = ms)
                     }
@@ -142,7 +151,7 @@ class ScanEngine {
             } catch (e: Exception) {
                 bestMs = min(bestMs, (System.currentTimeMillis() - t0).toInt())
             }
-            if (attempt < config.retries - 1) Thread.sleep(20)
+            if (attempt < config.retries - 1) Thread.sleep(10)
         }
         return ScanResult(ip = ip, ok = false, ms = bestMs, code = lastCode)
     }
@@ -190,8 +199,8 @@ class ScanEngine {
     // ── OkHttp client ───────────────────────────────────────────────────────
 
     private fun buildClient(config: ScanConfig): OkHttpClient {
-        val connectMs = (config.timeout * 650).toLong()  // 65% of timeout for connect
-        val readMs = (config.timeout * 1000).toLong()
+        val connectMs = (config.timeout * 500).toLong()  // 50% of timeout for connect
+        val readMs = (config.timeout * 800).toLong()
 
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(c: Array<out X509Certificate>?, a: String?) {}
