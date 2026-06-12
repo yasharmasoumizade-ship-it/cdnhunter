@@ -198,28 +198,45 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
         Tab.RESULTS to Icons.Rounded.FormatListBulleted,
         Tab.TOOLS   to Icons.Rounded.Tune
     )
-    val bgColor = if (isDarkMode()) CardBg.copy(0.85f) else LightCardBg.copy(0.9f)
-    val selectedColor = if (isDarkMode()) Color(0xFF60A5FA) else Color(0xFF2563EB)
-    val unselectedColor = if (isDarkMode()) Color(0xFF4B5563) else Color(0xFFBBBBBB)
-    
-    Box(Modifier.fillMaxWidth().background(bgColor)) {
-        Row(Modifier.fillMaxWidth().padding(8.dp, 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+    val dark = isDarkMode()
+    val selectedColor = AccentBlue
+    val unselectedColor = if (dark) Color(0xFF4B5563) else Color(0xFFBBBBBB)
+    val bgColor = if (dark) Color(0xFF1A1D24).copy(alpha = 0.95f) else Color(0xFFFFFDF7).copy(alpha = 0.95f)
+    val borderColor = if (dark) Color(0xFF2C2F38) else Color(0xFFE0DDD5)
+
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(bgColor)
+                .border(1.dp, borderColor, RoundedCornerShape(28.dp))
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
             Tab.entries.forEach { tab ->
                 val selected = tab == current
                 val color = if (selected) selectedColor else unselectedColor
-                Column(
-                    Modifier.clickable { onSelect(tab) }.padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (selected) AccentBlue.copy(0.12f) else Color.Transparent)
+                        .clickable { onSelect(tab) }
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.height(2.dp))
-                    Text(tab.label, fontSize = 10.sp, color = color,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.height(2.dp))
+                        Text(tab.label, fontSize = 10.sp, color = color,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    }
                 }
             }
         }
     }
 }
+
 
 // ── VPN TAB ───────────────────────────────────────────────────────────────────
 @Composable
