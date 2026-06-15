@@ -76,7 +76,7 @@ fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
 }
 
 private enum class Tab(val label: String) {
-    VPN("VPN"), SCANNER("Scanner"), RESULTS("Results"), TOOLS("Tools")
+    VPN("VPN"), SETTINGS("Settings")
 }
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
@@ -156,12 +156,6 @@ fun AppScreen(
     val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(state.phase, state.results.size) {
-        if (state.phase == ScanPhase.DONE && state.results.isNotEmpty()) {
-            pagerState.animateScrollToPage(Tab.RESULTS.ordinal)
-        }
-    }
-
     androidx.compose.runtime.CompositionLocalProvider(LocalThemeMode provides themeMode) {
     Box(
         Modifier.fillMaxSize()
@@ -174,9 +168,7 @@ fun AppScreen(
                     Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                         when (Tab.entries[page]) {
                             Tab.VPN      -> VpnTab(autoIpEnabled)
-                            Tab.SCANNER  -> ScannerTab(state, config, onConfigChange, onStart, onStop)
-                            Tab.RESULTS  -> ResultsTab(state.results)
-                            Tab.TOOLS    -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
+                            Tab.SETTINGS -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
                         }
                     }
                 }
@@ -193,10 +185,8 @@ fun AppScreen(
 @Composable
 private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
-        Tab.VPN     to Icons.Rounded.Bolt,
-        Tab.SCANNER to Icons.Rounded.MyLocation,
-        Tab.RESULTS to Icons.Rounded.FormatListBulleted,
-        Tab.TOOLS   to Icons.Rounded.Tune
+        Tab.VPN      to Icons.Rounded.Bolt,
+        Tab.SETTINGS to Icons.Rounded.Tune
     )
     val dark = isDarkMode()
     val selectedColor = AccentBlue
@@ -204,14 +194,26 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val bgColor = if (dark) Color(0xFF1A1D24).copy(alpha = 0.95f) else Color(0xFFFFFDF7).copy(alpha = 0.95f)
     val borderColor = if (dark) Color(0xFF2C2F38) else Color(0xFFE0DDD5)
 
-    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        // Shadow layer
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(30.dp))
+                .background(if (dark) Color(0xFF000000).copy(0.3f) else Color(0xFF000000).copy(0.08f))
+                .padding(bottom = 2.dp)
+        )
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
+                .clip(RoundedCornerShape(30.dp))
                 .background(bgColor)
-                .border(1.dp, borderColor, RoundedCornerShape(28.dp))
-                .padding(horizontal = 8.dp, vertical = 10.dp),
+                .border(1.dp, borderColor, RoundedCornerShape(30.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             Tab.entries.forEach { tab ->
