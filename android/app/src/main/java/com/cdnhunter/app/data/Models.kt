@@ -27,6 +27,7 @@ enum class ProxyType(val label: String) {
     VLESS("VLESS (v2ray)"),
     VMESS("VMess (v2ray)"),
     TROJAN("Trojan"),
+    SHADOWSOCKS("Shadowsocks"),
     SINGBOX("Sing-Box"),
     CLASH("Clash Meta"),
 }

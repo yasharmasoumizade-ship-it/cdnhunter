@@ -16,6 +16,7 @@ object ConfigUriParser {
             trimmed.startsWith("trojan://") -> parseTrojan(trimmed)
             trimmed.startsWith("vless://") -> parseVless(trimmed)
             trimmed.startsWith("vmess://") -> parseVmess(trimmed)
+            trimmed.startsWith("ss://") -> parseShadowsocks(trimmed)
             else -> null
         }
     }
@@ -68,6 +69,64 @@ object ConfigUriParser {
         ob.put("settings", settings)
         ob.put("streamSettings", buildStreamSettings(params))
         return ob
+    }
+
+    private fun parseShadowsocks(uri: String): JSONObject? {
+        val body = uri.removePrefix("ss://")
+        val withoutTag = body.substringBefore("#")
+        val hasAt = withoutTag.contains("@")
+
+        val method: String
+        val password: String
+        val hostPortRaw: String
+
+        if (hasAt) {
+            val userInfo = withoutTag.substringBefore("@")
+            hostPortRaw = withoutTag.substringAfter("@")
+            val decodedUserInfo = try {
+                String(Base64.decode(padBase64(userInfo), Base64.URL_SAFE or Base64.NO_WRAP))
+            } catch (e: Exception) {
+                try { String(Base64.decode(padBase64(userInfo), Base64.DEFAULT)) }
+                catch (e2: Exception) { userInfo }
+            }
+            val credSource = if (decodedUserInfo.contains(":")) decodedUserInfo else userInfo
+            method = credSource.substringBefore(":")
+            password = credSource.substringAfter(":")
+        } else {
+            val decoded = try {
+                String(Base64.decode(padBase64(withoutTag), Base64.DEFAULT))
+            } catch (e: Exception) { return null }
+            if (!decoded.contains("@")) return null
+            val credPart = decoded.substringBefore("@")
+            hostPortRaw = decoded.substringAfter("@")
+            method = credPart.substringBefore(":")
+            password = credPart.substringAfter(":")
+        }
+
+        val hostPortClean = hostPortRaw.substringBefore("?")
+        val address = hostPortClean.substringBeforeLast(":")
+        val port = hostPortClean.substringAfterLast(":").toIntOrNull() ?: 8388
+
+        if (address.isBlank() || method.isBlank() || password.isBlank()) return null
+
+        val ob = JSONObject()
+        ob.put("protocol", "shadowsocks")
+        val settings = JSONObject()
+        val server = JSONObject()
+        server.put("address", address)
+        server.put("port", port)
+        server.put("method", method)
+        server.put("password", password)
+        settings.put("servers", JSONArray().put(server))
+        ob.put("settings", settings)
+        return ob
+    }
+
+    private fun padBase64(s: String): String {
+        var str = s.replace('-', '+').replace('_', '/')
+        val mod = str.length % 4
+        if (mod > 0) str += "=".repeat(4 - mod)
+        return str
     }
 
     private fun parseVmess(uri: String): JSONObject {

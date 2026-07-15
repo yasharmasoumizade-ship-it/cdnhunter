@@ -12,6 +12,7 @@ object ConfigGenerator {
             ProxyType.VLESS -> generateVless(config, uuid)
             ProxyType.VMESS -> generateVmess(config, uuid)
             ProxyType.TROJAN -> generateTrojan(config, uuid)
+            ProxyType.SHADOWSOCKS -> generateShadowsocks(config, uuid)
             ProxyType.SINGBOX -> generateSingBox(config, uuid)
             ProxyType.CLASH -> generateClash(config, uuid)
         }
@@ -34,6 +35,15 @@ object ConfigGenerator {
 
     private fun generateTrojan(c: ProxyConfig, uuid: String) = buildString {
         appendLine("trojan://$uuid@${c.ip}:${c.port}?security=${c.security}&sni=${c.sni.ifBlank { c.ip }}&type=ws&host=${c.host.ifBlank { c.sni }}&path=${c.path}#CDNHunter-${c.ip}")
+    }
+
+    private fun generateShadowsocks(c: ProxyConfig, uuid: String): String {
+        val method = "chacha20-ietf-poly1305"
+        val userInfo = "$method:$uuid"
+        val encoded = android.util.Base64.encodeToString(
+            userInfo.toByteArray(), android.util.Base64.NO_WRAP or android.util.Base64.URL_SAFE
+        ).trimEnd('=')
+        return "ss://$encoded@${c.ip}:${c.port}#CDNHunter-${c.ip}"
     }
 
     private fun generateSingBox(c: ProxyConfig, uuid: String) = buildString {
