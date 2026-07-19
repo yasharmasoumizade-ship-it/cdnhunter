@@ -179,6 +179,9 @@ object ConfigUriParser {
                 if (alpn.isNotBlank()) tls.put("alpn", JSONArray().apply { alpn.split(",").forEach { put(it) } })
                 val fp = params["fp"] ?: ""
                 if (fp.isNotBlank()) tls.put("fingerprint", fp)
+                // allowInsecure
+                val insecure = params["allowInsecure"] ?: params["insecure"] ?: "0"
+                if (insecure == "1") tls.put("allowInsecure", true)
                 ss.put("tlsSettings", tls)
             }
             "reality" -> {
@@ -200,6 +203,20 @@ object ConfigUriParser {
 
         // Transport
         when (network) {
+            "tcp" -> {
+                val headerType = params["headerType"] ?: ""
+                if (headerType == "http") {
+                    val tcp = JSONObject()
+                    val header = JSONObject()
+                    header.put("type", "http")
+                    val req = JSONObject()
+                    val host = params["host"] ?: ""
+                    if (host.isNotBlank()) req.put("headers", JSONObject().put("Host", JSONArray().put(host)))
+                    header.put("request", req)
+                    tcp.put("header", header)
+                    ss.put("tcpSettings", tcp)
+                }
+            }
             "ws" -> {
                 val ws = JSONObject()
                 ws.put("path", params["path"] ?: "/")
