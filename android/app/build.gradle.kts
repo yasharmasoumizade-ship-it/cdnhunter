@@ -73,5 +73,15 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+    
+    // Lottie animations
+    implementation("com.airbnb.android:lottie-compose:6.3.0")
+    
+    // Accompanist (blur, permissions, system UI)
+    implementation("com.google.accompanist:accompanist-systemuicontroller:0.32.0")
+    implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+    
+    // Coil image loading
+    implementation("io.coil-kt:coil-compose:2.5.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
