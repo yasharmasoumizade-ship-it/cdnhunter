@@ -26,6 +26,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.window.Dialog
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -47,17 +51,17 @@ import kotlinx.coroutines.launch
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 // Dark theme
-val DarkBg        = Color(0xFF111318)
-val CardBg        = Color(0xFF1A1D24)
-val CardBg2       = Color(0xFF23272F)
-val AccentBlue    = Color(0xFF4B7BEC)
+val DarkBg        = Color(0xFF0B0B0D)
+val CardBg        = Color(0xFF131316)
+val CardBg2       = Color(0xFF1E1F24)
+val AccentBlue    = Color(0xFF4ADE9C)
 val AccentTeal    = Color(0xFF64D2FF)
 val GreenOk       = Color(0xFF30D158)
 val RedFail       = Color(0xFFFF453A)
 val YellowWarn    = Color(0xFFFFD60A)
-val TextPrimary   = Color(0xFFFFFFFF)
-val TextSecondary = Color(0xFF8E8E93)
-val TextMuted     = Color(0xFF48484A)
+val TextPrimary   = Color(0xFFFAFAFA)
+val TextSecondary = Color(0xFF6E7078)
+val TextMuted     = Color(0xFF3A3C44)
 
 // Light theme
 val LightBg       = Color(0xFFF5F0E8)
@@ -192,7 +196,7 @@ fun AppScreen(
             .background(
                 when {
                     onVpnTab      -> Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg))
-                    isDarkMode()  -> Brush.verticalGradient(listOf(Color(0xFF0D1018), Color(0xFF111318), DarkBg))
+                    isDarkMode()  -> Brush.verticalGradient(listOf(Color(0xFF0D0D10), DarkBg, DarkBg))
                     else          -> Brush.verticalGradient(listOf(Color(0xFFF5F0E8), Color(0xFFFAF6EE), LightBg))
                 }
             )
@@ -474,7 +478,10 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         configs = configs, activeId = activeId, connected = connected,
         onBack = { screen = AnanasScreen.HOME },
         onConnect = { connectConfig(it) },
-        onCopy = { clip.setText(AnnotatedString(it.uri)) },
+        onCopy = { cfg ->
+            clip.setText(AnnotatedString(cfg.uri))
+            android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+        },
         onAdd = { showAddDialog = true },
         onDelete = { deleteConfig(it) }
     )
@@ -578,7 +585,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
 @Composable
 private fun ServerRow(
     cfg: SavedConfig, isActive: Boolean, connected: Boolean,
-    onClick: () -> Unit, onCopy: () -> Unit,
+    onClick: () -> Unit, onCopy: () -> Unit, onShowQr: () -> Unit = {},
 ) {
     val badgeColor = when (cfg.proto.lowercase()) {
         "trojan" -> AnanasAccent
@@ -622,12 +629,20 @@ private fun ServerRow(
                         }
                     }
                 }
-                Box(
-                    Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
-                        .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
-                        .clickable { onCopy() },
-                    contentAlignment = Alignment.Center
-                ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(
+                        Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
+                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                            .clickable { onShowQr() },
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Rounded.QrCode2, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(16.dp)) }
+                    Box(
+                        Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
+                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                            .clickable { onCopy() },
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp)) }
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -697,6 +712,76 @@ private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit) {
     Divider(color = AnanasDivider, thickness = 1.dp)
 }
 
+// ── QR code: generate + dialog (v2rayNG-style config sharing) ──────────────────
+private fun generateQrBitmap(text: String, sizePx: Int = 560): android.graphics.Bitmap? {
+    return try {
+        val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.RGB_565)
+        for (x in 0 until sizePx) {
+            for (y in 0 until sizePx) {
+                bmp.setPixel(x, y, if (matrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+        }
+        bmp
+    } catch (e: Exception) {
+        null
+    }
+}
+
+@Composable
+private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clip = LocalClipboardManager.current
+    val qrBitmap = remember(cfg.uri) { generateQrBitmap(cfg.uri) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(22.dp))
+                .background(AnanasCard)
+                .border(1.dp, AnanasBorder2, RoundedCornerShape(22.dp))
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(cfg.displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+            Text("Scan with another device", fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+
+            Box(
+                Modifier.size(220.dp).clip(RoundedCornerShape(14.dp)).background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                if (qrBitmap != null) {
+                    Image(qrBitmap.asImageBitmap(), contentDescription = "QR code", modifier = Modifier.size(196.dp))
+                } else {
+                    CircularProgressIndicator(color = AnanasAccent)
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AnanasCard2)
+                    .border(1.dp, AnanasBorder2, RoundedCornerShape(14.dp))
+                    .clickable {
+                        clip.setText(AnnotatedString(cfg.uri))
+                        android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(vertical = 13.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Copy link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasText)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Close", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted,
+                modifier = Modifier.padding(top = 6.dp).clickable { onDismiss() }
+            )
+        }
+    }
+}
+
 // ── My Configs — full functional list screen ────────────────────────────────────
 @Composable
 private fun MyConfigsScreen(
@@ -704,6 +789,8 @@ private fun MyConfigsScreen(
     onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onCopy: (SavedConfig) -> Unit,
     onAdd: () -> Unit, onDelete: (SavedConfig) -> Unit,
 ) {
+    var qrConfig by remember { mutableStateOf<SavedConfig?>(null) }
+
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
@@ -730,12 +817,17 @@ private fun MyConfigsScreen(
                         val isActive = cfg.id == activeId
                         ServerRow(
                             cfg = cfg, isActive = isActive, connected = connected && isActive,
-                            onClick = { onConnect(cfg) }, onCopy = { onCopy(cfg) }
+                            onClick = { onConnect(cfg) }, onCopy = { onCopy(cfg) },
+                            onShowQr = { qrConfig = cfg }
                         )
                     }
                 }
             }
         }
+    }
+
+    qrConfig?.let { cfg ->
+        QrCodeDialog(cfg = cfg, onDismiss = { qrConfig = null })
     }
 }
 
