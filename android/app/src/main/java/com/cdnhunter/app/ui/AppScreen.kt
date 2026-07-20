@@ -186,23 +186,29 @@ fun AppScreen(
     val coroutineScope = rememberCoroutineScope()
 
     androidx.compose.runtime.CompositionLocalProvider(LocalThemeMode provides themeMode) {
+    val onVpnTab = Tab.entries[pagerState.currentPage] == Tab.VPN
     Box(
         Modifier.fillMaxSize()
-            .background(if (isDarkMode()) Brush.verticalGradient(listOf(Color(0xFF0D1018), Color(0xFF111318), DarkBg))
-                        else Brush.verticalGradient(listOf(Color(0xFFF5F0E8), Color(0xFFFAF6EE), LightBg)))
+            .background(
+                when {
+                    onVpnTab      -> Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg))
+                    isDarkMode()  -> Brush.verticalGradient(listOf(Color(0xFF0D1018), Color(0xFF111318), DarkBg))
+                    else          -> Brush.verticalGradient(listOf(Color(0xFFF5F0E8), Color(0xFFFAF6EE), LightBg))
+                }
+            )
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-                        when (Tab.entries[page]) {
-                            Tab.VPN      -> VpnTab(autoIpEnabled)
-                            Tab.SETTINGS -> ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
+                    when (Tab.entries[page]) {
+                        Tab.VPN      -> VpnTab(autoIpEnabled) // full-bleed, owns its own edge padding
+                        Tab.SETTINGS -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                            ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
                         }
                     }
                 }
             }
-            BottomNavBar(Tab.entries[pagerState.currentPage]) { tab ->
+            BottomNavBar(Tab.entries[pagerState.currentPage], forceDark = onVpnTab) { tab ->
                 coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) }
             }
         }
@@ -212,16 +218,17 @@ fun AppScreen(
 
 // ── Bottom Nav ────────────────────────────────────────────────────────────────
 @Composable
-private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
+private fun BottomNavBar(current: Tab, forceDark: Boolean = false, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
         Tab.VPN      to Icons.Rounded.Bolt,
         Tab.SETTINGS to Icons.Rounded.Tune
     )
-    val dark = isDarkMode()
-    val selectedColor = AccentBlue
-    val unselectedColor = if (dark) Color(0xFF4B5563) else Color(0xFFBBBBBB)
-    val bgColor = if (dark) Color(0xFF1A1D24).copy(alpha = 0.95f) else Color(0xFFFFFDF7).copy(alpha = 0.95f)
-    val borderColor = if (dark) Color(0xFF2C2F38) else Color(0xFFE0DDD5)
+    val dark = forceDark || isDarkMode()
+    val selectedColor = if (forceDark) AnanasAccent else AccentBlue
+    val unselectedColor = if (forceDark) AnanasMuted else if (dark) Color(0xFF4B5563) else Color(0xFFBBBBBB)
+    val bgColor = if (forceDark) AnanasCard2.copy(alpha = 0.97f) else if (dark) Color(0xFF1A1D24).copy(alpha = 0.95f) else Color(0xFFFFFDF7).copy(alpha = 0.95f)
+    val borderColor = if (forceDark) AnanasBorder2 else if (dark) Color(0xFF2C2F38) else Color(0xFFE0DDD5)
+    val selectedBg = if (forceDark) AnanasAccent.copy(0.14f) else AccentBlue.copy(0.12f)
 
     Box(
         Modifier
@@ -251,7 +258,7 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(if (selected) AccentBlue.copy(0.12f) else Color.Transparent)
+                        .background(if (selected) selectedBg else Color.Transparent)
                         .clickable { onSelect(tab) }
                         .padding(horizontal = 16.dp, vertical = 7.dp),
                     contentAlignment = Alignment.Center
@@ -371,7 +378,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             Column(Modifier.fillMaxSize()) {
                 // ── Top bar ──────────────────────────────────────────────
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp).padding(top = 22.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -406,7 +413,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                 }
 
                 LazyColumn(
-                    Modifier.weight(1f).padding(horizontal = 4.dp),
+                    Modifier.weight(1f).padding(horizontal = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 100.dp)
                 ) {
