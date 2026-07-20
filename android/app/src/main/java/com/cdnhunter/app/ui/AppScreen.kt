@@ -694,7 +694,7 @@ private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit) {
         }
         Text(cfg.network.uppercase(), fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
     }
-    HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+    Divider(color = AnanasDivider, thickness = 1.dp)
 }
 
 // ── My Configs — full functional list screen ────────────────────────────────────
@@ -780,7 +780,7 @@ private fun LocationsScreen(onBack: () -> Unit) {
                 Text("Fastest", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
                 Text("Saved", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
             }
-            HorizontalDivider(color = Color(0xFF1C1C20), thickness = 1.dp)
+            Divider(color = Color(0xFF1C1C20), thickness = 1.dp)
             Spacer(Modifier.height(6.dp))
 
             LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
@@ -801,7 +801,7 @@ private fun LocationsScreen(onBack: () -> Unit) {
                             Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
                         }
                     }
-                    HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+                    Divider(color = AnanasDivider, thickness = 1.dp)
                 }
             }
         }
@@ -878,9 +878,9 @@ private fun ProfileScreen(onBack: () -> Unit) {
                 }
             }
             MenuRow(Icons.Rounded.Diamond, "Upgrade plan", AnanasAmber, AnanasText, AnanasCard2)
-            HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+            Divider(color = AnanasDivider, thickness = 1.dp)
             MenuRow(Icons.Rounded.History, "Payment history", AnanasMuted, AnanasText, AnanasCard2)
-            HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+            Divider(color = AnanasDivider, thickness = 1.dp)
             MenuRow(Icons.Rounded.Logout, "Sign out", AnanasRed, AnanasRed, Color(0xFF1C1416), showChevron = false)
         }
     }
