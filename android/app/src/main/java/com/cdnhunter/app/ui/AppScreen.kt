@@ -276,6 +276,9 @@ private fun BottomNavBar(current: Tab, forceDark: Boolean = false, onSelect: (Ta
 }
 
 
+// ── ANANAS in-tab navigation (Home ⇄ Locations / My Configs / Profile) ─────────
+private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, PROFILE }
+
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @Composable
 private fun VpnTab(autoIpEnabled: Boolean = false) {
@@ -292,6 +295,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         )
     }
     var showAddDialog by remember { mutableStateOf(false) }
+    var screen by remember { mutableStateOf(AnanasScreen.HOME) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
     var elapsedSec        by remember { mutableStateOf(0L) }
@@ -371,7 +375,8 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
     val otherConfigs  = configs.filter { it.id != activeConfig?.id }
 
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    when (screen) {
+    AnanasScreen.HOME -> Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         if (configs.isEmpty()) {
             EmptyHomeState { showAddDialog = true }
         } else {
@@ -382,12 +387,12 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AnanasIconButton(Icons.Rounded.Menu) { /* TODO: side drawer */ }
+                    AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.MY_CONFIGS }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
                         Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
                     }
-                    AnanasIconButton(Icons.Rounded.Person) { /* TODO: profile */ }
+                    AnanasIconButton(Icons.Rounded.Person) { screen = AnanasScreen.PROFILE }
                 }
 
                 // ── Power button + status ────────────────────────────────
@@ -419,10 +424,9 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                 ) {
                     activeConfig?.let { cfg ->
                         item(key = "active-${cfg.id}") {
-                            ServerRow(
-                                cfg = cfg, isActive = true, connected = connected,
-                                onClick = { connectConfig(cfg) },
-                                onCopy  = { clip.setText(AnnotatedString(cfg.uri)) }
+                            SelectedServerSummaryCard(
+                                cfg = cfg, connected = connected,
+                                onClick = { screen = AnanasScreen.LOCATIONS }
                             )
                         }
                     }
@@ -439,17 +443,18 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                         item(key = "quick-switch-hdr") {
                             Row(
                                 Modifier.fillMaxWidth().padding(bottom = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                Text(
+                                    "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
+                                    modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
+                                )
                             }
                         }
                         items(otherConfigs, key = { "row-${it.id}" }) { cfg ->
-                            ServerRow(
-                                cfg = cfg, isActive = false, connected = false,
-                                onClick = { connectConfig(cfg) },
-                                onCopy  = { clip.setText(AnnotatedString(cfg.uri)) }
-                            )
+                            QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) })
                         }
                     }
                 }
@@ -463,6 +468,20 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             contentColor   = AnanasTextHi,
             shape          = RoundedCornerShape(16.dp)
         ) { Icon(Icons.Rounded.Add, contentDescription = "Add config") }
+    }
+
+    AnanasScreen.MY_CONFIGS -> MyConfigsScreen(
+        configs = configs, activeId = activeId, connected = connected,
+        onBack = { screen = AnanasScreen.HOME },
+        onConnect = { connectConfig(it) },
+        onCopy = { clip.setText(AnnotatedString(it.uri)) },
+        onAdd = { showAddDialog = true },
+        onDelete = { deleteConfig(it) }
+    )
+
+    AnanasScreen.LOCATIONS -> LocationsScreen(onBack = { screen = AnanasScreen.HOME })
+
+    AnanasScreen.PROFILE -> ProfileScreen(onBack = { screen = AnanasScreen.HOME })
     }
 
     if (showAddDialog) {
@@ -623,7 +642,249 @@ private fun ServerRow(
     }
 }
 
-// ── Download / Upload stat box ──────────────────────────────────────────────────
+// ── Selected-server summary card (Home, top) — simple row + chevron to Locations ─
+@Composable
+private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onClick: () -> Unit) {
+    val badgeColor = when (cfg.proto.lowercase()) {
+        "trojan" -> AnanasAccent; "vless" -> AnanasVless; "vmess" -> AnanasAmber; else -> AnanasMuted
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 15.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(Modifier.size(26.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
+            Column {
+                Text(cfg.displayName, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                Text(
+                    if (connected) "${cfg.network.uppercase()} · Active" else "Tap to browse locations",
+                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
+                )
+            }
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
+    }
+}
+
+// ── Quick-switch row (Home, bottom) — minimal, no card/border, matches reference ─
+@Composable
+private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit) {
+    val badgeColor = when (cfg.proto.lowercase()) {
+        "trojan" -> AnanasAccent; "vless" -> AnanasVless; "vmess" -> AnanasAmber; else -> AnanasMuted
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(Modifier.size(22.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 9.5.sp)
+            }
+            Text(cfg.displayName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE4E5E9))
+        }
+        Text(cfg.network.uppercase(), fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
+    }
+    HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+}
+
+// ── My Configs — full functional list screen ────────────────────────────────────
+@Composable
+private fun MyConfigsScreen(
+    configs: List<SavedConfig>, activeId: String, connected: Boolean,
+    onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onCopy: (SavedConfig) -> Unit,
+    onAdd: () -> Unit, onDelete: (SavedConfig) -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                    Column {
+                        Text("My configs", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+                        val activeCount = if (configs.any { it.id == activeId } && connected) 1 else 0
+                        Text("${configs.size} configs · $activeCount active", fontSize = 11.5.sp, color = AnanasMuted)
+                    }
+                }
+                AnanasIconButton(Icons.Rounded.Add, onAdd)
+            }
+
+            if (configs.isEmpty()) {
+                EmptyHomeState(onAdd)
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                    items(configs, key = { it.id }) { cfg ->
+                        val isActive = cfg.id == activeId
+                        ServerRow(
+                            cfg = cfg, isActive = isActive, connected = connected && isActive,
+                            onClick = { onConnect(cfg) }, onCopy = { onCopy(cfg) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Locations — visual reference screen (static demo data, wired later) ────────
+private data class DemoCountry(val name: String, val servers: Int, val ms: Int, val color: Color)
+@Composable
+private fun LocationsScreen(onBack: () -> Unit) {
+    val demo = remember {
+        listOf(
+            DemoCountry("Germany", 14, 17, AnanasAccent),
+            DemoCountry("France", 9, 29, AnanasMuted),
+            DemoCountry("Netherlands", 11, 34, AnanasMuted),
+            DemoCountry("Turkey", 18, 61, AnanasMuted),
+        )
+    }
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 26.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                Column {
+                    Text("Locations", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+                    Text("128 servers across 32 countries", fontSize = 11.5.sp, color = AnanasMuted)
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AnanasCard2)
+                    .border(1.dp, AnanasBorder2, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(Icons.Rounded.Search, null, tint = AnanasMuted, modifier = Modifier.size(16.dp))
+                Text("Search", fontSize = 13.sp, color = Color(0xFF54565E))
+            }
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Text("All", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi,
+                    modifier = Modifier.padding(bottom = 10.dp).border(0.dp, Color.Transparent))
+                Text("Fastest", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
+                Text("Saved", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
+            }
+            HorizontalDivider(color = Color(0xFF1C1C20), thickness = 1.dp)
+            Spacer(Modifier.height(6.dp))
+
+            LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
+                items(demo) { c ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                            Box(Modifier.size(26.dp).clip(CircleShape).background(Color(0xFF1A1A1E)))
+                            Column {
+                                Text(c.name, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
+                                Text("${c.servers} servers", fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("${c.ms}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.color)
+                            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                    HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+                }
+            }
+        }
+    }
+}
+
+// ── Profile — visual reference screen (static placeholder, wired later) ────────
+@Composable
+private fun ProfileScreen(onBack: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                Text("Profile", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+            }
+
+            Column(Modifier.fillMaxWidth().padding(bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(76.dp).clip(CircleShape).background(AnanasCard2).border(2.dp, Color(0xFF2A2C31), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Text("YM", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent) }
+                Spacer(Modifier.height(12.dp))
+                Text("Yashar M.", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Text("yashar@ananasvpn.com", fontSize = 12.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+            }
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF161310))
+                    .border(1.dp, Color(0xFF3A2F1E), RoundedCornerShape(16.dp)).padding(16.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Rounded.WorkspacePremium, null, tint = AnanasAmber, modifier = Modifier.size(14.dp))
+                        Text("Pro plan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasAmber)
+                    }
+                    Text("Renews Aug 10", fontSize = 11.sp, color = AnanasMuted)
+                }
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(0.7f).clip(RoundedCornerShape(8.dp)).background(AnanasAmber))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("21 of 30 days remaining", fontSize = 11.sp, color = AnanasMuted)
+            }
+            Spacer(Modifier.height(20.dp))
+
+            Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("6" to "Configs", "142 GB" to "Used total", "98" to "Sessions").forEach { (v, l) ->
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(AnanasCard)
+                            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)).padding(13.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(v, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                        Text(l, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+            }
+
+            @Composable fun MenuRow(icon: ImageVector, label: String, tint: Color, labelColor: Color, iconBg: Color, showChevron: Boolean = true) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 13.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(iconBg), contentAlignment = Alignment.Center) {
+                            Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
+                        }
+                        Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = labelColor)
+                    }
+                    if (showChevron) Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+                }
+            }
+            MenuRow(Icons.Rounded.Diamond, "Upgrade plan", AnanasAmber, AnanasText, AnanasCard2)
+            HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+            MenuRow(Icons.Rounded.History, "Payment history", AnanasMuted, AnanasText, AnanasCard2)
+            HorizontalDivider(color = AnanasDivider, thickness = 1.dp)
+            MenuRow(Icons.Rounded.Logout, "Sign out", AnanasRed, AnanasRed, Color(0xFF1C1416), showChevron = false)
+        }
+    }
+}
 @Composable
 private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, modifier: Modifier) {
     val (value, unit) = formatSpeed(kbps)
