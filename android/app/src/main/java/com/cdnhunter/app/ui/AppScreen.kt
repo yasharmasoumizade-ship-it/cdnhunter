@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -67,6 +68,23 @@ val LightTextSecondary = Color(0xFF6E6E73)
 val LightTextMuted = Color(0xFFAEAEB2)
 val LightBorder   = Color(0xFFE5E5EA)
 val GreenBorder   = Color(0xFF34C759)
+
+// ── ANANAS Home/Connected reference palette ──────────────────────────────────
+val AnanasBg       = Color(0xFF050505)
+val AnanasScreenBg = Color(0xFF0B0B0D)
+val AnanasCard     = Color(0xFF131316)
+val AnanasCard2    = Color(0xFF151519)
+val AnanasBorder   = Color(0xFF1E1F24)
+val AnanasBorder2  = Color(0xFF232328)
+val AnanasDivider  = Color(0xFF17171B)
+val AnanasAccent   = Color(0xFF4ADE9C)
+val AnanasAmber    = Color(0xFFE6A23C)
+val AnanasRed      = Color(0xFFE0605C)
+val AnanasTextHi   = Color(0xFFFAFAFA)
+val AnanasText     = Color(0xFFF0F0F2)
+val AnanasMuted    = Color(0xFF6E7078)
+val AnanasFaint    = Color(0xFF3A3C44)
+val AnanasVless    = Color(0xFF64D2FF)
 
 @Composable
 fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
@@ -140,6 +158,17 @@ private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
     context.getSharedPreferences("cdnhunter_vpn", 0)
         .edit().putString("saved_configs", limited.joinToString("\n") { it.uri }).apply()
 }
+
+private fun formatElapsed(totalSec: Long): String {
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return "%02d:%02d:%02d".format(h, m, s)
+}
+
+private fun formatSpeed(kbps: Double): Pair<String, String> =
+    if (kbps >= 1024.0) "%.1f".format(kbps / 1024.0) to "MB/s"
+    else "%.0f".format(kbps) to "KB/s"
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -240,35 +269,53 @@ private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
 }
 
 
-// ── VPN TAB ───────────────────────────────────────────────────────────────────
+// ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @Composable
 private fun VpnTab(autoIpEnabled: Boolean = false) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
+    val clip    = LocalClipboardManager.current
 
-    var configs   by remember { mutableStateOf(loadConfigs(context)) }
-    var connected by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
+    var configs    by remember { mutableStateOf(loadConfigs(context)) }
+    var connected  by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
     var connecting by remember { mutableStateOf(false) }
-    var activeId  by remember {
+    var activeId   by remember {
         mutableStateOf(
             context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
         )
     }
-    var expandedId by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    // Poll VPN status
+    var connectedSinceMs by remember { mutableStateOf(0L) }
+    var elapsedSec        by remember { mutableStateOf(0L) }
+    var downloadKBps      by remember { mutableStateOf(0.0) }
+    var uploadKBps        by remember { mutableStateOf(0.0) }
+
+    // Poll VPN status + derive live throughput from CdnVpnService's cumulative byte counters
     LaunchedEffect(Unit) {
+        var lastDown = CdnVpnService.downloadBytes
+        var lastUp   = CdnVpnService.uploadBytes
         while (true) {
             val vpnRunning = CdnVpnService.isRunning.get()
-            // If autoIp enabled, only show connected after IP is applied
             connected = if (autoIpEnabled) {
                 vpnRunning && AutoIpManager.currentIp.isNotBlank()
+            } else vpnRunning
+
+            if (connected) {
+                connecting = false
+                if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
+                elapsedSec = (System.currentTimeMillis() - connectedSinceMs) / 1000
+
+                val curDown = CdnVpnService.downloadBytes
+                val curUp   = CdnVpnService.uploadBytes
+                downloadKBps = (curDown - lastDown).coerceAtLeast(0L) / 1024.0
+                uploadKBps   = (curUp - lastUp).coerceAtLeast(0L) / 1024.0
+                lastDown = curDown; lastUp = curUp
             } else {
-                vpnRunning
+                connectedSinceMs = 0L; elapsedSec = 0L; downloadKBps = 0.0; uploadKBps = 0.0
+                lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
             }
-            if (connected) connecting = false
-            // Auto-start AutoIP when VPN connects
+
             if (vpnRunning && autoIpEnabled && !AutoIpManager.enabled.get()) {
                 delay(3000)
                 if (CdnVpnService.isRunning.get() && !AutoIpManager.enabled.get()) {
@@ -282,98 +329,135 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(20.dp))
-
-            Spacer(Modifier.height(8.dp))
-
-                        // ── Config list ────────────────────────────────────────────────
-            if (configs.isEmpty()) {
-                Box(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.AddCircleOutline, null, tint = TextMuted, modifier = Modifier.size(52.dp))
-                        Spacer(Modifier.height(14.dp))
-                        Text("No configs yet", fontSize = 16.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Tap + to add a trojan/vless/vmess config", fontSize = 13.sp, color = TextMuted)
-                    }
-                }
-            } else {
-                LazyColumn(
-                    Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
-                    userScrollEnabled = true
-                ) {
-                    items(configs, key = { it.id }) { cfg ->
-                        val isActive   = cfg.id == activeId
-                        val isExpanded = cfg.id == expandedId
-
-                        ConfigCard(
-                            cfg         = cfg,
-                            isActive    = isActive,
-                            isExpanded  = isExpanded,
-                            connected   = connected && isActive,
-                            connecting  = connecting && isActive,
-                            onTap       = { expandedId = if (isExpanded) "" else cfg.id },
-                            onConnect   = {
-                                if (connected && isActive) {
-                                    CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
-                                } else {
-                                    if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
-                                    activeId = cfg.id
-                                    context.getSharedPreferences("cdnhunter_vpn", 0)
-                                        .edit()
-                                        .putString("user_config", cfg.uri)
-                                        .putString("active_config_id", cfg.id)
-                                        .apply()
-                                    connecting = true
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    try {
-                                        val act = context as? com.cdnhunter.app.MainActivity
-                                        if (act != null) act.requestVpnPermissionAndConnect()
-                                        else CdnVpnService.start(context)
-                                    } catch (e: Exception) {
-                                        connecting = false
-                                        android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            },
-                            onDelete    = {
-                                if (isActive && connected) { CdnVpnService.stop(context); connected = false }
-                                val updated = configs.filter { it.id != cfg.id }
-                                configs = updated
-                                saveConfigs(context, updated)
-                                if (isActive) activeId = ""
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── FAB ─────────────────────────────────────────────────────────────
-        Box(
-            Modifier.fillMaxSize(),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                modifier = Modifier.padding(16.dp),
-                containerColor = AccentBlue,
-                contentColor   = Color.White,
-                shape          = RoundedCornerShape(18.dp)
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Add config")
+    fun connectConfig(cfg: SavedConfig) {
+        if (connected && cfg.id == activeId) {
+            CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
+        } else {
+            if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+            activeId = cfg.id
+            context.getSharedPreferences("cdnhunter_vpn", 0)
+                .edit()
+                .putString("user_config", cfg.uri)
+                .putString("active_config_id", cfg.id)
+                .apply()
+            connecting = true
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            try {
+                val act = context as? com.cdnhunter.app.MainActivity
+                if (act != null) act.requestVpnPermissionAndConnect()
+                else CdnVpnService.start(context)
+            } catch (e: Exception) {
+                connecting = false
+                android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // ── Add config dialog ────────────────────────────────────────────────────
+    fun deleteConfig(cfg: SavedConfig) {
+        if (cfg.id == activeId && connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+        val updated = configs.filter { it.id != cfg.id }
+        configs = updated
+        saveConfigs(context, updated)
+        if (cfg.id == activeId) activeId = ""
+    }
+
+    val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
+    val otherConfigs  = configs.filter { it.id != activeConfig?.id }
+
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        if (configs.isEmpty()) {
+            EmptyHomeState { showAddDialog = true }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                // ── Top bar ──────────────────────────────────────────────
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp).padding(top = 22.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AnanasIconButton(Icons.Rounded.Menu) { /* TODO: side drawer */ }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
+                        Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
+                    }
+                    AnanasIconButton(Icons.Rounded.Person) { /* TODO: profile */ }
+                }
+
+                // ── Power button + status ────────────────────────────────
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 26.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    PowerButton(
+                        connected = connected,
+                        connecting = connecting,
+                        onClick = { activeConfig?.let { connectConfig(it) } }
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Not protected" },
+                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        if (connected) formatElapsed(elapsedSec) else "Tap to connect",
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, letterSpacing = 0.3.sp
+                    )
+                }
+
+                LazyColumn(
+                    Modifier.weight(1f).padding(horizontal = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 100.dp)
+                ) {
+                    activeConfig?.let { cfg ->
+                        item(key = "active-${cfg.id}") {
+                            ServerRow(
+                                cfg = cfg, isActive = true, connected = connected,
+                                onClick = { connectConfig(cfg) },
+                                onCopy  = { clip.setText(AnnotatedString(cfg.uri)) }
+                            )
+                        }
+                    }
+                    item(key = "stats") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            StatBox(Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent, Modifier.weight(1f))
+                            StatBox(Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText, Modifier.weight(1f))
+                        }
+                    }
+                    if (otherConfigs.isNotEmpty()) {
+                        item(key = "quick-switch-hdr") {
+                            Row(
+                                Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                            }
+                        }
+                        items(otherConfigs, key = { "row-${it.id}" }) { cfg ->
+                            ServerRow(
+                                cfg = cfg, isActive = false, connected = false,
+                                onClick = { connectConfig(cfg) },
+                                onCopy  = { clip.setText(AnnotatedString(cfg.uri)) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showAddDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            containerColor = AnanasCard2,
+            contentColor   = AnanasTextHi,
+            shape          = RoundedCornerShape(16.dp)
+        ) { Icon(Icons.Rounded.Add, contentDescription = "Add config") }
+    }
+
     if (showAddDialog) {
         AddConfigDialog(
             onDismiss = { showAddDialog = false },
@@ -391,6 +475,199 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         )
     }
 }
+
+// ── Power button: pulsing rings + rotating sweep arc (ANANAS reference) ────────
+@Composable
+private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
+    val infinite = rememberInfiniteTransition(label = "power")
+    val pulse1 by infinite.animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2500, easing = LinearEasing)), label = "pulse1"
+    )
+    val pulse2 by infinite.animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2500, delayMillis = 1250, easing = LinearEasing)), label = "pulse2"
+    )
+    val sweepRotation by infinite.animateFloat(
+        0f, 360f, infiniteRepeatable(tween(3500, easing = LinearEasing)), label = "sweep"
+    )
+
+    Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
+        // ambient glow
+        Box(
+            Modifier.size(160.dp).clip(CircleShape)
+                .background(Brush.radialGradient(listOf(AnanasAccent.copy(0.14f), Color.Transparent)))
+        )
+
+        // pulsing outward rings — only while connected
+        if (connected) {
+            listOf(pulse1, pulse2).forEach { p ->
+                Box(
+                    Modifier
+                        .size(160.dp)
+                        .scale(0.75f + p * 0.45f)
+                        .clip(CircleShape)
+                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.6f), CircleShape)
+                )
+            }
+        }
+
+        // static guide rings
+        Box(Modifier.size(140.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
+        Box(Modifier.size(106.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
+
+        // thin rotating sweep arc while connected
+        if (connected) {
+            Canvas(Modifier.size(140.dp).rotate(sweepRotation)) {
+                drawArc(
+                    color = AnanasAccent,
+                    startAngle = 0f, sweepAngle = 26f, useCenter = false,
+                    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+        }
+
+        // core power button
+        Box(
+            Modifier
+                .size(112.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF101210))
+                .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
+                .clickable(enabled = !connecting) { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            if (connecting) {
+                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+            } else {
+                Icon(
+                    Icons.Rounded.PowerSettingsNew, null,
+                    tint = if (connected) AnanasAccent else AnanasMuted,
+                    modifier = Modifier.size(38.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── Server row: active/selected card + quick-switch rows ───────────────────────
+@Composable
+private fun ServerRow(
+    cfg: SavedConfig, isActive: Boolean, connected: Boolean,
+    onClick: () -> Unit, onCopy: () -> Unit,
+) {
+    val badgeColor = when (cfg.proto.lowercase()) {
+        "trojan" -> AnanasAccent
+        "vless"  -> AnanasVless
+        "vmess"  -> AnanasAmber
+        else     -> AnanasMuted
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(AnanasCard)
+            .border(1.dp, if (isActive) AnanasBorder2 else AnanasBorder, RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+    ) {
+        if (isActive) {
+            Box(
+                Modifier.fillMaxHeight().width(3.dp).align(Alignment.CenterStart)
+                    .background(AnanasAccent, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
+            )
+        }
+        Column(Modifier.padding(start = if (isActive) 19.dp else 16.dp, top = 14.dp, end = 14.dp, bottom = 14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        Modifier.size(30.dp).clip(CircleShape).background(badgeColor.copy(0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Column {
+                        Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                        Spacer(Modifier.height(3.dp))
+                        if (isActive && connected) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(AnanasAccent))
+                                Text("CONNECTED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AnanasAccent, letterSpacing = 0.2.sp)
+                            }
+                        } else {
+                            Text("Tap to connect", fontSize = 11.5.sp, fontWeight = FontWeight.Normal, color = AnanasMuted)
+                        }
+                    }
+                }
+                Box(
+                    Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
+                        .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                        .clickable { onCopy() },
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp)) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(cfg.proto.uppercase(), cfg.network.uppercase()).forEach { tag ->
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp)).background(AnanasCard2)
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) { Text(tag, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.2.sp) }
+                }
+            }
+        }
+    }
+}
+
+// ── Download / Upload stat box ──────────────────────────────────────────────────
+@Composable
+private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, modifier: Modifier) {
+    val (value, unit) = formatSpeed(kbps)
+    Box(
+        modifier.clip(RoundedCornerShape(14.dp)).background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)).padding(12.dp)
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icon(icon, null, tint = accentColor, modifier = Modifier.size(12.dp))
+                Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.3.sp)
+            }
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Spacer(Modifier.width(4.dp))
+                Text(unit, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
+            }
+        }
+    }
+}
+
+// ── Icon button (top bar) ───────────────────────────────────────────────────────
+@Composable
+private fun AnanasIconButton(icon: ImageVector, onClick: () -> Unit) {
+    Box(
+        Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
+            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(16.dp)) }
+}
+
+// ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
+@Composable
+private fun EmptyHomeState(onAdd: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.size(76.dp).clip(CircleShape).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, CircleShape),
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Rounded.Add, null, tint = AnanasMuted, modifier = Modifier.size(26.dp)) }
+            Spacer(Modifier.height(16.dp))
+            Text("No configs yet", fontSize = 15.sp, color = AnanasTextHi, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
+        }
+    }
+}
+// ── (legacy, unused after ANANAS restyle — safe to delete) ─────────────────────
 // ── Config Card ───────────────────────────────────────────────────────────────
 @Composable
 private fun ConfigCard(
@@ -991,94 +1268,4 @@ private fun ToolsTab(
                             Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("Update CDN Ranges", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
-                                Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-// ── Shared Components ─────────────────────────────────────────────────────────
-@Composable
-private fun GlassCard(value: String, label: String, color: Color, modifier: Modifier) {
-    val bgColor = if (isDarkMode()) color.copy(0.08f) else color.copy(0.05f)
-    val borderColor = if (isDarkMode()) color.copy(0.15f) else color.copy(0.1f)
-    Box(modifier.clip(RoundedCornerShape(16.dp)).background(bgColor).border(1.dp, borderColor, RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
-            Text(label, fontSize = 10.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-        }
-    }
-}
-
-@Composable
-private fun GlassBox(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val bgColor = if (isDarkMode()) CardBg.copy(0.7f) else LightCardBg
-    val borderColor = if (isDarkMode()) Color(0xFF38383A).copy(0.4f) else Color(0xFFDDDDDD)
-    Box(
-        modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(bgColor)
-            .border(2.dp, borderColor, RoundedCornerShape(18.dp)),
-        content = content
-    )
-}
-
-@Composable
-private fun PhaseIndicator(current: ScanPhase) {
-    val phases = ScanPhase.entries.filter { it != ScanPhase.IDLE }
-    val idx = phases.indexOf(current)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        phases.forEachIndexed { i, p ->
-            val done = i < idx; val active = i == idx
-            Box(Modifier.clip(RoundedCornerShape(20.dp)).background(when { done -> GreenOk.copy(0.12f); active -> AccentBlue.copy(0.15f); else -> if (isDarkMode()) CardBg2 else LightCardBg2 }).border(1.dp, when { done -> GreenOk.copy(0.2f); active -> AccentBlue.copy(0.3f); else -> if (isDarkMode()) Color.Transparent else LightBorder }, RoundedCornerShape(20.dp)).padding(10.dp, 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (done) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(12.dp))
-                    Text(p.label, fontSize = 11.sp, color = when { done -> GreenOk; active -> AccentBlue; else -> TextMuted })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolButton(label: String, icon: ImageVector, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(0.1f)).clickable { onClick() }.padding(12.dp, 10.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(label, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConfigField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp))) {
-        TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(placeholder, fontSize = 13.sp, color = if (isDarkMode()) TextMuted else LightTextMuted) },
-            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                focusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, unfocusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, cursorColor = AccentBlue,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace), singleLine = true)
-    }
-}
-
-@Composable
-private fun EmptyState(icon: ImageVector, message: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = TextMuted, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(12.dp))
-            Text(message, fontSize = 14.sp, color = TextSecondary)
-        }
-    }
-}
-// Thu Jun 11 14:43:19 +0330 2026
+                                Text("Update CDN Ranges", fontSize = 14.sp,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
