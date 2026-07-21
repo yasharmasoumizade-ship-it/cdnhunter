@@ -184,35 +184,42 @@ fun AppScreen(
 ) {
     val context = LocalContext.current
     val uiPrefs = remember { context.getSharedPreferences("cdnhunter_ui", 0) }
+    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
     var themeMode by remember { mutableStateOf(ThemeMode.valueOf(uiPrefs.getString("theme_mode", "LIGHT") ?: "LIGHT")) }
     var autoIpEnabled by remember { mutableStateOf(AutoIpManager.enabled.get()) }
     val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
     val coroutineScope = rememberCoroutineScope()
 
     androidx.compose.runtime.CompositionLocalProvider(LocalThemeMode provides themeMode) {
-    val onVpnTab = Tab.entries[pagerState.currentPage] == Tab.VPN
     Box(
         Modifier.fillMaxSize()
-            .background(
-                when {
-                    onVpnTab      -> Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg))
-                    isDarkMode()  -> Brush.verticalGradient(listOf(Color(0xFF0D0D10), DarkBg, DarkBg))
-                    else          -> Brush.verticalGradient(listOf(Color(0xFFF5F0E8), Color(0xFFFAF6EE), LightBg))
-                }
-            )
+            .background(Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg)))
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     when (Tab.entries[page]) {
                         Tab.VPN      -> VpnTab(autoIpEnabled) // full-bleed, owns its own edge padding
-                        Tab.SETTINGS -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-                            ToolsTab(state.results, config, onConfigChange, onStart, onCopyIps, onUpdateRanges, onExport, themeMode, autoIpEnabled, { autoIpEnabled = it }) { m -> themeMode = m; uiPrefs.edit().putString("theme_mode", m.name).apply() }
+                        Tab.SETTINGS -> {
+                            var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
+                            var showProfile by remember { mutableStateOf(false) }
+                            if (showProfile) {
+                                ProfileScreen(onBack = { showProfile = false })
+                            } else {
+                                SettingsScreen(
+                                    fragmentEnabled = fragmentEnabled,
+                                    onFragmentChange = {
+                                        fragmentEnabled = it
+                                        vpnPrefs.edit().putBoolean("fragment_enabled", it).apply()
+                                    },
+                                    onProfileClick = { showProfile = true }
+                                )
+                            }
                         }
                     }
                 }
             }
-            BottomNavBar(Tab.entries[pagerState.currentPage], forceDark = onVpnTab) { tab ->
+            BottomNavBar(Tab.entries[pagerState.currentPage]) { tab ->
                 coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) }
             }
         }
@@ -222,17 +229,16 @@ fun AppScreen(
 
 // ── Bottom Nav ────────────────────────────────────────────────────────────────
 @Composable
-private fun BottomNavBar(current: Tab, forceDark: Boolean = false, onSelect: (Tab) -> Unit) {
+private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
     val icons = mapOf(
         Tab.VPN      to Icons.Rounded.Bolt,
         Tab.SETTINGS to Icons.Rounded.Tune
     )
-    val dark = forceDark || isDarkMode()
-    val selectedColor = if (forceDark) AnanasAccent else AccentBlue
-    val unselectedColor = if (forceDark) AnanasMuted else if (dark) Color(0xFF4B5563) else Color(0xFFBBBBBB)
-    val bgColor = if (forceDark) AnanasCard2.copy(alpha = 0.97f) else if (dark) Color(0xFF1A1D24).copy(alpha = 0.95f) else Color(0xFFFFFDF7).copy(alpha = 0.95f)
-    val borderColor = if (forceDark) AnanasBorder2 else if (dark) Color(0xFF2C2F38) else Color(0xFFE0DDD5)
-    val selectedBg = if (forceDark) AnanasAccent.copy(0.14f) else AccentBlue.copy(0.12f)
+    val selectedColor   = AnanasAccent
+    val unselectedColor = AnanasMuted
+    val bgColor         = AnanasCard2.copy(alpha = 0.97f)
+    val borderColor     = AnanasBorder2
+    val selectedBg      = AnanasAccent.copy(0.14f)
 
     Box(
         Modifier
@@ -244,7 +250,7 @@ private fun BottomNavBar(current: Tab, forceDark: Boolean = false, onSelect: (Ta
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(30.dp))
-                .background(if (dark) Color(0xFF000000).copy(0.3f) else Color(0xFF000000).copy(0.08f))
+                .background(Color(0xFF000000).copy(0.3f))
                 .padding(bottom = 2.dp)
         )
         Row(
@@ -900,6 +906,137 @@ private fun LocationsScreen(onBack: () -> Unit) {
     }
 }
 
+// ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
+@Composable
+private fun SettingsScreen(
+    fragmentEnabled: Boolean, onFragmentChange: (Boolean) -> Unit,
+    onProfileClick: () -> Unit = {},
+) {
+    var autoReconnect by remember { mutableStateOf(true) }
+    var killSwitch by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("Settings", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+            }
+
+            // Profile summary card
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                    .clickable { onProfileClick() }
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(42.dp).clip(CircleShape).background(AnanasCard2).border(1.5.dp, Color(0xFF2A2C31), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Text("YM", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Yashar M.", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 2.dp)) {
+                        Box(Modifier.clip(RoundedCornerShape(5.dp)).background(AnanasAmber.copy(0.16f)).padding(horizontal = 6.dp, vertical = 1.dp)) {
+                            Text("PRO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = AnanasAmber, letterSpacing = 0.3.sp)
+                        }
+                        Text("· Expires in 21 days", fontSize = 11.sp, color = AnanasMuted)
+                    }
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Text("CONNECTION", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            ) {
+                SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsToggleRow(
+                    Icons.Rounded.Security, "TLS fragmentation", "Bypass deep packet inspection",
+                    fragmentEnabled, onFragmentChange
+                )
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsToggleRow(
+                    Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
+                    autoReconnect, { autoReconnect = it }
+                )
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsToggleRow(
+                    Icons.Rounded.Lock, "Kill switch", "Block traffic if VPN disconnects",
+                    killSwitch, { killSwitch = it }
+                )
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Text("GENERAL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            ) {
+                SettingsRow(Icons.Rounded.NotificationsNone, "Notifications", null, AnanasMuted, showChevron = true)
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsRow(Icons.Rounded.Language, "Language", "English", AnanasMuted, showChevron = true)
+            }
+
+            Spacer(Modifier.height(40.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = iconTint, modifier = Modifier.size(15.dp))
+            }
+            Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (value != null) Text(value, fontSize = 12.5.sp, color = AnanasMuted)
+            if (showChevron) Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp))
+            }
+            Column {
+                Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                Text(desc, fontSize = 10.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+            }
+        }
+        Switch(
+            checked = checked, onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White, checkedTrackColor = AnanasAccent, checkedBorderColor = Color.Transparent,
+                uncheckedThumbColor = Color(0xFF6B6B70), uncheckedTrackColor = AnanasCard2, uncheckedBorderColor = AnanasBorder2
+            )
+        )
+    }
+}
+
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
 @Composable
 private fun ProfileScreen(onBack: () -> Unit) {
@@ -1027,156 +1164,6 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
         }
     }
 }
-// ── (legacy, unused after ANANAS restyle — safe to delete) ─────────────────────
-// ── Config Card ───────────────────────────────────────────────────────────────
-@Composable
-private fun ConfigCard(
-    cfg: SavedConfig,
-    isActive: Boolean,
-    isExpanded: Boolean,
-    connected: Boolean,
-    connecting: Boolean,
-    onTap: () -> Unit,
-    onConnect: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val dark = isDarkMode()
-    val borderColor = when {
-        connected  -> AccentBlue.copy(if (dark) 0.6f else 0.8f)
-        connecting -> YellowWarn.copy(0.5f)
-        isActive   -> AccentBlue.copy(0.5f)
-        else       -> if (dark) Color(0xFF38383A).copy(0.3f) else Color(0xFFDDDDDD)
-    }
-    val bgColor = when {
-        connected  -> AccentBlue.copy(if (dark) 0.08f else 0.05f)
-        connecting -> YellowWarn.copy(0.05f)
-        isActive   -> AccentBlue.copy(if (dark) 0.06f else 0.04f)
-        else       -> if (dark) CardBg.copy(0.7f) else LightCardBg
-    }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(bgColor)
-            .border(2.dp, borderColor, RoundedCornerShape(18.dp))
-            .clickable { onTap() }
-    ) {
-        // ── Row 1: icon + name + status dot ──
-        Row(
-            Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Protocol badge
-            Box(
-                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (isActive) AccentBlue.copy(0.15f) else if (isDarkMode()) CardBg2 else LightCardBg2),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    cfg.proto.take(2).uppercase(),
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    color = if (isActive) AccentBlue else TextSecondary
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
-                Text(
-                    buildString {
-                        append(cfg.network.uppercase())
-                        if (cfg.sni.isNotBlank()) append(" · ${cfg.sni}")
-                        append(" · :${cfg.port}")
-                    },
-                    fontSize = 11.sp, color = TextSecondary
-                )
-            }
-            // Status indicator
-            when {
-                connecting -> {
-                    val pulse by rememberInfiniteTransition(label = "csp").animateFloat(
-                        0.4f, 1f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "cspf"
-                    )
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(YellowWarn.copy(pulse)))
-                }
-                connected  -> Box(Modifier.size(10.dp).clip(CircleShape).background(AccentBlue))
-                else       -> Box(Modifier.size(10.dp).clip(CircleShape).background(TextMuted))
-            }
-        }
-
-        // ── Row 2: expanded connect button ────────────────────────────────
-        AnimatedVisibility(
-            visible = isExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit  = shrinkVertically() + fadeOut()
-        ) {
-            Column {
-                Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
-                Row(
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Connect / Disconnect button
-                    val dark = isDarkMode()
-                    val btnBg = when {
-                        connected  -> if (dark) Color(0xFF2A0A0A) else Color(0xFFFFEEEE)
-                        connecting -> if (dark) Color(0xFF1A1800) else Color(0xFFFFF8E1)
-                        else       -> if (dark) Color(0xFF0F1A2E) else Color(0xFFEEF2FF)
-                    }
-                    val btnBorder = when {
-                        connected  -> RedFail.copy(0.4f)
-                        connecting -> YellowWarn.copy(0.4f)
-                        else       -> AccentBlue.copy(0.4f)
-                    }
-                    val btnTextColor = when {
-                        connected  -> RedFail
-                        connecting -> if (dark) Color(0xFFFFD700) else Color(0xFFB8860B)
-                        else       -> AccentBlue
-                    }
-                    Box(
-                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                            .background(btnBg)
-                            .border(1.dp, btnBorder, RoundedCornerShape(14.dp))
-                            .clickable { onConnect() }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (connecting) {
-                                val rot by rememberInfiniteTransition(label = "cb").animateFloat(
-                                    0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "cbr"
-                                )
-                                Icon(Icons.Rounded.Sync, null, tint = btnTextColor,
-                                    modifier = Modifier.size(16.dp).rotate(rot))
-                            } else {
-                                Icon(
-                                    if (connected) Icons.Rounded.PowerSettingsNew else Icons.Rounded.Bolt,
-                                    null, tint = btnTextColor, modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            Text(
-                                when { connected -> "Disconnect"; connecting -> "Connecting..."; else -> "Connect" },
-                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = btnTextColor
-                            )
-                        }
-                    }
-                    // Delete button
-                    Box(
-                        Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
-                            .background(RedFail.copy(0.08f))
-                            .clickable { onDelete() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Delete, null, tint = RedFail, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-        }
-    }
-}
 
 // ── Add Config Dialog ─────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1278,444 +1265,3 @@ private fun AddConfigDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     )
 }
 
-// ── SCANNER TAB ───────────────────────────────────────────────────────────────
-@Composable
-private fun ScannerTab(state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit, onStart: () -> Unit, onStop: () -> Unit) {
-    val dark = isDarkMode()
-
-    // Set default concurrency to 100 silently
-    LaunchedEffect(Unit) {
-        if (config.concurrency != 100) onConfigChange(config.copy(concurrency = 100))
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Spacer(Modifier.height(20.dp))
-
-        // ── Header ─────────────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Scanner", fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                    color = if (dark) TextPrimary else LightTextPrimary)
-                Box(Modifier.height(20.dp)) {
-                    Text(
-                        if (state.running) state.phaseDetail.take(32) else "Ready to scan",
-                        fontSize = 13.sp,
-                        color = if (state.running) AccentBlue else if (dark) TextSecondary else LightTextSecondary
-                    )
-                }
-            }
-            // Scan button top-right
-            if (state.running) {
-                val pulse by rememberInfiniteTransition(label = "sp").animateFloat(
-                    1f, 1.25f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "spf"
-                )
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(64.dp).scale(pulse).clip(CircleShape).background(RedFail.copy(0.1f)))
-                    Box(
-                        Modifier.size(56.dp).clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(RedFail, Color(0xFF8A1B1B))))
-                            .clickable { onStop() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Stop, null, tint = Color.White, modifier = Modifier.size(26.dp))
-                    }
-                }
-            } else {
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                    Box(
-                        Modifier.size(56.dp).clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(AccentBlue, Color(0xFF1A4FAD))))
-                            .clickable { onStart() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Radar, null, tint = Color.White, modifier = Modifier.size(26.dp))
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // ── Stats ──────────────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GlassCard("${state.scanned}", "Scanned", AccentBlue, Modifier.weight(1f))
-            GlassCard("${state.healthy}", "Healthy", GreenOk, Modifier.weight(1f))
-            GlassCard("${state.failed}", "Failed", RedFail, Modifier.weight(1f))
-        }
-
-        if (state.running) {
-            Spacer(Modifier.height(12.dp))
-            @Suppress("DEPRECATION")
-            LinearProgressIndicator(
-                progress = state.pct / 100f,
-                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                color = AccentBlue,
-                trackColor = if (dark) CardBg2 else LightCardBg2
-            )
-            Spacer(Modifier.height(4.dp))
-            Text("${state.pct}%", fontSize = 11.sp,
-                color = if (dark) TextSecondary else LightTextSecondary)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── CDN Provider ───────────────────────────────────────────────────
-        GlassBox(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Text("CDN PROVIDER", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                    color = if (dark) TextSecondary else LightTextSecondary)
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CdnProvider.entries.forEach { p ->
-                        val sel = config.cdnProvider == p
-                        Box(
-                            Modifier.clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) AccentBlue.copy(0.15f) else if (dark) CardBg2 else LightCardBg2)
-                                .border(1.5.dp, if (sel) AccentBlue.copy(0.7f) else if (dark) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
-                                .clickable { onConfigChange(config.copy(cdnProvider = p)) }
-                                .padding(14.dp, 8.dp)
-                        ) {
-                            Text(p.label, fontSize = 13.sp,
-                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (sel) AccentBlue else if (dark) TextSecondary else LightTextSecondary)
-                        }
-                    }
-                }
-                if (config.cdnProvider == CdnProvider.MANUAL) {
-                    Spacer(Modifier.height(10.dp))
-                    ConfigField(config.manualIps, { onConfigChange(config.copy(manualIps = it)) }, "IPs: 1.2.3.4, 5.6.7.8")
-                }
-                if (config.cdnProvider == CdnProvider.CIDR) {
-                    Spacer(Modifier.height(10.dp))
-                    ConfigField(config.manualCidr, { onConfigChange(config.copy(manualCidr = it)) }, "CIDR: 104.16.0.0/12")
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // ── Max IPs ────────────────────────────────────────────────────────
-        GlassBox(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Max IPs to scan", fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                        color = if (dark) TextPrimary else LightTextPrimary)
-                    Text("Higher = slower but more results", fontSize = 11.sp,
-                        color = if (dark) TextSecondary else LightTextSecondary)
-                }
-                Spacer(Modifier.width(12.dp))
-                Box(Modifier.width(90.dp)) {
-                    ConfigField("${config.maxIps}", {
-                        it.toIntOrNull()?.let { v -> onConfigChange(config.copy(maxIps = v)) }
-                    }, "3000")
-                }
-            }
-        }
-
-        Spacer(Modifier.height(40.dp))
-    }
-}
-
-
-// ── RESULTS TAB ───────────────────────────────────────────────────────────────
-@Composable
-private fun ResultsTab(results: List<ScanResult>) {
-    val clip   = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
-    val healthy = results.filter { it.ok }
-
-    if (results.isEmpty()) { EmptyState(Icons.Rounded.Search, "No results yet. Start a scan!"); return }
-
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-            items(results, key = { it.ip }) { r ->
-                var copied by remember { mutableStateOf(false) }
-                val bg by animateColorAsState(if (copied) GreenOk.copy(0.12f) else if (isDarkMode()) CardBg.copy(0.7f) else LightCardBg, tween(300), label = "")
-                LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
-                Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg)
-                        .border(1.5.dp, if (copied) GreenOk.copy(0.4f) else if (isDarkMode()) Color(0xFF38383A).copy(0.3f) else LightBorder, RoundedCornerShape(16.dp))
-                        .clickable { clip.setText(AnnotatedString(r.ip)); haptic.performHapticFeedback(HapticFeedbackType.LongPress); copied = true }
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(if (r.ok) GreenOk else RedFail))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(r.ip, fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
-                            val regionText = buildString {
-                                append(r.cdn)
-                                if (r.country.isNotBlank()) { append(" • ${r.country}"); if (r.city.isNotBlank()) append(" - ${r.city}") }
-                            }
-                            Text(regionText, fontSize = 11.sp, color = AccentBlue)
-                        }
-                        if (copied) Text("✓", fontSize = 18.sp, color = GreenOk, fontWeight = FontWeight.Bold)
-                        else Column(horizontalAlignment = Alignment.End) {
-                            Text("${r.ms}ms", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = when { r.ms < 200 -> GreenOk; r.ms < 400 -> YellowWarn; else -> RedFail })
-                            if (r.kbps > 0) Text("${r.kbps.toInt()} kB/s", fontSize = 10.sp, color = TextMuted)
-                        }
-                    }
-                }
-            }
-        }
-        if (healthy.isNotEmpty()) {
-            FloatingActionButton(
-                onClick = { clip.setText(AnnotatedString(healthy.joinToString("\n") { it.ip })); haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                containerColor = AccentBlue, contentColor = Color.White
-            ) { Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy all IPs") }
-        }
-    }
-}
-
-// ── TOOLS TAB ─────────────────────────────────────────────────────────────────
-@Composable
-private fun ToolsTab(
-    results: List<ScanResult>, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
-    onStart: () -> Unit, onCopyIps: () -> Unit, onUpdateRanges: () -> Unit, onExport: () -> Unit,
-    currentTheme: ThemeMode = ThemeMode.LIGHT,
-    autoIpState: Boolean = false,
-    onAutoIpChange: (Boolean) -> Unit = {},
-    onThemeChange: (ThemeMode) -> Unit = {},
-) {
-    val context = LocalContext.current
-    val clip    = LocalClipboardManager.current
-    val haptic  = LocalHapticFeedback.current
-    val healthy = results.filter { it.ok }
-    var fragment by remember {
-        mutableStateOf(context.getSharedPreferences("cdnhunter_vpn", 0).getBoolean("fragment_enabled", true))
-    }
-    val autoIp = autoIpState
-    var showXrayLog by remember { mutableStateOf(false) }
-
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp)) {
-
-        item { Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (isDarkMode()) TextPrimary else LightTextPrimary) }
-
-        // ── Appearance ────────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                    Spacer(Modifier.height(10.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            Triple(ThemeMode.LIGHT, "Light", Icons.Rounded.LightMode),
-                            Triple(ThemeMode.DARK, "Dark", Icons.Rounded.DarkMode),
-                            Triple(ThemeMode.SYSTEM, "System", Icons.Rounded.SettingsBrightness)
-                        ).forEach { (mode, label, icon) ->
-                            val sel = currentTheme == mode
-                            Box(
-                                Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                                    .background(if (sel) AccentBlue.copy(0.15f) else if (isDarkMode()) CardBg2 else LightCardBg2)
-                                    .border(1.dp, if (sel) AccentBlue.copy(0.7f) else Color.Transparent, RoundedCornerShape(12.dp))
-                                    .clickable { onThemeChange(mode) }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(icon, null, tint = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary, modifier = Modifier.size(18.dp))
-                                    Text(label, fontSize = 11.sp, color = if (sel) AccentBlue else if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── VPN Settings ──────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("VPN SETTINGS", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Fragment (DPI bypass)", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontWeight = FontWeight.Medium)
-                            Text("Splits TLS hello. OFF for xhttp/gRPC", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                        }
-                        Switch(
-                            checked = fragment,
-                            onCheckedChange = {
-                                fragment = it
-                                context.getSharedPreferences("cdnhunter_vpn", 0).edit().putBoolean("fragment_enabled", it).apply()
-                            },
-                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
-                    Spacer(Modifier.height(10.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Auto-IP", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary, fontWeight = FontWeight.Medium)
-                            Text("Scan + pick best IP, switch if slow", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                        }
-                        Switch(
-                            checked = autoIp,
-                            onCheckedChange = {
-                                onAutoIpChange(it)
-                                if (it && CdnVpnService.isRunning.get()) AutoIpManager.start(context) else AutoIpManager.stop()
-                            },
-                            colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, uncheckedTrackColor = if (isDarkMode()) CardBg2 else LightCardBg2)
-                        )
-                    }
-                    if (autoIp) {
-                        Spacer(Modifier.height(10.dp))
-                        Divider(color = Color(0xFF38383A).copy(0.3f), thickness = 0.5.dp)
-                        Spacer(Modifier.height(10.dp))
-                        Text("Status: ${AutoIpManager.status}", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.Medium)
-                        if (AutoIpManager.currentIp.isNotBlank())
-                            Text("Active: ${AutoIpManager.currentIp}", fontSize = 11.sp, color = AccentTeal, fontFamily = FontFamily.Monospace)
-                        if (AutoIpManager.ipPool.isNotEmpty())
-                            Text("Pool: ${AutoIpManager.ipPool.size} IPs", fontSize = 10.sp, color = if (isDarkMode()) TextMuted else LightTextMuted)
-                    }
-                }
-            }
-        }
-
-        // ── Xray Log ──────────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth().clickable { showXrayLog = !showXrayLog }) {
-                Column(Modifier.padding(14.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Terminal, null, tint = YellowWarn, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Xray Log", fontSize = 13.sp, color = YellowWarn, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Box(
-                            Modifier.clip(RoundedCornerShape(8.dp))
-                                .background(if (isDarkMode()) CardBg2 else LightCardBg2)
-                                .border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(8.dp))
-                                .clickable { clip.setText(AnnotatedString(CdnVpnService.xrayLog.ifBlank { "(empty)" })) }
-                                .padding(8.dp, 4.dp)
-                        ) { Text("Copy", fontSize = 11.sp, color = AccentTeal) }
-                        Spacer(Modifier.width(6.dp))
-                        Icon(
-                            if (showXrayLog) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            null, tint = TextSecondary, modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    AnimatedVisibility(visible = showXrayLog) {
-                        Column {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                CdnVpnService.xrayLog.ifBlank { "No log yet." },
-                                fontSize = 10.sp, color = TextSecondary,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.horizontalScroll(rememberScrollState())
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Maintenance ───────────────────────────────────────────────────
-        item {
-            GlassBox(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("MAINTENANCE", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(10.dp))
-                    Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(if (isDarkMode()) CardBg2 else LightCardBg2)
-                            .border(1.5.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(12.dp))
-                            .clickable { onUpdateRanges() }
-                            .padding(14.dp, 12.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Refresh, null, tint = AccentTeal, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("Update CDN Ranges", fontSize = 14.sp, color = if (isDarkMode()) TextPrimary else LightTextPrimary)
-                                Text("Fetch latest IP ranges from CDN providers", fontSize = 11.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-// ── Shared Components ─────────────────────────────────────────────────────────
-@Composable
-private fun GlassCard(value: String, label: String, color: Color, modifier: Modifier) {
-    val bgColor = if (isDarkMode()) color.copy(0.08f) else color.copy(0.05f)
-    val borderColor = if (isDarkMode()) color.copy(0.15f) else color.copy(0.1f)
-    Box(modifier.clip(RoundedCornerShape(16.dp)).background(bgColor).border(1.dp, borderColor, RoundedCornerShape(16.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
-            Text(label, fontSize = 10.sp, color = if (isDarkMode()) TextSecondary else LightTextSecondary)
-        }
-    }
-}
-
-@Composable
-private fun GlassBox(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val bgColor = if (isDarkMode()) CardBg.copy(0.7f) else LightCardBg
-    val borderColor = if (isDarkMode()) Color(0xFF38383A).copy(0.4f) else Color(0xFFDDDDDD)
-    Box(
-        modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(bgColor)
-            .border(2.dp, borderColor, RoundedCornerShape(18.dp)),
-        content = content
-    )
-}
-
-@Composable
-private fun PhaseIndicator(current: ScanPhase) {
-    val phases = ScanPhase.entries.filter { it != ScanPhase.IDLE }
-    val idx = phases.indexOf(current)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        phases.forEachIndexed { i, p ->
-            val done = i < idx; val active = i == idx
-            Box(Modifier.clip(RoundedCornerShape(20.dp)).background(when { done -> GreenOk.copy(0.12f); active -> AccentBlue.copy(0.15f); else -> if (isDarkMode()) CardBg2 else LightCardBg2 }).border(1.dp, when { done -> GreenOk.copy(0.2f); active -> AccentBlue.copy(0.3f); else -> if (isDarkMode()) Color.Transparent else LightBorder }, RoundedCornerShape(20.dp)).padding(10.dp, 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (done) Icon(Icons.Rounded.CheckCircle, null, tint = GreenOk, modifier = Modifier.size(12.dp))
-                    Text(p.label, fontSize = 11.sp, color = when { done -> GreenOk; active -> AccentBlue; else -> TextMuted })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolButton(label: String, icon: ImageVector, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(0.1f)).clickable { onClick() }.padding(12.dp, 10.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(label, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConfigField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (isDarkMode()) CardBg2 else LightCardBg2).border(1.dp, if (isDarkMode()) Color.Transparent else LightBorder, RoundedCornerShape(10.dp))) {
-        TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(placeholder, fontSize = 13.sp, color = if (isDarkMode()) TextMuted else LightTextMuted) },
-            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                focusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, unfocusedTextColor = if (isDarkMode()) TextPrimary else LightTextPrimary, cursorColor = AccentBlue,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace), singleLine = true)
-    }
-}
-
-@Composable
-private fun EmptyState(icon: ImageVector, message: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = TextMuted, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(12.dp))
-            Text(message, fontSize = 14.sp, color = TextSecondary)
-        }
-    }
-}
-// Thu Jun 11 14:43:19 +0330 2026
