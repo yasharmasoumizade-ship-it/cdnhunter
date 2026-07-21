@@ -448,36 +448,23 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         0f, 360f, infiniteRepeatable(tween(3500, easing = LinearEasing)), label = "sweep"
     )
 
-    Box(Modifier.size(300.dp), contentAlignment = Alignment.Center) {
-        // wide ambient glow (soft, spread across most of the card — matches reference)
-        if (connected) {
-            Box(
-                Modifier.size(300.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(AnanasAccent.copy(0.20f), AnanasAccent.copy(0.05f), Color.Transparent)))
-            )
-        }
-
-        // pulsing outward rings — only while connected
+    Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
+        // pulsing outward rings — only while connected (exact ref: 160x160, 1px #4ade9c border)
         if (connected) {
             listOf(pulse1, pulse2).forEach { p ->
                 Box(
                     Modifier
-                        .size(220.dp)
-                        .scale(0.8f + p * 0.35f)
+                        .size(160.dp)
+                        .scale(0.85f + p * 0.25f)
                         .clip(CircleShape)
-                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.5f), CircleShape)
+                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.7f), CircleShape)
                 )
             }
         }
 
-        // static faint guide rings, spread wide like reference
-        Box(Modifier.size(240.dp).clip(CircleShape).border(1.dp, Color(0xFF17171C), CircleShape))
-        Box(Modifier.size(190.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
-        Box(Modifier.size(150.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
-
         // thin rotating sweep arc while connected
         if (connected) {
-            Canvas(Modifier.size(150.dp).rotate(sweepRotation)) {
+            Canvas(Modifier.size(140.dp).rotate(sweepRotation)) {
                 drawArc(
                     color = AnanasAccent,
                     startAngle = 0f, sweepAngle = 26f, useCenter = false,
@@ -486,12 +473,22 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             }
         }
 
-        // core power button
+        // core power button — exact ref: 112dp, border 1.5dp #2a4638, glow shadow 0 0 40px rgba(74,222,156,.12)
         Box(
             Modifier
-                .size(126.dp)
+                .size(128.dp) // 112dp core + 8dp ring-shadow spread on each side (matches ref's "0 0 0 8px #0b0b0d" collar)
                 .clip(CircleShape)
-                .background(Color(0xFF0D100E))
+                .background(
+                    if (connected) Brush.radialGradient(listOf(AnanasAccent.copy(0.16f), Color.Transparent), radius = 200f)
+                    else Brush.radialGradient(listOf(Color.Transparent, Color.Transparent))
+                ),
+            contentAlignment = Alignment.Center
+        ) {}
+        Box(
+            Modifier
+                .size(112.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF101210))
                 .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
                 .clickable(enabled = !connecting) { onClick() },
             contentAlignment = Alignment.Center
@@ -602,15 +599,15 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
-                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(Modifier.size(26.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
             Column {
-                Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Text(cfg.displayName, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
                     if (connected) "${cfg.network.uppercase()} · Active" else "Tap to browse locations",
-                    fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp)
+                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
                 )
             }
         }
@@ -629,11 +626,11 @@ private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit, showDivider: B
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(30.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
-                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(Modifier.size(22.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 9.sp)
             }
-            Text(cfg.displayName, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFE4E5E9))
+            Text(cfg.displayName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE4E5E9))
         }
         Text(cfg.network.uppercase(), fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
     }
