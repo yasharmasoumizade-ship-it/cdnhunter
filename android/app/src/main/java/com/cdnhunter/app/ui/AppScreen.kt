@@ -192,6 +192,7 @@ fun AppScreen(
 private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, SETTINGS, PROFILE }
 
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VpnTab(autoIpEnabled: Boolean = false) {
     val context = LocalContext.current
@@ -290,103 +291,131 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     val otherConfigs  = configs.filter { it.id != activeConfig?.id }
 
     when (screen) {
-    AnanasScreen.HOME -> Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    AnanasScreen.HOME -> {
         if (configs.isEmpty()) {
-            EmptyHomeState { showAddDialog = true }
+            Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+                EmptyHomeState { showAddDialog = true }
+                FloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+                    containerColor = AnanasCard2, contentColor = AnanasTextHi, shape = RoundedCornerShape(16.dp)
+                ) { Icon(Icons.Rounded.Add, contentDescription = "Add config") }
+            }
         } else {
-            Column(Modifier.fillMaxSize()) {
-                // ── Top bar ──────────────────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.SETTINGS }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
-                        Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
-                    }
-                    AnanasIconButton(Icons.Rounded.Person) { screen = AnanasScreen.PROFILE }
-                }
-
-                // ── Power button + status ────────────────────────────────
-                Column(
-                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    PowerButton(
-                        connected = connected,
-                        connecting = connecting,
-                        onClick = { activeConfig?.let { connectConfig(it) } }
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Not protected" },
-                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        if (connected) formatElapsed(elapsedSec) else "Tap to connect",
-                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, letterSpacing = 0.3.sp
-                    )
-                }
-
-                LazyColumn(
-                    Modifier.weight(1f).padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 100.dp)
-                ) {
-                    activeConfig?.let { cfg ->
-                        item(key = "active-${cfg.id}") {
-                            SelectedServerSummaryCard(
-                                cfg = cfg, connected = connected,
-                                onClick = { screen = AnanasScreen.LOCATIONS }
-                            )
-                        }
-                    }
-                    item(key = "stats") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            StatBox(Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent, Modifier.weight(1f))
-                            StatBox(Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText, Modifier.weight(1f))
-                        }
-                    }
+            val sheetState = rememberBottomSheetScaffoldState()
+            BottomSheetScaffold(
+                scaffoldState = sheetState,
+                sheetPeekHeight = if (otherConfigs.isNotEmpty()) 76.dp else 0.dp,
+                sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                sheetContainerColor = Color(0xFF101012),
+                sheetContentColor = AnanasText,
+                sheetTonalElevation = 0.dp,
+                sheetShadowElevation = 12.dp,
+                sheetSwipeEnabled = otherConfigs.isNotEmpty(),
+                sheetDragHandle = {
                     if (otherConfigs.isNotEmpty()) {
-                        item(key = "quick-switch-block") {
-                            Column(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(16.dp)
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Spacer(Modifier.height(10.dp))
+                            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(AnanasBorder2))
+                        }
+                    }
+                },
+                containerColor = AnanasScreenBg,
+                modifier = Modifier.fillMaxSize(),
+                sheetContent = {
+                    if (otherConfigs.isNotEmpty()) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 28.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
-                                    Text(
-                                        "See all", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
-                                        modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
-                                    )
-                                }
-                                otherConfigs.forEachIndexed { idx, cfg ->
-                                    QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
-                                }
+                                Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                Text(
+                                    "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
+                                    modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
+                                )
+                            }
+                            otherConfigs.forEachIndexed { idx, cfg ->
+                                QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
                             }
                         }
                     }
                 }
+            ) { innerPadding ->
+                Box(Modifier.fillMaxSize().padding(innerPadding).background(AnanasScreenBg)) {
+                    Column(Modifier.fillMaxSize()) {
+                        // ── Top bar ──────────────────────────────────────────────
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.SETTINGS }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
+                                Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
+                            }
+                            AnanasIconButton(Icons.Rounded.Person) { screen = AnanasScreen.PROFILE }
+                        }
+
+                        // ── Power button + status ────────────────────────────────
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            PowerButton(
+                                connected = connected,
+                                connecting = connecting,
+                                onClick = { activeConfig?.let { connectConfig(it) } }
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Not protected" },
+                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                if (connected) formatElapsed(elapsedSec) else "Tap to connect",
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, letterSpacing = 0.3.sp
+                            )
+                        }
+
+                        LazyColumn(
+                            Modifier.weight(1f).padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(bottom = 24.dp)
+                        ) {
+                            activeConfig?.let { cfg ->
+                                item(key = "active-${cfg.id}") {
+                                    SelectedServerSummaryCard(
+                                        cfg = cfg, connected = connected,
+                                        onClick = { screen = AnanasScreen.LOCATIONS }
+                                    )
+                                }
+                            }
+                            item(key = "stats") {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    StatBox(Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent, Modifier.weight(1f))
+                                    StatBox(Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText, Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    FloatingActionButton(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+                        containerColor = AnanasCard2,
+                        contentColor   = AnanasTextHi,
+                        shape          = RoundedCornerShape(16.dp)
+                    ) { Icon(Icons.Rounded.Add, contentDescription = "Add config") }
+                }
             }
         }
-
-        FloatingActionButton(
-            onClick = { showAddDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = AnanasCard2,
-            contentColor   = AnanasTextHi,
-            shape          = RoundedCornerShape(16.dp)
-        ) { Icon(Icons.Rounded.Add, contentDescription = "Add config") }
     }
 
     AnanasScreen.MY_CONFIGS -> MyConfigsScreen(
