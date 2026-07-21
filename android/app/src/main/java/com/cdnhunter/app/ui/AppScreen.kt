@@ -97,10 +97,6 @@ fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
     ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
 }
 
-private enum class Tab(val label: String) {
-    VPN("VPN"), SETTINGS("Settings")
-}
-
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 val LocalThemeMode = androidx.compose.runtime.staticCompositionLocalOf { ThemeMode.LIGHT }
 
@@ -182,112 +178,18 @@ fun AppScreen(
     onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
-    val context = LocalContext.current
-    val uiPrefs = remember { context.getSharedPreferences("cdnhunter_ui", 0) }
-    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
-    var themeMode by remember { mutableStateOf(ThemeMode.valueOf(uiPrefs.getString("theme_mode", "LIGHT") ?: "LIGHT")) }
     var autoIpEnabled by remember { mutableStateOf(AutoIpManager.enabled.get()) }
-    val pagerState = rememberPagerState(initialPage = 0) { Tab.entries.size }
-    val coroutineScope = rememberCoroutineScope()
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalThemeMode provides themeMode) {
     Box(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg)))
     ) {
-        Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f)) {
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    when (Tab.entries[page]) {
-                        Tab.VPN      -> VpnTab(autoIpEnabled) // full-bleed, owns its own edge padding
-                        Tab.SETTINGS -> {
-                            var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
-                            var showProfile by remember { mutableStateOf(false) }
-                            if (showProfile) {
-                                ProfileScreen(onBack = { showProfile = false })
-                            } else {
-                                SettingsScreen(
-                                    fragmentEnabled = fragmentEnabled,
-                                    onFragmentChange = {
-                                        fragmentEnabled = it
-                                        vpnPrefs.edit().putBoolean("fragment_enabled", it).apply()
-                                    },
-                                    onProfileClick = { showProfile = true }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            BottomNavBar(Tab.entries[pagerState.currentPage]) { tab ->
-                coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) }
-            }
-        }
-    }
-    } // CompositionLocalProvider
-}
-
-// ── Bottom Nav ────────────────────────────────────────────────────────────────
-@Composable
-private fun BottomNavBar(current: Tab, onSelect: (Tab) -> Unit) {
-    val icons = mapOf(
-        Tab.VPN      to Icons.Rounded.Bolt,
-        Tab.SETTINGS to Icons.Rounded.Tune
-    )
-    val selectedColor   = AnanasAccent
-    val unselectedColor = AnanasMuted
-    val bgColor         = AnanasCard2.copy(alpha = 0.97f)
-    val borderColor     = AnanasBorder2
-    val selectedBg      = AnanasAccent.copy(0.14f)
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp)
-    ) {
-        // Shadow layer
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(30.dp))
-                .background(Color(0xFF000000).copy(0.3f))
-                .padding(bottom = 2.dp)
-        )
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(30.dp))
-                .background(bgColor)
-                .border(1.dp, borderColor, RoundedCornerShape(30.dp))
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Tab.entries.forEach { tab ->
-                val selected = tab == current
-                val color = if (selected) selectedColor else unselectedColor
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (selected) selectedBg else Color.Transparent)
-                        .clickable { onSelect(tab) }
-                        .padding(horizontal = 16.dp, vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(icons[tab]!!, null, tint = color, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.height(2.dp))
-                        Text(tab.label, fontSize = 10.sp, color = color,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                    }
-                }
-            }
-        }
+        VpnTab(autoIpEnabled) // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
     }
 }
 
-
-// ── ANANAS in-tab navigation (Home ⇄ Locations / My Configs / Profile) ─────────
-private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, PROFILE }
+// ── ANANAS navigation (Home ⇄ Locations / My Configs / Settings / Profile) ─────
+private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, SETTINGS, PROFILE }
 
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @Composable
@@ -306,6 +208,8 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     }
     var showAddDialog by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf(AnanasScreen.HOME) }
+    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
+    var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
     var elapsedSec        by remember { mutableStateOf(0L) }
@@ -397,7 +301,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.MY_CONFIGS }
+                    AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.SETTINGS }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
                         Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
@@ -493,6 +397,16 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     )
 
     AnanasScreen.LOCATIONS -> LocationsScreen(onBack = { screen = AnanasScreen.HOME })
+
+    AnanasScreen.SETTINGS -> SettingsScreen(
+        fragmentEnabled = fragmentEnabled,
+        onFragmentChange = {
+            fragmentEnabled = it
+            vpnPrefs.edit().putBoolean("fragment_enabled", it).apply()
+        },
+        onProfileClick = { screen = AnanasScreen.PROFILE },
+        onBack = { screen = AnanasScreen.HOME }
+    )
 
     AnanasScreen.PROFILE -> ProfileScreen(onBack = { screen = AnanasScreen.HOME })
     }
@@ -910,7 +824,7 @@ private fun LocationsScreen(onBack: () -> Unit) {
 @Composable
 private fun SettingsScreen(
     fragmentEnabled: Boolean, onFragmentChange: (Boolean) -> Unit,
-    onProfileClick: () -> Unit = {},
+    onProfileClick: () -> Unit = {}, onBack: () -> Unit = {},
 ) {
     var autoReconnect by remember { mutableStateOf(true) }
     var killSwitch by remember { mutableStateOf(false) }
@@ -921,7 +835,8 @@ private fun SettingsScreen(
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("Settings", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                Text("Settings", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
             }
 
             // Profile summary card
