@@ -311,7 +311,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
 
                 // ── Power button + status ────────────────────────────────
                 Column(
-                    Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 26.dp),
+                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     PowerButton(
@@ -354,21 +354,26 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                         }
                     }
                     if (otherConfigs.isNotEmpty()) {
-                        item(key = "quick-switch-hdr") {
-                            Row(
-                                Modifier.fillMaxWidth().padding(bottom = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        item(key = "quick-switch-block") {
+                            Column(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(16.dp)
                             ) {
-                                Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
-                                Text(
-                                    "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
-                                    modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
-                                )
+                                Row(
+                                    Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                    Text(
+                                        "See all", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
+                                        modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
+                                    )
+                                }
+                                otherConfigs.forEachIndexed { idx, cfg ->
+                                    QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
+                                }
                             }
-                        }
-                        items(otherConfigs, key = { "row-${it.id}" }) { cfg ->
-                            QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) })
                         }
                     }
                 }
@@ -443,33 +448,36 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         0f, 360f, infiniteRepeatable(tween(3500, easing = LinearEasing)), label = "sweep"
     )
 
-    Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
-        // ambient glow
-        Box(
-            Modifier.size(160.dp).clip(CircleShape)
-                .background(Brush.radialGradient(listOf(AnanasAccent.copy(0.14f), Color.Transparent)))
-        )
+    Box(Modifier.size(300.dp), contentAlignment = Alignment.Center) {
+        // wide ambient glow (soft, spread across most of the card — matches reference)
+        if (connected) {
+            Box(
+                Modifier.size(300.dp).clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(AnanasAccent.copy(0.20f), AnanasAccent.copy(0.05f), Color.Transparent)))
+            )
+        }
 
         // pulsing outward rings — only while connected
         if (connected) {
             listOf(pulse1, pulse2).forEach { p ->
                 Box(
                     Modifier
-                        .size(160.dp)
-                        .scale(0.75f + p * 0.45f)
+                        .size(220.dp)
+                        .scale(0.8f + p * 0.35f)
                         .clip(CircleShape)
-                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.6f), CircleShape)
+                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.5f), CircleShape)
                 )
             }
         }
 
-        // static guide rings
-        Box(Modifier.size(140.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
-        Box(Modifier.size(106.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
+        // static faint guide rings, spread wide like reference
+        Box(Modifier.size(240.dp).clip(CircleShape).border(1.dp, Color(0xFF17171C), CircleShape))
+        Box(Modifier.size(190.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
+        Box(Modifier.size(150.dp).clip(CircleShape).border(1.dp, Color(0xFF1C1C20), CircleShape))
 
         // thin rotating sweep arc while connected
         if (connected) {
-            Canvas(Modifier.size(140.dp).rotate(sweepRotation)) {
+            Canvas(Modifier.size(150.dp).rotate(sweepRotation)) {
                 drawArc(
                     color = AnanasAccent,
                     startAngle = 0f, sweepAngle = 26f, useCenter = false,
@@ -481,9 +489,9 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         // core power button
         Box(
             Modifier
-                .size(112.dp)
+                .size(126.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF101210))
+                .background(Color(0xFF0D100E))
                 .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
                 .clickable(enabled = !connecting) { onClick() },
             contentAlignment = Alignment.Center
@@ -594,15 +602,15 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.size(26.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
-                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
             Column {
-                Text(cfg.displayName, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                 Text(
                     if (connected) "${cfg.network.uppercase()} · Active" else "Tap to browse locations",
-                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
+                    fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp)
                 )
             }
         }
@@ -610,26 +618,26 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
     }
 }
 
-// ── Quick-switch row (Home, bottom) — minimal, no card/border, matches reference ─
+// ── Quick-switch row (inside the bordered Quick Switch card) ───────────────────
 @Composable
-private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit) {
+private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit, showDivider: Boolean = true) {
     val badgeColor = when (cfg.proto.lowercase()) {
         "trojan" -> AnanasAccent; "vless" -> AnanasVless; "vmess" -> AnanasAmber; else -> AnanasMuted
     }
     Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 11.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.size(22.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
-                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 9.5.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(badgeColor.copy(0.16f)), contentAlignment = Alignment.Center) {
+                Text(cfg.proto.take(1).uppercase(), color = badgeColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
-            Text(cfg.displayName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE4E5E9))
+            Text(cfg.displayName, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFE4E5E9))
         }
         Text(cfg.network.uppercase(), fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
     }
-    Divider(color = AnanasDivider, thickness = 1.dp)
+    if (showDivider) Divider(color = AnanasDivider, thickness = 1.dp)
 }
 
 // ── QR code: generate + dialog (v2rayNG-style config sharing) ──────────────────
