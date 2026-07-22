@@ -147,11 +147,34 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
-// 2-letter country code -> flag emoji (regional indicator symbols).
-private fun countryCodeToFlagEmoji(cc: String): String {
-    if (cc.length != 2) return "🏳️"
-    val base = 0x1F1E6 - 'A'.code
-    return cc.uppercase().map { c -> String(Character.toChars(base + c.code)) }.joinToString("")
+// Flat two-tone accent color per country — used to draw an abstract flag glyph
+// instead of relying on emoji flags (which often render as bare letter codes on Android).
+private fun countryCodeToFlagColor(cc: String): Color = when (cc.uppercase()) {
+    "DE" -> Color(0xFFE6A23C)
+    "FR", "NL", "GB", "US" -> Color(0xFF64D2FF)
+    "TR", "IT" -> Color(0xFFE0605C)
+    else -> AnanasMuted
+}
+
+// Small abstract flag glyph drawn on a dark circular badge (matches the design reference,
+// which uses colored geometric shapes rather than emoji flags).
+@Composable
+private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+    val accent = countryCodeToFlagColor(countryCode)
+    Box(
+        modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color(0xFF1A1A1E)),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .size(size * 0.46f)
+                .clip(RoundedCornerShape(size * 0.04f))
+                .background(accent)
+        )
+    }
 }
 
 private fun pingQualityLabel(ms: Int): String = when {
@@ -276,7 +299,6 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
         )
     }
-    var showAddDialog by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf(AnanasScreen.HOME) }
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
@@ -337,6 +359,19 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
     }
 
+    // Unwraps a possibly-wrapped Compose Context down to the hosting Activity.
+    // context as? MainActivity often fails silently (LocalContext is frequently a
+    // ContextWrapper, e.g. themed context), which was skipping VPN permission
+    // and causing the connect flow to fail/crash without a clear error.
+    fun findActivity(ctx: Context): com.cdnhunter.app.MainActivity? {
+        var c = ctx
+        while (c is android.content.ContextWrapper) {
+            if (c is com.cdnhunter.app.MainActivity) return c
+            c = c.baseContext
+        }
+        return c as? com.cdnhunter.app.MainActivity
+    }
+
     fun connectConfig(cfg: SavedConfig) {
         if (connected && cfg.id == activeId) {
             CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
@@ -351,9 +386,13 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             connecting = true
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             try {
-                val act = context as? com.cdnhunter.app.MainActivity
-                if (act != null) act.requestVpnPermissionAndConnect()
-                else CdnVpnService.start(context)
+                val act = findActivity(context)
+                if (act != null) {
+                    act.requestVpnPermissionAndConnect()
+                } else {
+                    connecting = false
+                    android.widget.Toast.makeText(context, "Couldn't start VPN — please reopen the app", android.widget.Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 connecting = false
                 android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
@@ -420,7 +459,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                     AddConfigFabMenu(
                         expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
                         onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
-                        onManual = { showAddDialog = true }
+                        onManual = {}
                     )
                 }
             }
@@ -489,7 +528,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
 
                         // ── Power button + status ────────────────────────────────
                         Column(
-                            Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 16.dp),
+                            Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             PowerButton(
@@ -538,7 +577,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                         AddConfigFabMenu(
                             expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
                             onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
-                            onManual = { showAddDialog = true }
+                            onManual = {}
                         )
                     }
                 }
@@ -554,13 +593,17 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
             clip.setText(AnnotatedString(cfg.uri))
             android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
         },
-        onManualAdd = { showAddDialog = true },
+        onManualAdd = {},
         onScanQr = ::startQrScan,
         onClipboardAdd = ::addFromClipboard,
         onDelete = { deleteConfig(it) }
     )
 
-    AnanasScreen.LOCATIONS -> LocationsScreen(onBack = { screen = AnanasScreen.HOME })
+    AnanasScreen.LOCATIONS -> LocationsScreen(
+        configs = configs, activeId = activeId, connected = connected,
+        onBack = { screen = AnanasScreen.HOME },
+        onConnect = { connectConfig(it) },
+    )
 
     AnanasScreen.SETTINGS -> SettingsScreen(
         fragmentEnabled = fragmentEnabled,
@@ -573,23 +616,6 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     )
 
     AnanasScreen.PROFILE -> ProfileScreen(onBack = { screen = AnanasScreen.HOME })
-    }
-
-    if (showAddDialog) {
-        AddConfigDialog(
-            onDismiss = { showAddDialog = false },
-            onAdd = { uri ->
-                val cfg = parseConfig(uri)
-                if (cfg != null) {
-                    val updated = configs + cfg
-                    configs = updated
-                    saveConfigs(context, updated)
-                    showAddDialog = false
-                } else {
-                    android.widget.Toast.makeText(context, "Invalid config URI", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-        )
     }
 }
 
@@ -607,13 +633,13 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         0f, 360f, infiniteRepeatable(tween(3500, easing = LinearEasing)), label = "sweep"
     )
 
-    Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
-        // pulsing outward rings — only while connected (exact ref: 160x160, 1px #4ade9c border)
+    Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
+        // pulsing outward rings — only while connected
         if (connected) {
             listOf(pulse1, pulse2).forEach { p ->
                 Box(
                     Modifier
-                        .size(160.dp)
+                        .size(180.dp)
                         .scale(0.85f + p * 0.25f)
                         .clip(CircleShape)
                         .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.7f), CircleShape)
@@ -623,7 +649,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
 
         // thin rotating sweep arc while connected
         if (connected) {
-            Canvas(Modifier.size(140.dp).rotate(sweepRotation)) {
+            Canvas(Modifier.size(158.dp).rotate(sweepRotation)) {
                 drawArc(
                     color = AnanasAccent,
                     startAngle = 0f, sweepAngle = 26f, useCenter = false,
@@ -632,10 +658,10 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             }
         }
 
-        // core power button — exact ref: 112dp, border 1.5dp #2a4638, glow shadow 0 0 40px rgba(74,222,156,.12)
+        // core power button — enlarged from reference (126dp) to give more visual weight
         Box(
             Modifier
-                .size(128.dp) // 112dp core + 8dp ring-shadow spread on each side (matches ref's "0 0 0 8px #0b0b0d" collar)
+                .size(144.dp) // 126dp core + 9dp ring-shadow spread on each side
                 .clip(CircleShape)
                 .background(
                     if (connected) Brush.radialGradient(listOf(AnanasAccent.copy(0.16f), Color.Transparent), radius = 200f)
@@ -645,7 +671,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         ) {}
         Box(
             Modifier
-                .size(112.dp)
+                .size(126.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF101210))
                 .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
@@ -653,69 +679,87 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             contentAlignment = Alignment.Center
         ) {
             if (connecting) {
-                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(32.dp))
             } else {
                 Icon(
                     Icons.Rounded.PowerSettingsNew, null,
                     tint = if (connected) AnanasAccent else AnanasMuted,
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(42.dp)
                 )
             }
         }
     }
 }
 
-// ── Add-config FAB menu: QR scan / clipboard instant / manual entry ────────────
+// ── Add-config menu: opens as a sliding bottom sheet with QR scan / clipboard ──
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddConfigFabMenu(
     expanded: Boolean, onToggle: () -> Unit,
     onScanQr: () -> Unit, onClipboard: () -> Unit, onManual: () -> Unit,
 ) {
     if (expanded) {
-        Column(
-            Modifier.padding(bottom = 8.dp, end = 2.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ModalBottomSheet(
+            onDismissRequest = onToggle,
+            containerColor = Color(0xFF101012),
+            contentColor = AnanasText,
+            dragHandle = {
+                Box(Modifier.padding(top = 10.dp, bottom = 6.dp)) {
+                    Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(AnanasBorder2))
+                }
+            }
         ) {
-            FabMenuAction("QR اسکن", Icons.Rounded.QrCodeScanner, false) { onToggle(); onScanQr() }
-            FabMenuAction("ورود دستی", Icons.Rounded.Edit, false) { onToggle(); onManual() }
-            FabMenuAction("افزودن از کلیپ‌بورد", Icons.Rounded.ContentPaste, true) { onToggle(); onClipboard() }
-            Spacer(Modifier.height(2.dp))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                Text(
+                    "Add a config", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = AnanasTextHi, modifier = Modifier.padding(bottom = 16.dp)
+                )
+                AddSheetAction("Scan QR code", "Scan a config from another device", Icons.Rounded.QrCodeScanner) {
+                    onToggle(); onScanQr()
+                }
+                Spacer(Modifier.height(10.dp))
+                AddSheetAction("Add from clipboard", "Paste a config link you've copied", Icons.Rounded.ContentPaste, highlight = true) {
+                    onToggle(); onClipboard()
+                }
+            }
         }
     }
     FloatingActionButton(
         onClick = onToggle,
-        containerColor = if (expanded) AnanasTextHi else AnanasCard2,
+        containerColor = AnanasCard2,
         contentColor   = AnanasTextHi,
         shape          = RoundedCornerShape(16.dp)
     ) {
         Icon(
-            if (expanded) Icons.Rounded.Close else Icons.Rounded.Add,
+            Icons.Rounded.Add,
             contentDescription = "Add config",
-            tint = if (expanded) AnanasBg else AnanasTextHi
+            tint = AnanasTextHi
         )
     }
 }
 
 @Composable
-private fun FabMenuAction(label: String, icon: ImageVector, highlight: Boolean, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, highlight: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (highlight) AnanasAccent else AnanasCard2)
+            .border(1.dp, if (highlight) Color.Transparent else AnanasBorder2, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Box(
-            Modifier.clip(RoundedCornerShape(10.dp))
-                .background(if (highlight) AnanasAccent else AnanasCard2)
-                .border(1.dp, if (highlight) Color.Transparent else AnanasBorder2, RoundedCornerShape(10.dp))
-                .clickable { onClick() }
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AnanasBg else AnanasTextHi)
-        }
-        Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(13.dp))
-                .background(if (highlight) AnanasAccent else AnanasCard2)
-                .border(1.dp, if (highlight) Color.Transparent else AnanasBorder2, RoundedCornerShape(13.dp))
-                .clickable { onClick() },
+            Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+                .background(if (highlight) Color.Black.copy(0.12f) else AnanasCard),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = if (highlight) AnanasBg else AnanasTextHi, modifier = Modifier.size(18.dp)) }
+        ) { Icon(icon, null, tint = if (highlight) AnanasBg else AnanasTextHi, modifier = Modifier.size(19.dp)) }
+        Column {
+            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AnanasBg else AnanasTextHi)
+            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) AnanasBg.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+        }
     }
 }
 
@@ -748,12 +792,7 @@ private fun ServerRow(
         Column(Modifier.padding(start = if (isActive) 19.dp else 16.dp, top = 14.dp, end = 14.dp, bottom = 14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        Modifier.size(30.dp).clip(CircleShape).background(AnanasCard2),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(countryCodeToFlagEmoji(cfg.countryCode), fontSize = 14.sp)
-                    }
+                    CountryFlagBadge(cfg.countryCode, 32.dp)
                     Column {
                         Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                         Spacer(Modifier.height(3.dp))
@@ -768,19 +807,19 @@ private fun ServerRow(
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
-                        Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
-                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
                             .clickable { onShowQr() },
                         contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.QrCode2, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(16.dp)) }
+                    ) { Icon(Icons.Rounded.QrCode2, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(18.dp)) }
                     Box(
-                        Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
-                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
                             .clickable { onCopy() },
                         contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp)) }
+                    ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(17.dp)) }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -811,18 +850,16 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(horizontal = 15.dp, vertical = 13.dp),
+            .padding(horizontal = 17.dp, vertical = 15.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.size(26.dp).clip(CircleShape).background(AnanasCard2), contentAlignment = Alignment.Center) {
-                Text(countryCodeToFlagEmoji(cfg.countryCode), fontSize = 13.sp)
-            }
+            CountryFlagBadge(cfg.countryCode, 26.dp)
             Column {
                 Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
@@ -844,9 +881,7 @@ private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit, showDivider: B
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.size(22.dp).clip(CircleShape).background(AnanasCard2), contentAlignment = Alignment.Center) {
-                Text(countryCodeToFlagEmoji(cfg.countryCode), fontSize = 11.sp)
-            }
+            CountryFlagBadge(cfg.countryCode, 22.dp)
             Text(cfg.displayName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE4E5E9))
         }
         Text(
@@ -985,17 +1020,17 @@ private fun MyConfigsScreen(
 }
 
 // ── Locations — visual reference screen (static demo data, wired later) ────────
-private data class DemoCountry(val name: String, val servers: Int, val ms: Int, val color: Color)
 @Composable
-private fun LocationsScreen(onBack: () -> Unit) {
-    val demo = remember {
-        listOf(
-            DemoCountry("Germany", 14, 17, AnanasAccent),
-            DemoCountry("France", 9, 29, AnanasMuted),
-            DemoCountry("Netherlands", 11, 34, AnanasMuted),
-            DemoCountry("Turkey", 18, 61, AnanasMuted),
-        )
+private fun LocationsScreen(
+    configs: List<SavedConfig>, activeId: String, connected: Boolean,
+    onBack: () -> Unit, onConnect: (SavedConfig) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(configs, query) {
+        if (query.isBlank()) configs
+        else configs.filter { it.displayName.contains(query, ignoreCase = true) }
     }
+
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
@@ -1006,7 +1041,10 @@ private fun LocationsScreen(onBack: () -> Unit) {
                 AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
                 Column {
                     Text("Locations", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
-                    Text("128 servers across 32 countries", fontSize = 11.5.sp, color = AnanasMuted)
+                    Text(
+                        if (configs.isEmpty()) "No configs yet" else "${configs.size} config${if (configs.size == 1) "" else "s"} saved",
+                        fontSize = 11.5.sp, color = AnanasMuted
+                    )
                 }
             }
 
@@ -1016,37 +1054,64 @@ private fun LocationsScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(Icons.Rounded.Search, null, tint = AnanasMuted, modifier = Modifier.size(16.dp))
-                Text("Search", fontSize = 13.sp, color = Color(0xFF54565E))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = AnanasText),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(AnanasAccent),
+                    decorationBox = { inner ->
+                        if (query.isEmpty()) Text("Search", fontSize = 13.sp, color = Color(0xFF54565E))
+                        inner()
+                    }
+                )
             }
             Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Text("All", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi,
-                    modifier = Modifier.padding(bottom = 10.dp).border(0.dp, Color.Transparent))
-                Text("Fastest", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
-                Text("Saved", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
-            }
             Divider(color = Color(0xFF1C1C20), thickness = 1.dp)
             Spacer(Modifier.height(6.dp))
 
-            LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
-                items(demo) { c ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 13.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                            Box(Modifier.size(26.dp).clip(CircleShape).background(Color(0xFF1A1A1E)))
-                            Column {
-                                Text(c.name, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
-                                Text("${c.servers} servers", fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+            if (configs.isEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 60.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Rounded.Public, null, tint = AnanasFaint, modifier = Modifier.size(36.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("No servers yet", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Add a config from the home screen", fontSize = 12.sp, color = AnanasMuted)
+                }
+            } else {
+                LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
+                    items(filtered, key = { it.id }) { cfg ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onConnect(cfg) }.padding(vertical = 13.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                                CountryFlagBadge(cfg.countryCode, 26.dp)
+                                Column {
+                                    Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
+                                    Text(
+                                        if (cfg.id == activeId && connected) "Connected"
+                                        else if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}"
+                                        else "Tap to connect",
+                                        fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
+                                    )
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (cfg.id == activeId && connected) {
+                                    Box(Modifier.size(6.dp).clip(CircleShape).background(AnanasAccent))
+                                } else if (cfg.pingMs >= 0) {
+                                    Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
+                                }
+                                Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("${c.ms}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.color)
-                            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
-                        }
+                        Divider(color = AnanasDivider, thickness = 1.dp)
                     }
-                    Divider(color = AnanasDivider, thickness = 1.dp)
                 }
             }
         }
@@ -1266,8 +1331,8 @@ private fun ProfileScreen(onBack: () -> Unit) {
 private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, modifier: Modifier) {
     val (value, unit) = formatSpeed(kbps)
     Box(
-        modifier.clip(RoundedCornerShape(14.dp)).background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)).padding(12.dp)
+        modifier.clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(14.dp)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1288,11 +1353,11 @@ private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor:
 @Composable
 private fun AnanasIconButton(icon: ImageVector, onClick: () -> Unit) {
     Box(
-        Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
-            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
+        Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(11.dp))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
-    ) { Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(16.dp)) }
+    ) { Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(18.dp)) }
 }
 
 // ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
@@ -1312,104 +1377,3 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
         }
     }
 }
-
-// ── Add Config Dialog ─────────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddConfigDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    val clip    = LocalClipboardManager.current
-    var uri     by remember { mutableStateOf("") }
-    var preview by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor   = CardBg,
-        shape            = RoundedCornerShape(20.dp),
-        title = {
-            Text("Add Config", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Paste a trojan://, vless://, or vmess:// URI", fontSize = 13.sp, color = TextSecondary)
-                // URI input
-                Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg2)
-                ) {
-                    TextField(
-                        value = uri,
-                        onValueChange = {
-                            uri = it
-                            val cfg = if (it.isNotBlank()) parseConfig(it.trim()) else null
-                            preview = if (cfg != null) "${cfg.proto.uppercase()} · ${cfg.address}:${cfg.port}" else if (it.isNotBlank()) "Invalid URI" else ""
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("trojan://...", fontSize = 12.sp, color = TextMuted) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor   = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedTextColor        = TextPrimary,
-                            unfocusedTextColor      = TextPrimary,
-                            cursorColor             = AccentBlue,
-                            focusedIndicatorColor   = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 12.sp, fontFamily = FontFamily.Monospace
-                        ),
-                        maxLines = 4
-                    )
-                }
-                // Paste from clipboard button
-                Box(
-                    Modifier.clip(RoundedCornerShape(10.dp)).background(AccentBlue.copy(0.12f))
-                        .clickable {
-                            val t = try { clip.getText()?.text ?: "" } catch (_: Exception) { "" }
-                            if (t.startsWith("trojan://") || t.startsWith("vless://") || t.startsWith("vmess://")) {
-                                uri = t
-                                val cfg = parseConfig(t.trim())
-                                preview = if (cfg != null) "${cfg.proto.uppercase()} · ${cfg.address}:${cfg.port}" else "Invalid URI"
-                            } else {
-                                android.widget.Toast.makeText(
-                                    /* context via preview string hack below */ null as android.content.Context?,
-                                    "No valid URI in clipboard", android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Rounded.ContentPaste, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
-                        Text("Paste from clipboard", fontSize = 12.sp, color = AccentBlue)
-                    }
-                }
-                if (preview.isNotBlank()) {
-                    Text(
-                        preview,
-                        fontSize = 12.sp,
-                        color = if (preview == "Invalid URI") RedFail else AccentTeal,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Box(
-                Modifier.clip(RoundedCornerShape(12.dp)).background(AccentBlue)
-                    .clickable { if (uri.isNotBlank()) onAdd(uri.trim()) }
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
-            ) {
-                Text("Add", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            Box(
-                Modifier.clip(RoundedCornerShape(12.dp)).background(CardBg2)
-                    .clickable { onDismiss() }
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
-            ) {
-                Text("Cancel", fontSize = 14.sp, color = TextSecondary)
-            }
-        }
-    )
-}
-
