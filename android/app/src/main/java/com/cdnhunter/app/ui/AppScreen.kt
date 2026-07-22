@@ -138,6 +138,12 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
 private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val ping = measurePingMs(cfg.address, cfg.port)
+        // If the country code was already pulled from a flag emoji in the config's name,
+        // keep it and only fetch city/ping — no need to hit the geo-lookup API for country.
+        if (cfg.countryCode.isNotBlank()) {
+            val info = try { geo.lookupGeoInfo(cfg.address) } catch (e: Exception) { null }
+            return@withContext cfg.copy(pingMs = ping, city = info?.city.orEmpty(), geoResolved = true)
+        }
         val info = try { geo.lookupGeoInfo(cfg.address) } catch (e: Exception) { null }
         cfg.copy(
             pingMs = ping,
@@ -147,32 +153,70 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
-// Flat two-tone accent color per country — used to draw an abstract flag glyph
-// instead of relying on emoji flags (which often render as bare letter codes on Android).
-private fun countryCodeToFlagColor(cc: String): Color = when (cc.uppercase()) {
-    "DE" -> Color(0xFFE6A23C)
-    "FR", "NL", "GB", "US" -> Color(0xFF64D2FF)
-    "TR", "IT" -> Color(0xFFE0605C)
-    else -> AnanasMuted
-}
+// Real flag stripe patterns (simplified, flat-color) per country code — drawn as a
+// square badge so it reads like an actual flag rather than an abstract color chip.
+private data class FlagPattern(val colors: List<Color>, val horizontal: Boolean = true)
+private val flagPatterns = mapOf(
+    "DE" to FlagPattern(listOf(Color(0xFF1A1A1A), Color(0xFFE0605C), Color(0xFFE6A23C))),
+    "FR" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "NL" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFF3A6CC8))),
+    "GB" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFFF2F2F2), Color(0xFFE0605C))),
+    "US" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFF2F2F2))),
+    "TR" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
+    "IT" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "CA" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "FI" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFF2F2F2))),
+    "SE" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
+)
+private fun flagPatternFor(cc: String): FlagPattern =
+    flagPatterns[cc.uppercase()] ?: FlagPattern(listOf(AnanasFaint, AnanasMuted, AnanasFaint))
 
-// Small abstract flag glyph drawn on a dark circular badge (matches the design reference,
-// which uses colored geometric shapes rather than emoji flags).
+// Square flag badge with rounded corners, real stripe pattern, and a glassy diagonal
+// highlight overlay (matches the "glass" look used in reference clients like Hiddify).
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val accent = countryCodeToFlagColor(countryCode)
+    val pattern = flagPatternFor(countryCode)
+    val corner = size * 0.28f
     Box(
         modifier
             .size(size)
-            .clip(CircleShape)
-            .background(Color(0xFF1A1A1E)),
-        contentAlignment = Alignment.Center
+            .clip(RoundedCornerShape(corner))
+            .background(Color(0xFF1A1A1E))
     ) {
+        // Stripes
+        if (pattern.horizontal) {
+            Column(Modifier.fillMaxSize()) {
+                pattern.colors.forEach { c ->
+                    Box(Modifier.weight(1f).fillMaxWidth().background(c))
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxSize()) {
+                pattern.colors.forEach { c ->
+                    Box(Modifier.weight(1f).fillMaxHeight().background(c))
+                }
+            }
+        }
+        // Glass highlight: soft diagonal light sweep + top sheen, like frosted glass over the flag
         Box(
             Modifier
-                .size(size * 0.46f)
-                .clip(RoundedCornerShape(size * 0.04f))
-                .background(accent)
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = 0.04f),
+                            Color.Black.copy(alpha = 0.10f),
+                        )
+                    )
+                )
+        )
+        // Thin border for definition
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(corner))
+                .border(0.75.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(corner))
         )
     }
 }
@@ -197,6 +241,19 @@ private val countryNames = mapOf(
 
 private fun countryCodeToName(cc: String): String = countryNames[cc.uppercase()] ?: ""
 
+// Detects a flag emoji (pair of regional-indicator symbols, e.g. 🇩🇪) inside a config's
+// remark/name — the way Hiddify-style clients embed the country in the config title.
+// Returns the 2-letter country code and the remaining text with the flag stripped out.
+private val flagEmojiRegex = Regex("[\\uD83C][\\uDDE6-\\uDDFF][\\uD83C][\\uDDE6-\\uDDFF]")
+private fun extractFlagFromName(raw: String): Pair<String, String> {
+    val match = flagEmojiRegex.find(raw) ?: return "" to raw
+    val flag = match.value
+    val codepoints = flag.codePoints().toArray()
+    val cc = codepoints.joinToString("") { cp -> ((cp - 0x1F1E6) + 'A'.code).toChar().toString() }
+    val stripped = raw.replace(flag, "").trim().trim('-', '·', '|', '(', ')').trim()
+    return cc to stripped.ifBlank { raw }
+}
+
 
 private fun parseConfig(uri: String): SavedConfig? {
     val ob = ConfigUriParser.parseToOutbound(uri) ?: return null
@@ -210,7 +267,7 @@ private fun parseConfig(uri: String): SavedConfig? {
     val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
     val net = ss?.optString("network", "tcp") ?: "tcp"
 
-    // Prefer the user-given remark (URI fragment, e.g. "...#Germany%20Pro%2001") if present
+    // Prefer the user-given remark (URI fragment, e.g. "...#🇩🇪 Germany Pro 01") if present
     val remark = try {
         java.net.URI(uri).rawFragment?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.takeIf { it.isNotBlank() }
     } catch (e: Exception) { null }
@@ -220,12 +277,18 @@ private fun parseConfig(uri: String): SavedConfig? {
         "vmess"   -> "VMess"
         else      -> proto.replaceFirstChar { it.uppercase() }
     } + " · $addr"
-    val name = remark ?: fallbackName
+
+    // If the remark carries a flag emoji (Hiddify-style, e.g. "🇩🇪 Germany Pro 01"),
+    // pull the country code from it and strip the emoji from the displayed name —
+    // this skips the geo-lookup entirely for that config.
+    val (flagCc, cleanRemark) = remark?.let { extractFlagFromName(it) } ?: ("" to null)
+    val name = cleanRemark ?: fallbackName
 
     return SavedConfig(
         id = uri.hashCode().toString(),
         uri = uri, displayName = name,
         proto = proto, address = addr, port = port, network = net, sni = sni,
+        countryCode = flagCc,
     )
 }
 
