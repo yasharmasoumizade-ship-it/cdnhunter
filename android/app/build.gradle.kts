@@ -15,6 +15,18 @@ android {
         versionName = "3.0"
     }
 
+    // Splits the native (.so) libraries per-ABI instead of bundling all four
+    // architectures into one APK. This is what was making the APK ~150MB and
+    // slow to install — most phones only need arm64-v8a.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true // also keep one fallback APK that works on any device
+        }
+    }
+
     signingConfigs {
         create("release") {
             storeFile = file("../keystore.jks")
