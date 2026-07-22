@@ -139,9 +139,25 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p out
-          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
-          echo "Found: $APK"
-          test -n "$APK" && cp "$APK" out/CDN-Hunter-v3.apk
+          find android/app/build/outputs/apk -name "*.apk" -exec ls -la {} \;
+
+          # With ABI splits enabled, Gradle produces separate APKs per architecture
+          # plus one universal APK. Ship all of them so users on any device can pick
+          # the small arch-specific one, with the universal APK as a safe fallback.
+          UNIVERSAL=$(find android/app/build/outputs/apk -iname "*universal*.apk" | head -1)
+          ARM64=$(find android/app/build/outputs/apk -iname "*arm64-v8a*.apk" | head -1)
+          ARMV7=$(find android/app/build/outputs/apk -iname "*armeabi-v7a*.apk" | head -1)
+
+          test -n "$UNIVERSAL" && cp "$UNIVERSAL" out/CDN-Hunter-v3-universal.apk
+          test -n "$ARM64" && cp "$ARM64" out/CDN-Hunter-v3-arm64.apk
+          test -n "$ARMV7" && cp "$ARMV7" out/CDN-Hunter-v3-armv7.apk
+
+          # Fallback: if splits didn't produce the expected names, ship whatever was built.
+          if [ ! -f out/CDN-Hunter-v3-universal.apk ] && [ ! -f out/CDN-Hunter-v3-arm64.apk ]; then
+            APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+            test -n "$APK" && cp "$APK" out/CDN-Hunter-v3.apk
+          fi
+
           ls -la out
 
 
@@ -163,6 +179,11 @@ jobs:
             - Auto-IP (scan + apply best IP)
             - Traffic stats (upload/download)
             - Speed monitor
-          files: out/CDN-Hunter-v3.apk
+
+            ### Which file to download?
+            - Most phones (made after ~2017): **CDN-Hunter-v3-arm64.apk** (smallest)
+            - Older/32-bit phones: **CDN-Hunter-v3-armv7.apk**
+            - Not sure / installer errors: **CDN-Hunter-v3-universal.apk** (works on any device, larger)
+          files: out/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
