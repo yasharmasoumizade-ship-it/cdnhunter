@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -435,6 +436,26 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         return c as? com.cdnhunter.app.MainActivity
     }
 
+    // Selecting a config in a list should only mark it active — it must NOT start the VPN.
+    // Previously config rows called connectConfig() directly, so just browsing/picking a
+    // server from My Configs or Locations also tried to launch the VPN tunnel, hitting the
+    // same foreground-service crash as the Connect button.
+    fun selectConfig(cfg: SavedConfig) {
+        activeId = cfg.id
+        context.getSharedPreferences("cdnhunter_vpn", 0)
+            .edit()
+            .putString("active_config_id", cfg.id)
+            .apply()
+        // If a VPN session is already running, switch it live to the newly selected config.
+        if (connected) {
+            context.getSharedPreferences("cdnhunter_vpn", 0)
+                .edit()
+                .putString("user_config", cfg.uri)
+                .apply()
+            CdnVpnService.restartXray(context)
+        }
+    }
+
     fun connectConfig(cfg: SavedConfig) {
         if (connected && cfg.id == activeId) {
             CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
@@ -513,6 +534,31 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
     val otherConfigs  = configs.filter { it.id != activeConfig?.id }
 
+    // Quick Switch sheet state is hoisted here (above the when(screen) block) instead of
+    // being created fresh inside the HOME branch. Previously it was recreated every time
+    // HOME re-entered the composition, so navigating away mid-drag (or during the sheet's
+    // own expand/collapse animation) tore down its state, leaving it visually stuck
+    // partway through a drag the next time Home was shown.
+    val quickSwitchSheetState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue = SheetValue.PartiallyExpanded,
+            skipHiddenState = true
+        )
+    )
+    LaunchedEffect(screen) {
+        if (screen != AnanasScreen.HOME) {
+            runCatching { quickSwitchSheetState.bottomSheetState.partialExpand() }
+        }
+    }
+
+    // System back button previously always exited the app from any screen (Settings,
+    // Locations, My Configs, Profile), since nothing intercepted it. It should instead
+    // navigate up to Home first, and only fall through to the default exit-app behavior
+    // once already on Home.
+    BackHandler(enabled = screen != AnanasScreen.HOME) {
+        screen = AnanasScreen.HOME
+    }
+
     when (screen) {
     AnanasScreen.HOME -> {
         if (configs.isEmpty()) {
@@ -527,14 +573,8 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                 }
             }
         } else {
-            val sheetState = rememberBottomSheetScaffoldState(
-                bottomSheetState = rememberStandardBottomSheetState(
-                    initialValue = SheetValue.PartiallyExpanded,
-                    skipHiddenState = true
-                )
-            )
             BottomSheetScaffold(
-                scaffoldState = sheetState,
+                scaffoldState = quickSwitchSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 76.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 sheetContainerColor = Color(0xFF101012),
@@ -567,7 +607,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                                 )
                             }
                             otherConfigs.forEachIndexed { idx, cfg ->
-                                QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
+                                QuickSwitchRow(cfg = cfg, onClick = { selectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
                             }
                         }
                     }
@@ -651,7 +691,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     AnanasScreen.MY_CONFIGS -> MyConfigsScreen(
         configs = configs, activeId = activeId, connected = connected,
         onBack = { screen = AnanasScreen.HOME },
-        onConnect = { connectConfig(it) },
+        onConnect = { selectConfig(it) },
         onCopy = { cfg ->
             clip.setText(AnnotatedString(cfg.uri))
             android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
@@ -665,7 +705,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     AnanasScreen.LOCATIONS -> LocationsScreen(
         configs = configs, activeId = activeId, connected = connected,
         onBack = { screen = AnanasScreen.HOME },
-        onConnect = { connectConfig(it) },
+        onConnect = { selectConfig(it) },
     )
 
     AnanasScreen.SETTINGS -> SettingsScreen(

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
@@ -82,7 +83,20 @@ class CdnVpnService : VpnService() {
 
     private fun startVpn() {
         if (isRunning.get()) return
-        startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
+        // Manifest declares foregroundServiceType="specialUse" (required on API 34+ for
+        // any specialUse FGS), but that alone isn't enough — startForeground() must also
+        // pass a matching type flag or the OS throws. This mismatch was the actual cause
+        // of the crash-on-Connect: the manifest-only fix in the previous commit didn't
+        // cover the code side.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification("Connecting..."),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
+        }
         lastError = ""
 
         job = scope.launch {
