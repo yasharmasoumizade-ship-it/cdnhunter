@@ -154,64 +154,55 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
-// Real flag stripe patterns (simplified, flat-color) per country code — drawn as a
-// square badge so it reads like an actual flag rather than an abstract color chip.
-private data class FlagPattern(val colors: List<Color>, val horizontal: Boolean = true)
-private val flagPatterns = mapOf(
-    "DE" to FlagPattern(listOf(Color(0xFF1A1A1A), Color(0xFFE0605C), Color(0xFFE6A23C))),
-    "FR" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "NL" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFF3A6CC8))),
-    "GB" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFFF2F2F2), Color(0xFFE0605C))),
-    "US" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFF2F2F2))),
-    "TR" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
-    "IT" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "CA" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "FI" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFF2F2F2))),
-    "SE" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
-)
-private fun flagPatternFor(cc: String): FlagPattern =
-    flagPatterns[cc.uppercase()] ?: FlagPattern(listOf(AnanasFaint, AnanasMuted, AnanasFaint))
+// Converts a 2-letter ISO country code into its Unicode flag emoji by mapping each
+// letter to its Regional Indicator Symbol (U+1F1E6..U+1F1FF, A..Z). This works for
+// EVERY ISO-3166 country automatically — no hardcoded per-country list to maintain,
+// unlike the old fixed set of ~10 stripe patterns that silently fell back to a gray
+// placeholder for anything else.
+private fun countryCodeToFlagEmoji(cc: String): String? {
+    val code = cc.trim().uppercase()
+    if (code.length != 2) return null
+    val first = code[0]
+    val second = code[1]
+    if (first !in 'A'..'Z' || second !in 'A'..'Z') return null
+    val base = 0x1F1E6 // Regional Indicator Symbol Letter A
+    val firstCp = base + (first - 'A')
+    val secondCp = base + (second - 'A')
+    return String(Character.toChars(firstCp)) + String(Character.toChars(secondCp))
+}
 
-// Square flag badge with rounded corners, real stripe pattern, and a glassy diagonal
-// highlight overlay (matches the "glass" look used in reference clients like Hiddify).
+// Fallback stripe pattern used only when we truly have no country code (e.g. geo
+// lookup hasn't resolved yet) — the badge still looks intentional instead of blank.
+private val fallbackFlagColors = listOf(AnanasFaint, AnanasMuted, AnanasFaint)
+
+// Square flag badge with rounded corners. Renders the real emoji flag for the given
+// ISO country code (covers all countries); falls back to a neutral stripe placeholder
+// only when the code is blank/unrecognized (e.g. still resolving).
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val pattern = flagPatternFor(countryCode)
+    val emoji = remember(countryCode) { countryCodeToFlagEmoji(countryCode) }
     val corner = size * 0.28f
     Box(
         modifier
             .size(size)
             .clip(RoundedCornerShape(corner))
-            .background(Color(0xFF1A1A1E))
+            .background(Color(0xFF1A1A1E)),
+        contentAlignment = Alignment.Center
     ) {
-        // Stripes
-        if (pattern.horizontal) {
+        if (emoji != null) {
+            Text(
+                emoji,
+                fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size.toPx() * 0.62f).toSp() },
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        } else {
+            // Neutral placeholder stripes while country is unresolved.
             Column(Modifier.fillMaxSize()) {
-                pattern.colors.forEach { c ->
+                fallbackFlagColors.forEach { c ->
                     Box(Modifier.weight(1f).fillMaxWidth().background(c))
                 }
             }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                pattern.colors.forEach { c ->
-                    Box(Modifier.weight(1f).fillMaxHeight().background(c))
-                }
-            }
         }
-        // Glass highlight: soft diagonal light sweep + top sheen, like frosted glass over the flag
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.22f),
-                            Color.White.copy(alpha = 0.04f),
-                            Color.Black.copy(alpha = 0.10f),
-                        )
-                    )
-                )
-        )
         // Thin border for definition
         Box(
             Modifier
@@ -375,13 +366,25 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
 
     val geoService = remember { GeoService() }
 
-    // Enrich configs with country/city/ping whenever the config list changes.
-    // Skips configs already enriched. Runs off the main thread inside enrichConfigGeo.
-    LaunchedEffect(configs.map { it.id }) {
-        val toEnrich = configs.filter { !it.geoResolved }
+    // Enrich configs with country/city/ping whenever the SET of config ids changes
+    // (add/remove), not on every write to `configs` itself. The old key
+    // (configs.map { it.id }) created a NEW list every recomposition even when only
+    // ping/geo fields changed, which re-triggered this effect, which wrote back into
+    // `configs`, which re-triggered it again — an effect storm that could hang the UI
+    // thread (worst when switching tabs forces a recomposition). Keying on a joined
+    // id string only changes identity when configs are actually added/removed.
+    val configIdsKey = remember(configs) { configs.map { it.id }.sorted().joinToString(",") }
+    val enrichingIds = remember { mutableSetOf<String>() }
+    LaunchedEffect(configIdsKey) {
+        val toEnrich = configs.filter { !it.geoResolved && it.id !in enrichingIds }
         for (cfg in toEnrich) {
-            val enriched = enrichConfigGeo(geoService, cfg)
-            configs = configs.map { if (it.id == cfg.id) enriched else it }
+            enrichingIds += cfg.id
+            try {
+                val enriched = enrichConfigGeo(geoService, cfg)
+                configs = configs.map { if (it.id == cfg.id) enriched else it }
+            } finally {
+                enrichingIds -= cfg.id
+            }
         }
     }
 
@@ -461,6 +464,21 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                 connecting = false
                 android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    // Tapping a server in the Locations list should SELECT it as the active server.
+    // If we're already connected, switch the live tunnel to it (reconnect).
+    // If we're not connected, just mark it active and go back — don't auto-connect.
+    fun selectConfig(cfg: SavedConfig) {
+        activeId = cfg.id
+        context.getSharedPreferences("cdnhunter_vpn", 0)
+            .edit()
+            .putString("user_config", cfg.uri)
+            .putString("active_config_id", cfg.id)
+            .apply()
+        if (connected) {
+            connectConfig(cfg)
         }
     }
 
@@ -662,7 +680,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     AnanasScreen.LOCATIONS -> LocationsScreen(
         configs = configs, activeId = activeId, connected = connected,
         onBack = { screen = AnanasScreen.HOME },
-        onConnect = { connectConfig(it) },
+        onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
     )
 
     AnanasScreen.SETTINGS -> SettingsScreen(
@@ -1155,8 +1173,9 @@ private fun LocationsScreen(
                                     Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
                                     Text(
                                         if (cfg.id == activeId && connected) "Connected"
+                                        else if (cfg.id == activeId) "Selected"
                                         else if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}"
-                                        else "Tap to connect",
+                                        else "Tap to select",
                                         fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
                                     )
                                 }
@@ -1164,6 +1183,8 @@ private fun LocationsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 if (cfg.id == activeId && connected) {
                                     Box(Modifier.size(6.dp).clip(CircleShape).background(AnanasAccent))
+                                } else if (cfg.id == activeId) {
+                                    Icon(Icons.Rounded.Check, null, tint = AnanasAccent, modifier = Modifier.size(16.dp))
                                 } else if (cfg.pingMs >= 0) {
                                     Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
                                 }
