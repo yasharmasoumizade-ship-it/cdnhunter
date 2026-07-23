@@ -582,10 +582,6 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.SETTINGS }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Icon(Icons.Rounded.Shield, null, tint = AnanasTextHi, modifier = Modifier.size(16.dp))
-                                Text("ANANAS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.2).sp)
-                            }
                             AnanasIconButton(Icons.Rounded.Person) { screen = AnanasScreen.PROFILE }
                         }
 
