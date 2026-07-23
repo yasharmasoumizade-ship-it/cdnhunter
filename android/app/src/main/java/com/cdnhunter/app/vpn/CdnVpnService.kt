@@ -9,15 +9,10 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import hev.htproxy.TProxyService
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * VPN Service architecture:
- *   Android TUN <-> hev-socks5-tunnel (.so) <-> xray SOCKS5 (127.0.0.1:10808) <-> Server
- */
 class CdnVpnService : VpnService() {
 
     companion object {
@@ -71,8 +66,7 @@ class CdnVpnService : VpnService() {
 
         job = scope.launch {
             try {
-                // 0. Copy geo assets to filesDir (xray needs them for routing)
-                listOf("geoip.dat", "geosite.dat").forEach { name ->
+                listOf("geoip.metadb", "geosite.dat").forEach { name ->
                     val target = File(filesDir, name)
                     if (!target.exists()) {
                         try {
@@ -81,64 +75,43 @@ class CdnVpnService : VpnService() {
                     }
                 }
 
-                // 1. Build xray config (SOCKS inbound on 10808)
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
-                val configFile = File(filesDir, "xray_config.json")
+                val configFile = File(filesDir, "mihomo_config.yaml")
                 configFile.writeText(config)
 
-                // Clear previous xray error log so we only see this session's errors
                 xrayLog = ""
                 runCatching { File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME).writeText("") }
 
-                // 2. Init and start xray as SOCKS proxy
-                XrayBridge.init(filesDir.absolutePath)
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                android.util.Log.d("CdnVpn", "Full xray config: $config")
-                XrayBridge.start(config, 0)
+                android.util.Log.d("CdnVpn", "Full mihomo config: $config")
 
-                // 3. Small delay for xray to bind port
-                delay(800)
-
-                // 4. Establish TUN interface
                 val tun = establishTun()
                 if (tun == null) {
                     lastError = "Failed to create VPN tunnel"
-                    XrayBridge.stop()
                     withContext(Dispatchers.Main) { stopSelf() }
                     return@launch
                 }
                 tunFd = tun
 
-                // 5. Start tun2socks: route TUN traffic -> SOCKS proxy
-                val configPath = TProxyService.writeConfig(filesDir, "127.0.0.1", 10808)
-                if (configPath == null) {
-                    lastError = "Failed to write tun2socks config"
-                    XrayBridge.stop()
-                    tun.close()
-                    withContext(Dispatchers.Main) { stopSelf() }
-                    return@launch
-                }
-                TProxyService.startService(configPath, tun.fd)
+                protect(tun.fd)
+
+                MihomoBridge.start(config, tun.fd)
 
                 isRunning.set(true)
                 uploadBytes = 0L
                 downloadBytes = 0L
                 updateNotification("Connected")
 
-                // 6. Monitor traffic stats
                 while (isActive && isRunning.get()) {
-                    val xUp = XrayBridge.queryUpload()
-                    val xDown = XrayBridge.queryDownload()
-                    val tunStats = TProxyService.stats()
-                    uploadBytes = if (xUp > 0) xUp else tunStats[1]
-                    downloadBytes = if (xDown > 0) xDown else tunStats[3]
-                    xrayLog = readXrayLog()
+                    uploadBytes = MihomoBridge.queryUpload()
+                    downloadBytes = MihomoBridge.queryDownload()
+                    xrayLog = readMihomoLog()
                     delay(1000)
                 }
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
-                xrayLog = readXrayLog()
+                xrayLog = readMihomoLog()
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 withContext(Dispatchers.Main) { stopVpn() }
@@ -146,8 +119,7 @@ class CdnVpnService : VpnService() {
         }
     }
 
-    /** Reads the tail of xray's error log so the UI can show why a connection failed. */
-    private fun readXrayLog(): String {
+    private fun readMihomoLog(): String {
         return try {
             val f = File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME)
             if (!f.exists()) return ""
@@ -159,8 +131,7 @@ class CdnVpnService : VpnService() {
     private fun stopVpn() {
         isRunning.set(false)
         job?.cancel()
-        TProxyService.stopService()
-        XrayBridge.stop()
+        MihomoBridge.stop()
         tunFd?.close()
         tunFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -172,17 +143,12 @@ class CdnVpnService : VpnService() {
             val builder = Builder()
                 .setSession("CDN Hunter VPN")
                 .addAddress("10.10.10.10", 32)
-                // IPv6 ULA address: required because we route ::/0 below. Without an
-                // IPv6 address on the TUN, IPv6 packets are accepted but mishandled,
-                // which makes apps that try AAAA (IPv6) first hang/timeout.
                 .addAddress("fd00:1:1:1::1", 128)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
-                .setMtu(8500)
+                .setMtu(9000)
                 .addDisallowedApplication(packageName)
                 .setBlocking(false)
-                // Use split routing (0/1 + 128/1) instead of 0/0
-                // This + addDisallowedApplication prevents xray traffic loop
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)
                 .addRoute("::", 0)
