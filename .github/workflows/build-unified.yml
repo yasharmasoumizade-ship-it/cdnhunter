@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'mihomo-mobile/**'
       - '.github/workflows/build-unified.yml'
 
 permissions:
@@ -39,89 +40,31 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
 
-      - name: Build libv2ray.aar (xray-core native)
+      - name: Build libmihomo.aar (mihomo core, native)
         run: |
-          git clone --depth 1 https://github.com/2dust/AndroidLibXrayLite.git xray-lib
-          cd xray-lib
+          set -euo pipefail
+          cd mihomo-mobile
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH=$PATH:$(go env GOPATH)/bin
           gomobile init
           go mod tidy -v
-          # -checklinkname=0 is REQUIRED for Go 1.23+ because anet uses
-          # //go:linkname to access net.zoneCache (see wlynxg/anet README).
-          gomobile bind -v -androidapi 21 -ldflags='-s -w -checklinkname=0' -o libv2ray.aar ./
-          ls -la libv2ray.aar
+          gomobile bind -v -androidapi 24 -ldflags='-s -w -checklinkname=0' -o libmihomo.aar .
+          ls -la libmihomo.aar
 
       - name: Place .aar in app/libs
         run: |
           mkdir -p android/app/libs
-          cp xray-lib/libv2ray.aar android/app/libs/
+          rm -f android/app/libs/libv2ray.aar
+          cp mihomo-mobile/libmihomo.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Build hev-socks5-tunnel .so (official ndk-build)
-        run: |
-          set -euo pipefail
-          NDK="${ANDROID_HOME}/ndk/26.1.10909125"
-
-          # Clone with submodules (yaml, lwip, hev-task-system) — required by Android.mk
-          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
-
-          # Build with the project's OWN Android.mk/Application.mk via ndk-build.
-          # This builds the submodules as static libs, links them correctly, adds the
-          # 16KB page-size alignment flags, and compiles hev-jni.c (PKGNAME defaults to
-          # hev/htproxy, CLSNAME TProxyService — matches our Java class). The previous
-          # hand-rolled `make` build dropped submodule objects and produced a .so with
-          # unresolved symbols that failed to load at runtime (UnsatisfiedLinkError).
-          "$NDK/ndk-build" \
-            NDK_PROJECT_PATH=/tmp/hev \
-            APP_BUILD_SCRIPT=/tmp/hev/Android.mk \
-            NDK_APPLICATION_MK=/tmp/hev/Application.mk \
-            APP_ABI="arm64-v8a armeabi-v7a" \
-            APP_PLATFORM=android-24 \
-            APP_CFLAGS="-DANDROID" \
-            NDK_LIBS_OUT=/tmp/hev/libs \
-            NDK_OUT=/tmp/hev/obj \
-            -j"$(nproc)"
-
-          # Copy the built .so for each ABI into jniLibs
-          mkdir -p android/app/src/main/jniLibs
-          cp -r /tmp/hev/libs/* android/app/src/main/jniLibs/
-
-          echo "=== jniLibs contents ==="
-          find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
-
-          # Verify that JNI_OnLoad is exported (required for System.loadLibrary).
-          # Try multiple tools in case llvm-nm -D doesn't show it.
-          echo "=== Verify JNI_OnLoad symbol (arm64-v8a) ==="
-          SO="android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so"
-          NM="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
-          READELF="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          
-          echo "--- llvm-nm -D ---"
-          "$NM" -D "$SO" | grep "JNI_OnLoad" || true
-          echo "--- llvm-readelf --dyn-syms ---"
-          "$READELF" --dyn-syms "$SO" | grep "JNI_OnLoad" || true
-          echo "--- llvm-nm (all symbols) ---"
-          "$NM" "$SO" 2>/dev/null | grep "JNI_OnLoad" || true
-          
-          # Final verdict: if readelf finds it, we're good (nm -D can be quirky)
-          if "$READELF" --dyn-syms "$SO" | grep -q "JNI_OnLoad"; then
-            echo "OK: JNI_OnLoad is exported"
-          elif "$NM" -D "$SO" | grep -q "JNI_OnLoad"; then
-            echo "OK: JNI_OnLoad found via nm -D"
-          else
-            echo "WARNING: JNI_OnLoad not found — checking if hev-jni.c was compiled..."
-            # Check obj files to diagnose
-            find /tmp/hev/obj -name "hev-jni.o" -exec ls -la {} \; || echo "hev-jni.o NOT FOUND"
-            echo "WARNING: JNI_OnLoad not found but continuing"
-          fi
-
-      - name: Bundle geoip/geosite assets
+      - name: Bundle mihomo geo assets
         run: |
           mkdir -p android/app/src/main/assets
-          curl -sL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o android/app/src/main/assets/geoip.dat
-          curl -sL "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat" -o android/app/src/main/assets/geosite.dat
+          curl -sL "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb" -o android/app/src/main/assets/geoip.metadb
+          curl -sL "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat" -o android/app/src/main/assets/geosite.dat
+          rm -f android/app/src/main/assets/geoip.dat
           ls -la android/app/src/main/assets/
 
       - name: Generate Gradle Wrapper
@@ -134,35 +77,51 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
+        env:
+          CI_VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Collect APK
         run: |
           mkdir -p out
-          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
-          echo "Found: $APK"
-          test -n "$APK" && cp "$APK" out/CDN-Hunter-v3.apk
+          find android/app/build/outputs/apk -name "*.apk" -exec ls -la {} \;
+
+          UNIVERSAL=$(find android/app/build/outputs/apk -iname "*universal*.apk" | head -1)
+          ARM64=$(find android/app/build/outputs/apk -iname "*arm64-v8a*.apk" | head -1)
+          ARMV7=$(find android/app/build/outputs/apk -iname "*armeabi-v7a*.apk" | head -1)
+
+          test -n "$UNIVERSAL" && cp "$UNIVERSAL" out/CDN-Hunter-v4-universal.apk
+          test -n "$ARM64" && cp "$ARM64" out/CDN-Hunter-v4-arm64.apk
+          test -n "$ARMV7" && cp "$ARMV7" out/CDN-Hunter-v4-armv7.apk
+
+          if [ ! -f out/CDN-Hunter-v4-universal.apk ] && [ ! -f out/CDN-Hunter-v4-arm64.apk ]; then
+            APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+            test -n "$APK" && cp "$APK" out/CDN-Hunter-v4.apk
+          fi
+
           ls -la out
-
-
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0-build${{ github.run_number }}
-          name: CDN Hunter v3.0 (Build ${{ github.run_number }})
+          tag_name: v4.0-build${{ github.run_number }}
+          name: CDN Hunter v4.0 (Build ${{ github.run_number }})
           body: |
-            ## CDN Hunter v3.0 — VPN + Scanner
+            ## CDN Hunter v4.0 — VPN Client (mihomo core)
 
-            Full Compose app with embedded Xray VPN engine.
+            Full Compose app now running on the embedded mihomo (Clash.Meta) core instead of Xray-core.
 
             ### Features:
-            - Xray VPN (trojan/vless/vmess)
-            - TLS Fragmentation (bypass DPI)
-            - CDN clean-IP scanner (Cloudflare/Fastly/Akamai)
-            - Auto-IP (scan + apply best IP)
+            - mihomo/Clash.Meta engine — VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, and everything else Clash.Meta supports
+            - Native TUN handling via mihomo itself (no separate tun2socks step)
+            - Server location (real IP-based geo lookup)
             - Traffic stats (upload/download)
             - Speed monitor
-          files: out/CDN-Hunter-v3.apk
+
+            ### Which file to download?
+            - Most phones (made after ~2017): **CDN-Hunter-v4-arm64.apk**
+            - Older/32-bit phones: **CDN-Hunter-v4-armv7.apk**
+            - Not sure / installer errors: **CDN-Hunter-v4-universal.apk**
+          files: out/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
