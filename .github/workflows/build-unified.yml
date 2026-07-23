@@ -176,15 +176,14 @@ jobs:
           tag_name: v3.0-build${{ github.run_number }}
           name: CDN Hunter v3.0 (Build ${{ github.run_number }})
           body: |
-            ## CDN Hunter v3.0 — VPN + Scanner
+            ## CDN Hunter v3.0 — VPN Client
 
             Full Compose app with embedded Xray VPN engine.
 
             ### Features:
             - Xray VPN (trojan/vless/vmess)
             - TLS Fragmentation (bypass DPI)
-            - CDN clean-IP scanner (Cloudflare/Fastly/Akamai)
-            - Auto-IP (scan + apply best IP)
+            - Server location (real IP-based geo lookup)
             - Traffic stats (upload/download)
             - Speed monitor
 
