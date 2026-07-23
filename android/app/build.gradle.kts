@@ -74,6 +74,22 @@ android {
     }
 }
 
+// Guard against accidentally shipping two gomobile-built AARs at once
+// (e.g. libv2ray.aar + mihomo.aar). Both embed the same Go runtime classes
+// (go.Seq, go.Universe, ...) and the same libgojni.so, so Gradle's
+// mergeReleaseNativeLibs / checkReleaseDuplicateClasses will fail the build
+// with a confusing "2 files found with path lib/arm64-v8a/libgojni.so"
+// error if more than one ends up in app/libs. Fail fast with a clear message
+// instead. Keep any AAR not currently wired into the app (e.g. a staged
+// mihomo.aar) outside of app/libs — see android/mihomo-staging/.
+val aarFiles = fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))).files
+require(aarFiles.size <= 1) {
+    "Found ${aarFiles.size} .aar files in app/libs (${aarFiles.joinToString { it.name }}). " +
+        "Only one gomobile-built AAR (e.g. libv2ray.aar) may be present at a time — " +
+        "multiple gomobile AARs collide on shared Go runtime classes and libgojni.so. " +
+        "Move any AAR not currently used by the app out of app/libs."
+}
+
 dependencies {
     // Local libs (libv2ray.aar built by CI)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
