@@ -1,0 +1,78 @@
+name: Build Mihomo Core (AAR)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'mihomo-mobile/**'
+      - '.github/workflows/build-mihomo-core.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-aar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          echo "y" | sdkmanager --install "ndk;26.1.10909125"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Add gomobile bind tool dependency
+        working-directory: mihomo-mobile
+        run: |
+          go get -tool golang.org/x/mobile/cmd/gobind
+
+      - name: Tidy Go module
+        working-directory: mihomo-mobile
+        run: go mod tidy
+
+      - name: gomobile init
+        run: gomobile init
+
+      - name: Build AAR
+        working-directory: mihomo-mobile
+        run: |
+          gomobile bind -v -target=android -androidapi 24 -o mihomo.aar .
+
+      - name: Commit AAR into android/app/libs
+        run: |
+          mkdir -p android/app/libs
+          cp mihomo-mobile/mihomo.aar android/app/libs/mihomo.aar
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add android/app/libs/mihomo.aar
+          git diff --staged --quiet || git commit -m "chore: update mihomo.aar [skip ci]"
+          git push
+
+      - name: Publish AAR to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="mihomo-core-$(date +%Y%m%d%H%M%S)"
+          gh release create "$TAG" mihomo-mobile/mihomo.aar \
+            --title "Mihomo Core AAR ($TAG)" \
+            --notes "Automated build of mihomo.aar from commit ${GITHUB_SHA}"
