@@ -1,22 +1,15 @@
 package com.cdnhunter.app
 
-import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cdnhunter.app.ui.AppScreen
 import com.cdnhunter.app.vpn.CdnVpnService
-import com.cdnhunter.app.viewmodel.ScanViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -49,47 +42,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainContent(activity: MainActivity) {
-    val viewModel: ScanViewModel = viewModel()
-    val state by viewModel.state.collectAsState()
-    val config by viewModel.config.collectAsState()
-    val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
-
-    // Load saved config on first launch
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("cdnhunter", 0)
-        val savedConc = prefs.getInt("concurrency", 60)
-        val savedMax = prefs.getInt("maxIps", 3000)
-        val savedTimeout = prefs.getFloat("timeout", 4.0f)
-        val savedHost = prefs.getString("host", "") ?: ""
-        val savedSni = prefs.getString("sni", "") ?: ""
-        viewModel.updateConfig(config.copy(concurrency = savedConc, maxIps = savedMax, timeout = savedTimeout, host = savedHost, sni = savedSni))
-    }
-
-    AppScreen(
-        state = state,
-        config = config,
-        onConfigChange = { newConfig ->
-            viewModel.updateConfig(newConfig)
-            val prefs = context.getSharedPreferences("cdnhunter", 0)
-            prefs.edit().putInt("concurrency", newConfig.concurrency).putInt("maxIps", newConfig.maxIps)
-                .putFloat("timeout", newConfig.timeout).putString("host", newConfig.host)
-                .putString("sni", newConfig.sni).apply()
-        },
-        onStart = { viewModel.startScan() },
-        onStop = { viewModel.stopScan() },
-        onCopyIps = {
-            val ips = viewModel.copyIps()
-            if (ips.isNotBlank()) {
-                clipboardManager.setText(AnnotatedString(ips))
-                Toast.makeText(context, "${ips.lines().size} IP(s) copied", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "No IPs to copy", Toast.LENGTH_SHORT).show()
-            }
-        },
-        onUpdateRanges = { Toast.makeText(context, "Ranges updated", Toast.LENGTH_SHORT).show() },
-        onExport = { Toast.makeText(context, "Exported", Toast.LENGTH_SHORT).show() },
-    )
+    AppScreen()
 }
 
 @Composable
