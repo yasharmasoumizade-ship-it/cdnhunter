@@ -45,24 +45,6 @@ object VpnConfigBuilder {
         ).toString(2)
     }
 
-    /**
-     * Builds config from the "active" URI (used by Auto-IP when it replaces the IP).
-     * Falls back to user_config if no active URI set.
-     */
-    fun buildConfigFromActiveUri(ctx: Context): String {
-        val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
-        val activeUri = prefs.getString("user_config_active", "")
-        val userConfig = if (activeUri.isNullOrBlank()) {
-            prefs.getString("user_config", "") ?: ""
-        } else activeUri
-        val fragmentEnabled = prefs.getBoolean("fragment_enabled", true)
-        val fragLength = prefs.getString("frag_length", "100-200") ?: "100-200"
-        val fragInterval = prefs.getString("frag_interval", "10-20") ?: "10-20"
-
-        val outbound = ConfigUriParser.parseToOutbound(userConfig) ?: defaultOutbound()
-        val errorLogPath = File(ctx.filesDir, ERROR_LOG_NAME).absolutePath
-        return buildFullConfig(outbound, fragmentEnabled, fragLength, fragInterval, errorLogPath).toString(2)
-    }
 
     private fun buildFullConfig(
         proxyOutbound: JSONObject,
