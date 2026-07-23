@@ -11,7 +11,14 @@ android {
         applicationId = "com.cdnhunter.scanner"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
+        // versionCode is overridden by CI (see build-unified.yml) using the GitHub
+        // Actions run number, so every release always has a strictly higher
+        // versionCode than the last. This matters: if versionCode doesn't increase,
+        // Android can keep stale native (.so) libraries from a previous install
+        // instead of replacing them on update, even though the APK itself changed —
+        // exactly what caused an old NoSuchMethodError crash to reappear on a device
+        // that had "updated" to a new build.
+        versionCode = (System.getenv("CI_VERSION_CODE")?.toIntOrNull()) ?: 4
         versionName = "3.0"
     }
 

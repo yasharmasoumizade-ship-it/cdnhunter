@@ -149,6 +149,11 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
+        env:
+          # Guarantees versionCode strictly increases every build, so Android
+          # always treats a new release as a real update (never keeps stale
+          # native .so files from a previous install with the same versionCode).
+          CI_VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Collect APK
