@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.cdnhunter.app.data.*
 import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.engine.GeoService
+import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.AutoIpManager
@@ -1258,6 +1259,47 @@ private fun SettingsScreen(
                 SettingsRow(Icons.Rounded.NotificationsNone, "Notifications", null, AnanasMuted, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsRow(Icons.Rounded.Language, "Language", "English", AnanasMuted, showChevron = true)
+            }
+
+            val context = LocalContext.current
+            val clip = LocalClipboardManager.current
+            val crashFile = remember { File(context.filesDir, com.cdnhunter.app.CdnHunterApp.CRASH_LOG_FILE) }
+            if (crashFile.exists()) {
+                Spacer(Modifier.height(26.dp))
+                Text("DEBUG", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                        .border(1.dp, AnanasRed.copy(0.3f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasRed.copy(0.14f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.BugReport, null, tint = AnanasRed, modifier = Modifier.size(15.dp))
+                        }
+                        Column {
+                            Text("Last crash log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                            Text("Found a saved crash report", fontSize = 10.5.sp, color = AnanasMuted)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasAccent)
+                                .clickable {
+                                    val text = runCatching { crashFile.readText() }.getOrDefault("")
+                                    clip.setText(AnnotatedString(text))
+                                    android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasBg) }
+                        Box(
+                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                                .clickable { runCatching { crashFile.delete() } }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) { Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted) }
+                    }
+                }
             }
 
             Spacer(Modifier.height(40.dp))
