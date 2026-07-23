@@ -65,8 +65,16 @@ jobs:
           set -euo pipefail
           NDK="${ANDROID_HOME}/ndk/26.1.10909125"
 
-          # Clone with submodules (yaml, lwip, hev-task-system) — required by the lib's build.mk
-          git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
+          # Clone with submodules (yaml, lwip, hev-task-system) — required by the lib's build.mk.
+          # Retry a few times: transient clone failures under concurrent CI load
+          # shouldn't kill the whole build.
+          for i in 1 2 3; do
+            rm -rf /tmp/hev
+            git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev && break
+            echo "Clone attempt $i failed, retrying..."
+            sleep 5
+          done
+          test -d /tmp/hev/.git || { echo "ERROR: failed to clone hev-socks5-tunnel after 3 attempts"; exit 1; }
 
           # IMPORTANT: current upstream hev-socks5-tunnel ships NO Java/JNI wrapper —
           # only a pure C API (hev_socks5_tunnel_main_from_file/_quit/_stats in
@@ -79,48 +87,10 @@ jobs:
           #
           # Fix: build our own thin JNI glue (hev-jni.c, from vpn-overlay/) as an
           # extra source in the same shared library, wired up via our own
-          # Android.mk that reuses the upstream lib's Android.mk for the tunnel
-          # sources/static deps, then adds our JNI file + JNI headers on top.
+          # Android-bridge.mk (tracked in vpn-overlay/, reuses the upstream lib's
+          # third-party static deps and source list, then adds hev-jni.c).
           cp vpn-overlay/hev-jni.c /tmp/hev/hev-jni.c
-
-          cat > /tmp/hev/Android-bridge.mk <<'EOF'
-          TOP_PATH := $(call my-dir)
-          ifeq ($(filter $(modules-get-list),yaml),)
-          include $(TOP_PATH)/third-part/yaml/Android.mk
-          endif
-          ifeq ($(filter $(modules-get-list),lwip),)
-          include $(TOP_PATH)/third-part/lwip/Android.mk
-          endif
-          ifeq ($(filter $(modules-get-list),hev-task-system),)
-          include $(TOP_PATH)/third-part/hev-task-system/Android.mk
-          endif
-          LOCAL_PATH = $(TOP_PATH)
-          SRCDIR := $(LOCAL_PATH)/src
-          include $(CLEAR_VARS)
-          include $(LOCAL_PATH)/build.mk
-          LOCAL_MODULE := hev-socks5-tunnel
-          LOCAL_SRC_FILES := $(patsubst $(SRCDIR)/%,src/%,$(SRCFILES)) hev-jni.c
-          LOCAL_C_INCLUDES := \
-            $(LOCAL_PATH)/src \
-            $(LOCAL_PATH)/src/misc \
-            $(LOCAL_PATH)/src/core/include \
-            $(LOCAL_PATH)/third-part/yaml/include \
-            $(LOCAL_PATH)/third-part/lwip/src/include \
-            $(LOCAL_PATH)/third-part/lwip/src/ports/include \
-            $(LOCAL_PATH)/third-part/hev-task-system/include
-          LOCAL_CFLAGS += -DFD_SET_DEFINED -DSOCKLEN_T_DEFINED -DENABLE_LIBRARY -DANDROID
-          ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
-          LOCAL_CFLAGS += -mfpu=neon
-          endif
-          LOCAL_LDLIBS := -llog
-          LOCAL_STATIC_LIBRARIES := yaml lwip hev-task-system
-          LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
-          LOCAL_LDFLAGS += -Wl,-z,common-page-size=16384
-          include $(BUILD_SHARED_LIBRARY)
-          EOF
-          # (heredoc above is indented to match the run block; strip leading
-          # whitespace so make doesn't choke on indented directives)
-          sed -i 's/^          //' /tmp/hev/Android-bridge.mk
+          cp vpn-overlay/Android-bridge.mk /tmp/hev/Android-bridge.mk
 
           "$NDK/ndk-build" \
             NDK_PROJECT_PATH=/tmp/hev \
