@@ -116,14 +116,21 @@ jobs:
           echo "=== Verify TProxyService symbols are exported (arm64-v8a) ==="
           SO="android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so"
           READELF="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          "$READELF" --dyn-syms "$SO" | grep "TProxy" || true
+          SYMS=$("$READELF" --dyn-syms "$SO")
+          echo "$SYMS" | grep "TProxy" || true
+
+          MISSING=0
           for sym in TProxyStartService TProxyStopService TProxyGetStats; do
-            if "$READELF" --dyn-syms "$SO" | grep -q "Java_hev_htproxy_TProxyService_$sym"; then
+            if echo "$SYMS" | grep -q "Java_hev_htproxy_TProxyService_${sym}"; then
               echo "OK: $sym exported"
             else
-              echo "ERROR: $sym NOT exported — build is broken" && exit 1
+              echo "ERROR: $sym NOT exported — build is broken"
+              MISSING=1
             fi
           done
+          if [ "$MISSING" -eq 1 ]; then
+            exit 1
+          fi
 
       - name: Bundle geoip/geosite assets
         run: |
