@@ -1,178 +1,105 @@
 package com.cdnhunter.app.engine
 
-import com.cdnhunter.app.data.CdnRanges
-import com.cdnhunter.app.data.ScanResult
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.*
-import kotlin.math.min
 
 /**
- * Geo/country lookup service — checks IP country codes via multiple APIs.
- * Filters out Iranian IPs.
+ * Geo/country lookup for a server's IP — used to resolve the real flag/location
+ * shown for each saved VPN config. Always does a live IP-based lookup (never
+ * trusts a flag emoji embedded in a config's name).
+ *
+ * Falls back across multiple providers, including an Iranian one (ipnumberia.com),
+ * so lookups still work even if a foreign geo-IP service is unreachable or rate
+ * limits requests from Iranian IP ranges.
  */
 class GeoService {
 
     private val client: OkHttpClient by lazy { buildClient() }
-    private val cache = mutableMapOf<String, String>()
-
-    private val geoApis = listOf(
-        GeoApi("https://ipwho.is/{ip}", listOf("country_code")),
-        GeoApi("https://ipapi.co/{ip}/json/", listOf("country_code")),
-        GeoApi("https://freeipapi.com/api/json/{ip}", listOf("countryCode")),
-    )
-
-    data class GeoApi(val urlTemplate: String, val fields: List<String>)
-
-    /**
-     * Look up country codes for a batch of IPs concurrently.
-     * Returns map of IP -> 2-letter country code.
-     */
-    suspend fun lookupBatch(
-        ips: List<String>,
-        timeout: Float = 3.0f,
-        concurrency: Int = 20
-    ): Map<String, String> = withContext(Dispatchers.IO) {
-        val result = mutableMapOf<String, String>()
-        val toFetch = ips.filter { it !in cache }
-
-        // Return cached results immediately
-        for (ip in ips) {
-            cache[ip]?.let { result[ip] = it }
-        }
-
-        if (toFetch.isEmpty()) return@withContext result
-
-        val semaphore = Semaphore(min(concurrency, toFetch.size))
-        val lock = Any()
-
-        coroutineScope {
-            toFetch.map { ip ->
-                launch {
-                    semaphore.acquire()
-                    try {
-                        val cc = lookupSingle(ip, timeout)
-                        synchronized(lock) {
-                            cache[ip] = cc
-                            result[ip] = cc
-                        }
-                    } finally {
-                        semaphore.release()
-                    }
-                }
-            }.joinAll()
-        }
-
-        result
-    }
-
-    /**
-     * Look up a single IP's country code with fallback chain.
-     */
-    private fun lookupSingle(ip: String, timeout: Float): String {
-        for (api in geoApis) {
-            try {
-                val url = api.urlTemplate.replace("{ip}", ip)
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "Mozilla/5.0")
-                    .header("Accept", "application/json")
-                    .build()
-
-                val timeoutMs = (timeout * 1000).toLong()
-                val c = client.newBuilder()
-                    .connectTimeout(java.time.Duration.ofMillis(timeoutMs))
-                    .readTimeout(java.time.Duration.ofMillis(timeoutMs))
-                    .build()
-
-                val response = c.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-                response.close()
-
-                if (body.isNotBlank()) {
-                    val cc = parseCountryCode(body, api.fields)
-                    if (cc.isNotBlank()) return cc
-                }
-            } catch (e: Exception) {
-                // Try next API
-            }
-        }
-        return ""
-    }
-
-    private fun parseCountryCode(json: String, fields: List<String>): String {
-        return try {
-            val obj = JSONObject(json)
-            for (field in fields) {
-                val value = obj.optString(field, "")
-                if (value.length == 2 && value.all { it.isLetter() }) {
-                    return value.uppercase()
-                }
-            }
-            // Fallback: check nested or regex
-            if (json.lowercase().contains("\"ir\"") || json.lowercase().contains("iran")) {
-                return "IR"
-            }
-            ""
-        } catch (e: Exception) { "" }
-    }
 
     data class GeoInfo(val cc: String, val lat: Double, val lon: Double, val city: String, val isp: String)
 
+    /**
+     * Providers tried in order until one returns a usable result.
+     * ipnumberia.com is an Iranian geo-IP service — kept first isn't required, but
+     * having it in the chain means Iranian networks/servers still resolve reliably
+     * even when a foreign provider is slow, blocked, or rate-limited.
+     */
+    private enum class Provider { IPWHOIS, IPNUMBERIA, IPAPI_CO }
+
     fun lookupGeoInfo(ip: String, timeout: Float = 4.0f): GeoInfo {
-        try {
-            val url = "https://ipwho.is/$ip"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-            val c = client.newBuilder()
-                .connectTimeout(java.time.Duration.ofMillis((timeout * 1000).toLong()))
-                .readTimeout(java.time.Duration.ofMillis((timeout * 1000).toLong()))
-                .build()
-            val response = c.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-            response.close()
-            if (body.isNotBlank()) {
-                val obj = JSONObject(body)
-                val cc = obj.optString("country_code", "").uppercase()
-                val lat = obj.optDouble("latitude", 0.0)
-                val lon = obj.optDouble("longitude", 0.0)
-                val city = obj.optString("city", "")
-                val isp = obj.optJSONObject("connection")?.optString("isp", "") ?: obj.optString("isp", "")
-                return GeoInfo(cc, lat, lon, city, isp)
+        for (provider in Provider.values()) {
+            try {
+                val info = when (provider) {
+                    Provider.IPWHOIS -> lookupIpWhoIs(ip, timeout)
+                    Provider.IPNUMBERIA -> lookupIpNumberia(ip, timeout)
+                    Provider.IPAPI_CO -> lookupIpApiCo(ip, timeout)
+                }
+                if (info != null && info.cc.isNotBlank()) return info
+            } catch (e: Exception) {
+                // try next provider
             }
-        } catch (e: Exception) {}
+        }
         return GeoInfo("", 0.0, 0.0, "", "")
     }
 
-    /**
-     * Filter out Iranian IPs from results.
-     * Returns filtered list (IPs confirmed as IR are removed).
-     */
-    suspend fun filterIranIps(
-        results: List<ScanResult>,
-        timeout: Float = 3.0f
-    ): List<ScanResult> {
-        if (results.isEmpty()) return results
-
-        val ips = results.map { it.ip }
-        val ccMap = lookupBatch(ips, timeout)
-
-        return results.mapNotNull { result ->
-            val cc = ccMap[result.ip] ?: ""
-            val isIran = cc.uppercase() == "IR" || hasIranDomain(result.frontingSni)
-            if (isIran) null
-            else result.copy(country = cc)
-        }
+    private fun httpGet(url: String, timeout: Float): String {
+        val timeoutMs = (timeout * 1000).toLong()
+        val c = client.newBuilder()
+            .connectTimeout(java.time.Duration.ofMillis(timeoutMs))
+            .readTimeout(java.time.Duration.ofMillis(timeoutMs))
+            .build()
+        val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+        val response = c.newCall(request).execute()
+        val body = response.body?.string() ?: ""
+        response.close()
+        return body
     }
 
-    private fun hasIranDomain(host: String): Boolean {
-        if (host.isBlank()) return false
-        val h = host.lowercase()
-        return CdnRanges.iranDomains.any { h.contains(it) }
+    private fun lookupIpWhoIs(ip: String, timeout: Float): GeoInfo? {
+        val body = httpGet("https://ipwho.is/$ip", timeout)
+        if (body.isBlank()) return null
+        val obj = JSONObject(body)
+        val cc = obj.optString("country_code", "").uppercase()
+        if (cc.isBlank()) return null
+        val lat = obj.optDouble("latitude", 0.0)
+        val lon = obj.optDouble("longitude", 0.0)
+        val city = obj.optString("city", "")
+        val isp = obj.optJSONObject("connection")?.optString("isp", "") ?: obj.optString("isp", "")
+        return GeoInfo(cc, lat, lon, city, isp)
+    }
+
+    // ipnumberia.com — Iranian geo-IP service. Response shape: { "country_code": "..",
+    // "city": "..", "latitude": .., "longitude": .., "isp": ".." } (falls back to
+    // whatever fields are present; unknown fields default safely).
+    private fun lookupIpNumberia(ip: String, timeout: Float): GeoInfo? {
+        val body = httpGet("https://ipnumberia.com/api/$ip", timeout)
+        if (body.isBlank()) return null
+        val obj = JSONObject(body)
+        val cc = (obj.optString("country_code", "").ifBlank { obj.optString("countryCode", "") }).uppercase()
+        if (cc.isBlank()) return null
+        val lat = obj.optDouble("latitude", 0.0)
+        val lon = obj.optDouble("longitude", 0.0)
+        val city = obj.optString("city", "")
+        val isp = obj.optString("isp", obj.optString("org", ""))
+        return GeoInfo(cc, lat, lon, city, isp)
+    }
+
+    private fun lookupIpApiCo(ip: String, timeout: Float): GeoInfo? {
+        val body = httpGet("https://ipapi.co/$ip/json/", timeout)
+        if (body.isBlank()) return null
+        val obj = JSONObject(body)
+        val cc = obj.optString("country_code", "").uppercase()
+        if (cc.isBlank() || cc.length != 2) return null
+        val lat = obj.optDouble("latitude", 0.0)
+        val lon = obj.optDouble("longitude", 0.0)
+        val city = obj.optString("city", "")
+        val isp = obj.optString("org", "")
+        return GeoInfo(cc, lat, lon, city, isp)
     }
 
     private fun buildClient(): OkHttpClient {

@@ -44,8 +44,6 @@ import androidx.compose.ui.unit.sp
 import android.content.Context
 import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
-import com.cdnhunter.app.data.*
-import com.cdnhunter.app.engine.ConfigGenerator
 import com.cdnhunter.app.engine.GeoService
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
@@ -227,16 +225,31 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
                 }
             }
         }
-        // Glass highlight: soft diagonal light sweep + top sheen, like frosted glass over the flag
+        // Glass highlight: diagonal sheen + top glossy arc, like a glass dome over the flag
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.22f),
-                            Color.White.copy(alpha = 0.04f),
-                            Color.Black.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.30f),
+                            Color.White.copy(alpha = 0.06f),
+                            Color.Black.copy(alpha = 0.14f),
+                        )
+                    )
+                )
+        )
+        // Glossy top highlight arc — concentrated shine near the top edge
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(size * 0.42f)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.White.copy(alpha = 0.0f),
                         )
                     )
                 )
@@ -358,11 +371,7 @@ private fun formatSpeed(kbps: Double): Pair<String, String> =
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun AppScreen(
-    state: ScanState, config: ScanConfig, onConfigChange: (ScanConfig) -> Unit,
-    onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
-    onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
-) {
+fun AppScreen() {
     Box(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg)))
@@ -399,6 +408,17 @@ private fun VpnTab() {
     androidx.activity.compose.BackHandler(enabled = screen != AnanasScreen.HOME) {
         screen = AnanasScreen.HOME
     }
+    // Hoisted here (not inside the HOME branch) so it survives navigating away from
+    // and back to Home. Re-creating this fresh every time HOME recomposes (which
+    // happens every time you return from another tab) tore down and rebuilt the
+    // sheet's swipeable-state, sometimes mid-animation-frame — this was the actual
+    // cause of the freeze when coming back to Home from another tab.
+    val homeSheetState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue = SheetValue.PartiallyExpanded,
+            skipHiddenState = true
+        )
+    )
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
     var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
 
@@ -581,14 +601,8 @@ private fun VpnTab() {
                 }
             }
         } else {
-            val sheetState = rememberBottomSheetScaffoldState(
-                bottomSheetState = rememberStandardBottomSheetState(
-                    initialValue = SheetValue.PartiallyExpanded,
-                    skipHiddenState = true
-                )
-            )
             BottomSheetScaffold(
-                scaffoldState = sheetState,
+                scaffoldState = homeSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 76.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 sheetContainerColor = Color(0xFF101012),

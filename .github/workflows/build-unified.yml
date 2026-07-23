@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'vpn-overlay/hev-jni.c'
       - '.github/workflows/build-unified.yml'
 
 permissions:
@@ -59,27 +60,74 @@ jobs:
           cp xray-lib/libv2ray.aar android/app/libs/
           ls -la android/app/libs/
 
-      - name: Build hev-socks5-tunnel .so (official ndk-build)
+      - name: Build hev-socks5-tunnel .so with our own JNI bridge
         run: |
           set -euo pipefail
           NDK="${ANDROID_HOME}/ndk/26.1.10909125"
 
-          # Clone with submodules (yaml, lwip, hev-task-system) — required by Android.mk
+          # Clone with submodules (yaml, lwip, hev-task-system) — required by the lib's build.mk
           git clone --depth 1 --recursive https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev
 
-          # Build with the project's OWN Android.mk/Application.mk via ndk-build.
-          # This builds the submodules as static libs, links them correctly, adds the
-          # 16KB page-size alignment flags, and compiles hev-jni.c (PKGNAME defaults to
-          # hev/htproxy, CLSNAME TProxyService — matches our Java class). The previous
-          # hand-rolled `make` build dropped submodule objects and produced a .so with
-          # unresolved symbols that failed to load at runtime (UnsatisfiedLinkError).
+          # IMPORTANT: current upstream hev-socks5-tunnel ships NO Java/JNI wrapper —
+          # only a pure C API (hev_socks5_tunnel_main_from_file/_quit/_stats in
+          # src/hev-main.h). Its own Android.mk only builds the .so as a C library,
+          # with no PKGNAME/CLSNAME mechanism and no Java-callable symbols at all.
+          # Using it as-is meant our TProxyService.java's native methods never
+          # existed in the compiled .so — System.loadLibrary succeeded (the .so is
+          # valid), but calling any native method threw NoSuchMethodError. That is
+          # the exact crash seen at connect time.
+          #
+          # Fix: build our own thin JNI glue (hev-jni.c, from vpn-overlay/) as an
+          # extra source in the same shared library, wired up via our own
+          # Android.mk that reuses the upstream lib's Android.mk for the tunnel
+          # sources/static deps, then adds our JNI file + JNI headers on top.
+          cp vpn-overlay/hev-jni.c /tmp/hev/hev-jni.c
+
+          cat > /tmp/hev/Android-bridge.mk <<'EOF'
+          TOP_PATH := $(call my-dir)
+          ifeq ($(filter $(modules-get-list),yaml),)
+          include $(TOP_PATH)/third-part/yaml/Android.mk
+          endif
+          ifeq ($(filter $(modules-get-list),lwip),)
+          include $(TOP_PATH)/third-part/lwip/Android.mk
+          endif
+          ifeq ($(filter $(modules-get-list),hev-task-system),)
+          include $(TOP_PATH)/third-part/hev-task-system/Android.mk
+          endif
+          LOCAL_PATH = $(TOP_PATH)
+          SRCDIR := $(LOCAL_PATH)/src
+          include $(CLEAR_VARS)
+          include $(LOCAL_PATH)/build.mk
+          LOCAL_MODULE := hev-socks5-tunnel
+          LOCAL_SRC_FILES := $(patsubst $(SRCDIR)/%,src/%,$(SRCFILES)) hev-jni.c
+          LOCAL_C_INCLUDES := \
+            $(LOCAL_PATH)/src \
+            $(LOCAL_PATH)/src/misc \
+            $(LOCAL_PATH)/src/core/include \
+            $(LOCAL_PATH)/third-part/yaml/include \
+            $(LOCAL_PATH)/third-part/lwip/src/include \
+            $(LOCAL_PATH)/third-part/lwip/src/ports/include \
+            $(LOCAL_PATH)/third-part/hev-task-system/include
+          LOCAL_CFLAGS += -DFD_SET_DEFINED -DSOCKLEN_T_DEFINED -DENABLE_LIBRARY -DANDROID
+          ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
+          LOCAL_CFLAGS += -mfpu=neon
+          endif
+          LOCAL_LDLIBS := -llog
+          LOCAL_STATIC_LIBRARIES := yaml lwip hev-task-system
+          LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
+          LOCAL_LDFLAGS += -Wl,-z,common-page-size=16384
+          include $(BUILD_SHARED_LIBRARY)
+          EOF
+          # (heredoc above is indented to match the run block; strip leading
+          # whitespace so make doesn't choke on indented directives)
+          sed -i 's/^          //' /tmp/hev/Android-bridge.mk
+
           "$NDK/ndk-build" \
             NDK_PROJECT_PATH=/tmp/hev \
-            APP_BUILD_SCRIPT=/tmp/hev/Android.mk \
+            APP_BUILD_SCRIPT=/tmp/hev/Android-bridge.mk \
             NDK_APPLICATION_MK=/tmp/hev/Application.mk \
             APP_ABI="arm64-v8a armeabi-v7a" \
             APP_PLATFORM=android-24 \
-            APP_CFLAGS="-DANDROID" \
             NDK_LIBS_OUT=/tmp/hev/libs \
             NDK_OUT=/tmp/hev/obj \
             -j"$(nproc)"
@@ -91,31 +139,21 @@ jobs:
           echo "=== jniLibs contents ==="
           find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
 
-          # Verify that JNI_OnLoad is exported (required for System.loadLibrary).
-          # Try multiple tools in case llvm-nm -D doesn't show it.
-          echo "=== Verify JNI_OnLoad symbol (arm64-v8a) ==="
+          # Verify our actual JNI methods are exported (this is what matters —
+          # JNI_OnLoad is irrelevant here since we use static native binding,
+          # i.e. plain `System.loadLibrary` + `private static native ...`, not
+          # RegisterNatives via JNI_OnLoad).
+          echo "=== Verify TProxyService symbols are exported (arm64-v8a) ==="
           SO="android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so"
-          NM="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           READELF="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          
-          echo "--- llvm-nm -D ---"
-          "$NM" -D "$SO" | grep "JNI_OnLoad" || true
-          echo "--- llvm-readelf --dyn-syms ---"
-          "$READELF" --dyn-syms "$SO" | grep "JNI_OnLoad" || true
-          echo "--- llvm-nm (all symbols) ---"
-          "$NM" "$SO" 2>/dev/null | grep "JNI_OnLoad" || true
-          
-          # Final verdict: if readelf finds it, we're good (nm -D can be quirky)
-          if "$READELF" --dyn-syms "$SO" | grep -q "JNI_OnLoad"; then
-            echo "OK: JNI_OnLoad is exported"
-          elif "$NM" -D "$SO" | grep -q "JNI_OnLoad"; then
-            echo "OK: JNI_OnLoad found via nm -D"
-          else
-            echo "WARNING: JNI_OnLoad not found — checking if hev-jni.c was compiled..."
-            # Check obj files to diagnose
-            find /tmp/hev/obj -name "hev-jni.o" -exec ls -la {} \; || echo "hev-jni.o NOT FOUND"
-            echo "WARNING: JNI_OnLoad not found but continuing"
-          fi
+          "$READELF" --dyn-syms "$SO" | grep "TProxy" || true
+          for sym in TProxyStartService TProxyStopService TProxyGetStats; do
+            if "$READELF" --dyn-syms "$SO" | grep -q "Java_hev_htproxy_TProxyService_$sym"; then
+              echo "OK: $sym exported"
+            else
+              echo "ERROR: $sym NOT exported — build is broken" && exit 1
+            fi
+          done
 
       - name: Bundle geoip/geosite assets
         run: |
