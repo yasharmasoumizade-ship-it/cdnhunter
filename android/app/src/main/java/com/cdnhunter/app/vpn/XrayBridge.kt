@@ -11,6 +11,7 @@ object XrayBridge {
 
     private var controller: CoreController? = null
     private var running = false
+    private var envInitialized = false
 
     private val callbackHandler = object : CoreCallbackHandler {
         override fun startup(): Long = 0
@@ -21,11 +22,29 @@ object XrayBridge {
         }
     }
 
+    /**
+     * Safe to call on every connect. initCoreEnv() must only run ONCE per process —
+     * calling it again (e.g. on reconnect/AutoIP restart) corrupts xray-core's native
+     * state and crashes the whole process with a JNI-level crash that no Kotlin
+     * try/catch can stop. We guard it with envInitialized so repeated connects only
+     * create a fresh CoreController, never re-touch the native env.
+     */
+    @Synchronized
     fun init(assetsDir: String) {
-        Libv2ray.initCoreEnv(assetsDir, "")
+        if (!envInitialized) {
+            Libv2ray.initCoreEnv(assetsDir, "")
+            envInitialized = true
+        }
+        // Always tear down any previous controller before creating a new one —
+        // never leave two CoreControllers alive at once.
+        if (controller != null) {
+            try { controller?.stopLoop() } catch (_: Exception) {}
+            controller = null
+        }
         controller = Libv2ray.newCoreController(callbackHandler)
     }
 
+    @Synchronized
     fun start(configContent: String, tunFd: Int = 0) {
         val ctrl = controller ?: throw IllegalStateException("Call init() first")
         try {
@@ -35,13 +54,17 @@ object XrayBridge {
             android.util.Log.i("XrayBridge", "Xray started OK")
         } catch (e: Exception) {
             android.util.Log.e("XrayBridge", "startLoop failed: ${e.message}")
+            running = false
             throw e
         }
     }
 
+    @Synchronized
     fun stop() {
         if (running) {
-            controller?.stopLoop()
+            try { controller?.stopLoop() } catch (e: Exception) {
+                android.util.Log.e("XrayBridge", "stopLoop failed: ${e.message}")
+            }
             running = false
         }
     }
