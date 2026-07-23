@@ -7,6 +7,9 @@ on:
       - 'mihomo-mobile/**'
       - '.github/workflows/build-mihomo-core.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-aar:
     runs-on: ubuntu-latest
@@ -55,13 +58,6 @@ jobs:
         run: |
           gomobile bind -v -target=android -androidapi 24 -o mihomo.aar .
 
-      - name: Upload AAR artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mihomo-aar
-          path: mihomo-mobile/mihomo.aar
-          retention-days: 30
-
       - name: Commit AAR into android/app/libs
         run: |
           mkdir -p android/app/libs
@@ -71,3 +67,12 @@ jobs:
           git add android/app/libs/mihomo.aar
           git diff --staged --quiet || git commit -m "chore: update mihomo.aar [skip ci]"
           git push
+
+      - name: Publish AAR to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="mihomo-core-$(date +%Y%m%d%H%M%S)"
+          gh release create "$TAG" mihomo-mobile/mihomo.aar \
+            --title "Mihomo Core AAR ($TAG)" \
+            --notes "Automated build of mihomo.aar from commit ${GITHUB_SHA}"
