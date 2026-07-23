@@ -50,7 +50,6 @@ import com.cdnhunter.app.engine.GeoService
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
-import com.cdnhunter.app.vpn.AutoIpManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -136,73 +135,112 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
 }
 
 // Resolves country/city + ping for a single config. Runs on IO dispatcher.
+// Always resolves the country from a real IP-based geo lookup (this is what Hiddify
+// actually does) — a flag emoji in the config's remark is just a label the server
+// owner typed in and can be wrong or stale, so it's never used as the source of
+// truth for the server's actual location.
 private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val ping = measurePingMs(cfg.address, cfg.port)
-        // If the country code was already pulled from a flag emoji in the config's name,
-        // keep it and only fetch city/ping — no need to hit the geo-lookup API for country.
-        if (cfg.countryCode.isNotBlank()) {
-            val info = try { geo.lookupGeoInfo(cfg.address) } catch (e: Exception) { null }
-            return@withContext cfg.copy(pingMs = ping, city = info?.city.orEmpty(), geoResolved = true)
-        }
         val info = try { geo.lookupGeoInfo(cfg.address) } catch (e: Exception) { null }
         cfg.copy(
             pingMs = ping,
-            countryCode = info?.cc.orEmpty(),
+            // Fall back to the emoji-derived code only if the real lookup fails entirely.
+            countryCode = info?.cc?.takeIf { it.isNotBlank() } ?: cfg.countryCode,
             city = info?.city.orEmpty(),
             geoResolved = true,
         )
     }
 
-// Converts a 2-letter ISO country code into its Unicode flag emoji by mapping each
-// letter to its Regional Indicator Symbol (U+1F1E6..U+1F1FF, A..Z). This works for
-// EVERY ISO-3166 country automatically — no hardcoded per-country list to maintain,
-// unlike the old fixed set of ~10 stripe patterns that silently fell back to a gray
-// placeholder for anything else.
-private fun countryCodeToFlagEmoji(cc: String): String? {
-    val code = cc.trim().uppercase()
-    if (code.length != 2) return null
-    val first = code[0]
-    val second = code[1]
-    if (first !in 'A'..'Z' || second !in 'A'..'Z') return null
-    val base = 0x1F1E6 // Regional Indicator Symbol Letter A
-    val firstCp = base + (first - 'A')
-    val secondCp = base + (second - 'A')
-    return String(Character.toChars(firstCp)) + String(Character.toChars(secondCp))
+// Real flag stripe patterns (simplified, flat-color) per country code — drawn as a
+// square badge so it reads like an actual flag rather than an abstract color chip.
+// Covers all commonly-seen VPN server countries; falls back to a neutral pattern for
+// anything not listed instead of failing to render.
+private data class FlagPattern(val colors: List<Color>, val horizontal: Boolean = true)
+private val flagPatterns = mapOf(
+    "DE" to FlagPattern(listOf(Color(0xFF1A1A1A), Color(0xFFE0605C), Color(0xFFE6A23C))),
+    "FR" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "NL" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFF3A6CC8))),
+    "GB" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFFF2F2F2), Color(0xFFE0605C))),
+    "US" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFF2F2F2))),
+    "TR" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
+    "IT" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "CA" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
+    "FI" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFF2F2F2))),
+    "SE" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
+    "JP" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFFF2F2F2))),
+    "SG" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFF2F2F2))),
+    "AE" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFF1A1A1A))),
+    "IR" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C))),
+    "ES" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE6A23C), Color(0xFFE0605C))),
+    "PL" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFFF2F2F2))),
+    "RU" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFE0605C))),
+    "CH" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
+    "AU" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFF1D2C5B), Color(0xFFF2F2F2))),
+    "BR" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
+    "IN" to FlagPattern(listOf(Color(0xFFE6A23C), Color(0xFFF2F2F2), Color(0xFF3AAA5C))),
+    "KR" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFF3A6CC8))),
+    "HK" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
+)
+// Deterministic fallback: derive a stable, distinct-looking stripe pattern from the
+// country code's own letters so unlisted countries still render a consistent badge
+// instead of a generic gray placeholder.
+private fun fallbackPatternFor(cc: String): FlagPattern {
+    val palette = listOf(
+        Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFE6A23C),
+        Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFF8B5CF6),
+    )
+    val seed = cc.uppercase().sumOf { it.code }
+    val c1 = palette[seed % palette.size]
+    val c2 = palette[(seed / 7 + 1) % palette.size]
+    val c3 = palette[(seed / 13 + 2) % palette.size]
+    return FlagPattern(listOf(c1, c2, c3), horizontal = seed % 2 == 0)
+}
+private fun flagPatternFor(cc: String): FlagPattern {
+    if (cc.isBlank()) return FlagPattern(listOf(AnanasFaint, AnanasMuted, AnanasFaint))
+    return flagPatterns[cc.uppercase()] ?: fallbackPatternFor(cc)
 }
 
-// Fallback stripe pattern used only when we truly have no country code (e.g. geo
-// lookup hasn't resolved yet) — the badge still looks intentional instead of blank.
-private val fallbackFlagColors = listOf(AnanasFaint, AnanasMuted, AnanasFaint)
-
-// Square flag badge with rounded corners. Renders the real emoji flag for the given
-// ISO country code (covers all countries); falls back to a neutral stripe placeholder
-// only when the code is blank/unrecognized (e.g. still resolving).
+// Square flag badge with rounded corners, real stripe pattern, and a glassy diagonal
+// highlight overlay (matches the "glass" look used in reference clients like Hiddify).
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val emoji = remember(countryCode) { countryCodeToFlagEmoji(countryCode) }
+    val pattern = flagPatternFor(countryCode)
     val corner = size * 0.28f
     Box(
         modifier
             .size(size)
             .clip(RoundedCornerShape(corner))
-            .background(Color(0xFF1A1A1E)),
-        contentAlignment = Alignment.Center
+            .background(Color(0xFF1A1A1E))
     ) {
-        if (emoji != null) {
-            Text(
-                emoji,
-                fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size.toPx() * 0.62f).toSp() },
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        } else {
-            // Neutral placeholder stripes while country is unresolved.
+        // Stripes
+        if (pattern.horizontal) {
             Column(Modifier.fillMaxSize()) {
-                fallbackFlagColors.forEach { c ->
+                pattern.colors.forEach { c ->
                     Box(Modifier.weight(1f).fillMaxWidth().background(c))
                 }
             }
+        } else {
+            Row(Modifier.fillMaxSize()) {
+                pattern.colors.forEach { c ->
+                    Box(Modifier.weight(1f).fillMaxHeight().background(c))
+                }
+            }
         }
+        // Glass highlight: soft diagonal light sweep + top sheen, like frosted glass over the flag
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = 0.04f),
+                            Color.Black.copy(alpha = 0.10f),
+                        )
+                    )
+                )
+        )
         // Thin border for definition
         Box(
             Modifier
@@ -325,13 +363,11 @@ fun AppScreen(
     onStart: () -> Unit, onStop: () -> Unit, onCopyIps: () -> Unit,
     onUpdateRanges: () -> Unit = {}, onExport: () -> Unit = {},
 ) {
-    var autoIpEnabled by remember { mutableStateOf(AutoIpManager.enabled.get()) }
-
     Box(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg)))
     ) {
-        VpnTab(autoIpEnabled) // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
+        VpnTab() // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
     }
 }
 
@@ -341,7 +377,7 @@ private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, SETTINGS, PROFILE
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VpnTab(autoIpEnabled: Boolean = false) {
+private fun VpnTab() {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
     val clip    = LocalClipboardManager.current
@@ -356,6 +392,13 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     }
     var showAddMenu by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf(AnanasScreen.HOME) }
+    // System back button: on any sub-screen, go back to Home instead of exiting the
+    // app. Only when already on Home does back fall through to the default (exit)
+    // behavior. Without this, pressing back on Locations/Settings/Profile/My Configs
+    // closed the whole app instead of navigating up.
+    androidx.activity.compose.BackHandler(enabled = screen != AnanasScreen.HOME) {
+        screen = AnanasScreen.HOME
+    }
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
     var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
 
@@ -394,9 +437,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
         var lastUp   = CdnVpnService.uploadBytes
         while (true) {
             val vpnRunning = CdnVpnService.isRunning.get()
-            connected = if (autoIpEnabled) {
-                vpnRunning && AutoIpManager.currentIp.isNotBlank()
-            } else vpnRunning
+            connected = vpnRunning
 
             if (connected) {
                 connecting = false
@@ -413,12 +454,6 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
             }
 
-            if (vpnRunning && autoIpEnabled && !AutoIpManager.enabled.get()) {
-                delay(3000)
-                if (CdnVpnService.isRunning.get() && !AutoIpManager.enabled.get()) {
-                    AutoIpManager.start(context)
-                }
-            }
             delay(1000)
         }
     }
@@ -441,9 +476,9 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
 
     fun connectConfig(cfg: SavedConfig) {
         if (connected && cfg.id == activeId) {
-            CdnVpnService.stop(context); AutoIpManager.stop(); connected = false
+            CdnVpnService.stop(context); connected = false
         } else {
-            if (connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+            if (connected) { CdnVpnService.stop(context); connected = false }
             activeId = cfg.id
             context.getSharedPreferences("cdnhunter_vpn", 0)
                 .edit()
@@ -483,7 +518,7 @@ private fun VpnTab(autoIpEnabled: Boolean = false) {
     }
 
     fun deleteConfig(cfg: SavedConfig) {
-        if (cfg.id == activeId && connected) { CdnVpnService.stop(context); AutoIpManager.stop(); connected = false }
+        if (cfg.id == activeId && connected) { CdnVpnService.stop(context); connected = false }
         val updated = configs.filter { it.id != cfg.id }
         configs = updated
         saveConfigs(context, updated)

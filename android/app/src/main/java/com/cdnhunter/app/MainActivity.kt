@@ -66,13 +66,6 @@ fun MainContent(activity: MainActivity) {
         viewModel.updateConfig(config.copy(concurrency = savedConc, maxIps = savedMax, timeout = savedTimeout, host = savedHost, sni = savedSni))
     }
 
-    // Wire scan results to AutoIpManager
-    LaunchedEffect(state.results) {
-        if (state.results.isNotEmpty()) {
-            com.cdnhunter.app.vpn.AutoIpManager.scanResultProvider = { state.results }
-        }
-    }
-
     AppScreen(
         state = state,
         config = config,
