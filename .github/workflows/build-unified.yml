@@ -116,12 +116,12 @@ jobs:
           echo "=== Verify TProxyService symbols are exported (arm64-v8a) ==="
           SO="android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so"
           READELF="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          SYMS=$("$READELF" --dyn-syms "$SO")
-          echo "$SYMS" | grep "TProxy" || true
+          "$READELF" --dyn-syms "$SO" > /tmp/hev_syms.txt
+          grep "TProxy" /tmp/hev_syms.txt || true
 
           MISSING=0
           for sym in TProxyStartService TProxyStopService TProxyGetStats; do
-            if echo "$SYMS" | grep -q "Java_hev_htproxy_TProxyService_${sym}"; then
+            if grep -q "Java_hev_htproxy_TProxyService_${sym}" /tmp/hev_syms.txt; then
               echo "OK: $sym exported"
             else
               echo "ERROR: $sym NOT exported — build is broken"
