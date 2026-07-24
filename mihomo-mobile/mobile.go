@@ -25,6 +25,7 @@ import (
 	"github.com/metacubex/mihomo/listener"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/component/dialer"
+	"github.com/metacubex/mihomo/log"
 )
 
 var (
@@ -42,6 +43,9 @@ var (
 
 	protectLogMu  sync.Mutex
 	protectLogBuf []string
+
+	coreLogMu  sync.Mutex
+	coreLogBuf []string
 )
 
 // logProtect appends one line to a small ring buffer describing a dial
@@ -71,6 +75,44 @@ func ProtectLog() string {
 		out += l + "\n"
 	}
 	return out
+}
+
+// logCore appends one formatted line to mihomo's own internal log ring
+// buffer (rule matching, DNS hijack, TUN read/write, dial attempts at the
+// core level).
+func logCore(line string) {
+coreLogMu.Lock()
+defer coreLogMu.Unlock()
+coreLogBuf = append(coreLogBuf, line)
+if len(coreLogBuf) > 300 {
+coreLogBuf = coreLogBuf[len(coreLogBuf)-300:]
+}
+}
+
+// CoreLog returns mihomo's own internal debug/info/warning/error log lines
+// captured since the last Start(), newest last.
+func CoreLog() string {
+coreLogMu.Lock()
+defer coreLogMu.Unlock()
+if len(coreLogBuf) == 0 {
+return "(no core log lines captured yet)"
+}
+out := ""
+for _, l := range coreLogBuf {
+out += l + "\n"
+}
+return out
+}
+
+// startCoreLogCapture subscribes to mihomo's internal log broadcast and
+// feeds every line into logCore(). Safe to call repeatedly.
+func startCoreLogCapture() {
+sub := log.Subscribe()
+go func() {
+for elm := range sub {
+logCore(fmt.Sprintf("[%s] %s", elm.LogLevel.String(), elm.Payload))
+}
+}()
 }
 
 // Protector is implemented on the Kotlin/Java side (gomobile reverse
@@ -175,6 +217,11 @@ func Start(configYaml string, homeDir string) string {
 	protectLogMu.Lock()
 	protectLogBuf = nil
 	protectLogMu.Unlock()
+
+	coreLogMu.Lock()
+	coreLogBuf = nil
+	coreLogMu.Unlock()
+	startCoreLogCapture()
 
 	// The traffic stream on /traffic starts emitting immediately once the
 	// controller is up; give the listener a brief moment to bind before the
