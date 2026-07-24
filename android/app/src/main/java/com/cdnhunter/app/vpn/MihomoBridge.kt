@@ -76,6 +76,11 @@ object MihomoBridge {
     // to see whether protect() is actually being invoked/succeeding.
     fun protectLog(): String = try { Mobile.protectLog() } catch (e: Exception) { "protectLog() error: ${e.message}" }
 
+    // mihomo's own internal debug/info/warning/error log lines (rule matching,
+    // DNS hijack, TUN read/write) -- the actual log-level: debug output, which
+    // otherwise never surfaces anywhere since we don't use mihomo's CLI printer.
+    fun coreLog(): String = try { Mobile.coreLog() } catch (e: Exception) { "coreLog() error: ${e.message}" }
+
     fun measureDelay(url: String = "https://www.google.com/generate_204"): Long = -1L
 
     fun version(): String = "mihomo-embedded"
