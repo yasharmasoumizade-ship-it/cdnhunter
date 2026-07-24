@@ -150,7 +150,13 @@ class CdnVpnService : VpnService() {
                 debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
                     "config length: ${config.length} chars\n" +
                     "tun fd: $rawFd\n" +
-                    "config head:\n${config.take(600)}\n"
+                    // 600 was too short — it happened to cut off exactly after
+                    // "uuid: ", making the proxy's UUID look empty in the debug
+                    // log when it wasn't (the real config always had it; only the
+                    // truncated debug view didn't show it). 2000 comfortably
+                    // covers the whole proxies: entry for any of our supported
+                    // proxy types.
+                    "config head:\n${config.take(2000)}\n"
 
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
