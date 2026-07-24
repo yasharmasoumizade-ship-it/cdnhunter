@@ -1,5 +1,6 @@
 package com.cdnhunter.app.vpn
 
+import android.net.VpnService
 import com.cdnhunter.mihomo.mobile.Mobile
 
 object MihomoBridge {
@@ -10,6 +11,22 @@ object MihomoBridge {
     // call (config validation errors, bind failures, etc.) — NOT just logcat.
     var lastError: String = ""
         private set
+
+    // Registers the Android-side socket protector with the Go core. Without
+    // this, mihomo's own outbound socket to the real proxy server gets
+    // captured by the TUN it created (loops back into itself), so only
+    // local connections that never touch the TUN (e.g. 127.0.0.1:10808)
+    // ever worked. Must be called before start(), every connection attempt
+    // — cheap, just overwrites the same hook on the Go side.
+    fun setProtector(service: VpnService) {
+        try {
+            Mobile.setProtector(object : com.cdnhunter.mihomo.mobile.Protector {
+                override fun protect(fd: Int): Boolean = service.protect(fd)
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("MihomoBridge", "setProtector failed: ${e.message}")
+        }
+    }
 
     @Synchronized
     fun start(configYaml: String, homeDir: String): Boolean {
