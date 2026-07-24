@@ -69,17 +69,27 @@ object VpnConfigBuilder {
                 "stack" to "gvisor",
                 "file-descriptor" to tunFd,
                 "auto-route" to false,
-                // This must be true, independently of auto-route: it's what makes
-                // mihomo bind its OWN outbound sockets (the real connection to your
-                // proxy server) to the physical network interface instead of the
-                // tun, via SO_BINDTODEVICE. With this false, mihomo's own proxy
-                // traffic re-entered the tun it was supposed to be feeding, looped,
-                // and never reached the real network — only the local mixed-port
-                // listener (127.0.0.1:10808) ever worked, since that never left the
-                // device. auto-route stays false: Android already owns routing via
-                // VpnService.Builder in establishTun(), and this setting is unrelated
-                // to that — it only affects mihomo's own dialer, not route creation.
-                "auto-detect-interface" to true,
+                // Reverted back to false. The real ClashMetaForAndroid client
+                // (the reference implementation for embedding mihomo on Android)
+                // sets this to false explicitly, with the comment "implements by
+                // VpnService::protect" — see core/src/main/golang/native/tun/tun.go
+                // in metacubex/ClashMetaForAndroid. Reason: mihomo's sing_tun.New()
+                // only starts a NetworkUpdateMonitor when AutoRoute OR
+                // AutoDetectInterface is true, and that monitor depends on
+                // netlink — which Google blocks for non-system apps on Android
+                // 14+. If it fails to start there, sing_tun.New() returns an
+                // error... which executor.ApplyConfig() swallows (it only logs
+                // Go-side errors, never surfaces them to Start()'s caller). That
+                // means mihomo could report "started OK" while the TUN listener
+                // was never actually created — indistinguishable from a healthy
+                // connection except that literally nothing ever reaches it, which
+                // matches "connects, zero dial attempts, whole device offline"
+                // exactly. protect() (already wired via MihomoBridge.setProtector
+                // -> dialer.DefaultSocketHook) is what actually needs to keep
+                // mihomo's own sockets out of the tun — auto-detect-interface was
+                // solving a problem protect() already solves, at the cost of this
+                // Android-14+ failure mode.
+                "auto-detect-interface" to false,
                 "dns-hijack" to listOf("any:53"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
                 // (also 1500) — a mismatch here means mihomo builds packets sized
