@@ -66,8 +66,10 @@ class CdnVpnService : VpnService() {
 
         job = scope.launch {
             try {
+                val mihomoHomeDir = File(filesDir, "mihomo").apply { mkdirs() }
+
                 listOf("geoip.metadb", "geosite.dat").forEach { name ->
-                    val target = File(filesDir, name)
+                    val target = File(mihomoHomeDir, name)
                     if (!target.exists()) {
                         try {
                             assets.open(name).use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
@@ -76,11 +78,8 @@ class CdnVpnService : VpnService() {
                 }
 
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
-                val configFile = File(filesDir, "mihomo_config.yaml")
-                configFile.writeText(config)
 
                 xrayLog = ""
-                runCatching { File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME).writeText("") }
 
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
@@ -96,7 +95,12 @@ class CdnVpnService : VpnService() {
 
                 protect(tun.fd)
 
-                MihomoBridge.start(config, tun.fd)
+                val started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
+                if (!started) {
+                    lastError = "mihomo failed to start (see logcat MihomoBridge tag)"
+                    withContext(Dispatchers.Main) { stopVpn() }
+                    return@launch
+                }
 
                 isRunning.set(true)
                 uploadBytes = 0L
@@ -106,26 +110,15 @@ class CdnVpnService : VpnService() {
                 while (isActive && isRunning.get()) {
                     uploadBytes = MihomoBridge.queryUpload()
                     downloadBytes = MihomoBridge.queryDownload()
-                    xrayLog = readMihomoLog()
                     delay(1000)
                 }
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
-                xrayLog = readMihomoLog()
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 withContext(Dispatchers.Main) { stopVpn() }
             }
         }
-    }
-
-    private fun readMihomoLog(): String {
-        return try {
-            val f = File(filesDir, VpnConfigBuilder.ERROR_LOG_NAME)
-            if (!f.exists()) return ""
-            val lines = f.readLines()
-            lines.takeLast(40).joinToString("\n")
-        } catch (_: Exception) { "" }
     }
 
     private fun stopVpn() {
