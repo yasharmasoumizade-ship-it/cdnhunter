@@ -202,6 +202,18 @@ func Start(configYaml string, homeDir string) string {
 		return fmt.Sprintf("parse config: %v", err)
 	}
 
+	coreLogMu.Lock()
+	coreLogBuf = nil
+	coreLogMu.Unlock()
+	// Must subscribe BEFORE ApplyConfig, not after: ApplyConfig is what
+	// actually builds the TUN listener and logs whether it succeeded (e.g.
+	// "[TUN] use tun name %s for fd %d" or the "get tun name failed"
+	// fallback warning). Subscribing afterward means log.Subscribe() opens
+	// its channel too late to catch anything ApplyConfig already emitted —
+	// exactly why coreLog showed no TUN-related lines at all even on runs
+	// where TUN setup may have silently failed.
+	startCoreLogCapture()
+
 	executor.ApplyConfig(cfg, true)
 	running = true
 
@@ -217,11 +229,6 @@ func Start(configYaml string, homeDir string) string {
 	protectLogMu.Lock()
 	protectLogBuf = nil
 	protectLogMu.Unlock()
-
-	coreLogMu.Lock()
-	coreLogBuf = nil
-	coreLogMu.Unlock()
-	startCoreLogCapture()
 
 	// The traffic stream on /traffic starts emitting immediately once the
 	// controller is up; give the listener a brief moment to bind before the

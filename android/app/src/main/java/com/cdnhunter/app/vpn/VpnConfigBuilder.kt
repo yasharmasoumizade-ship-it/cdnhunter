@@ -81,7 +81,12 @@ object VpnConfigBuilder {
                 // to that — it only affects mihomo's own dialer, not route creation.
                 "auto-detect-interface" to true,
                 "dns-hijack" to listOf("any:53"),
-                "mtu" to 9000,
+                // Must match VpnService.Builder().setMtu() in CdnVpnService
+                // (also 1500) — a mismatch here means mihomo builds packets sized
+                // for a 9000-byte interface while the actual OS-level tun device
+                // is only configured for 1500, and they get silently dropped once
+                // they leave the tun.
+                "mtu" to 1500,
             ),
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
