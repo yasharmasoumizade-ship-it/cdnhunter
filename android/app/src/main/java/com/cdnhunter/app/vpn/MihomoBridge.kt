@@ -1,6 +1,6 @@
 package com.cdnhunter.app.vpn
 
-import com.cdnhunter.mihomo.Mobile
+import com.cdnhunter.mihomo.mobile.Mobile
 
 object MihomoBridge {
 
