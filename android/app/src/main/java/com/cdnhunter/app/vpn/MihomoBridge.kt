@@ -7,16 +7,22 @@ object MihomoBridge {
     private var running = false
 
     @Synchronized
-    fun start(configYaml: String, tunFd: Int = 0) {
-        try {
-            android.util.Log.i("MihomoBridge", "mihomo version: ${version()}")
-            Mobile.start(configYaml)
-            running = true
-            android.util.Log.i("MihomoBridge", "mihomo started OK")
+    fun start(configYaml: String, homeDir: String): Boolean {
+        return try {
+            val err = Mobile.start(configYaml, homeDir)
+            if (err.isNullOrEmpty()) {
+                running = true
+                android.util.Log.i("MihomoBridge", "mihomo started OK")
+                true
+            } else {
+                android.util.Log.e("MihomoBridge", "start failed: $err")
+                running = false
+                false
+            }
         } catch (e: Exception) {
-            android.util.Log.e("MihomoBridge", "start failed: ${e.message}")
+            android.util.Log.e("MihomoBridge", "start exception: ${e.message}")
             running = false
-            throw e
+            false
         }
     }
 
@@ -30,13 +36,13 @@ object MihomoBridge {
         }
     }
 
-    fun queryUpload(): Long = try { Mobile.queryUpload() } catch (_: Exception) { 0L }
+    fun queryUpload(): Long = try { Mobile.trafficUp() } catch (_: Exception) { 0L }
 
-    fun queryDownload(): Long = try { Mobile.queryDownload() } catch (_: Exception) { 0L }
+    fun queryDownload(): Long = try { Mobile.trafficDown() } catch (_: Exception) { 0L }
 
     fun measureDelay(url: String = "https://www.google.com/generate_204"): Long = -1L
 
-    fun version(): String = try { Mobile.version() } catch (_: Exception) { "unknown" }
+    fun version(): String = "mihomo-embedded"
 
     fun isRunning() = running
 }
