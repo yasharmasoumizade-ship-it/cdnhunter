@@ -299,16 +299,12 @@ private fun extractFlagFromName(raw: String): Pair<String, String> {
 
 
 private fun parseConfig(uri: String): SavedConfig? {
-    val ob = ConfigUriParser.parseToOutbound(uri) ?: return null
-    val proto = ob.optString("protocol", "?")
-    val settings = ob.optJSONObject("settings")
-    val addr = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optString("address")
-        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optString("address") ?: "?"
-    val port = settings?.optJSONArray("vnext")?.optJSONObject(0)?.optInt("port", 443)
-        ?: settings?.optJSONArray("servers")?.optJSONObject(0)?.optInt("port", 443) ?: 443
-    val ss = ob.optJSONObject("streamSettings")
-    val sni = ss?.optJSONObject("tlsSettings")?.optString("serverName", "") ?: ""
-    val net = ss?.optString("network", "tcp") ?: "tcp"
+    val proxy = com.cdnhunter.app.vpn.ConfigUriParser.parseToProxy(uri) ?: return null
+    val proto = (proxy["type"] as? String) ?: "?"
+    val addr = (proxy["server"] as? String) ?: "?"
+    val port = (proxy["port"] as? Int) ?: 443
+    val sni = (proxy["servername"] as? String) ?: ""
+    val net = (proxy["network"] as? String) ?: "tcp"
 
     // Prefer the user-given remark (URI fragment, e.g. "...#🇩🇪 Germany Pro 01") if present
     val remark = try {
@@ -318,7 +314,7 @@ private fun parseConfig(uri: String): SavedConfig? {
         "trojan"  -> "Trojan"
         "vless"   -> "VLESS"
         "vmess"   -> "VMess"
-        else      -> proto.replaceFirstChar { it.uppercase() }
+        else      -> proto.replaceFirstChar { ch -> ch.uppercase() }
     } + " · $addr"
 
     // If the remark carries a flag emoji (Hiddify-style, e.g. "🇩🇪 Germany Pro 01"),
