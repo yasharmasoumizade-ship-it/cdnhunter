@@ -6,20 +6,28 @@ object MihomoBridge {
 
     private var running = false
 
+    // The actual error string mihomo itself returned on the last failed start()
+    // call (config validation errors, bind failures, etc.) — NOT just logcat.
+    var lastError: String = ""
+        private set
+
     @Synchronized
     fun start(configYaml: String, homeDir: String): Boolean {
         return try {
             val err = Mobile.start(configYaml, homeDir)
             if (err.isNullOrEmpty()) {
                 running = true
+                lastError = ""
                 android.util.Log.i("MihomoBridge", "mihomo started OK")
                 true
             } else {
+                lastError = err
                 android.util.Log.e("MihomoBridge", "start failed: $err")
                 running = false
                 false
             }
         } catch (e: Exception) {
+            lastError = "exception: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
             android.util.Log.e("MihomoBridge", "start exception: ${e.message}")
             running = false
             false
