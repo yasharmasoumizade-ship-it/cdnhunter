@@ -1,16 +1,19 @@
 package com.cdnhunter.app.vpn
 
 import android.util.Base64
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLDecoder
 
 /**
- * Parses proxy URI (trojan:// vless:// vmess://) into xray outbound JSON.
+ * Parses a proxy URI (vless:// trojan:// vmess:// ss://) into the flat
+ * key-value shape mihomo/Clash expects under `proxies:` in its YAML config.
+ * Unlike Xray, mihomo has no separate streamSettings/tls block — transport,
+ * TLS and REALITY options all live directly on the proxy object.
  */
 object ConfigUriParser {
 
-    fun parseToOutbound(uri: String): JSONObject? {
+    /** Returns a LinkedHashMap ready to be YAML-serialized as one `proxies:` entry, or null. */
+    fun parseToProxy(uri: String): LinkedHashMap<String, Any>? {
         val trimmed = uri.trim()
         return when {
             trimmed.startsWith("trojan://") -> parseTrojan(trimmed)
@@ -21,7 +24,7 @@ object ConfigUriParser {
         }
     }
 
-    private fun parseTrojan(uri: String): JSONObject {
+    private fun parseTrojan(uri: String): LinkedHashMap<String, Any> {
         val body = uri.removePrefix("trojan://")
         val password = body.substringBefore("@")
         val rest = body.substringAfter("@").substringBefore("#")
@@ -31,20 +34,22 @@ object ConfigUriParser {
         val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
         val params = parseQuery(query)
 
-        val ob = JSONObject()
-        ob.put("protocol", "trojan")
-        val settings = JSONObject()
-        val server = JSONObject()
-        server.put("address", address)
-        server.put("port", port)
-        server.put("password", password)
-        settings.put("servers", JSONArray().put(server))
-        ob.put("settings", settings)
-        ob.put("streamSettings", buildStreamSettings(params))
-        return ob
+        val p = linkedMapOf<String, Any>(
+            "name" to "trojan-out",
+            "type" to "trojan",
+            "server" to address,
+            "port" to port,
+            "password" to password,
+            "udp" to true,
+        )
+        val sni = params["sni"] ?: params["peer"] ?: ""
+        if (sni.isNotBlank()) p["sni"] = sni
+        if ((params["allowInsecure"] ?: params["insecure"]) == "1") p["skip-cert-verify"] = true
+        applyTransport(p, params)
+        return p
     }
 
-    private fun parseVless(uri: String): JSONObject {
+    private fun parseVless(uri: String): LinkedHashMap<String, Any> {
         val body = uri.removePrefix("vless://")
         val uuid = body.substringBefore("@")
         val rest = body.substringAfter("@").substringBefore("#")
@@ -54,24 +59,49 @@ object ConfigUriParser {
         val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
         val params = parseQuery(query)
 
-        val ob = JSONObject()
-        ob.put("protocol", "vless")
-        val settings = JSONObject()
-        val vnext = JSONObject()
-        vnext.put("address", address)
-        vnext.put("port", port)
-        val user = JSONObject()
-        user.put("id", uuid)
-        user.put("encryption", params["encryption"] ?: "none")
-        user.put("flow", params["flow"] ?: "")
-        vnext.put("users", JSONArray().put(user))
-        settings.put("vnext", JSONArray().put(vnext))
-        ob.put("settings", settings)
-        ob.put("streamSettings", buildStreamSettings(params))
-        return ob
+        val p = linkedMapOf<String, Any>(
+            "name" to "vless-out",
+            "type" to "vless",
+            "server" to address,
+            "port" to port,
+            "uuid" to uuid,
+            "udp" to true,
+        )
+        val flow = params["flow"] ?: ""
+        if (flow.isNotBlank()) p["flow"] = flow
+        applyTransport(p, params)
+        return p
     }
 
-    private fun parseShadowsocks(uri: String): JSONObject? {
+    private fun parseVmess(uri: String): LinkedHashMap<String, Any> {
+        val b64 = uri.removePrefix("vmess://")
+        val json = String(Base64.decode(padBase64(b64), Base64.DEFAULT))
+        val obj = JSONObject(json)
+
+        val p = linkedMapOf<String, Any>(
+            "name" to "vmess-out",
+            "type" to "vmess",
+            "server" to obj.optString("add"),
+            "port" to (obj.optString("port").toIntOrNull() ?: 443),
+            "uuid" to obj.optString("id"),
+            "alterId" to (obj.optString("aid", "0").toIntOrNull() ?: 0),
+            "cipher" to obj.optString("scy", "auto"),
+            "udp" to true,
+        )
+        val params = mapOf(
+            "type" to obj.optString("net", "tcp"),
+            "security" to obj.optString("tls", ""),
+            "sni" to obj.optString("sni", ""),
+            "host" to obj.optString("host", ""),
+            "path" to obj.optString("path", ""),
+            "alpn" to obj.optString("alpn", ""),
+            "fp" to obj.optString("fp", ""),
+        )
+        applyTransport(p, params)
+        return p
+    }
+
+    private fun parseShadowsocks(uri: String): LinkedHashMap<String, Any>? {
         val body = uri.removePrefix("ss://")
         val withoutTag = body.substringBefore("#")
         val hasAt = withoutTag.contains("@")
@@ -103,23 +133,20 @@ object ConfigUriParser {
             password = credPart.substringAfter(":")
         }
 
-        val hostPortClean = hostPortRaw.substringBefore("?")
+        val hostPortClean = hostPortRaw.substringBefore("?").substringBefore("#")
         val address = hostPortClean.substringBeforeLast(":")
         val port = hostPortClean.substringAfterLast(":").toIntOrNull() ?: 8388
-
         if (address.isBlank() || method.isBlank() || password.isBlank()) return null
 
-        val ob = JSONObject()
-        ob.put("protocol", "shadowsocks")
-        val settings = JSONObject()
-        val server = JSONObject()
-        server.put("address", address)
-        server.put("port", port)
-        server.put("method", method)
-        server.put("password", password)
-        settings.put("servers", JSONArray().put(server))
-        ob.put("settings", settings)
-        return ob
+        return linkedMapOf(
+            "name" to "ss-out",
+            "type" to "ss",
+            "server" to address,
+            "port" to port,
+            "cipher" to method,
+            "password" to password,
+            "udp" to true,
+        )
     }
 
     private fun padBase64(s: String): String {
@@ -129,140 +156,63 @@ object ConfigUriParser {
         return str
     }
 
-    private fun parseVmess(uri: String): JSONObject {
-        val b64 = uri.removePrefix("vmess://")
-        val json = String(Base64.decode(b64, Base64.DEFAULT))
-        val obj = JSONObject(json)
-
-        val ob = JSONObject()
-        ob.put("protocol", "vmess")
-        val settings = JSONObject()
-        val vnext = JSONObject()
-        vnext.put("address", obj.optString("add"))
-        vnext.put("port", obj.optString("port").toIntOrNull() ?: 443)
-        val user = JSONObject()
-        user.put("id", obj.optString("id"))
-        user.put("alterId", obj.optString("aid", "0").toIntOrNull() ?: 0)
-        user.put("security", obj.optString("scy", "auto"))
-        vnext.put("users", JSONArray().put(user))
-        settings.put("vnext", JSONArray().put(vnext))
-        ob.put("settings", settings)
-
-        val params = mapOf(
-            "type" to obj.optString("net", "tcp"),
-            "security" to obj.optString("tls", ""),
-            "sni" to obj.optString("sni", ""),
-            "host" to obj.optString("host", ""),
-            "path" to obj.optString("path", ""),
-            "alpn" to obj.optString("alpn", ""),
-            "fp" to obj.optString("fp", ""),
-            "mode" to obj.optString("mode", ""),
-        )
-        ob.put("streamSettings", buildStreamSettings(params))
-        return ob
-    }
-
-    private fun buildStreamSettings(params: Map<String, String>): JSONObject {
-        val ss = JSONObject()
+    /** Applies TLS/REALITY + transport (ws/grpc/h2/tcp) settings directly onto the flat proxy map. */
+    private fun applyTransport(p: LinkedHashMap<String, Any>, params: Map<String, String>) {
         val network = params["type"] ?: "tcp"
-        ss.put("network", network)
-
-        // Security: TLS or REALITY
         val security = params["security"] ?: ""
+
         when (security) {
             "tls" -> {
-                ss.put("security", "tls")
-                val tls = JSONObject()
+                p["tls"] = true
                 val sni = params["sni"] ?: params["host"] ?: ""
-                if (sni.isNotBlank()) tls.put("serverName", sni)
+                if (sni.isNotBlank()) p["servername"] = sni
                 val alpn = params["alpn"] ?: ""
-                if (alpn.isNotBlank()) tls.put("alpn", JSONArray().apply { alpn.split(",").forEach { put(it) } })
+                if (alpn.isNotBlank()) p["alpn"] = alpn.split(",").filter { it.isNotBlank() }
                 val fp = params["fp"] ?: ""
-                if (fp.isNotBlank()) tls.put("fingerprint", fp)
-                // allowInsecure
-                val insecure = params["allowInsecure"] ?: params["insecure"] ?: "0"
-                if (insecure == "1") tls.put("allowInsecure", true)
-                ss.put("tlsSettings", tls)
+                if (fp.isNotBlank()) p["client-fingerprint"] = fp
+                if ((params["allowInsecure"] ?: params["insecure"]) == "1") p["skip-cert-verify"] = true
             }
             "reality" -> {
-                ss.put("security", "reality")
-                val reality = JSONObject()
+                p["tls"] = true
                 val sni = params["sni"] ?: ""
-                if (sni.isNotBlank()) reality.put("serverName", sni)
-                // fingerprint is REQUIRED for REALITY; default to chrome
-                reality.put("fingerprint", params["fp"]?.takeIf { it.isNotBlank() } ?: "chrome")
-                val pbk = params["pbk"] ?: ""
-                if (pbk.isNotBlank()) reality.put("publicKey", pbk)
-                val sid = params["sid"] ?: ""
-                if (sid.isNotBlank()) reality.put("shortId", sid)
-                val spx = params["spx"] ?: ""
-                if (spx.isNotBlank()) reality.put("spiderX", spx)
-                ss.put("realitySettings", reality)
+                if (sni.isNotBlank()) p["servername"] = sni
+                p["client-fingerprint"] = params["fp"]?.takeIf { it.isNotBlank() } ?: "chrome"
+                val realityOpts = linkedMapOf<String, Any>()
+                (params["pbk"] ?: "").takeIf { it.isNotBlank() }?.let { realityOpts["public-key"] = it }
+                (params["sid"] ?: "").let { realityOpts["short-id"] = it } // mihomo accepts empty short-id
+                if (realityOpts.isNotEmpty()) p["reality-opts"] = realityOpts
             }
         }
 
-        // Transport
         when (network) {
-            "tcp" -> {
-                val headerType = params["headerType"] ?: ""
-                if (headerType == "http") {
-                    val tcp = JSONObject()
-                    val header = JSONObject()
-                    header.put("type", "http")
-                    val req = JSONObject()
-                    val host = params["host"] ?: ""
-                    if (host.isNotBlank()) req.put("headers", JSONObject().put("Host", JSONArray().put(host)))
-                    header.put("request", req)
-                    tcp.put("header", header)
-                    ss.put("tcpSettings", tcp)
-                }
-            }
             "ws" -> {
-                val ws = JSONObject()
-                ws.put("path", params["path"] ?: "/")
-                val headers = JSONObject()
+                p["network"] = "ws"
+                val wsOpts = linkedMapOf<String, Any>("path" to (params["path"]?.takeIf { it.isNotBlank() } ?: "/"))
                 val host = params["host"] ?: ""
-                if (host.isNotBlank()) headers.put("Host", host)
-                ws.put("headers", headers)
-                ss.put("wsSettings", ws)
-            }
-            "xhttp", "splithttp" -> {
-                val xhttp = JSONObject()
-                xhttp.put("path", params["path"] ?: "/")
-                val host = params["host"] ?: ""
-                if (host.isNotBlank()) xhttp.put("host", host)
-                val mode = params["mode"] ?: ""
-                if (mode.isNotBlank()) xhttp.put("mode", mode)
-                // "extra" carries advanced xhttp settings (scMaxEachPostBytes, xPaddingBytes,
-                // xmux, downloadSettings, ...). Xray merges it over host/path/mode at build time.
-                val extra = params["extra"] ?: ""
-                if (extra.isNotBlank()) {
-                    try { xhttp.put("extra", JSONObject(extra)) } catch (_: Exception) {}
-                }
-                ss.put("xhttpSettings", xhttp)
+                if (host.isNotBlank()) wsOpts["headers"] = linkedMapOf("Host" to host)
+                p["ws-opts"] = wsOpts
             }
             "grpc" -> {
-                val grpc = JSONObject()
-                grpc.put("serviceName", params["serviceName"] ?: params["path"] ?: "")
-                ss.put("grpcSettings", grpc)
+                p["network"] = "grpc"
+                val serviceName = params["serviceName"] ?: params["path"] ?: ""
+                p["grpc-opts"] = linkedMapOf("grpc-service-name" to serviceName)
             }
             "h2", "http" -> {
-                val h2 = JSONObject()
-                h2.put("path", params["path"] ?: "/")
+                p["network"] = "h2"
+                val h2Opts = linkedMapOf<String, Any>("path" to listOf(params["path"]?.takeIf { it.isNotBlank() } ?: "/"))
                 val host = params["host"] ?: ""
-                if (host.isNotBlank()) h2.put("host", JSONArray().put(host))
-                ss.put("httpSettings", h2)
+                if (host.isNotBlank()) h2Opts["host"] = listOf(host)
+                p["h2-opts"] = h2Opts
             }
+            // "tcp" (the default) needs no network/*-opts entry in mihomo.
         }
-
-        return ss
     }
 
     private fun parseQuery(query: String): Map<String, String> {
         if (query.isBlank()) return emptyMap()
-        return query.split("&").associate { p ->
-            val k = p.substringBefore("=")
-            val v = try { URLDecoder.decode(p.substringAfter("="), "UTF-8") } catch (_: Exception) { p.substringAfter("=") }
+        return query.split("&").associate { part ->
+            val k = part.substringBefore("=")
+            val v = try { URLDecoder.decode(part.substringAfter("="), "UTF-8") } catch (_: Exception) { part.substringAfter("=") }
             k to v
         }
     }
