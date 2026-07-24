@@ -51,7 +51,7 @@ jobs:
           go get -tool golang.org/x/mobile/cmd/gobind
           go get golang.org/x/mobile/cmd/gomobile
           go mod tidy -v
-          gomobile bind -v -androidapi 24 -javapkg=com.cdnhunter.mihomo -ldflags='-s -w -checklinkname=0' -o libmihomo.aar .
+          gomobile bind -v -tags with_gvisor -androidapi 24 -javapkg=com.cdnhunter.mihomo -ldflags='-s -w -checklinkname=0' -o libmihomo.aar .
           ls -la libmihomo.aar
 
       - name: DEBUG list AAR contents
