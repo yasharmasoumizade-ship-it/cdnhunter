@@ -38,6 +38,19 @@ object VpnConfigBuilder {
             "dns" to linkedMapOf(
                 "enable" to true,
                 "listen" to "0.0.0.0:1053",
+                // fake-ip is required here, not just an option: with the default
+                // "mapping" mode, mihomo only learns a domain<->IP pairing when a
+                // client actually queries mihomo's own DNS server first. Nothing on
+                // Android forces that — apps use the system/private DNS resolver by
+                // default — so real IPs reached the tun with no domain attached, the
+                // rule engine had nothing to match against, and traffic silently went
+                // nowhere even though the tun and mihomo both reported "connected".
+                // fake-ip returns synthetic addresses from fake-ip-range for every
+                // hijacked query, forcing all DNS through mihomo and giving every
+                // outbound connection a domain to match against `rules:` below.
+                "enhanced-mode" to "fake-ip",
+                "fake-ip-range" to "198.18.0.1/16",
+                "fake-ip-filter" to listOf("*.lan", "localhost.ptlogin2.qq.com"),
                 "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
                 "nameserver" to listOf("1.1.1.1", "8.8.8.8"),
             ),
