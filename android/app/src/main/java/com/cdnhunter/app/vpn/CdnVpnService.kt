@@ -95,6 +95,20 @@ class CdnVpnService : VpnService() {
                 tunFd = tun
                 protect(tun.fd)
 
+                // Android's system-wide "Private DNS" (Settings > Network > Private
+                // DNS), when set to a specific hostname (strict mode), bypasses the
+                // VPN's captured port 53 entirely — apps' DNS queries go straight out
+                // over DoT to that hostname, never touching mihomo's dns-hijack. This
+                // produces exactly the "connects, no error, no traffic" symptom: the
+                // tun comes up and mihomo reports healthy, but nothing ever gets a
+                // domain to route because DNS never passed through it. Surface this
+                // in the debug log since there's no way to force it off from here.
+                checkPrivateDnsStrictMode()?.let { hostname ->
+                    debugLog += "\nWARNING: Android Private DNS is set to strict mode ($hostname). " +
+                        "This bypasses the VPN's DNS hijacking — traffic may not route correctly. " +
+                        "Disable it or set it to \"Automatic\" in Settings > Network > Private DNS."
+                }
+
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, tun.fd)
 
                 debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
@@ -164,6 +178,19 @@ class CdnVpnService : VpnService() {
             builder.establish()
         } catch (e: Exception) {
             lastError = "TUN: ${e.message}"
+            null
+        }
+    }
+
+    /** Returns the configured Private DNS hostname if Android's system-wide
+     *  Private DNS is set to strict/hostname mode, or null if it's off/opportunistic. */
+    private fun checkPrivateDnsStrictMode(): String? {
+        return try {
+            val mode = android.provider.Settings.Global.getString(contentResolver, "private_dns_mode")
+            if (mode == "hostname") {
+                android.provider.Settings.Global.getString(contentResolver, "private_dns_specifier")
+            } else null
+        } catch (_: Exception) {
             null
         }
     }
