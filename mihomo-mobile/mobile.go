@@ -39,7 +39,39 @@ var (
 	protectorMu sync.Mutex
 	protector   Protector
 	hookSet     bool
+
+	protectLogMu  sync.Mutex
+	protectLogBuf []string
 )
+
+// logProtect appends one line to a small ring buffer describing a dial
+// attempt seen by the SocketControl hook — whether a protector was
+// registered at all, and whether the protect() call itself reported
+// success. Exposed via ProtectLog() so the Android side can include it
+// when the user shares debug info, since a dial that silently never
+// leaves the device produces no error anywhere else in the stack.
+func logProtect(line string) {
+	protectLogMu.Lock()
+	defer protectLogMu.Unlock()
+	protectLogBuf = append(protectLogBuf, line)
+	if len(protectLogBuf) > 50 {
+		protectLogBuf = protectLogBuf[len(protectLogBuf)-50:]
+	}
+}
+
+// ProtectLog returns the recent dial/protect attempt history, newest last.
+func ProtectLog() string {
+	protectLogMu.Lock()
+	defer protectLogMu.Unlock()
+	if len(protectLogBuf) == 0 {
+		return "(no dial attempts observed yet)"
+	}
+	out := ""
+	for _, l := range protectLogBuf {
+		out += l + "\n"
+	}
+	return out
+}
 
 // Protector is implemented on the Kotlin/Java side (gomobile reverse
 // binding) as a thin wrapper around android.net.VpnService.protect(fd).
@@ -74,16 +106,25 @@ func SetProtector(p Protector) {
 			p := protector
 			protectorMu.Unlock()
 			if p == nil {
+				logProtect(fmt.Sprintf("network=%s address=%s: NO PROTECTOR REGISTERED (skipped)", network, address))
 				return nil
 			}
 			var protectErr error
+			var gotFd uintptr
 			err := c.Control(func(fd uintptr) {
+				gotFd = fd
 				if !p.Protect(int(fd)) {
 					protectErr = fmt.Errorf("VpnService.protect failed for fd %d (network=%s address=%s)", fd, network, address)
 				}
 			})
 			if err != nil {
+				logProtect(fmt.Sprintf("network=%s address=%s: c.Control ERROR: %v", network, address, err))
 				return err
+			}
+			if protectErr != nil {
+				logProtect(fmt.Sprintf("network=%s address=%s fd=%d: PROTECT FAILED: %v", network, address, gotFd, protectErr))
+			} else {
+				logProtect(fmt.Sprintf("network=%s address=%s fd=%d: protected OK", network, address, gotFd))
 			}
 			return protectErr
 		}
@@ -130,6 +171,10 @@ func Start(configYaml string, homeDir string) string {
 	controller = "127.0.0.1:10809"
 	lastUp, lastDown = 0, 0
 	trafficMu.Unlock()
+
+	protectLogMu.Lock()
+	protectLogBuf = nil
+	protectLogMu.Unlock()
 
 	// The traffic stream on /traffic starts emitting immediately once the
 	// controller is up; give the listener a brief moment to bind before the
