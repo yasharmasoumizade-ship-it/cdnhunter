@@ -25,7 +25,7 @@ class CdnVpnService : VpnService() {
         var uploadBytes = 0L
         var downloadBytes = 0L
         var lastError = ""
-        var xrayLog = ""
+        var debugLog = ""
 
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
@@ -79,7 +79,9 @@ class CdnVpnService : VpnService() {
 
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
 
-                xrayLog = ""
+                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat(\"HH:mm:ss\", java.util.Locale.US).format(java.util.Date())} ──\n" +
+                    "config length: ${config.length} chars\n" +
+                    "config head:\n${config.take(600)}\n"
 
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
                 android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
@@ -88,6 +90,7 @@ class CdnVpnService : VpnService() {
                 val tun = establishTun()
                 if (tun == null) {
                     lastError = "Failed to create VPN tunnel"
+                    debugLog += "\nFAILED: could not establish TUN interface (lastError set above)"
                     withContext(Dispatchers.Main) { stopSelf() }
                     return@launch
                 }
@@ -97,11 +100,13 @@ class CdnVpnService : VpnService() {
 
                 val started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
                 if (!started) {
-                    lastError = "mihomo failed to start (see logcat MihomoBridge tag)"
+                    lastError = "mihomo failed to start: ${MihomoBridge.lastError}"
+                    debugLog += "\nFAILED: mihomo rejected the config.\nmihomo error:\n${MihomoBridge.lastError}"
                     withContext(Dispatchers.Main) { stopVpn() }
                     return@launch
                 }
 
+                debugLog += "\nmihomo started OK"
                 isRunning.set(true)
                 uploadBytes = 0L
                 downloadBytes = 0L
@@ -114,6 +119,7 @@ class CdnVpnService : VpnService() {
                 }
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
+                debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 withContext(Dispatchers.Main) { stopVpn() }
