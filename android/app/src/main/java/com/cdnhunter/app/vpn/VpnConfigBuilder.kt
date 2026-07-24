@@ -33,7 +33,7 @@ object VpnConfigBuilder {
             "external-controller" to "127.0.0.1:10809",
             "allow-lan" to false,
             "mode" to "rule",
-            "log-level" to "info",
+            "log-level" to "debug",
             "ipv6" to false,
             "dns" to linkedMapOf(
                 "enable" to true,
@@ -189,3 +189,4 @@ object VpnConfigBuilder {
         return "\"$escaped\""
     }
 }
+
