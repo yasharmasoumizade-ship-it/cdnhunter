@@ -21,6 +21,8 @@ import (
 	"github.com/metacubex/mihomo/config"
 	"github.com/metacubex/mihomo/hub/executor"
 	"github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/listener"
+	LC "github.com/metacubex/mihomo/listener/config"
 )
 
 var (
@@ -90,6 +92,38 @@ func Stop() {
 		return
 	}
 	executor.Shutdown()
+
+	// executor.Shutdown() -> listener.Cleanup() only closes the TUN
+	// listener (closeTunListener()). It never touches the mixed-port
+	// listener, and it never resets listener.LastTunConf. That's correct
+	// for mihomo's normal usage (a CLI process that exits and takes every
+	// socket with it), but wrong here: we're embedded as a library in a
+	// long-lived Android process that starts/stops repeatedly. Left as-is
+	// this caused two symptoms:
+	//
+	//  1. The mixed-port listener (127.0.0.1:10808) is a package-level
+	//     singleton that's never closed, so it keeps accepting connections
+	//     forever after "Stop" — the port never actually frees up.
+	//  2. Worse, on the *next* Start(), ReCreateTun compares the new tun
+	//     config against listener.LastTunConf — which Shutdown() never
+	//     cleared. Android almost always hands back the same fd number for
+	//     the new TUN (it's just reusing the freed slot), so every field
+	//     including FileDescriptor matches the stale LastTunConf, the equal
+	//     check short-circuits, and no real TUN listener gets created at
+	//     all. Only the never-closed mixed-port listener from point 1 keeps
+	//     working, which is exactly the "only 127.0.0.1:10808 gets
+	//     proxied" symptom.
+	//
+	// Fix: force both closed/reset ourselves. ReCreateMixed(0, nil) closes
+	// the mixed listener (port 0 short-circuits before the nil tunnel is
+	// ever used). ReCreateTun(LC.Tun{}, nil) is Enable:false, guaranteed to
+	// differ from the real (Enable:true) config, so its deferred
+	// `LastTunConf = tunConf` unconditionally overwrites the stale value —
+	// guaranteeing the next Start() sees a real change and actually builds
+	// a fresh TUN listener regardless of fd-number reuse.
+	listener.ReCreateMixed(0, nil)
+	listener.ReCreateTun(LC.Tun{}, nil)
+
 	running = false
 	trafficMu.Lock()
 	controller = ""
@@ -175,4 +209,3 @@ func TrafficDown() int64 {
 	defer trafficMu.Unlock()
 	return lastDown
 }
-
