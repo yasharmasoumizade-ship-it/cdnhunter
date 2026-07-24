@@ -54,6 +54,16 @@ jobs:
           gomobile bind -v -androidapi 24 -javapkg=com.cdnhunter.mihomo -ldflags='-s -w -checklinkname=0' -o libmihomo.aar .
           ls -la libmihomo.aar
 
+      - name: DEBUG list AAR contents
+        run: |
+          mkdir -p /tmp/aar_check
+          cd /tmp/aar_check
+          unzip -o "$GITHUB_WORKSPACE/mihomo-mobile/libmihomo.aar" -d extracted
+          echo "=== classes.jar contents (mihomo/mobile related) ==="
+          find extracted -name "classes.jar" -exec unzip -l {} \; | grep -iE "mihomo|mobile" || echo "NO MATCH FOUND"
+          echo "=== full classes.jar listing (first 100 lines) ==="
+          find extracted -name "classes.jar" -exec unzip -l {} \; | head -100
+
       - name: Place .aar in app/libs
         run: |
           mkdir -p android/app/libs
