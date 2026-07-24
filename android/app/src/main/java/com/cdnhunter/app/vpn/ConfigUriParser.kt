@@ -204,6 +204,16 @@ object ConfigUriParser {
                 if (host.isNotBlank()) h2Opts["host"] = listOf(host)
                 p["h2-opts"] = h2Opts
             }
+            "xhttp", "splithttp" -> {
+                p["network"] = "xhttp"
+                val xhttpOpts = linkedMapOf<String, Any>(
+                    "path" to (params["path"]?.takeIf { it.isNotBlank() } ?: "/"),
+                    "mode" to (params["mode"]?.takeIf { it.isNotBlank() } ?: "auto"),
+                )
+                val host = params["host"] ?: ""
+                if (host.isNotBlank()) xhttpOpts["host"] = host
+                p["xhttp-opts"] = xhttpOpts
+            }
             // "tcp" (the default) needs no network/*-opts entry in mihomo.
         }
     }
