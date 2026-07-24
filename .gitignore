@@ -1,1 +1,7 @@
 __pycache__/
+
+# CI builds libmihomo.aar fresh every run (see build-unified.yml) and copies
+# it here. Never commit an AAR in this directory — a stale committed one
+# sitting alongside the freshly-built one is exactly what caused the
+# duplicate-class/libgojni.so build failures fixed in past commits.
+android/app/libs/*.aar

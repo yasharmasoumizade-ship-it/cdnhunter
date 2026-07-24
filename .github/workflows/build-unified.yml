@@ -68,8 +68,15 @@ jobs:
 
       - name: Place .aar in app/libs
         run: |
+          # Wipe app/libs completely before copying in the AAR this workflow
+          # just built. Only removing the old xray filename (libv2ray.aar)
+          # let a stale committed mihomo.aar sit alongside the freshly-built
+          # libmihomo.aar — both are gomobile-built AARs sharing the same Go
+          # runtime classes and libgojni.so, so Gradle failed with duplicate
+          # class / duplicate native-lib errors. This directory should only
+          # ever contain the one AAR this workflow produces.
+          rm -rf android/app/libs
           mkdir -p android/app/libs
-          rm -f android/app/libs/libv2ray.aar
           cp mihomo-mobile/libmihomo.aar android/app/libs/
           ls -la android/app/libs/
 
