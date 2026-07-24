@@ -1333,10 +1333,41 @@ private fun SettingsScreen(
 
             val context = LocalContext.current
             val clip = LocalClipboardManager.current
+
+            Spacer(Modifier.height(26.dp))
+            Text("DEBUG", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Terminal, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp))
+                    }
+                    Column {
+                        Text("Connection log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                        Text(
+                            if (CdnVpnService.lastError.isNotBlank()) "Last error: ${CdnVpnService.lastError.take(40)}" else "No errors on last connect",
+                            fontSize = 10.5.sp, color = if (CdnVpnService.lastError.isNotBlank()) AnanasRed else AnanasMuted
+                        )
+                    }
+                }
+                Box(
+                    Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
+                        .clickable {
+                            val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}"
+                            clip.setText(AnnotatedString(text))
+                            android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasText) }
+            }
+
             val crashFile = remember { File(context.filesDir, com.cdnhunter.app.CdnHunterApp.CRASH_LOG_FILE) }
             if (crashFile.exists()) {
-                Spacer(Modifier.height(26.dp))
-                Text("DEBUG", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
