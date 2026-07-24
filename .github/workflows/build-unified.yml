@@ -63,6 +63,8 @@ jobs:
           find extracted -name "classes.jar" -exec unzip -l {} \; | grep -iE "mihomo|mobile" || echo "NO MATCH FOUND"
           echo "=== full classes.jar listing (first 100 lines) ==="
           find extracted -name "classes.jar" -exec unzip -l {} \; | head -100
+          echo "=== javap signature of Mobile.class ==="
+          mkdir -p /tmp/classdump && cd /tmp/classdump && unzip -o "$GITHUB_WORKSPACE/mihomo-mobile/libmihomo.aar" classes.jar -d . && unzip -o classes.jar "com/cdnhunter/mihomo/mobile/Mobile.class" -d . && javap com/cdnhunter/mihomo/mobile/Mobile.class
 
       - name: Place .aar in app/libs
         run: |
