@@ -11,23 +11,23 @@ object VpnConfigBuilder {
 
     const val ERROR_LOG_NAME = "mihomo_error.log"
 
-    fun buildConfig(ctx: Context): String {
+    fun buildConfig(ctx: Context, tunFd: Int): String {
         val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val userConfig = prefs.getString("user_config", "") ?: ""
-        return buildConfigFromUri(userConfig)
+        return buildConfigFromUri(userConfig, tunFd)
     }
 
     /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
-    fun buildConfigFromUri(uri: String): String {
+    fun buildConfigFromUri(uri: String, tunFd: Int): String {
         val proxy = ConfigUriParser.parseToProxy(uri) ?: defaultProxy()
         proxy["name"] = "proxy"
-        return renderYaml(proxy)
+        return renderYaml(proxy, tunFd)
     }
 
     private fun defaultProxy(): LinkedHashMap<String, Any> =
         linkedMapOf("name" to "proxy", "type" to "direct")
 
-    private fun renderYaml(proxy: LinkedHashMap<String, Any>): String {
+    private fun renderYaml(proxy: LinkedHashMap<String, Any>, tunFd: Int): String {
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
             "external-controller" to "127.0.0.1:10809",
@@ -40,6 +40,25 @@ object VpnConfigBuilder {
                 "listen" to "0.0.0.0:1053",
                 "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
                 "nameserver" to listOf("1.1.1.1", "8.8.8.8"),
+            ),
+            // Wire mihomo directly to the TUN device Android already created via
+            // VpnService.Builder.establish(). Without this block mihomo only opened
+            // a local mixed-proxy port with nothing feeding it any TUN traffic —
+            // the VPN looked "connected" but no packets ever reached the tunnel.
+            // - file-descriptor: hands mihomo the already-open fd directly (the
+            //   only way to do TUN on Android without root/CAP_NET_ADMIN).
+            // - auto-route/auto-detect-interface: false, because routing is already
+            //   configured on the Android side (see CdnVpnService.establishTun()).
+            // - stack: gvisor — avoids kernel/user-space switches, better throughput
+            //   on Android than "system" (which also needs privileges we don't have).
+            "tun" to linkedMapOf(
+                "enable" to true,
+                "stack" to "gvisor",
+                "file-descriptor" to tunFd,
+                "auto-route" to false,
+                "auto-detect-interface" to false,
+                "dns-hijack" to listOf("any:53"),
+                "mtu" to 9000,
             ),
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
