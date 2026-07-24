@@ -69,6 +69,13 @@ object MihomoBridge {
 
     fun queryDownload(): Long = try { Mobile.trafficDown() } catch (_: Exception) { 0L }
 
+    // Per-dial-attempt log from the Go SocketControl hook: whether a
+    // protector was registered and whether protect() reported success for
+    // each socket mihomo tried to open. A dial that never leaves the
+    // device produces no exception anywhere else, so this is the only way
+    // to see whether protect() is actually being invoked/succeeding.
+    fun protectLog(): String = try { Mobile.protectLog() } catch (e: Exception) { "protectLog() error: ${e.message}" }
+
     fun measureDelay(url: String = "https://www.google.com/generate_204"): Long = -1L
 
     fun version(): String = "mihomo-embedded"
