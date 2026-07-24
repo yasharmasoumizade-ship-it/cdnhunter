@@ -69,7 +69,17 @@ object VpnConfigBuilder {
                 "stack" to "gvisor",
                 "file-descriptor" to tunFd,
                 "auto-route" to false,
-                "auto-detect-interface" to false,
+                // This must be true, independently of auto-route: it's what makes
+                // mihomo bind its OWN outbound sockets (the real connection to your
+                // proxy server) to the physical network interface instead of the
+                // tun, via SO_BINDTODEVICE. With this false, mihomo's own proxy
+                // traffic re-entered the tun it was supposed to be feeding, looped,
+                // and never reached the real network — only the local mixed-port
+                // listener (127.0.0.1:10808) ever worked, since that never left the
+                // device. auto-route stays false: Android already owns routing via
+                // VpnService.Builder in establishTun(), and this setting is unrelated
+                // to that — it only affects mihomo's own dialer, not route creation.
+                "auto-detect-interface" to true,
                 "dns-hijack" to listOf("any:53"),
                 "mtu" to 9000,
             ),

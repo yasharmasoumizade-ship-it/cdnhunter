@@ -54,7 +54,14 @@ class CdnVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startVpn()
-            ACTION_STOP -> stopVpn()
+            // stopVpn() makes a blocking JNI call into mihomo (MihomoBridge.stop()
+            // -> executor.Shutdown()) to tear down listeners/goroutines. Running
+            // that synchronously here on the main thread (onStartCommand always
+            // runs on main) could block the UI for as long as that call takes,
+            // which looked like "disconnect does nothing" rather than an actual
+            // failure — it just hadn't finished yet. Run it on the same IO scope
+            // startVpn() uses instead.
+            ACTION_STOP -> scope.launch { stopVpn() }
         }
         return START_STICKY
     }
@@ -124,7 +131,7 @@ class CdnVpnService : VpnService() {
                 if (!started) {
                     lastError = "mihomo failed to start: ${MihomoBridge.lastError}"
                     debugLog += "\nFAILED: mihomo rejected the config.\nmihomo error:\n${MihomoBridge.lastError}"
-                    withContext(Dispatchers.Main) { stopVpn() }
+                    stopVpnInternal()
                     return@launch
                 }
 
@@ -145,14 +152,25 @@ class CdnVpnService : VpnService() {
                 debugLog = debugLog.takeLast(8000)
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
-                withContext(Dispatchers.Main) { stopVpn() }
+                // Already running on the IO scope's job — no need to hop to Main
+                // (that would re-block the UI thread on MihomoBridge.stop()'s JNI
+                // call) or to cancel `job`, since this coroutine IS `job` and is
+                // already on its way out via this catch block.
+                stopVpnInternal()
             }
         }
     }
 
     private fun stopVpn() {
-        isRunning.set(false)
         job?.cancel()
+        stopVpnInternal()
+    }
+
+    // Actual teardown, shared by the external-stop path (stopVpn) and the
+    // internal error-recovery path in startVpn's catch block, which must not
+    // cancel `job` since it IS the job currently running this code.
+    private fun stopVpnInternal() {
+        isRunning.set(false)
         MihomoBridge.stop()
         tunFd?.close()
         tunFd = null
@@ -218,6 +236,12 @@ class CdnVpnService : VpnService() {
         } catch (_: Exception) {}
     }
 
-    override fun onDestroy() { stopVpn(); scope.cancel(); instance = null; super.onDestroy() }
-    override fun onRevoke() { stopVpn(); super.onRevoke() }
+    // onDestroy/onRevoke run synchronously and unconditionally: unlike the
+    // user-initiated stop button (where blocking the main thread on
+    // MihomoBridge.stop()'s JNI call would freeze the UI), here the process
+    // is already being torn down by the OS, so blocking briefly to actually
+    // finish mihomo's shutdown and release the tun fd is correct — cancelling
+    // `scope` first would abandon that teardown mid-flight and leak the fd.
+    override fun onDestroy() { job?.cancel(); stopVpnInternal(); scope.cancel(); instance = null; super.onDestroy() }
+    override fun onRevoke() { job?.cancel(); stopVpnInternal(); super.onRevoke() }
 }
