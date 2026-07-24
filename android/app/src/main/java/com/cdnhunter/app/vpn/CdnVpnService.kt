@@ -63,6 +63,9 @@ class CdnVpnService : VpnService() {
         if (isRunning.get()) return
         startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
         lastError = ""
+        // Reset per-attempt, not appended forever — otherwise repeated connect/
+        // disconnect cycles grow this string without bound for the life of the process.
+        debugLog = ""
 
         job = scope.launch {
             try {
@@ -77,16 +80,11 @@ class CdnVpnService : VpnService() {
                     }
                 }
 
-                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
-
-                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
-                    "config length: ${config.length} chars\n" +
-                    "config head:\n${config.take(600)}\n"
-
-                android.util.Log.i("CdnVpn", "Config length: ${config.length}")
-                android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                android.util.Log.d("CdnVpn", "Full mihomo config: $config")
-
+                // TUN must be established BEFORE building the config: mihomo needs
+                // the live file descriptor embedded directly in its YAML (tun.file-
+                // descriptor) to read/write packets. Building config first (the old
+                // order) meant there was no fd to give it, so mihomo only opened a
+                // local proxy port with nothing ever feeding it TUN traffic.
                 val tun = establishTun()
                 if (tun == null) {
                     lastError = "Failed to create VPN tunnel"
@@ -95,8 +93,18 @@ class CdnVpnService : VpnService() {
                     return@launch
                 }
                 tunFd = tun
-
                 protect(tun.fd)
+
+                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, tun.fd)
+
+                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
+                    "config length: ${config.length} chars\n" +
+                    "tun fd: ${tun.fd}\n" +
+                    "config head:\n${config.take(600)}\n"
+
+                android.util.Log.i("CdnVpn", "Config length: ${config.length}")
+                android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
+                android.util.Log.d("CdnVpn", "Full mihomo config: $config")
 
                 val started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
                 if (!started) {
@@ -120,6 +128,7 @@ class CdnVpnService : VpnService() {
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
                 debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
+                debugLog = debugLog.takeLast(8000)
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 withContext(Dispatchers.Main) { stopVpn() }
