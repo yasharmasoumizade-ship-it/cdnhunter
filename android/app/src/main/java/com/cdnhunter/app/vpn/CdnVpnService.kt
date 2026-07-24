@@ -155,6 +155,12 @@ class CdnVpnService : VpnService() {
                     downloadBytes = MihomoBridge.queryDownload()
                     delay(1000)
                 }
+            } catch (e: CancellationException) {
+                // Normal path when the user hits disconnect: stopVpn() calls
+                // job?.cancel(), which throws this inside the coroutine. It's
+                // not a failure — don't set lastError/debugLog as if it were,
+                // that only makes real errors harder to spot in the log.
+                throw e
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
                 debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
