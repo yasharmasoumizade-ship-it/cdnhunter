@@ -30,6 +30,7 @@ object VpnConfigBuilder {
     private fun renderYaml(proxy: LinkedHashMap<String, Any>): String {
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
+            "external-controller" to "127.0.0.1:10809",
             "allow-lan" to false,
             "mode" to "rule",
             "log-level" to "info",
