@@ -48,6 +48,7 @@ import com.cdnhunter.app.engine.GeoService
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
+import com.cdnhunter.app.vpn.MihomoBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -1354,7 +1355,7 @@ private fun SettingsScreen(
                 Box(
                     Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
                         .clickable {
-                            val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}"
+                            val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}\n\nprotectLog:\n${MihomoBridge.protectLog()}"
                             clip.setText(AnnotatedString(text))
                             android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
                         }
