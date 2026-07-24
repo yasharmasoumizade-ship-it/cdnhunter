@@ -230,7 +230,18 @@ class CdnVpnService : VpnService() {
                 .addAddress("fd00:1:1:1::1", 128)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
-                .setMtu(9000)
+                // 9000 (jumbo-frame territory) assumes every hop between here and
+                // the real destination also supports frames that large — mobile
+                // data and the vast majority of Wi-Fi/ISP paths don't, and cap out
+                // at the standard Ethernet 1500. Packets mihomo builds thinking it
+                // has a 9000-byte-capable interface get silently dropped once they
+                // reach the real physical interface (no ICMP "frag needed" is
+                // guaranteed to come back and correct this, especially over
+                // mobile), which looks exactly like "nothing ever connects" with
+                // no visible error anywhere. 1500 matches what Android's own
+                // built-in VPN client uses by default and is safe on every network
+                // this app will realistically run on.
+                .setMtu(1500)
                 .addDisallowedApplication(packageName)
                 .setBlocking(false)
                 .addRoute("0.0.0.0", 1)
