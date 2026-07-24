@@ -66,7 +66,27 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f android/app/libs/mihomo.aar
           git diff --staged --quiet || git commit -m "chore: update mihomo.aar [skip ci]"
-          git push
+
+          # This job and build-unified.yml can both push to main around the same
+          # time (this workflow's own paths overlap with android/**), so a plain
+          # `git push` here regularly loses the race with a non-fast-forward
+          # rejection — leaving a STALE mihomo.aar committed even though the
+          # build itself succeeded. Rebase onto the latest main and retry before
+          # giving up for real.
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt $i"
+              break
+            fi
+            echo "Push rejected (attempt $i), fetching + rebasing onto latest main..."
+            git fetch origin main
+            git rebase origin/main
+            if [ "$i" -eq 5 ]; then
+              echo "ERROR: could not push mihomo.aar after 5 attempts"
+              exit 1
+            fi
+            sleep $((i * 5))
+          done
 
       - name: Publish AAR to GitHub Release
         env:
