@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/metacubex/mihomo/config"
@@ -23,6 +24,7 @@ import (
 	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/listener"
 	LC "github.com/metacubex/mihomo/listener/config"
+	"github.com/metacubex/mihomo/component/dialer"
 )
 
 var (
@@ -33,7 +35,61 @@ var (
 	lastUp      int64
 	lastDown    int64
 	controller  string // external-controller address, e.g. "127.0.0.1:10809"
+
+	protectorMu sync.Mutex
+	protector   Protector
+	hookSet     bool
 )
+
+// Protector is implemented on the Kotlin/Java side (gomobile reverse
+// binding) as a thin wrapper around android.net.VpnService.protect(fd).
+// Without this, every socket mihomo opens to actually reach the user's
+// remote proxy server gets captured by the very TUN interface mihomo
+// itself is feeding, and the connection never leaves the device — the
+// classic "only 127.0.0.1:<mixed-port> works, real device traffic
+// doesn't route" symptom. "tun.auto-detect-interface" alone does NOT fix
+// this on unrooted Android: binding directly to a network interface via
+// SO_BINDTODEVICE requires CAP_NET_ADMIN, which a normal app process
+// doesn't have. VpnService.protect() is the only privilege-free way to
+// exempt a specific socket from the VPN's own routing on Android, and it
+// must be called explicitly per-socket — there's no automatic mechanism.
+type Protector interface {
+	Protect(fd int) bool
+}
+
+// SetProtector registers the Android-side protector. Must be called once
+// before Start() — CdnVpnService does this every connection attempt,
+// which is harmless (just overwrites the same hook).
+func SetProtector(p Protector) {
+	protectorMu.Lock()
+	defer protectorMu.Unlock()
+	protector = p
+	if !hookSet {
+		// dialer.DefaultSocketHook is mihomo's own extension point for
+		// exactly this purpose (the same one CMFA uses) — it's invoked as
+		// the Control function on every socket mihomo's dialer/listener
+		// creates, network and outbound listeners included.
+		dialer.DefaultSocketHook = func(network, address string, c syscall.RawConn) error {
+			protectorMu.Lock()
+			p := protector
+			protectorMu.Unlock()
+			if p == nil {
+				return nil
+			}
+			var protectErr error
+			err := c.Control(func(fd uintptr) {
+				if !p.Protect(int(fd)) {
+					protectErr = fmt.Errorf("VpnService.protect failed for fd %d (network=%s address=%s)", fd, network, address)
+				}
+			})
+			if err != nil {
+				return err
+			}
+			return protectErr
+		}
+		hookSet = true
+	}
+}
 
 // Start parses the given Clash/mihomo YAML config and applies it, bringing
 // up all inbound/outbound listeners and the routing engine. homeDir is
