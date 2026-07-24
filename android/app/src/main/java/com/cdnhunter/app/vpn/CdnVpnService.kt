@@ -102,6 +102,15 @@ class CdnVpnService : VpnService() {
                 tunFd = tun
                 protect(tun.fd)
 
+                // Register the socket protector BEFORE mihomo starts dialing
+                // anything: it exempts mihomo's own outbound connection to the
+                // real proxy server from being captured by the TUN mihomo is
+                // about to feed. Without this, only local (non-TUN) traffic —
+                // e.g. an app pointed directly at 127.0.0.1:10808 — ever
+                // reaches the internet; everything routed through the TUN
+                // loops back into mihomo and goes nowhere.
+                MihomoBridge.setProtector(this@CdnVpnService)
+
                 // Android's system-wide "Private DNS" (Settings > Network > Private
                 // DNS), when set to a specific hostname (strict mode), bypasses the
                 // VPN's captured port 53 entirely — apps' DNS queries go straight out
