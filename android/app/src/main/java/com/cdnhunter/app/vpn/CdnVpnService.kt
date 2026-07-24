@@ -79,7 +79,7 @@ class CdnVpnService : VpnService() {
 
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService)
 
-                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat(\"HH:mm:ss\", java.util.Locale.US).format(java.util.Date())} ──\n" +
+                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
                     "config length: ${config.length} chars\n" +
                     "config head:\n${config.take(600)}\n"
 
