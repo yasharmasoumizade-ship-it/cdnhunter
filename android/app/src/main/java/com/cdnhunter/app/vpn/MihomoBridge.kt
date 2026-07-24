@@ -21,7 +21,11 @@ object MihomoBridge {
     fun setProtector(service: VpnService) {
         try {
             Mobile.setProtector(object : com.cdnhunter.mihomo.mobile.Protector {
-                override fun protect(fd: Int): Boolean = service.protect(fd)
+                // gomobile maps Go's `int` to Java/Kotlin `Long` (Go's int has no
+                // fixed width, so the binding always widens to long) — the fd
+                // itself is a normal 32-bit descriptor, so narrow it back down
+                // for VpnService.protect(Int).
+                override fun protect(fd: Long): Boolean = service.protect(fd.toInt())
             })
         } catch (e: Exception) {
             android.util.Log.e("MihomoBridge", "setProtector failed: ${e.message}")
