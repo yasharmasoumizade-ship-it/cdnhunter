@@ -168,9 +168,22 @@ object ConfigUriParser {
                 if (sni.isNotBlank()) p["servername"] = sni
                 val alpn = params["alpn"] ?: ""
                 if (alpn.isNotBlank()) p["alpn"] = alpn.split(",").filter { it.isNotBlank() }
-                val fp = params["fp"] ?: ""
-                if (fp.isNotBlank()) p["client-fingerprint"] = fp
                 if ((params["allowInsecure"] ?: params["insecure"]) == "1") p["skip-cert-verify"] = true
+
+                // ECH (Encrypted Client Hello) -- mihomo cannot use client-fingerprint
+                // and ech-opts at the same time (they conflict at the uTLS layer), so
+                // when an ech= param is present we skip fp entirely rather than emit
+                // a config mihomo will silently misbehave on.
+                val ech = params["ech"] ?: ""
+                if (ech.isNotBlank()) {
+                    p["ech-opts"] = linkedMapOf<String, Any>(
+                        "enable" to true,
+                        "config" to ech
+                    )
+                } else {
+                    val fp = params["fp"] ?: ""
+                    if (fp.isNotBlank()) p["client-fingerprint"] = fp
+                }
             }
             "reality" -> {
                 p["tls"] = true
@@ -181,6 +194,10 @@ object ConfigUriParser {
                 (params["pbk"] ?: "").takeIf { it.isNotBlank() }?.let { realityOpts["public-key"] = it }
                 (params["sid"] ?: "").let { realityOpts["short-id"] = it } // mihomo accepts empty short-id
                 if (realityOpts.isNotEmpty()) p["reality-opts"] = realityOpts
+                // Note: "spx" (REALITY spider-x path) has no mihomo equivalent field
+                // and is silently dropped -- it only affects what a passive prober
+                // sees when it fetches the REALITY target site directly, not the
+                // proxy handshake itself, so omitting it does not break the connection.
             }
         }
 
