@@ -42,6 +42,10 @@ class CdnVpnService : VpnService() {
     }
 
     private var tunFd: ParcelFileDescriptor? = null
+    // The raw fd number after tunFd.detachFd() — this is what actually owns
+    // the descriptor now and must be closed directly (see stopVpnInternal()),
+    // since tunFd itself no longer holds anything to close once detached.
+    private var tunRawFd: Int? = null
     private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -100,7 +104,23 @@ class CdnVpnService : VpnService() {
                     return@launch
                 }
                 tunFd = tun
-                protect(tun.fd)
+                // detachFd() transfers ownership of the underlying descriptor to us
+                // as a plain int — NOT tun.fd, which leaves the ParcelFileDescriptor
+                // object owning it. With .fd, Android's GC can finalize/close the
+                // ParcelFileDescriptor at any point while mihomo is still reading/
+                // writing it from native code — sometimes immediately, sometimes
+                // after a GC pause — since nothing forces the object to stay alive
+                // just because Go holds the raw number. That produced exactly this
+                // symptom: TUN "establishes", mihomo reports healthy and even logs
+                // proxied connections for traffic that happens to loop through
+                // userspace sockets, but the actual OS-level tun device never
+                // reliably passes packets, taking the whole device's connectivity
+                // down with it once Android sees a VPN is "active" but nothing
+                // flows through it. After detachFd() we own the raw fd directly and
+                // are responsible for closing it ourselves (see stopVpnInternal()).
+                val rawFd = tun.detachFd()
+                tunRawFd = rawFd
+                protect(rawFd)
 
                 // Register the socket protector BEFORE mihomo starts dialing
                 // anything: it exempts mihomo's own outbound connection to the
@@ -125,11 +145,11 @@ class CdnVpnService : VpnService() {
                         "Disable it or set it to \"Automatic\" in Settings > Network > Private DNS."
                 }
 
-                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, tun.fd)
+                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd)
 
                 debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
                     "config length: ${config.length} chars\n" +
-                    "tun fd: ${tun.fd}\n" +
+                    "tun fd: $rawFd\n" +
                     "config head:\n${config.take(600)}\n"
 
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
@@ -187,7 +207,16 @@ class CdnVpnService : VpnService() {
     private fun stopVpnInternal() {
         isRunning.set(false)
         MihomoBridge.stop()
-        tunFd?.close()
+        // tunFd.detachFd() (in startVpn) transferred ownership of the actual
+        // descriptor to tunRawFd — tunFd itself is now an empty shell with
+        // nothing to close, so tunFd?.close() here was silently doing
+        // nothing and leaking the real fd every time the VPN stopped.
+        // ParcelFileDescriptor.adoptFd() is the documented way to re-wrap a
+        // previously-detached raw fd so it can be closed properly.
+        tunRawFd?.let { fd ->
+            try { ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
+        }
+        tunRawFd = null
         tunFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
