@@ -38,6 +38,8 @@ var (
 
 	coreLogMu  sync.Mutex
 	coreLogBuf []string
+
+	coreLogCaptureOnce sync.Once
 )
 
 // logProtect appends one line to a small ring buffer describing a dial
@@ -97,14 +99,22 @@ return out
 }
 
 // startCoreLogCapture subscribes to mihomo's internal log broadcast and
-// feeds every line into logCore(). Safe to call repeatedly.
+// feeds every line into logCore(). Only ever runs once per process: it's
+// called from every Start(), but log.Subscribe() has no corresponding
+// unsubscribe here, so a second subscription doesn't replace the first --
+// it adds a second permanent goroutine alongside it, both forwarding every
+// future log line. After N reconnects in the same app process that means
+// N goroutines each appending the same line, i.e. every line appears N
+// times over in CoreLog() with no error anywhere to explain why.
 func startCoreLogCapture() {
-sub := log.Subscribe()
-go func() {
-for elm := range sub {
-logCore(fmt.Sprintf("[%s] %s", elm.LogLevel.String(), elm.Payload))
-}
-}()
+	coreLogCaptureOnce.Do(func() {
+		sub := log.Subscribe()
+		go func() {
+			for elm := range sub {
+				logCore(fmt.Sprintf("[%s] %s", elm.LogLevel.String(), elm.Payload))
+			}
+		}()
+	})
 }
 
 // Protector is implemented on the Kotlin/Java side (gomobile reverse
