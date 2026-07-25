@@ -170,20 +170,19 @@ object ConfigUriParser {
                 if (alpn.isNotBlank()) p["alpn"] = alpn.split(",").filter { it.isNotBlank() }
                 if ((params["allowInsecure"] ?: params["insecure"]) == "1") p["skip-cert-verify"] = true
 
-                // ECH (Encrypted Client Hello) -- mihomo cannot use client-fingerprint
-                // and ech-opts at the same time (they conflict at the uTLS layer), so
-                // when an ech= param is present we skip fp entirely rather than emit
-                // a config mihomo will silently misbehave on.
+                // ECH (Encrypted Client Hello) -- mihomo's vless outbound applies
+                // ClientFingerprint and ECH together with no conflict (see upstream
+                // adapter/outbound/vless.go: both fields sit side by side on the same
+                // TLSConfig struct), so both are always emitted when present.
                 val ech = params["ech"] ?: ""
                 if (ech.isNotBlank()) {
                     p["ech-opts"] = linkedMapOf<String, Any>(
                         "enable" to true,
                         "config" to ech
                     )
-                } else {
-                    val fp = params["fp"] ?: ""
-                    if (fp.isNotBlank()) p["client-fingerprint"] = fp
                 }
+                val fp = params["fp"] ?: ""
+                if (fp.isNotBlank()) p["client-fingerprint"] = fp
             }
             "reality" -> {
                 p["tls"] = true
