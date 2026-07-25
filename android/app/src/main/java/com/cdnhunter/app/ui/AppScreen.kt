@@ -251,97 +251,41 @@ private fun flagSpecFor(cc: String): FlagSpec {
 // fixes flags that were structurally wrong before (Nordic cross flags, UK's Union
 // Jack) — plus a glassy diagonal highlight overlay matching the rest of the UI.
 @Composable
+// Real circle-flags SVGs (github.com/HatScripts/circle-flags, MIT — same source
+// Hiddify uses via its circle_flags package) bundled under assets/flags/{cc}.svg.
+// Rendered through Coil's SVG decoder instead of hand-drawn Canvas shapes.
+private var flagImageLoader: coil.ImageLoader? = null
+private fun getFlagImageLoader(context: Context): coil.ImageLoader =
+    flagImageLoader ?: coil.ImageLoader.Builder(context)
+        .components { add(coil.decode.SvgDecoder.Factory()) }
+        .build()
+        .also { flagImageLoader = it }
+
+@Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val spec = flagSpecFor(countryCode)
-    val corner = size * 0.28f
+    val context = LocalContext.current
+    val cc = countryCode.lowercase()
+    val corner = size * 0.5f // circle-flags are already circular; keep the badge itself circular too
+
     Box(
         modifier
             .size(size)
             .clip(RoundedCornerShape(corner))
             .background(Color(0xFF1A1A1E))
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w = this.size.width
-            val h = this.size.height
-            when (spec.shape) {
-                FlagShape.STRIPES_H -> {
-                    val bandH = h / spec.colors.size
-                    spec.colors.forEachIndexed { i, c ->
-                        drawRect(c, topLeft = Offset(0f, i * bandH), size = Size(w, bandH + 1f))
-                    }
-                }
-                FlagShape.STRIPES_V -> {
-                    val bandW = w / spec.colors.size
-                    spec.colors.forEachIndexed { i, c ->
-                        drawRect(c, topLeft = Offset(i * bandW, 0f), size = Size(bandW + 1f, h))
-                    }
-                }
-                FlagShape.NORDIC_CROSS -> {
-                    drawRect(spec.bg, size = Size(w, h))
-                    val barThick = h * 0.24f
-                    val crossX = w * 0.38f
-                    drawRect(spec.fg, topLeft = Offset(crossX - barThick / 2f, 0f), size = Size(barThick, h))
-                    drawRect(spec.fg, topLeft = Offset(0f, h / 2f - barThick / 2f), size = Size(w, barThick))
-                }
-                FlagShape.UNION_JACK -> {
-                    drawRect(FDARKBLUE, size = Size(w, h))
-                    val diagW = h * 0.16f
-                    drawLine(FWHITE, Offset(0f, 0f), Offset(w, h), strokeWidth = diagW)
-                    drawLine(FWHITE, Offset(w, 0f), Offset(0f, h), strokeWidth = diagW)
-                    drawLine(FRED, Offset(0f, 0f), Offset(w, h), strokeWidth = diagW * 0.4f)
-                    drawLine(FRED, Offset(w, 0f), Offset(0f, h), strokeWidth = diagW * 0.4f)
-                    val crossThick = h * 0.30f
-                    drawRect(FWHITE, topLeft = Offset(w / 2f - crossThick / 2f, 0f), size = Size(crossThick, h))
-                    drawRect(FWHITE, topLeft = Offset(0f, h / 2f - crossThick / 2f), size = Size(w, crossThick))
-                    val redThick = h * 0.16f
-                    drawRect(FRED, topLeft = Offset(w / 2f - redThick / 2f, 0f), size = Size(redThick, h))
-                    drawRect(FRED, topLeft = Offset(0f, h / 2f - redThick / 2f), size = Size(w, redThick))
-                }
-                FlagShape.DISC_CENTER -> {
-                    drawRect(spec.bg, size = Size(w, h))
-                    drawCircle(spec.fg, radius = h * 0.28f, center = Offset(w / 2f, h / 2f))
-                }
-                FlagShape.SINGLE -> {
-                    drawRect(spec.bg, size = Size(w, h))
-                }
+        if (cc.length == 2) {
+            coil.compose.AsyncImage(
+                model = "file:///android_asset/flags/$cc.svg",
+                imageLoader = getFlagImageLoader(context),
+                contentDescription = countryCode,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(size * 0.3f).clip(CircleShape).background(AnanasFaint))
             }
         }
-        // Glass highlight: diagonal sheen + top glossy arc, like a glass dome over the flag
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.30f),
-                            Color.White.copy(alpha = 0.06f),
-                            Color.Black.copy(alpha = 0.14f),
-                        )
-                    )
-                )
-        )
-        // Glossy top highlight arc — concentrated shine near the top edge
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(size * 0.42f)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.28f),
-                            Color.White.copy(alpha = 0.0f),
-                        )
-                    )
-                )
-        )
-        // Thin border for definition
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(corner))
-                .border(0.75.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(corner))
-        )
     }
 }
 
