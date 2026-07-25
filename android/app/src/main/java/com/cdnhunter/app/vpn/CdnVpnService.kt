@@ -40,6 +40,8 @@ class CdnVpnService : VpnService() {
         var exitCity = ""
         var exitGeoConfigId = ""
 
+        var killSwitchBlocking = AtomicBoolean(false)
+
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
@@ -78,13 +80,17 @@ class CdnVpnService : VpnService() {
             // which looked like "disconnect does nothing" rather than an actual
             // failure — it just hadn't finished yet. Run it on the same IO scope
             // startVpn() uses instead.
-            ACTION_STOP -> scope.launch { stopVpn() }
+            ACTION_STOP -> scope.launch { killSwitchBlocking.set(false); stopVpn() }
         }
         return START_STICKY
     }
 
+    private fun isKillSwitchEnabled(): Boolean =
+        getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("kill_switch_enabled", false)
+
     private fun startVpn() {
         if (isRunning.get()) return
+        killSwitchBlocking.set(false)
         startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
         lastError = ""
         // Reset per-attempt, not appended forever — otherwise repeated connect/
@@ -180,7 +186,7 @@ class CdnVpnService : VpnService() {
                 if (!started) {
                     lastError = "mihomo failed to start: ${MihomoBridge.lastError}"
                     debugLog += "\nFAILED: mihomo rejected the config.\nmihomo error:\n${MihomoBridge.lastError}"
-                    stopVpnInternal()
+                    stopVpnInternal(keepTunAlive = false)
                     return@launch
                 }
 
@@ -260,20 +266,29 @@ class CdnVpnService : VpnService() {
                 lastError = e.message ?: "Unknown error"
                 debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
                 debugLog = debugLog.takeLast(8000)
+                val holdKillSwitch = isRunning.get() && isKillSwitchEnabled()
+                isRunning.set(false)
+                if (holdKillSwitch) {
+                    killSwitchBlocking.set(true)
+                    updateNotification("Blocked - connection lost (Kill Switch on)")
+                    debugLog += "\nKill switch: holding TUN up with traffic blocked after unexpected disconnect."
+                    stopVpnInternal(keepTunAlive = true)
+                    return@launch
+                }
                 updateNotification("Error: ${lastError.take(30)}")
                 delay(2000)
                 // Already running on the IO scope's job — no need to hop to Main
                 // (that would re-block the UI thread on MihomoBridge.stop()'s JNI
                 // call) or to cancel `job`, since this coroutine IS `job` and is
                 // already on its way out via this catch block.
-                stopVpnInternal()
+                stopVpnInternal(keepTunAlive = false)
             }
         }
     }
 
     private fun stopVpn() {
         job?.cancel()
-        stopVpnInternal()
+        stopVpnInternal(keepTunAlive = false)
     }
 
     // Writes the tunnel-verified (accurate) country/city for one saved config
@@ -312,12 +327,16 @@ class CdnVpnService : VpnService() {
     // Actual teardown, shared by the external-stop path (stopVpn) and the
     // internal error-recovery path in startVpn's catch block, which must not
     // cancel `job` since it IS the job currently running this code.
-    private fun stopVpnInternal() {
+    private fun stopVpnInternal(keepTunAlive: Boolean) {
         isRunning.set(false)
         MihomoBridge.stop()
         exitCountryCode = ""
         exitCity = ""
         exitGeoConfigId = ""
+
+        if (keepTunAlive) {
+            return
+        }
         // MihomoBridge.stop() already closes the tun fd internally (via
         // executor.Shutdown -> listener.Cleanup). We must NOT also close it
         // here on the Kotlin side -- that would double-close the same fd
@@ -405,6 +424,6 @@ class CdnVpnService : VpnService() {
     // is already being torn down by the OS, so blocking briefly to actually
     // finish mihomo's shutdown and release the tun fd is correct — cancelling
     // `scope` first would abandon that teardown mid-flight and leak the fd.
-    override fun onDestroy() { job?.cancel(); stopVpnInternal(); scope.cancel(); instance = null; super.onDestroy() }
-    override fun onRevoke() { job?.cancel(); stopVpnInternal(); super.onRevoke() }
+    override fun onDestroy() { job?.cancel(); stopVpnInternal(keepTunAlive = false); scope.cancel(); instance = null; super.onDestroy() }
+    override fun onRevoke() { job?.cancel(); stopVpnInternal(keepTunAlive = false); super.onRevoke() }
 }
