@@ -34,7 +34,7 @@ object VpnConfigBuilder {
             "external-controller" to "127.0.0.1:10809",
             "allow-lan" to false,
             "mode" to "rule",
-            "log-level" to "debug",
+            "log-level" to "error",
             "ipv6" to false,
             "dns" to linkedMapOf(
                 "enable" to true,
@@ -111,6 +111,42 @@ object VpnConfigBuilder {
                 // they leave the tun.
                 "mtu" to 9000,
             ),
+            // Sniffs the real destination straight out of the TLS ClientHello/HTTP
+            // Host header for any connection, regardless of what DNS resolved (or
+            // didn't). Always on -- this isn't something worth exposing as a
+            // toggle, it only ever helps and never changes routing behavior for
+            // traffic that was already going to be classified correctly anyway.
+            "sniffer" to linkedMapOf(
+                "enable" to true,
+                "parse-pure-ip" to true,
+                "sniff" to linkedMapOf(
+                    "TLS" to linkedMapOf("ports" to listOf("443", "8443")),
+                    "HTTP" to linkedMapOf("ports" to listOf("80", "8080")),
+                ),
+            ),
+            // Iran domains/IPs always go DIRECT, never through the tunnel -- not a
+            // setting, since there's no real tradeoff: local sites are faster and
+            // more reliable without an unnecessary round trip through a foreign
+            // proxy, and this never affects anything actually blocked in Iran
+            // (which lives outside these rulesets by definition).
+            "rule-providers" to linkedMapOf(
+                "ir-domain" to linkedMapOf(
+                    "type" to "http",
+                    "format" to "text",
+                    "behavior" to "domain",
+                    "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ir.txt",
+                    "path" to "./ruleset/ir-domain.txt",
+                    "interval" to 86400,
+                ),
+                "ir-ip" to linkedMapOf(
+                    "type" to "http",
+                    "format" to "yaml",
+                    "behavior" to "ipcidr",
+                    "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ircidr.yaml",
+                    "path" to "./ruleset/ir-ip.yaml",
+                    "interval" to 86400,
+                ),
+            ),
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
                 linkedMapOf(
@@ -126,6 +162,12 @@ object VpnConfigBuilder {
                 "IP-CIDR,192.168.0.0/16,DIRECT",
                 "IP-CIDR,169.254.0.0/16,DIRECT",
                 "IP-CIDR,127.0.0.0/8,DIRECT",
+                // If the rule-provider fetch fails (e.g. no internet yet on first
+                // ever launch), these RULE-SET lines just never match anything and
+                // everything falls through to MATCH,PROXY same as before --
+                // non-fatal either way.
+                "RULE-SET,ir-domain,DIRECT",
+                "RULE-SET,ir-ip,DIRECT",
                 "MATCH,PROXY",
             ),
         )
