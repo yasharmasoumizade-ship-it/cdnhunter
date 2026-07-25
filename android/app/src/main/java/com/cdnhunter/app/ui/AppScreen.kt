@@ -161,13 +161,22 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
 private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val ping = measurePingMs(cfg.address, cfg.port)
-        val geoTarget = cfg.sni.ifBlank { cfg.address }
-        val info = try { geo.lookupGeoInfo(geoTarget) } catch (e: Exception) { null }
+        // If the config's own title already named a country (e.g. "CF GERMANY" ->
+        // DE), that beats the on-device IP lookup below: for CDN-fronted domains,
+        // an IP-based lookup on the SNI/address frequently reports the CDN edge's
+        // location (e.g. a US Cloudflare PoP) instead of the real backend server
+        // the title is naming. The lookup is only used to FILL IN a guess when the
+        // title didn't name a country, never to override one that's already there.
+        // The one check that's actually reliable for CDN-fronted configs -- through
+        // the live tunnel, after a real connection -- runs separately (see
+        // CdnVpnService) and is free to overwrite either of these once it succeeds.
+        val info = if (cfg.countryCode.isBlank()) {
+            try { geo.lookupGeoInfo(cfg.sni.ifBlank { cfg.address }) } catch (e: Exception) { null }
+        } else null
         cfg.copy(
             pingMs = ping,
-            // Fall back to the emoji-derived code only if the real lookup fails entirely.
-            countryCode = info?.cc?.takeIf { it.isNotBlank() } ?: cfg.countryCode,
-            city = info?.city.orEmpty(),
+            countryCode = cfg.countryCode.ifBlank { info?.cc.orEmpty() },
+            city = cfg.city.ifBlank { info?.city.orEmpty() },
             geoResolved = true,
         )
     }
