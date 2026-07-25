@@ -206,6 +206,13 @@ func Start(configYaml string, homeDir string) string {
 	// where TUN setup may have silently failed.
 	startCoreLogCapture()
 
+	// statistic.DefaultManager is a package-level singleton that lives for
+	// the whole Android process, not per-connection -- executor.ApplyConfig
+	// never touches it. Without this reset, TrafficUp()/TrafficDown() (which
+	// read DefaultManager.Total()) keep accumulating across every Stop/Start
+	// cycle instead of starting the "session" total back at zero.
+	statistic.DefaultManager.ResetStatistic()
+
 	executor.ApplyConfig(cfg, true)
 	running = true
 
