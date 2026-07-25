@@ -66,6 +66,77 @@ class GeoService {
         return GeoInfo("", 0.0, 0.0, "", "")
     }
 
+    /**
+     * Looks up geo info for the ACTIVE TUNNEL'S REAL EXIT IP, by routing the
+     * lookup request itself through the local mixed-port proxy instead of
+     * resolving any hostname directly. This is the only reliable way to get
+     * a server's true location: lookupGeoInfo() above resolves the config's
+     * server/SNI hostname directly on-device (before the tunnel exists), so
+     * for any domain sitting behind a CDN — Cloudflare fronting, some reality
+     * setups, etc. — it reports the CDN edge node's location (e.g. wherever
+     * Cloudflare happened to route THIS device's DNS query), not the actual
+     * backend server's location. Once connected, asking "what IP does the
+     * outside world see me as" through the tunnel itself sidesteps all of
+     * that: the geo-IP service directly sees the real exit IP, matching how
+     * Hiddify's getCurrentIpInfo(proxyOnly: true) works.
+     *
+     * mixedPort must be the mihomo mixed-port this app's VPN service actually
+     * started (see VpnConfigBuilder — currently always 10808).
+     */
+    fun lookupCurrentExitGeoInfo(mixedPort: Int = 10808, timeout: Float = 5.0f): GeoInfo {
+        val proxyClient = buildProxiedClient(mixedPort, timeout)
+        // Same provider list/order as lookupGeoInfo, just with no host in the
+        // URL — each of these returns info about the caller's own apparent IP
+        // when queried with no path/query, which is exactly what we want here.
+        val attempts = listOf(
+            { proxyGet(proxyClient, "https://ipwho.is/", timeout) },
+            { proxyGet(proxyClient, "https://ipnumberia.com/api/", timeout) },
+            { proxyGet(proxyClient, "https://ipapi.co/json/", timeout) },
+        )
+        for (attempt in attempts) {
+            try {
+                val body = attempt() ?: continue
+                if (body.isBlank()) continue
+                val obj = JSONObject(body)
+                val cc = (obj.optString("country_code", "").ifBlank { obj.optString("countryCode", "") }).uppercase()
+                if (cc.isBlank()) continue
+                val lat = obj.optDouble("latitude", 0.0)
+                val lon = obj.optDouble("longitude", 0.0)
+                val city = obj.optString("city", "")
+                val isp = obj.optJSONObject("connection")?.optString("isp", "")
+                    ?: obj.optString("isp", obj.optString("org", ""))
+                return GeoInfo(cc, lat, lon, city, isp)
+            } catch (e: Exception) {
+                // try next provider
+            }
+        }
+        return GeoInfo("", 0.0, 0.0, "", "")
+    }
+
+    private fun proxyGet(client: OkHttpClient, url: String, timeout: Float): String? {
+        val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            return response.body?.string()
+        }
+    }
+
+    // A client identical to the normal trust-all client, except every request
+    // goes through the local SOCKS/HTTP mixed-port proxy mihomo exposes on
+    // 127.0.0.1 instead of the device's normal network path.
+    private fun buildProxiedClient(mixedPort: Int, timeout: Float): OkHttpClient {
+        val timeoutMs = (timeout * 1000).toLong()
+        val proxy = java.net.Proxy(
+            java.net.Proxy.Type.HTTP,
+            java.net.InetSocketAddress("127.0.0.1", mixedPort)
+        )
+        return client.newBuilder()
+            .proxy(proxy)
+            .connectTimeout(java.time.Duration.ofMillis(timeoutMs))
+            .readTimeout(java.time.Duration.ofMillis(timeoutMs))
+            .build()
+    }
+
     private fun httpGet(url: String, timeout: Float): String {
         val timeoutMs = (timeout * 1000).toLong()
         val c = client.newBuilder()

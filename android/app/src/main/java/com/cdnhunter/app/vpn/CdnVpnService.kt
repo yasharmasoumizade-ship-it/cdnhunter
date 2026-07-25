@@ -27,6 +27,19 @@ class CdnVpnService : VpnService() {
         var lastError = ""
         var debugLog = ""
 
+        // The server's REAL location, resolved by asking a geo-IP service
+        // "what IP am I connecting from" THROUGH the active tunnel (see
+        // GeoService.lookupCurrentExitGeoInfo), not by resolving the config's
+        // hostname directly. Populated once per successful connection by
+        // startVpn(); empty/blank until that lookup completes. The UI should
+        // prefer this over any pre-connect estimate once it's non-blank and
+        // exitGeoConfigId matches the currently active config, since domains
+        // behind a CDN report the CDN edge's location from a direct DNS
+        // lookup, not the real backend server's.
+        var exitCountryCode = ""
+        var exitCity = ""
+        var exitGeoConfigId = ""
+
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
@@ -207,6 +220,30 @@ class CdnVpnService : VpnService() {
                 downloadBytes = 0L
                 updateNotification("Connected")
 
+                // Resolve the server's REAL location by asking a geo-IP service
+                // through the tunnel itself, not by resolving the config's
+                // hostname directly (which for CDN-fronted domains reports the
+                // CDN edge's location, not the actual backend server's — see
+                // GeoService.lookupCurrentExitGeoInfo). Runs on its own coroutine,
+                // separate from the traffic-polling loop below, so a slow/failed
+                // geo-IP provider can never delay traffic stats or the connection
+                // itself.
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val configId = getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE)
+                            .getString("active_config_id", "") ?: ""
+                        val info = com.cdnhunter.app.engine.GeoService().lookupCurrentExitGeoInfo()
+                        if (info.cc.isNotBlank()) {
+                            exitCountryCode = info.cc
+                            exitCity = info.city
+                            exitGeoConfigId = configId
+                        }
+                    } catch (_: Exception) {
+                        // Leave exitCountryCode blank — UI falls back to the
+                        // pre-connect estimate if this never resolves.
+                    }
+                }
+
                 while (isActive && isRunning.get()) {
                     uploadBytes = MihomoBridge.queryUpload()
                     downloadBytes = MihomoBridge.queryDownload()
@@ -244,6 +281,9 @@ class CdnVpnService : VpnService() {
     private fun stopVpnInternal() {
         isRunning.set(false)
         MihomoBridge.stop()
+        exitCountryCode = ""
+        exitCity = ""
+        exitGeoConfigId = ""
         // MihomoBridge.stop() already closes the tun fd internally (via
         // executor.Shutdown -> listener.Cleanup). We must NOT also close it
         // here on the Kotlin side -- that would double-close the same fd
