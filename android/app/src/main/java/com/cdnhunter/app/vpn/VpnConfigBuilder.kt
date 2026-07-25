@@ -92,11 +92,11 @@ object VpnConfigBuilder {
                 "auto-detect-interface" to false,
                 "dns-hijack" to listOf("any:53"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
-                // (also 1500) — a mismatch here means mihomo builds packets sized
-                // for a 9000-byte interface while the actual OS-level tun device
-                // is only configured for 1500, and they get silently dropped once
+                // (also 9000, per explicit request) — a mismatch here means mihomo
+                // builds packets sized for a different MTU than the actual
+                // OS-level tun device, and they get silently dropped once
                 // they leave the tun.
-                "mtu" to 1500,
+                "mtu" to 9000,
             ),
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
