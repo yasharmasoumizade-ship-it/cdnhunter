@@ -124,11 +124,11 @@ data class SavedConfig(
     val city: String = "",
     val pingMs: Int = -1,
     val geoResolved: Boolean = false,
-    // Set once the ACCURATE (through-the-proxy) probe has resolved this config —
-    // see probeAccurateGeo below. Distinct from geoResolved (the quick on-device
-    // SNI/address lookup done at app-open, which is wrong for CDN-fronted/reality
-    // configs) so we know which configs still need the accurate pass and don't
-    // redo it every app open once it's already been done.
+    // Set once the ACCURATE (through-the-live-tunnel) check has resolved this
+    // config — see the coroutine in CdnVpnService.startVpn() after a successful
+    // connect. Distinct from geoResolved (the quick on-device title/SNI guess,
+    // which is wrong for CDN-fronted/reality configs) so we know which configs
+    // still need the accurate check and don't redo it every reconnect.
     val accurateGeoResolved: Boolean = false,
 )
 
@@ -172,46 +172,11 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
-// Resolves the ACCURATE country/city for one config by actually starting mihomo
-// with just this proxy (no TUN — see VpnConfigBuilder.buildProbeConfigFromUri)
-// and asking a geo-IP service through it, same principle as the post-connect
-// check in CdnVpnService. This is the only reliable way for CDN-fronted/reality
-// configs, where even the real destination server's IP is the CDN edge, not the
-// backend — no on-device lookup (SNI or address) can ever get those right.
-//
-// CALLER MUST ensure MihomoBridge.isRunning() is false before calling this and
-// must not call it again until this returns — the Go mihomo core is a single,
-// process-wide instance; running this concurrently with a real connection (or
-// with another probe) would corrupt whichever one loses the race.
-private suspend fun probeAccurateGeo(context: Context, cfg: SavedConfig): SavedConfig? =
-    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val probeHomeDir = java.io.File(context.filesDir, "mihomo_probe").apply { mkdirs() }
-        try {
-            val yaml = com.cdnhunter.app.vpn.VpnConfigBuilder.buildProbeConfigFromUri(cfg.uri)
-            val started = com.cdnhunter.app.vpn.MihomoBridge.start(yaml, probeHomeDir.absolutePath)
-            if (!started) return@withContext null
-            try {
-                // Give the mixed-port listener + outbound handshake a moment before
-                // asking it to fetch anything.
-                kotlinx.coroutines.delay(400)
-                val info = GeoService().lookupCurrentExitGeoInfo(
-                    mixedPort = com.cdnhunter.app.vpn.VpnConfigBuilder.PROBE_MIXED_PORT,
-                    timeout = 6.0f,
-                )
-                if (info.cc.isBlank()) return@withContext null
-                cfg.copy(
-                    countryCode = info.cc,
-                    city = info.city,
-                    geoResolved = true,
-                    accurateGeoResolved = true,
-                )
-            } finally {
-                com.cdnhunter.app.vpn.MihomoBridge.stop()
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
+// Note: the accurate (through-the-tunnel) geo check runs inside CdnVpnService
+// itself, right after a real connection succeeds — see the coroutine launched
+// after isRunning.set(true) in CdnVpnService.startVpn(), which calls
+// GeoService().lookupCurrentExitGeoInfo() against the live tunnel and persists
+// the result via persistAccurateGeo(). No separate UI-side probe needed.
 
 
 // Covers all commonly-seen VPN server countries; falls back to a neutral pattern for
@@ -383,6 +348,47 @@ private val countryNames = mapOf(
 
 private fun countryCodeToName(cc: String): String = countryNames[cc.uppercase()] ?: ""
 
+// Common country name/abbreviation -> ISO code, matched case-insensitively against
+// words in a config's title (e.g. "GERMANY", "Germany Pro 01", "DE-Frankfurt").
+// This is the fast, no-network initial guess shown immediately when a config is
+// added — refined afterward by the real through-the-tunnel check once connected
+// (see probeAccurateGeoViaLiveTunnel below), never treated as final truth.
+private val countryNameToCode = mapOf(
+    "GERMANY" to "DE", "DEUTSCHLAND" to "DE",
+    "FRANCE" to "FR", "ITALY" to "IT", "ITALIA" to "IT",
+    "NETHERLANDS" to "NL", "HOLLAND" to "NL",
+    "UNITED KINGDOM" to "GB", "UK" to "GB", "BRITAIN" to "GB", "ENGLAND" to "GB",
+    "UNITED STATES" to "US", "USA" to "US", "AMERICA" to "US",
+    "TURKEY" to "TR", "TURKIYE" to "TR",
+    "CANADA" to "CA", "FINLAND" to "FI", "SWEDEN" to "SE", "NORWAY" to "NO", "DENMARK" to "DK",
+    "ICELAND" to "IS", "JAPAN" to "JP", "SINGAPORE" to "SG",
+    "UAE" to "AE", "EMIRATES" to "AE", "DUBAI" to "AE",
+    "IRAN" to "IR", "SPAIN" to "ES", "ESPANA" to "ES", "POLAND" to "PL",
+    "RUSSIA" to "RU", "SWITZERLAND" to "CH", "AUSTRALIA" to "AU",
+    "BRAZIL" to "BR", "BRASIL" to "BR", "INDIA" to "IN", "SOUTH KOREA" to "KR", "KOREA" to "KR",
+    "HONG KONG" to "HK", "AUSTRIA" to "AT", "BELGIUM" to "BE", "ROMANIA" to "RO",
+    "BULGARIA" to "BG", "HUNGARY" to "HU", "IRELAND" to "IE", "PORTUGAL" to "PT",
+    "IRELAND" to "IE", "INDONESIA" to "ID", "THAILAND" to "TH", "LUXEMBOURG" to "LU",
+    "QATAR" to "QA", "EGYPT" to "EG", "MOROCCO" to "MA", "NEW ZEALAND" to "NZ",
+)
+private fun countryCodeFromTitle(title: String): String? {
+    val normalized = title.uppercase()
+        .replace(Regex("[^A-Z ]"), " ") // strip flag emoji, punctuation, digits
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (normalized.isBlank()) return null
+    // Try longest names first so "SOUTH KOREA" matches before a stray "KOREA" would.
+    for ((name, code) in countryNameToCode.entries.sortedByDescending { it.key.length }) {
+        if (normalized.contains(name)) return code
+    }
+    // Also catch a standalone 2-letter ISO code as its own word, e.g. "DE - Frankfurt 01".
+    val words = normalized.split(" ")
+    for (w in words) {
+        if (w.length == 2 && flagSpecs.containsKey(w)) return w
+    }
+    return null
+}
+
 private fun parseConfig(uri: String): SavedConfig? {
     val proxy = com.cdnhunter.app.vpn.ConfigUriParser.parseToProxy(uri) ?: return null
     val proto = (proxy["type"] as? String) ?: "?"
@@ -406,11 +412,13 @@ private fun parseConfig(uri: String): SavedConfig? {
         else      -> proto.replaceFirstChar { ch -> ch.uppercase() }
     } + " · $addr"
     val name = remark ?: fallbackName
+    val titleGuessCc = remark?.let { countryCodeFromTitle(it) } ?: ""
 
     return SavedConfig(
         id = uri.hashCode().toString(),
         uri = uri, displayName = name,
         proto = proto, address = addr, port = port, network = net, sni = sni,
+        countryCode = titleGuessCc,
     )
 }
 
@@ -580,25 +588,16 @@ private fun VpnTab() {
         }
     }
 
-    // Accurate geo pass: replaces the quick-but-sometimes-wrong estimate above with
-    // a real through-the-proxy lookup (see probeAccurateGeo) for every config that
-    // hasn't had it done yet, one at a time — mihomo's Go core is a single
-    // process-wide instance, so two probes (or a probe + the real connection)
-    // running at once would corrupt each other. Bails immediately, and re-checks
-    // before every single config, if the user actually connects mid-pass — a real
-    // connection always wins over background probing.
-    LaunchedEffect(configIdsKey) {
-        val toProbe = configs.filter { !it.accurateGeoResolved }
-        for (cfg in toProbe) {
-            if (CdnVpnService.isRunning.get()) break
-            val result = try { probeAccurateGeo(context, cfg) } catch (e: Exception) { null }
-            if (CdnVpnService.isRunning.get()) break // connected while probing this one — discard, don't race the stop()
-            if (result != null) {
-                configs = configs.map { if (it.id == cfg.id) result else it }
-                saveConfigs(context, configs)
-            }
-        }
-    }
+    // Accurate geo for the active config now runs only AFTER a real connection is
+    // already up, through that same live tunnel (see the "connected" poller below
+    // and probeAccurateGeoViaLiveTunnel) — never as a separate speculative mihomo
+    // instance beforehand. That background probe used to run concurrently with
+    // whatever the user did next; if they hit connect while it was starting, the
+    // real connect's own start() could race a probe instance that was still mid-
+    // startup on the same process-wide mihomo core, which looked like "connect
+    // does nothing, like the port's already taken." There's only ever one mihomo
+    // instance running at any point now.
+
 
     // Poll VPN status + derive live throughput from CdnVpnService's cumulative byte counters
     LaunchedEffect(Unit) {
