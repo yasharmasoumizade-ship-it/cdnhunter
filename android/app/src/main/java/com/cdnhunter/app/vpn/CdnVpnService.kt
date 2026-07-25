@@ -279,7 +279,7 @@ class CdnVpnService : VpnService() {
     // Writes the tunnel-verified (accurate) country/city for one saved config
     // straight into the same SharedPreferences record AppScreen's
     // loadConfigs/saveConfigs read and write (key "saved_configs", one line
-    // per config: "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved").
+    // per config: "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved").
     // Without this, the accurate result only ever lived in the in-memory
     // exitCountryCode/exitCity vars above — gone the moment the app restarts,
     // so the next app-open flag went right back to the pre-connect (on-device,
@@ -299,7 +299,7 @@ class CdnVpnService : VpnService() {
                 if (uri.isBlank() || uri.hashCode().toString() != configId) return@map line
                 changed = true
                 val pingMs = parts.getOrNull(3) ?: "-1"
-                listOf(uri, cc, city, pingMs, "1").joinToString(sep)
+                listOf(uri, cc, city, pingMs, "1", "1").joinToString(sep)
             }
             if (changed) {
                 prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()
