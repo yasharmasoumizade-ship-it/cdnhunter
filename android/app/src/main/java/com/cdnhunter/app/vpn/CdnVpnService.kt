@@ -41,6 +41,13 @@ class CdnVpnService : VpnService() {
         var exitGeoConfigId = ""
 
         var killSwitchBlocking = AtomicBoolean(false)
+        // The currently-running kill-switch drain coroutine, if any -- see
+        // stopVpnInternal(keepTunAlive = true) and startVpn(). Only ever one
+        // at a time; startVpn() joins this (with a timeout) before touching
+        // tunRawFd, so the drain loop is always the sole owner that closes
+        // its own fd and there's no window for both sides to close the same
+        // descriptor.
+        var killSwitchDrainJob: Job? = null
 
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
@@ -99,6 +106,27 @@ class CdnVpnService : VpnService() {
 
         job = scope.launch {
             try {
+                // If the kill switch was holding a previous tun fd open, it's
+                // being drained by killSwitchDrainLoop on a coroutine tracked
+                // by killSwitchDrainJob, which is the SOLE owner responsible
+                // for closing that fd once it exits (see killSwitchDrainLoop).
+                // killSwitchBlocking.set(false) above wakes it on its next
+                // while-check, but that's not instant -- it may be blocked
+                // inside stream.read() at this exact moment. Actually join()
+                // it here (suspending, not busy-waiting) so we're guaranteed
+                // it has fully exited and closed its own fd before we touch
+                // tunRawFd/tunFd at all. Without this wait, closing the same
+                // fd from both this coroutine and the drain loop around the
+                // same moment would risk the exact double-close bug that
+                // previously crashed the app on disconnect. Bounded by a
+                // timeout as a safety net in case that coroutine is ever
+                // stuck for some unrelated reason -- we still proceed after
+                // it (a stale fd left open a bit longer is far less bad than
+                // startVpn() hanging forever).
+                killSwitchDrainJob?.let { withTimeoutOrNull(2000) { it.join() } }
+                tunRawFd = null
+                tunFd = null
+
                 val mihomoHomeDir = File(filesDir, "mihomo").apply { mkdirs() }
 
                 listOf("geoip.metadb", "geosite.dat").forEach { name ->
@@ -286,7 +314,7 @@ class CdnVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn() {
+    private suspend fun stopVpn() {
         job?.cancel()
         stopVpnInternal(keepTunAlive = false)
     }
@@ -327,7 +355,7 @@ class CdnVpnService : VpnService() {
     // Actual teardown, shared by the external-stop path (stopVpn) and the
     // internal error-recovery path in startVpn's catch block, which must not
     // cancel `job` since it IS the job currently running this code.
-    private fun stopVpnInternal(keepTunAlive: Boolean) {
+    private suspend fun stopVpnInternal(keepTunAlive: Boolean) {
         isRunning.set(false)
         MihomoBridge.stop()
         exitCountryCode = ""
@@ -335,19 +363,95 @@ class CdnVpnService : VpnService() {
         exitGeoConfigId = ""
 
         if (keepTunAlive) {
+            // A real kill switch, matching how Mullvad/NordVPN/etc. implement
+            // it: Android's routes are still committed to this VPN interface
+            // (addRoute("0.0.0.0", 1) + addRoute("128.0.0.0", 1) in
+            // establishTun() are untouched — Android won't fall back to
+            // direct routing just because mihomo stopped reading), so all
+            // traffic is still forced through the tun fd. mihomo itself is
+            // now stopped and isn't reading it anymore, so simply leaving the
+            // fd open and doing nothing would only block traffic informally,
+            // by letting the kernel-side tun buffer fill up and start
+            // dropping packets on its own — not immediate, not guaranteed,
+            // and not how a real kill switch works. Instead, actively read
+            // and discard every packet ourselves on its own coroutine, so
+            // blocking is explicit and instant regardless of buffer
+            // behavior. Runs until reconnect (see startVpn(), which joins
+            // killSwitchDrainJob) or the user hits disconnect (below, in the
+            // !keepTunAlive branch, which also joins it).
+            val fd = tunRawFd
+            if (fd != null) {
+                killSwitchDrainJob = scope.launch(Dispatchers.IO) { killSwitchDrainLoop(fd) }
+            }
             return
         }
-        // MihomoBridge.stop() already closes the tun fd internally (via
-        // executor.Shutdown -> listener.Cleanup). We must NOT also close it
-        // here on the Kotlin side -- that would double-close the same fd
-        // number, which on Linux/Android can immediately reassign that same
-        // integer to a totally unrelated file/socket and corrupt native
-        // state. This was the actual cause of the app being killed right
-        // after pressing disconnect.
+
+        // If the kill switch was active, mihomo was already stopped earlier
+        // (when the kill switch first triggered) and does NOT own tunRawFd
+        // anymore -- killSwitchDrainLoop does, exclusively. Join it (it
+        // notices killSwitchBlocking=false, set below, on its next
+        // while-check) so it finishes and closes its own fd, rather than
+        // this coroutine racing to close the same fd independently -- that
+        // double-close was the actual original cause of the app being killed
+        // right after pressing disconnect. Bounded by a timeout as a safety
+        // net in case it's ever stuck.
+        val hadKillSwitchJob = killSwitchDrainJob != null
+        killSwitchBlocking.set(false)
+        killSwitchDrainJob?.let { withTimeoutOrNull(2000) { it.join() } }
+        killSwitchDrainJob = null
+
+        if (!hadKillSwitchJob) {
+            // Normal path: MihomoBridge.stop() above already closed the tun
+            // fd internally (via executor.Shutdown -> listener.Cleanup). We
+            // must NOT also close it here on the Kotlin side -- that would
+            // double-close the same fd number, which on Linux/Android can
+            // immediately reassign that same integer to a totally unrelated
+            // file/socket and corrupt native state. This was the actual
+            // cause of the app being killed right after pressing disconnect.
+        }
+        // Either way (kill switch was active, or normal disconnect), the fd
+        // has now been closed by whichever side actually owned it -- safe to
+        // drop our references.
         tunRawFd = null
         tunFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // Reads and discards packets from the tun fd for as long as the kill
+    // switch is holding it open. Exits cleanly (no crash, no leak) once the
+    // fd is closed out from under it -- either by a real reconnect
+    // (startVpn() closes any stale kill-switch fd before establishing a new
+    // one) or the user disconnecting (stopVpnInternal(keepTunAlive = false)
+    // closes it).
+    private fun killSwitchDrainLoop(fd: Int) {
+        // ParcelFileDescriptor.adoptFd() + AutoCloseInputStream are both
+        // fully public, documented APIs -- deliberately avoiding any
+        // reflection into FileDescriptor's internal int constructor (a
+        // non-SDK interface Android's hidden-API restrictions can silently
+        // break depending on target SDK/OS version), since this path is
+        // security-critical and must not be allowed to quietly stop working.
+        val pfd = try { ParcelFileDescriptor.adoptFd(fd) } catch (_: Exception) { return }
+        val stream = ParcelFileDescriptor.AutoCloseInputStream(pfd)
+        val buf = ByteArray(32767)
+        try {
+            while (killSwitchBlocking.get()) {
+                val n = stream.read(buf)
+                if (n < 0) break // fd closed elsewhere (reconnect or real disconnect) -- exit quietly
+                // Read and discard -- do not forward, do not respond. This is
+                // the actual block: nothing this app does with these bytes
+                // ever reaches a real network socket.
+            }
+        } catch (_: Exception) {
+            // fd closed/invalidated elsewhere -- exit quietly, this is expected
+        } finally {
+            // AutoCloseInputStream closes pfd (and therefore fd) when the
+            // stream itself is closed -- do that here so the fd doesn't stay
+            // open forever if the loop exits because killSwitchBlocking went
+            // false (a real reconnect) rather than because the fd was
+            // already closed by someone else.
+            try { stream.close() } catch (_: Exception) {}
+        }
     }
 
     private fun establishTun(): ParcelFileDescriptor? {
@@ -424,6 +528,6 @@ class CdnVpnService : VpnService() {
     // is already being torn down by the OS, so blocking briefly to actually
     // finish mihomo's shutdown and release the tun fd is correct — cancelling
     // `scope` first would abandon that teardown mid-flight and leak the fd.
-    override fun onDestroy() { job?.cancel(); stopVpnInternal(keepTunAlive = false); scope.cancel(); instance = null; super.onDestroy() }
-    override fun onRevoke() { job?.cancel(); stopVpnInternal(keepTunAlive = false); super.onRevoke() }
+    override fun onDestroy() { job?.cancel(); kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }; scope.cancel(); instance = null; super.onDestroy() }
+    override fun onRevoke() { job?.cancel(); kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }; super.onRevoke() }
 }
