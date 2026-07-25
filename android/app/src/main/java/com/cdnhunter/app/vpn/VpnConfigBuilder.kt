@@ -11,15 +11,15 @@ object VpnConfigBuilder {
 
     const val ERROR_LOG_NAME = "mihomo_error.log"
 
-    fun buildConfig(ctx: Context, tunFd: Int): String {
+    fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
         val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val userConfig = prefs.getString("user_config", "") ?: ""
-        return buildConfigFromUri(userConfig, tunFd)
+        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768)
     }
 
     /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
-    fun buildConfigFromUri(uri: String, tunFd: Int): String {
-        val proxy = ConfigUriParser.parseToProxy(uri) ?: defaultProxy()
+    fun buildConfigFromUri(uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
+        val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
         return renderYaml(proxy, tunFd)
     }

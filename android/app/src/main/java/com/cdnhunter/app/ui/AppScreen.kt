@@ -787,14 +787,24 @@ private fun VpnTab() {
         }
     }
 
-    AnanasScreen.LOCATIONS -> LocationsScreen(
-        configs = configs, activeId = activeId, connected = connected,
-        onBack = { screen = AnanasScreen.HOME },
-        onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
-        onDelete = { deleteConfig(it) },
-        showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },
-        onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
-    )
+    AnanasScreen.LOCATIONS -> {
+        // Re-sync from disk every time this screen is entered — a defensive
+        // measure so the Locations list can never show "no configs" while
+        // configs actually exist on disk, regardless of what happened to the
+        // in-memory `configs` state via recomposition.
+        LaunchedEffect(Unit) {
+            val onDisk = loadConfigs(context)
+            if (onDisk != configs) configs = onDisk
+        }
+        LocationsScreen(
+            configs = configs, activeId = activeId, connected = connected,
+            onBack = { screen = AnanasScreen.HOME },
+            onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
+            onDelete = { deleteConfig(it) },
+            showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },
+            onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
+        )
+    }
 
     AnanasScreen.SETTINGS -> SettingsScreen(
         fragmentEnabled = fragmentEnabled,
@@ -1682,7 +1692,8 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 Modifier.size(76.dp).clip(CircleShape).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, CircleShape),
+                    .border(1.dp, AnanasBorder, CircleShape)
+                    .clickable { onAdd() },
                 contentAlignment = Alignment.Center
             ) { Icon(Icons.Rounded.Add, null, tint = AnanasMuted, modifier = Modifier.size(26.dp)) }
             Spacer(Modifier.height(16.dp))

@@ -145,7 +145,8 @@ class CdnVpnService : VpnService() {
                         "Disable it or set it to \"Automatic\" in Settings > Network > Private DNS."
                 }
 
-                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd)
+                var forceX25519 = false
+                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519)
 
                 debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
                     "config length: ${config.length} chars\n" +
@@ -171,6 +172,36 @@ class CdnVpnService : VpnService() {
                 }
 
                 debugLog += "\nmihomo started OK"
+
+                // REALITY's handshake is a strict binary match, not a soft TLS
+                // negotiation — support-x25519mlkem768 must exactly match what the
+                // server expects (some Xray-core versions require it, others break
+                // if it's forced on) and there's no way to know which ahead of time
+                // from the share link alone. mihomo only discovers this by actually
+                // attempting a handshake, which happens asynchronously after
+                // start() already returned success — so check coreLog a moment
+                // later and, if it shows the specific auth failure, restart once
+                // with the flag flipped. This only ever fires for reality configs
+                // (that's the only error text this check matches), so it's a
+                // no-op for every other proxy type.
+                if (!forceX25519 && config.contains("reality-opts")) {
+                    delay(2500)
+                    if (MihomoBridge.coreLog().contains("REALITY authentication failed")) {
+                        debugLog += "\nREALITY handshake failed without support-x25519mlkem768 — retrying with it enabled."
+                        forceX25519 = true
+                        MihomoBridge.stop()
+                        val retryConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519)
+                        val retryStarted = MihomoBridge.start(retryConfig, mihomoHomeDir.absolutePath)
+                        if (!retryStarted) {
+                            lastError = "mihomo failed to start (retry): ${MihomoBridge.lastError}"
+                            debugLog += "\nFAILED on retry: ${MihomoBridge.lastError}"
+                            stopVpnInternal()
+                            return@launch
+                        }
+                        debugLog += "\nmihomo restarted OK with support-x25519mlkem768"
+                    }
+                }
+
                 isRunning.set(true)
                 uploadBytes = 0L
                 downloadBytes = 0L
