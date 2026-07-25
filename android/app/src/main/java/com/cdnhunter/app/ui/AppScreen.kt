@@ -691,14 +691,7 @@ private fun VpnTab() {
     AnanasScreen.HOME -> {
         if (configs.isEmpty()) {
             Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-                EmptyHomeState { showAddMenu = true }
-                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-                    AddConfigFabMenu(
-                        expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
-                        onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
-                        onManual = {}
-                    )
-                }
+                EmptyHomeState { screen = AnanasScreen.LOCATIONS }
             }
         } else {
             BottomSheetScaffold(
@@ -743,7 +736,6 @@ private fun VpnTab() {
             ) { innerPadding ->
                 Box(Modifier.fillMaxSize().padding(innerPadding).background(AnanasScreenBg)) {
                     Column(Modifier.fillMaxSize()) {
-                        // ── Top bar ──────────────────────────────────────────────
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -809,14 +801,6 @@ private fun VpnTab() {
                             }
                         }
                     }
-
-                    Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-                        AddConfigFabMenu(
-                            expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
-                            onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
-                            onManual = {}
-                        )
-                    }
                 }
             }
         }
@@ -827,6 +811,8 @@ private fun VpnTab() {
         onBack = { screen = AnanasScreen.HOME },
         onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
         onDelete = { deleteConfig(it) },
+        showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },
+        onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
     )
 
     AnanasScreen.SETTINGS -> SettingsScreen(
@@ -915,12 +901,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     }
 }
 
-// ── Add-config menu: opens as a sliding bottom sheet with QR scan / clipboard ──
+// ── Add-config sheet: sliding bottom sheet with QR scan / clipboard ──
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddConfigFabMenu(
+private fun AddConfigSheet(
     expanded: Boolean, onToggle: () -> Unit,
-    onScanQr: () -> Unit, onClipboard: () -> Unit, onManual: () -> Unit,
+    onScanQr: () -> Unit, onClipboard: () -> Unit,
 ) {
     if (expanded) {
         ModalBottomSheet(
@@ -947,18 +933,6 @@ private fun AddConfigFabMenu(
                 }
             }
         }
-    }
-    FloatingActionButton(
-        onClick = onToggle,
-        containerColor = AnanasCard2,
-        contentColor   = AnanasTextHi,
-        shape          = RoundedCornerShape(16.dp)
-    ) {
-        Icon(
-            Icons.Rounded.Add,
-            contentDescription = "Add config",
-            tint = AnanasTextHi
-        )
     }
 }
 
@@ -1191,7 +1165,11 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
 private fun LocationsScreen(
     configs: List<SavedConfig>, activeId: String, connected: Boolean,
     onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit,
+    showAddMenu: Boolean, onToggleAddMenu: () -> Unit,
+    onScanQr: () -> Unit, onClipboard: () -> Unit,
 ) {
+    AddConfigSheet(expanded = showAddMenu, onToggle = onToggleAddMenu, onScanQr = onScanQr, onClipboard = onClipboard)
+
     var query by remember { mutableStateOf("") }
     val filtered = remember(configs, query) {
         if (query.isBlank()) configs
@@ -1206,12 +1184,18 @@ private fun LocationsScreen(
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("Locations", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
                     Text(
                         if (configs.isEmpty()) "No configs yet" else "${configs.size} config${if (configs.size == 1) "" else "s"} saved",
                         fontSize = 11.5.sp, color = AnanasMuted
                     )
+                }
+                // Only shown when there are no saved configs at all -- this is
+                // now the sole entry point for adding the first one, since the
+                // home screen no longer has its own add button.
+                if (configs.isEmpty()) {
+                    AnanasIconButton(Icons.Rounded.Add, onToggleAddMenu)
                 }
             }
 
@@ -1247,7 +1231,7 @@ private fun LocationsScreen(
                     Spacer(Modifier.height(10.dp))
                     Text("No servers yet", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                     Spacer(Modifier.height(4.dp))
-                    Text("Add a config from the home screen", fontSize = 12.sp, color = AnanasMuted)
+                    Text("Tap + above to add one", fontSize = 12.sp, color = AnanasMuted)
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
