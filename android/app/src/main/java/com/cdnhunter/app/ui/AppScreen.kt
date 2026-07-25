@@ -814,36 +814,71 @@ private fun VpnTab() {
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     val infinite = rememberInfiniteTransition(label = "power")
-    // Single smooth sweep arc — replaces the old three-layer animation (two
-    // independently-pulsing ring borders + a separate rotating arc) that drifted
-    // out of sync with each other and read as messy/jittery.
-    val sweepRotation by infinite.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "sweep"
+
+    // Concentric ripple waves expanding outward from the core while connected —
+    // like a radar/sonar ping, staggered so a new ring starts as the previous one
+    // is still fading, giving a continuous outward pulse instead of one static ring.
+    val rippleProgress1 by infinite.animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2400, easing = LinearOutSlowInEasing)), label = "ripple1"
     )
-    // Gentle breathing glow on the outer ring while connected — one slow,
-    // continuous cycle instead of two overlapping pulses.
+    val rippleProgress2 by infinite.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(2400, easing = LinearOutSlowInEasing), initialStartOffset = StartOffset(1200)),
+        label = "ripple2"
+    )
+
+    // Smooth dual-arc scan while connecting — two short arcs chasing each other
+    // around the ring, replacing the plain circular spinner.
+    val scanRotation by infinite.animateFloat(
+        0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "scan"
+    )
+
+    // Soft breathing glow on the core while connected.
     val breathe by infinite.animateFloat(
-        0.35f, 0.8f,
-        infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        0.5f, 1f,
+        infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "breathe"
     )
 
     Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
-        // static outer ring — always visible, brighter and animated only when connected
+        // Ripple waves: only while connected, drawn behind everything else.
+        if (connected) {
+            listOf(rippleProgress1, rippleProgress2).forEach { progress ->
+                Canvas(Modifier.size(200.dp)) {
+                    val maxRadius = this.size.minDimension / 2f
+                    val radius = maxRadius * (0.42f + progress * 0.58f)
+                    val alpha = (1f - progress).coerceIn(0f, 1f) * 0.55f
+                    drawCircle(
+                        color = AnanasAccent.copy(alpha = alpha),
+                        radius = radius,
+                        style = Stroke(width = 1.6.dp.toPx())
+                    )
+                }
+            }
+        }
+
+        // Static outer ring — brighter and breathing softly when connected.
         Box(
             Modifier
                 .size(200.dp)
                 .clip(CircleShape)
-                .border(1.dp, if (connected) AnanasAccent.copy(alpha = breathe) else AnanasBorder2, CircleShape)
+                .border(1.dp, if (connected) AnanasAccent.copy(alpha = breathe * 0.7f) else AnanasBorder2, CircleShape)
         )
 
-        // thin rotating sweep arc while connected
-        if (connected) {
-            Canvas(Modifier.size(176.dp).rotate(sweepRotation)) {
+        // Dual-arc scan while connecting — two short arcs 180° apart, chasing
+        // each other around the ring for a livelier "searching" feel than a
+        // single spinner arc.
+        if (connecting) {
+            Canvas(Modifier.size(176.dp).rotate(scanRotation)) {
                 drawArc(
                     color = AnanasAccent,
-                    startAngle = 0f, sweepAngle = 34f, useCenter = false,
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                    startAngle = 0f, sweepAngle = 26f, useCenter = false,
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = AnanasAccent.copy(alpha = 0.5f),
+                    startAngle = 180f, sweepAngle = 26f, useCenter = false,
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
         }
@@ -854,7 +889,9 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 .size(160.dp) // 140dp core + 10dp ring-shadow spread on each side
                 .clip(CircleShape)
                 .background(
-                    if (connected) Brush.radialGradient(listOf(AnanasAccent.copy(0.16f), Color.Transparent), radius = 220f)
+                    if (connected) Brush.radialGradient(
+                        listOf(AnanasAccent.copy(0.16f * breathe), Color.Transparent), radius = 220f
+                    )
                     else Brush.radialGradient(listOf(Color.Transparent, Color.Transparent))
                 ),
             contentAlignment = Alignment.Center
