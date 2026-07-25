@@ -124,6 +124,12 @@ data class SavedConfig(
     val city: String = "",
     val pingMs: Int = -1,
     val geoResolved: Boolean = false,
+    // Set once the ACCURATE (through-the-proxy) probe has resolved this config —
+    // see probeAccurateGeo below. Distinct from geoResolved (the quick on-device
+    // SNI/address lookup done at app-open, which is wrong for CDN-fronted/reality
+    // configs) so we know which configs still need the accurate pass and don't
+    // redo it every app open once it's already been done.
+    val accurateGeoResolved: Boolean = false,
 )
 
 // Measures round-trip time of a raw TCP connect to the server's host:port. DNS
@@ -166,8 +172,48 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
-// Real flag stripe patterns (simplified, flat-color) per country code — drawn as a
-// square badge so it reads like an actual flag rather than an abstract color chip.
+// Resolves the ACCURATE country/city for one config by actually starting mihomo
+// with just this proxy (no TUN — see VpnConfigBuilder.buildProbeConfigFromUri)
+// and asking a geo-IP service through it, same principle as the post-connect
+// check in CdnVpnService. This is the only reliable way for CDN-fronted/reality
+// configs, where even the real destination server's IP is the CDN edge, not the
+// backend — no on-device lookup (SNI or address) can ever get those right.
+//
+// CALLER MUST ensure MihomoBridge.isRunning() is false before calling this and
+// must not call it again until this returns — the Go mihomo core is a single,
+// process-wide instance; running this concurrently with a real connection (or
+// with another probe) would corrupt whichever one loses the race.
+private suspend fun probeAccurateGeo(context: Context, cfg: SavedConfig): SavedConfig? =
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val probeHomeDir = java.io.File(context.filesDir, "mihomo_probe").apply { mkdirs() }
+        try {
+            val yaml = com.cdnhunter.app.vpn.VpnConfigBuilder.buildProbeConfigFromUri(cfg.uri)
+            val started = com.cdnhunter.app.vpn.MihomoBridge.start(yaml, probeHomeDir.absolutePath)
+            if (!started) return@withContext null
+            try {
+                // Give the mixed-port listener + outbound handshake a moment before
+                // asking it to fetch anything.
+                kotlinx.coroutines.delay(400)
+                val info = GeoService().lookupCurrentExitGeoInfo(
+                    mixedPort = com.cdnhunter.app.vpn.VpnConfigBuilder.PROBE_MIXED_PORT,
+                    timeout = 6.0f,
+                )
+                if (info.cc.isBlank()) return@withContext null
+                cfg.copy(
+                    countryCode = info.cc,
+                    city = info.city,
+                    geoResolved = true,
+                    accurateGeoResolved = true,
+                )
+            } finally {
+                com.cdnhunter.app.vpn.MihomoBridge.stop()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+
 // Covers all commonly-seen VPN server countries; falls back to a neutral pattern for
 // anything not listed instead of failing to render.
 private enum class FlagShape { STRIPES_H, STRIPES_V, NORDIC_CROSS, UNION_JACK, DISC_CENTER, SINGLE }
@@ -368,10 +414,12 @@ private fun parseConfig(uri: String): SavedConfig? {
     )
 }
 
-// Each saved line is "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved" — the
-// \u0001 separator can't appear in a URI or in geo text, so this is safe without escaping.
-// Persisting the geo fields (not just the uri) means a resolved config's flag/ping survives
-// an app restart instead of re-resolving every single time the app is reopened.
+// Each saved line is
+// "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved" —
+// the \u0001 separator can't appear in a URI or in geo text, so this is safe
+// without escaping. Persisting the geo fields (not just the uri) means a
+// resolved config's flag/ping survives an app restart instead of re-resolving
+// every single time the app is reopened.
 private const val CONFIG_FIELD_SEP = "\u0001"
 
 private fun loadConfigs(context: Context): List<SavedConfig> {
@@ -397,6 +445,9 @@ private fun loadConfigs(context: Context): List<SavedConfig> {
             city = parts[2],
             pingMs = parts[3].toIntOrNull() ?: -1,
             geoResolved = parts[4] == "1",
+            // Older saves (5 fields) never ran the accurate probe — default false
+            // so they get picked up by it once instead of being silently skipped.
+            accurateGeoResolved = parts.getOrNull(5) == "1",
         )
     }
 }
@@ -405,8 +456,11 @@ private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
     // Prevent crash with max 50 configs
     val limited = configs.take(50)
     val serialized = limited.joinToString("\n") { cfg ->
-        listOf(cfg.uri, cfg.countryCode, cfg.city, cfg.pingMs.toString(), if (cfg.geoResolved) "1" else "0")
-            .joinToString(CONFIG_FIELD_SEP)
+        listOf(
+            cfg.uri, cfg.countryCode, cfg.city, cfg.pingMs.toString(),
+            if (cfg.geoResolved) "1" else "0",
+            if (cfg.accurateGeoResolved) "1" else "0",
+        ).joinToString(CONFIG_FIELD_SEP)
     }
     context.getSharedPreferences("cdnhunter_vpn", 0)
         .edit().putString("saved_configs", serialized).apply()
@@ -522,6 +576,26 @@ private fun VpnTab() {
                 saveConfigs(context, configs)
             } finally {
                 enrichingIds -= cfg.id
+            }
+        }
+    }
+
+    // Accurate geo pass: replaces the quick-but-sometimes-wrong estimate above with
+    // a real through-the-proxy lookup (see probeAccurateGeo) for every config that
+    // hasn't had it done yet, one at a time — mihomo's Go core is a single
+    // process-wide instance, so two probes (or a probe + the real connection)
+    // running at once would corrupt each other. Bails immediately, and re-checks
+    // before every single config, if the user actually connects mid-pass — a real
+    // connection always wins over background probing.
+    LaunchedEffect(configIdsKey) {
+        val toProbe = configs.filter { !it.accurateGeoResolved }
+        for (cfg in toProbe) {
+            if (CdnVpnService.isRunning.get()) break
+            val result = try { probeAccurateGeo(context, cfg) } catch (e: Exception) { null }
+            if (CdnVpnService.isRunning.get()) break // connected while probing this one — discard, don't race the stop()
+            if (result != null) {
+                configs = configs.map { if (it.id == cfg.id) result else it }
+                saveConfigs(context, configs)
             }
         }
     }
