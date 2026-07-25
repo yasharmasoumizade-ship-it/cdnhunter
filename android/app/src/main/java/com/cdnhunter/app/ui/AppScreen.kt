@@ -113,7 +113,8 @@ data class SavedConfig(
     val port: Int,
     val network: String,
     val sni: String,
-    // Geo/ping info — filled in lazily via GeoService + a TCP-connect probe, not persisted.
+    // Geo/ping info — filled in lazily via GeoService + a TCP-connect probe, then
+    // persisted (see saveConfigs/loadConfigs) so it isn't re-resolved on every app start.
     val countryCode: String = "",
     val city: String = "",
     val pingMs: Int = -1,
@@ -285,20 +286,6 @@ private val countryNames = mapOf(
 
 private fun countryCodeToName(cc: String): String = countryNames[cc.uppercase()] ?: ""
 
-// Detects a flag emoji (pair of regional-indicator symbols, e.g. 🇩🇪) inside a config's
-// remark/name — the way Hiddify-style clients embed the country in the config title.
-// Returns the 2-letter country code and the remaining text with the flag stripped out.
-private val flagEmojiRegex = Regex("[\\uD83C][\\uDDE6-\\uDDFF][\\uD83C][\\uDDE6-\\uDDFF]")
-private fun extractFlagFromName(raw: String): Pair<String, String> {
-    val match = flagEmojiRegex.find(raw) ?: return "" to raw
-    val flag = match.value
-    val codepoints = flag.codePoints().toArray()
-    val cc = codepoints.joinToString("") { cp -> ((cp - 0x1F1E6) + 'A'.code).toChar().toString() }
-    val stripped = raw.replace(flag, "").trim().trim('-', '·', '|', '(', ')').trim()
-    return cc to stripped.ifBlank { raw }
-}
-
-
 private fun parseConfig(uri: String): SavedConfig? {
     val proxy = com.cdnhunter.app.vpn.ConfigUriParser.parseToProxy(uri) ?: return null
     val proto = (proxy["type"] as? String) ?: "?"
@@ -307,7 +294,11 @@ private fun parseConfig(uri: String): SavedConfig? {
     val sni = (proxy["servername"] as? String) ?: ""
     val net = (proxy["network"] as? String) ?: "tcp"
 
-    // Prefer the user-given remark (URI fragment, e.g. "...#🇩🇪 Germany Pro 01") if present
+    // Prefer the user-given remark (URI fragment, e.g. "...#Germany Pro 01") if present.
+    // The name is kept exactly as given — including any flag emoji the user put in
+    // it — we just never read that emoji for anything. Like Hiddify, the country
+    // shown on the flag badge always comes from a geo-lookup on the server's real
+    // IP (see enrichConfigGeo), never from parsing text in the config's title.
     val remark = try {
         java.net.URI(uri).rawFragment?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.takeIf { it.isNotBlank() }
     } catch (e: Exception) { null }
@@ -317,20 +308,20 @@ private fun parseConfig(uri: String): SavedConfig? {
         "vmess"   -> "VMess"
         else      -> proto.replaceFirstChar { ch -> ch.uppercase() }
     } + " · $addr"
-
-    // If the remark carries a flag emoji (Hiddify-style, e.g. "🇩🇪 Germany Pro 01"),
-    // pull the country code from it and strip the emoji from the displayed name —
-    // this skips the geo-lookup entirely for that config.
-    val (flagCc, cleanRemark) = remark?.let { extractFlagFromName(it) } ?: ("" to null)
-    val name = cleanRemark ?: fallbackName
+    val name = remark ?: fallbackName
 
     return SavedConfig(
         id = uri.hashCode().toString(),
         uri = uri, displayName = name,
         proto = proto, address = addr, port = port, network = net, sni = sni,
-        countryCode = flagCc,
     )
 }
+
+// Each saved line is "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved" — the
+// \u0001 separator can't appear in a URI or in geo text, so this is safe without escaping.
+// Persisting the geo fields (not just the uri) means a resolved config's flag/ping survives
+// an app restart instead of re-resolving every single time the app is reopened.
+private const val CONFIG_FIELD_SEP = "\u0001"
 
 private fun loadConfigs(context: Context): List<SavedConfig> {
     val prefs = context.getSharedPreferences("cdnhunter_vpn", 0)
@@ -344,14 +335,30 @@ private fun loadConfigs(context: Context): List<SavedConfig> {
         }
         return emptyList()
     }
-    return raw.split("\n").mapNotNull { parseConfig(it.trim()) }
+    return raw.split("\n").mapNotNull { line ->
+        val parts = line.split(CONFIG_FIELD_SEP)
+        val uri = parts.getOrNull(0)?.trim().orEmpty()
+        if (uri.isBlank()) return@mapNotNull null
+        val base = parseConfig(uri) ?: return@mapNotNull null
+        if (parts.size < 5) return@mapNotNull base // old format, no cached geo yet
+        base.copy(
+            countryCode = parts[1],
+            city = parts[2],
+            pingMs = parts[3].toIntOrNull() ?: -1,
+            geoResolved = parts[4] == "1",
+        )
+    }
 }
 
 private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
     // Prevent crash with max 50 configs
     val limited = configs.take(50)
+    val serialized = limited.joinToString("\n") { cfg ->
+        listOf(cfg.uri, cfg.countryCode, cfg.city, cfg.pingMs.toString(), if (cfg.geoResolved) "1" else "0")
+            .joinToString(CONFIG_FIELD_SEP)
+    }
     context.getSharedPreferences("cdnhunter_vpn", 0)
-        .edit().putString("saved_configs", limited.joinToString("\n") { it.uri }).apply()
+        .edit().putString("saved_configs", serialized).apply()
 }
 
 private fun formatElapsed(totalSec: Long): String {
@@ -453,6 +460,7 @@ private fun VpnTab() {
             try {
                 val enriched = enrichConfigGeo(geoService, cfg)
                 configs = configs.map { if (it.id == cfg.id) enriched else it }
+                saveConfigs(context, configs)
             } finally {
                 enrichingIds -= cfg.id
             }
