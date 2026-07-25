@@ -213,15 +213,13 @@ class CdnVpnService : VpnService() {
     private fun stopVpnInternal() {
         isRunning.set(false)
         MihomoBridge.stop()
-        // tunFd.detachFd() (in startVpn) transferred ownership of the actual
-        // descriptor to tunRawFd — tunFd itself is now an empty shell with
-        // nothing to close, so tunFd?.close() here was silently doing
-        // nothing and leaking the real fd every time the VPN stopped.
-        // ParcelFileDescriptor.adoptFd() is the documented way to re-wrap a
-        // previously-detached raw fd so it can be closed properly.
-        tunRawFd?.let { fd ->
-            try { ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
-        }
+        // MihomoBridge.stop() already closes the tun fd internally (via
+        // executor.Shutdown -> listener.Cleanup). We must NOT also close it
+        // here on the Kotlin side -- that would double-close the same fd
+        // number, which on Linux/Android can immediately reassign that same
+        // integer to a totally unrelated file/socket and corrupt native
+        // state. This was the actual cause of the app being killed right
+        // after pressing disconnect.
         tunRawFd = null
         tunFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
