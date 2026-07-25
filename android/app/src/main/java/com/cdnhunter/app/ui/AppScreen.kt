@@ -261,7 +261,9 @@ private fun getFlagImageLoader(context: Context): coil.ImageLoader =
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val cc = countryCode.lowercase()
-    val corner = size * 0.5f // circle-flags are already circular; keep the badge itself circular too
+    // circle-flags SVGs are drawn as full circles filling their viewbox, so cropping
+    // one into a rounded square still shows the flag's stripes/emblem correctly.
+    val corner = size * 0.22f
 
     Box(
         modifier
@@ -675,7 +677,7 @@ private fun VpnTab() {
         } else {
             BottomSheetScaffold(
                 scaffoldState = homeSheetState,
-                sheetPeekHeight = if (otherConfigs.isNotEmpty()) 76.dp else 0.dp,
+                sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 sheetContainerColor = Color(0xFF101012),
                 sheetContentColor = AnanasText,
@@ -812,55 +814,54 @@ private fun VpnTab() {
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     val infinite = rememberInfiniteTransition(label = "power")
-    val pulse1 by infinite.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2500, easing = LinearEasing)), label = "pulse1"
-    )
-    val pulse2 by infinite.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2500, delayMillis = 1250, easing = LinearEasing)), label = "pulse2"
-    )
+    // Single smooth sweep arc — replaces the old three-layer animation (two
+    // independently-pulsing ring borders + a separate rotating arc) that drifted
+    // out of sync with each other and read as messy/jittery.
     val sweepRotation by infinite.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(3500, easing = LinearEasing)), label = "sweep"
+        0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "sweep"
+    )
+    // Gentle breathing glow on the outer ring while connected — one slow,
+    // continuous cycle instead of two overlapping pulses.
+    val breathe by infinite.animateFloat(
+        0.35f, 0.8f,
+        infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breathe"
     )
 
-    Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
-        // pulsing outward rings — only while connected
-        if (connected) {
-            listOf(pulse1, pulse2).forEach { p ->
-                Box(
-                    Modifier
-                        .size(180.dp)
-                        .scale(0.85f + p * 0.25f)
-                        .clip(CircleShape)
-                        .border(1.dp, AnanasAccent.copy(alpha = (1f - p) * 0.7f), CircleShape)
-                )
-            }
-        }
+    Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+        // static outer ring — always visible, brighter and animated only when connected
+        Box(
+            Modifier
+                .size(200.dp)
+                .clip(CircleShape)
+                .border(1.dp, if (connected) AnanasAccent.copy(alpha = breathe) else AnanasBorder2, CircleShape)
+        )
 
         // thin rotating sweep arc while connected
         if (connected) {
-            Canvas(Modifier.size(158.dp).rotate(sweepRotation)) {
+            Canvas(Modifier.size(176.dp).rotate(sweepRotation)) {
                 drawArc(
                     color = AnanasAccent,
-                    startAngle = 0f, sweepAngle = 26f, useCenter = false,
-                    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                    startAngle = 0f, sweepAngle = 34f, useCenter = false,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
         }
 
-        // core power button — enlarged from reference (126dp) to give more visual weight
+        // core power button — enlarged for more visual weight
         Box(
             Modifier
-                .size(144.dp) // 126dp core + 9dp ring-shadow spread on each side
+                .size(160.dp) // 140dp core + 10dp ring-shadow spread on each side
                 .clip(CircleShape)
                 .background(
-                    if (connected) Brush.radialGradient(listOf(AnanasAccent.copy(0.16f), Color.Transparent), radius = 200f)
+                    if (connected) Brush.radialGradient(listOf(AnanasAccent.copy(0.16f), Color.Transparent), radius = 220f)
                     else Brush.radialGradient(listOf(Color.Transparent, Color.Transparent))
                 ),
             contentAlignment = Alignment.Center
         ) {}
         Box(
             Modifier
-                .size(126.dp)
+                .size(140.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF101210))
                 .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
@@ -868,12 +869,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             contentAlignment = Alignment.Center
         ) {
             if (connecting) {
-                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(32.dp))
+                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(34.dp))
             } else {
                 Icon(
                     Icons.Rounded.PowerSettingsNew, null,
                     tint = if (connected) AnanasAccent else AnanasMuted,
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(46.dp)
                 )
             }
         }
@@ -969,7 +970,7 @@ private fun ServerRow(
         Column(Modifier.padding(start = if (isActive) 19.dp else 16.dp, top = 14.dp, end = 14.dp, bottom = 14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CountryFlagBadge(cfg.countryCode, 32.dp)
+                    CountryFlagBadge(cfg.countryCode, 38.dp)
                     Column {
                         Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                         Spacer(Modifier.height(3.dp))
@@ -1039,7 +1040,7 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            CountryFlagBadge(cfg.countryCode, 26.dp)
+            CountryFlagBadge(cfg.countryCode, 32.dp)
             Column {
                 Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
@@ -1061,7 +1062,7 @@ private fun QuickSwitchRow(cfg: SavedConfig, onClick: () -> Unit, showDivider: B
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            CountryFlagBadge(cfg.countryCode, 22.dp)
+            CountryFlagBadge(cfg.countryCode, 26.dp)
             Text(cfg.displayName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE4E5E9))
         }
         Text(
@@ -1173,12 +1174,7 @@ private fun LocationsScreen(
                         fontSize = 11.5.sp, color = AnanasMuted
                     )
                 }
-                // Only shown when there are no saved configs at all -- this is
-                // now the sole entry point for adding the first one, since the
-                // home screen no longer has its own add button.
-                if (configs.isEmpty()) {
-                    AnanasIconButton(Icons.Rounded.Add, onToggleAddMenu)
-                }
+                AnanasIconButton(Icons.Rounded.Add, onToggleAddMenu)
             }
 
             Row(
@@ -1223,7 +1219,7 @@ private fun LocationsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                                CountryFlagBadge(cfg.countryCode, 26.dp)
+                                CountryFlagBadge(cfg.countryCode, 32.dp)
                                 Column {
                                     Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
                                     Text(
