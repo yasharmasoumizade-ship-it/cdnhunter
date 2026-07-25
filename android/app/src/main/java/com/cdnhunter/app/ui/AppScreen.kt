@@ -5,6 +5,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -156,56 +158,90 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
 // square badge so it reads like an actual flag rather than an abstract color chip.
 // Covers all commonly-seen VPN server countries; falls back to a neutral pattern for
 // anything not listed instead of failing to render.
-private data class FlagPattern(val colors: List<Color>, val horizontal: Boolean = true)
-private val flagPatterns = mapOf(
-    "DE" to FlagPattern(listOf(Color(0xFF1A1A1A), Color(0xFFE0605C), Color(0xFFE6A23C))),
-    "FR" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "NL" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFF3A6CC8))),
-    "GB" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFFF2F2F2), Color(0xFFE0605C))),
-    "US" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFF2F2F2))),
-    "TR" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
-    "IT" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "CA" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFE0605C)), horizontal = false),
-    "FI" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFF2F2F2))),
-    "SE" to FlagPattern(listOf(Color(0xFF3A6CC8), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
-    "JP" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFFF2F2F2))),
-    "SG" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFF2F2F2), Color(0xFFF2F2F2))),
-    "AE" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFF1A1A1A))),
-    "IR" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFFE0605C))),
-    "ES" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE6A23C), Color(0xFFE0605C))),
-    "PL" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFFF2F2F2))),
-    "RU" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFF3A6CC8), Color(0xFFE0605C))),
-    "CH" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
-    "AU" to FlagPattern(listOf(Color(0xFF1D2C5B), Color(0xFF1D2C5B), Color(0xFFF2F2F2))),
-    "BR" to FlagPattern(listOf(Color(0xFF3AAA5C), Color(0xFFE6A23C), Color(0xFF3A6CC8))),
-    "IN" to FlagPattern(listOf(Color(0xFFE6A23C), Color(0xFFF2F2F2), Color(0xFF3AAA5C))),
-    "KR" to FlagPattern(listOf(Color(0xFFF2F2F2), Color(0xFFE0605C), Color(0xFF3A6CC8))),
-    "HK" to FlagPattern(listOf(Color(0xFFE0605C), Color(0xFFE0605C), Color(0xFFE0605C))),
+private enum class FlagShape { STRIPES_H, STRIPES_V, NORDIC_CROSS, UNION_JACK, DISC_CENTER, SINGLE }
+private data class FlagSpec(
+    val shape: FlagShape,
+    val colors: List<Color> = emptyList(),
+    val bg: Color = Color(0xFFF2F2F2),
+    val fg: Color = Color(0xFFE0605C),
 )
-// Deterministic fallback: derive a stable, distinct-looking stripe pattern from the
-// country code's own letters so unlisted countries still render a consistent badge
-// instead of a generic gray placeholder.
-private fun fallbackPatternFor(cc: String): FlagPattern {
-    val palette = listOf(
-        Color(0xFF3A6CC8), Color(0xFFE0605C), Color(0xFFE6A23C),
-        Color(0xFF3AAA5C), Color(0xFFF2F2F2), Color(0xFF8B5CF6),
-    )
+
+private val FRED = Color(0xFFE0605C)
+private val FBLUE = Color(0xFF3A6CC8)
+private val FDARKBLUE = Color(0xFF1D2C5B)
+private val FWHITE = Color(0xFFF2F2F2)
+private val FYELLOW = Color(0xFFE6A23C)
+private val FGREEN = Color(0xFF3AAA5C)
+private val FBLACK = Color(0xFF1A1A1A)
+
+private val flagSpecs = mapOf(
+    "DE" to FlagSpec(FlagShape.STRIPES_H, listOf(FBLACK, FRED, FYELLOW)),
+    "FR" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLUE, FWHITE, FRED)),
+    "IT" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FWHITE, FRED)),
+    "IE" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FWHITE, FYELLOW)),
+    "NL" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
+    "RU" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FBLUE, FRED)),
+    "AT" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FRED)),
+    "PL" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FRED, FWHITE)),
+    "ID" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FWHITE)),
+    "BE" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLACK, FYELLOW, FRED)),
+    "RO" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLUE, FYELLOW, FRED)),
+    "BG" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FGREEN, FRED)),
+    "HU" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FGREEN)),
+    "IN" to FlagSpec(FlagShape.STRIPES_H, listOf(FYELLOW, FWHITE, FGREEN)),
+    "AE" to FlagSpec(FlagShape.STRIPES_H, listOf(FGREEN, FWHITE, FBLACK)),
+    "EG" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLACK)),
+    "YE" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLACK)),
+    "US" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FDARKBLUE)),
+    "TH" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
+    "LU" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
+    "SE" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FBLUE, fg = FYELLOW),
+    "FI" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FWHITE, fg = FBLUE),
+    "NO" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FRED, fg = FWHITE),
+    "DK" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FRED, fg = FWHITE),
+    "IS" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FBLUE, fg = FWHITE),
+    "GB" to FlagSpec(FlagShape.UNION_JACK),
+    "JP" to FlagSpec(FlagShape.DISC_CENTER, bg = FWHITE, fg = FRED),
+    "KR" to FlagSpec(FlagShape.DISC_CENTER, bg = FWHITE, fg = FRED),
+    "BD" to FlagSpec(FlagShape.DISC_CENTER, bg = FGREEN, fg = FRED),
+    "PW" to FlagSpec(FlagShape.DISC_CENTER, bg = FBLUE, fg = FYELLOW),
+    "TR" to FlagSpec(FlagShape.SINGLE, bg = FRED),
+    "CH" to FlagSpec(FlagShape.SINGLE, bg = FRED),
+    "MA" to FlagSpec(FlagShape.SINGLE, bg = FRED),
+    "QA" to FlagSpec(FlagShape.SINGLE, bg = Color(0xFF8B1538)),
+    "SG" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FWHITE)),
+    "HK" to FlagSpec(FlagShape.SINGLE, bg = FRED),
+    "CA" to FlagSpec(FlagShape.SINGLE, bg = FRED),
+    "ES" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FYELLOW, FRED)),
+    "PT" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FRED, FRED)),
+    "BR" to FlagSpec(FlagShape.SINGLE, bg = FGREEN),
+    "AU" to FlagSpec(FlagShape.SINGLE, bg = FDARKBLUE),
+    "NZ" to FlagSpec(FlagShape.SINGLE, bg = FDARKBLUE),
+    "IR" to FlagSpec(FlagShape.STRIPES_H, listOf(FGREEN, FWHITE, FRED)),
+)
+
+// Deterministic fallback for anything not curated above — consistent per country
+// code (not literally accurate), better than a blank gray box.
+private fun fallbackSpecFor(cc: String): FlagSpec {
+    val palette = listOf(FBLUE, FRED, FYELLOW, FGREEN, FWHITE, Color(0xFF8B5CF6))
     val seed = cc.uppercase().sumOf { it.code }
     val c1 = palette[seed % palette.size]
     val c2 = palette[(seed / 7 + 1) % palette.size]
     val c3 = palette[(seed / 13 + 2) % palette.size]
-    return FlagPattern(listOf(c1, c2, c3), horizontal = seed % 2 == 0)
+    return FlagSpec(if (seed % 2 == 0) FlagShape.STRIPES_H else FlagShape.STRIPES_V, listOf(c1, c2, c3))
 }
-private fun flagPatternFor(cc: String): FlagPattern {
-    if (cc.isBlank()) return FlagPattern(listOf(AnanasFaint, AnanasMuted, AnanasFaint))
-    return flagPatterns[cc.uppercase()] ?: fallbackPatternFor(cc)
+private fun flagSpecFor(cc: String): FlagSpec {
+    if (cc.isBlank()) return FlagSpec(FlagShape.STRIPES_H, listOf(AnanasFaint, AnanasMuted, AnanasFaint))
+    return flagSpecs[cc.uppercase()] ?: fallbackSpecFor(cc)
 }
 
-// Square flag badge with rounded corners, real stripe pattern, and a glassy diagonal
-// highlight overlay (matches the "glass" look used in reference clients like Hiddify).
+// Square flag badge with rounded corners. Draws real flag geometry via Canvas
+// (crosses, unions, discs) instead of approximating every flag as flat stripes —
+// fixes flags that were structurally wrong before (Nordic cross flags, UK's Union
+// Jack) — plus a glassy diagonal highlight overlay matching the rest of the UI.
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val pattern = flagPatternFor(countryCode)
+    val spec = flagSpecFor(countryCode)
     val corner = size * 0.28f
     Box(
         modifier
@@ -213,17 +249,49 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
             .clip(RoundedCornerShape(corner))
             .background(Color(0xFF1A1A1E))
     ) {
-        // Stripes
-        if (pattern.horizontal) {
-            Column(Modifier.fillMaxSize()) {
-                pattern.colors.forEach { c ->
-                    Box(Modifier.weight(1f).fillMaxWidth().background(c))
+        Canvas(Modifier.fillMaxSize()) {
+            val w = this.size.width
+            val h = this.size.height
+            when (spec.shape) {
+                FlagShape.STRIPES_H -> {
+                    val bandH = h / spec.colors.size
+                    spec.colors.forEachIndexed { i, c ->
+                        drawRect(c, topLeft = Offset(0f, i * bandH), size = Size(w, bandH + 1f))
+                    }
                 }
-            }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                pattern.colors.forEach { c ->
-                    Box(Modifier.weight(1f).fillMaxHeight().background(c))
+                FlagShape.STRIPES_V -> {
+                    val bandW = w / spec.colors.size
+                    spec.colors.forEachIndexed { i, c ->
+                        drawRect(c, topLeft = Offset(i * bandW, 0f), size = Size(bandW + 1f, h))
+                    }
+                }
+                FlagShape.NORDIC_CROSS -> {
+                    drawRect(spec.bg, size = Size(w, h))
+                    val barThick = h * 0.24f
+                    val crossX = w * 0.38f
+                    drawRect(spec.fg, topLeft = Offset(crossX - barThick / 2f, 0f), size = Size(barThick, h))
+                    drawRect(spec.fg, topLeft = Offset(0f, h / 2f - barThick / 2f), size = Size(w, barThick))
+                }
+                FlagShape.UNION_JACK -> {
+                    drawRect(FDARKBLUE, size = Size(w, h))
+                    val diagW = h * 0.16f
+                    drawLine(FWHITE, Offset(0f, 0f), Offset(w, h), strokeWidth = diagW)
+                    drawLine(FWHITE, Offset(w, 0f), Offset(0f, h), strokeWidth = diagW)
+                    drawLine(FRED, Offset(0f, 0f), Offset(w, h), strokeWidth = diagW * 0.4f)
+                    drawLine(FRED, Offset(w, 0f), Offset(0f, h), strokeWidth = diagW * 0.4f)
+                    val crossThick = h * 0.30f
+                    drawRect(FWHITE, topLeft = Offset(w / 2f - crossThick / 2f, 0f), size = Size(crossThick, h))
+                    drawRect(FWHITE, topLeft = Offset(0f, h / 2f - crossThick / 2f), size = Size(w, crossThick))
+                    val redThick = h * 0.16f
+                    drawRect(FRED, topLeft = Offset(w / 2f - redThick / 2f, 0f), size = Size(redThick, h))
+                    drawRect(FRED, topLeft = Offset(0f, h / 2f - redThick / 2f), size = Size(w, redThick))
+                }
+                FlagShape.DISC_CENTER -> {
+                    drawRect(spec.bg, size = Size(w, h))
+                    drawCircle(spec.fg, radius = h * 0.28f, center = Offset(w / 2f, h / 2f))
+                }
+                FlagShape.SINGLE -> {
+                    drawRect(spec.bg, size = Size(w, h))
                 }
             }
         }
@@ -708,26 +776,21 @@ private fun VpnTab() {
                                 }
                             }
                             item(key = "stats") {
+                                val sessionTotal = if (connected) formatBytes(totalDownloadBytes + totalUploadBytes) else null
                                 Row(
-                                    Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+                                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 2.dp, bottom = 6.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    StatBox(Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent, Modifier.weight(1f))
-                                    StatBox(Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText, Modifier.weight(1f))
-                                }
-                            }
-                            if (connected) {
-                                item(key = "session-total") {
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            "Session: ${formatBytes(totalDownloadBytes)} ↓  ·  ${formatBytes(totalUploadBytes)} ↑",
-                                            fontSize = 11.5.sp, color = AnanasMuted
-                                        )
-                                    }
+                                    StatBox(
+                                        Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent,
+                                        sessionTotal = sessionTotal,
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    )
+                                    StatBox(
+                                        Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText,
+                                        sessionTotal = sessionTotal,
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    )
                                 }
                             }
                         }
@@ -1497,23 +1560,32 @@ private fun ProfileScreen(onBack: () -> Unit) {
     }
 }
 @Composable
-private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, modifier: Modifier) {
+private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, sessionTotal: String?, modifier: Modifier) {
     val (value, unit) = formatSpeed(kbps)
     Box(
         modifier.clip(RoundedCornerShape(16.dp)).background(AnanasCard)
             .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(14.dp)
     ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Icon(icon, null, tint = accentColor, modifier = Modifier.size(12.dp))
-                Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.3.sp)
+        Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(icon, null, tint = accentColor, modifier = Modifier.size(12.dp))
+                    Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.3.sp)
+                }
+                Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                    Spacer(Modifier.width(4.dp))
+                    Text(unit, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
+                }
             }
-            Spacer(Modifier.height(5.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                Spacer(Modifier.width(4.dp))
-                Text(unit, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
-            }
+            // Session total (download+upload combined) — shown identically in both
+            // cards so their layout/height always matches regardless of connection state.
+            Text(
+                if (sessionTotal != null) "Session: $sessionTotal" else " ",
+                fontSize = 10.sp, fontWeight = FontWeight.Medium, color = AnanasMuted,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 }

@@ -31,7 +31,26 @@ class GeoService {
      */
     private enum class Provider { IPWHOIS, IPNUMBERIA, IPAPI_CO }
 
-    fun lookupGeoInfo(ip: String, timeout: Float = 4.0f): GeoInfo {
+    /**
+     * Resolves the given host (which may already be an IP, or a domain name) to a
+     * plain IP string suitable for the geo-IP providers below. The provider APIs
+     * are documented and tested against raw IPs (e.g. ipwho.is/8.8.4.4) — passing a
+     * domain straight through was silently failing for configs whose server address
+     * is a hostname rather than an IP, which is why those showed a blank/gray flag.
+     */
+    private fun resolveToIp(host: String): String {
+        // Already an IPv4/IPv6 literal — nothing to resolve.
+        val isIpLiteral = host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(":")
+        if (isIpLiteral) return host
+        return try {
+            java.net.InetAddress.getByName(host).hostAddress ?: host
+        } catch (e: Exception) {
+            host
+        }
+    }
+
+    fun lookupGeoInfo(host: String, timeout: Float = 4.0f): GeoInfo {
+        val ip = resolveToIp(host)
         for (provider in Provider.values()) {
             try {
                 val info = when (provider) {
