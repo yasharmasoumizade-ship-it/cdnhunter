@@ -1634,7 +1634,7 @@ private fun SpeedSparkline(history: List<Float>, color: Color, modifier: Modifie
                 val p1 = points[i]
                 val midX = (p0.x + p1.x) / 2f
                 val midY = (p0.y + p1.y) / 2f
-                quadraticTo(p0.x, p0.y, midX, midY)
+                quadraticBezierTo(p0.x, p0.y, midX, midY)
             }
             lineTo(points.last().x, points.last().y)
         }
