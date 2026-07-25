@@ -192,6 +192,14 @@ object ConfigUriParser {
                 val realityOpts = linkedMapOf<String, Any>()
                 (params["pbk"] ?: "").takeIf { it.isNotBlank() }?.let { realityOpts["public-key"] = it }
                 (params["sid"] ?: "").let { realityOpts["short-id"] = it } // mihomo accepts empty short-id
+                // Needed against newer Xray-core servers (v26.7.11+), which made
+                // the post-quantum X25519MLKEM768 key exchange mandatory for
+                // REALITY. mihomo does not negotiate this automatically -- without
+                // this flag, every handshake against such a server fails with
+                // "REALITY authentication failed" even though public-key/short-id
+                // are correct. Safe to always set: mihomo falls back to classic
+                // X25519 against older servers that don't support it.
+                realityOpts["support-x25519mlkem768"] = true
                 if (realityOpts.isNotEmpty()) p["reality-opts"] = realityOpts
                 // Note: "spx" (REALITY spider-x path) has no mihomo equivalent field
                 // and is silently dropped -- it only affects what a passive prober
