@@ -365,6 +365,11 @@ private fun formatSpeed(kbps: Double): Pair<String, String> =
     if (kbps >= 1024.0) "%.1f".format(kbps / 1024.0) to "MB/s"
     else "%.0f".format(kbps) to "KB/s"
 
+private fun formatBytes(bytes: Long): String {
+    val mb = bytes / 1024.0 / 1024.0
+    return if (mb >= 1024.0) "%.2f GB".format(mb / 1024.0) else "%.1f MB".format(mb)
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -378,7 +383,7 @@ fun AppScreen() {
 }
 
 // ── ANANAS navigation (Home ⇄ Locations / My Configs / Settings / Profile) ─────
-private enum class AnanasScreen { HOME, LOCATIONS, MY_CONFIGS, SETTINGS, PROFILE }
+private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE }
 
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -423,6 +428,12 @@ private fun VpnTab() {
     var elapsedSec        by remember { mutableStateOf(0L) }
     var downloadKBps      by remember { mutableStateOf(0.0) }
     var uploadKBps        by remember { mutableStateOf(0.0) }
+    // Cumulative bytes for the whole session — from the moment this connection
+    // came up until it's disconnected, like NPV's usage counter. mihomo's own
+    // statistic.DefaultManager totals reset to 0 on every fresh Start(), so
+    // these track exactly one connection's lifetime, not an all-time total.
+    var totalDownloadBytes by remember { mutableStateOf(0L) }
+    var totalUploadBytes   by remember { mutableStateOf(0L) }
 
     val geoService = remember { GeoService() }
 
@@ -465,9 +476,12 @@ private fun VpnTab() {
                 val curUp   = CdnVpnService.uploadBytes
                 downloadKBps = (curDown - lastDown).coerceAtLeast(0L) / 1024.0
                 uploadKBps   = (curUp - lastUp).coerceAtLeast(0L) / 1024.0
+                totalDownloadBytes = curDown
+                totalUploadBytes   = curUp
                 lastDown = curDown; lastUp = curUp
             } else {
                 connectedSinceMs = 0L; elapsedSec = 0L; downloadKBps = 0.0; uploadKBps = 0.0
+                totalDownloadBytes = 0L; totalUploadBytes = 0L
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
             }
 
@@ -628,7 +642,7 @@ private fun VpnTab() {
                                 Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
                                 Text(
                                     "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
-                                    modifier = Modifier.clickable { screen = AnanasScreen.MY_CONFIGS }
+                                    modifier = Modifier.clickable { screen = AnanasScreen.LOCATIONS }
                                 )
                             }
                             otherConfigs.forEachIndexed { idx, cfg ->
@@ -694,6 +708,20 @@ private fun VpnTab() {
                                     StatBox(Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText, Modifier.weight(1f))
                                 }
                             }
+                            if (connected) {
+                                item(key = "session-total") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "Session: ${formatBytes(totalDownloadBytes)} ↓  ·  ${formatBytes(totalUploadBytes)} ↑",
+                                            fontSize = 11.5.sp, color = AnanasMuted
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -709,24 +737,11 @@ private fun VpnTab() {
         }
     }
 
-    AnanasScreen.MY_CONFIGS -> MyConfigsScreen(
-        configs = configs, activeId = activeId, connected = connected,
-        onBack = { screen = AnanasScreen.HOME },
-        onConnect = { connectConfig(it) },
-        onCopy = { cfg ->
-            clip.setText(AnnotatedString(cfg.uri))
-            android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
-        },
-        onManualAdd = {},
-        onScanQr = ::startQrScan,
-        onClipboardAdd = ::addFromClipboard,
-        onDelete = { deleteConfig(it) }
-    )
-
     AnanasScreen.LOCATIONS -> LocationsScreen(
         configs = configs, activeId = activeId, connected = connected,
         onBack = { screen = AnanasScreen.HOME },
         onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
+        onDelete = { deleteConfig(it) },
     )
 
     AnanasScreen.SETTINGS -> SettingsScreen(
@@ -1086,68 +1101,11 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
     }
 }
 
-// ── My Configs — full functional list screen ────────────────────────────────────
-@Composable
-private fun MyConfigsScreen(
-    configs: List<SavedConfig>, activeId: String, connected: Boolean,
-    onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onCopy: (SavedConfig) -> Unit,
-    onManualAdd: () -> Unit, onScanQr: () -> Unit, onClipboardAdd: () -> Unit,
-    onDelete: (SavedConfig) -> Unit,
-) {
-    var qrConfig by remember { mutableStateOf<SavedConfig?>(null) }
-    var showAddMenu by remember { mutableStateOf(false) }
-
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
-                    Column {
-                        Text("My configs", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
-                        val activeCount = if (configs.any { it.id == activeId } && connected) 1 else 0
-                        Text("${configs.size} configs · $activeCount active", fontSize = 11.5.sp, color = AnanasMuted)
-                    }
-                }
-            }
-
-            if (configs.isEmpty()) {
-                EmptyHomeState { showAddMenu = true }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
-                    items(configs, key = { it.id }) { cfg ->
-                        val isActive = cfg.id == activeId
-                        ServerRow(
-                            cfg = cfg, isActive = isActive, connected = connected && isActive,
-                            onClick = { onConnect(cfg) }, onCopy = { onCopy(cfg) },
-                            onShowQr = { qrConfig = cfg }
-                        )
-                    }
-                }
-            }
-        }
-
-        Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-            AddConfigFabMenu(
-                expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
-                onScanQr = onScanQr, onClipboard = onClipboardAdd, onManual = onManualAdd
-            )
-        }
-    }
-
-    qrConfig?.let { cfg ->
-        QrCodeDialog(cfg = cfg, onDismiss = { qrConfig = null })
-    }
-}
-
 // ── Locations — visual reference screen (static demo data, wired later) ────────
 @Composable
 private fun LocationsScreen(
     configs: List<SavedConfig>, activeId: String, connected: Boolean,
-    onBack: () -> Unit, onConnect: (SavedConfig) -> Unit,
+    onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     val filtered = remember(configs, query) {
@@ -1234,6 +1192,10 @@ private fun LocationsScreen(
                                 } else if (cfg.pingMs >= 0) {
                                     Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
                                 }
+                                Icon(
+                                    Icons.Rounded.DeleteOutline, null, tint = AnanasFaint,
+                                    modifier = Modifier.size(18.dp).clickable { onDelete(cfg) }
+                                )
                                 Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
                             }
                         }
