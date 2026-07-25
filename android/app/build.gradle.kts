@@ -118,6 +118,7 @@ dependencies {
     
     // Coil image loading
     implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-svg:2.5.0")
 
     // QR code generation + scanning (config sharing, v2rayNG-style)
     implementation("com.google.zxing:core:3.5.3")
