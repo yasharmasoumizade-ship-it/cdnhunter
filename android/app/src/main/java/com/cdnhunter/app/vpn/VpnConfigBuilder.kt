@@ -51,8 +51,20 @@ object VpnConfigBuilder {
                 "enhanced-mode" to "fake-ip",
                 "fake-ip-range" to "198.18.0.1/16",
                 "fake-ip-filter" to listOf("*.lan", "localhost.ptlogin2.qq.com"),
+                // default-nameserver stays plain IP (bootstrap only, used if a
+                // nameserver entry below were ever a hostname instead of an IP).
                 "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
-                "nameserver" to listOf("1.1.1.1", "8.8.8.8"),
+                // Plain UDP:53 to 1.1.1.1/8.8.8.8 is exactly what an ISP-level
+                // censor intercepts and poisons -- e.g. facebook/google domains
+                // coming back with a bogus sinkhole IP even though mihomo itself
+                // reports no error. mihomo's own DNS client dials these directly
+                // over the protected (non-tunneled) socket, same as any other
+                // outbound, so plain UDP here is fully exposed to that tampering
+                // regardless of which proxy the actual traffic uses afterward.
+                // DoH (by IP, so no extra hostname lookup is needed to bootstrap
+                // it) is TLS-wrapped end to end and can't be selectively poisoned
+                // the same way.
+                "nameserver" to listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"),
             ),
             // Wire mihomo directly to the TUN device Android already created via
             // VpnService.Builder.establish(). Without this block mihomo only opened
