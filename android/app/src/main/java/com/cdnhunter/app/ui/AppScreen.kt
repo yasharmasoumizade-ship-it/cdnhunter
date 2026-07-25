@@ -246,11 +246,6 @@ private fun flagSpecFor(cc: String): FlagSpec {
     return flagSpecs[cc.uppercase()] ?: fallbackSpecFor(cc)
 }
 
-// Square flag badge with rounded corners. Draws real flag geometry via Canvas
-// (crosses, unions, discs) instead of approximating every flag as flat stripes —
-// fixes flags that were structurally wrong before (Nordic cross flags, UK's Union
-// Jack) — plus a glassy diagonal highlight overlay matching the rest of the UI.
-@Composable
 // Real circle-flags SVGs (github.com/HatScripts/circle-flags, MIT — same source
 // Hiddify uses via its circle_flags package) bundled under assets/flags/{cc}.svg.
 // Rendered through Coil's SVG decoder instead of hand-drawn Canvas shapes.
