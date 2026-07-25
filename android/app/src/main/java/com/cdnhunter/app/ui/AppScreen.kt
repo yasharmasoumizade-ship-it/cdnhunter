@@ -551,7 +551,6 @@ private fun VpnTab() {
         )
     )
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
-    var fragmentEnabled by remember { mutableStateOf(vpnPrefs.getBoolean("fragment_enabled", true)) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
     var elapsedSec        by remember { mutableStateOf(0L) }
@@ -898,11 +897,6 @@ private fun VpnTab() {
     }
 
     AnanasScreen.SETTINGS -> SettingsScreen(
-        fragmentEnabled = fragmentEnabled,
-        onFragmentChange = {
-            fragmentEnabled = it
-            vpnPrefs.edit().putBoolean("fragment_enabled", it).apply()
-        },
         onProfileClick = { screen = AnanasScreen.PROFILE },
         onBack = { screen = AnanasScreen.HOME }
     )
@@ -1412,11 +1406,16 @@ private fun LocationsScreen(
 // ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
 @Composable
 private fun SettingsScreen(
-    fragmentEnabled: Boolean, onFragmentChange: (Boolean) -> Unit,
     onProfileClick: () -> Unit = {}, onBack: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
     var autoReconnect by remember { mutableStateOf(true) }
-    var killSwitch by remember { mutableStateOf(false) }
+    // Backed by the same "kill_switch_enabled" key CdnVpnService reads
+    // (isKillSwitchEnabled()) before deciding whether to hold a dead TUN up
+    // after an unexpected disconnect -- this toggle is now the actual, live
+    // switch for that behavior, not a decorative local-only state.
+    var killSwitch by remember { mutableStateOf(vpnPrefs.getBoolean("kill_switch_enabled", false)) }
 
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -1464,18 +1463,16 @@ private fun SettingsScreen(
                 SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
-                    Icons.Rounded.Security, "TLS fragmentation", "Bypass deep packet inspection",
-                    fragmentEnabled, onFragmentChange
-                )
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                SettingsToggleRow(
                     Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
                     autoReconnect, { autoReconnect = it }
                 )
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
-                    Icons.Rounded.Lock, "Kill switch", "Block traffic if VPN disconnects",
-                    killSwitch, { killSwitch = it }
+                    Icons.Rounded.Lock, "Kill switch", "Block traffic if VPN disconnects unexpectedly",
+                    killSwitch, {
+                        killSwitch = it
+                        vpnPrefs.edit().putBoolean("kill_switch_enabled", it).apply()
+                    }
                 )
             }
 
@@ -1492,7 +1489,6 @@ private fun SettingsScreen(
                 SettingsRow(Icons.Rounded.Language, "Language", "English", AnanasMuted, showChevron = true)
             }
 
-            val context = LocalContext.current
             val clip = LocalClipboardManager.current
 
             Spacer(Modifier.height(26.dp))
