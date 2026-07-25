@@ -10,14 +10,10 @@
 package mobile
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/metacubex/mihomo/config"
 	"github.com/metacubex/mihomo/hub/executor"
@@ -26,16 +22,12 @@ import (
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 var (
 	mu      sync.Mutex
 	running bool
-
-	trafficMu   sync.Mutex
-	lastUp      int64
-	lastDown    int64
-	controller  string // external-controller address, e.g. "127.0.0.1:10809"
 
 	protectorMu sync.Mutex
 	protector   Protector
@@ -217,23 +209,9 @@ func Start(configYaml string, homeDir string) string {
 	executor.ApplyConfig(cfg, true)
 	running = true
 
-	trafficMu.Lock()
-	// The YAML this app generates always sets external-controller to this
-	// fixed local address (see VpnConfigBuilder.kt) — hardcoding it here
-	// avoids depending on the exact shape of config.Config's General struct,
-	// which can change across mihomo versions.
-	controller = "127.0.0.1:10809"
-	lastUp, lastDown = 0, 0
-	trafficMu.Unlock()
-
 	protectLogMu.Lock()
 	protectLogBuf = nil
 	protectLogMu.Unlock()
-
-	// The traffic stream on /traffic starts emitting immediately once the
-	// controller is up; give the listener a brief moment to bind before the
-	// Kotlin side starts polling TrafficUp/TrafficDown.
-	go pollTraffic()
 
 	return ""
 }
@@ -280,9 +258,6 @@ func Stop() {
 	listener.ReCreateTun(LC.Tun{}, nil)
 
 	running = false
-	trafficMu.Lock()
-	controller = ""
-	trafficMu.Unlock()
 }
 
 // IsRunning reports whether the kernel is currently active.
@@ -292,75 +267,19 @@ func IsRunning() bool {
 	return running
 }
 
-// pollTraffic reads mihomo's own streaming /traffic endpoint (newline-delimited
-// JSON objects: {"up":N,"down":N} in bytes-per-second) and keeps the latest
-// cumulative totals in lastUp/lastDown. Runs for the lifetime of one Start()
-// call; exits on its own once the controller stops responding (i.e. Stop()
-// was called or the process is tearing down).
-func pollTraffic() {
-	trafficMu.Lock()
-	addr := controller
-	trafficMu.Unlock()
-	if addr == "" {
-		return
-	}
-
-	client := &http.Client{Timeout: 0}
-	var resp *http.Response
-	var err error
-	for i := 0; i < 10; i++ {
-		resp, err = client.Get("http://" + addr + "/traffic")
-		if err == nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	var cumUp, cumDown int64
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		trafficMu.Lock()
-		stillRunning := running
-		trafficMu.Unlock()
-		if !stillRunning {
-			return
-		}
-
-		var sample struct {
-			Up   int64 `json:"up"`
-			Down int64 `json:"down"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &sample); err != nil {
-			continue
-		}
-		// mihomo's /traffic reports bytes-in-the-last-second, not a running
-		// total, so accumulate it ourselves for the UI's cumulative counters.
-		cumUp += sample.Up
-		cumDown += sample.Down
-
-		trafficMu.Lock()
-		lastUp = cumUp
-		lastDown = cumDown
-		trafficMu.Unlock()
-
-		time.Sleep(0) // yield; scanner.Scan() already blocks until the next line
-	}
-}
-
-// TrafficUp/TrafficDown return cumulative bytes sent/received since Start,
-// polled by the Kotlin side for the live speed counters on the home screen.
+// TrafficUp/TrafficDown return cumulative bytes sent/received since the
+// kernel started (mihomo's own running totals — resets to 0 every time a
+// fresh Start() rebuilds statistic.DefaultManager's counters), polled by
+// the Kotlin side once a second for the home screen's live counters and
+// session total. No goroutine or HTTP round-trip needed: this reads the
+// same in-process atomic counters mihomo's own /traffic endpoint reports,
+// directly.
 func TrafficUp() int64 {
-	trafficMu.Lock()
-	defer trafficMu.Unlock()
-	return lastUp
+	up, _ := statistic.DefaultManager.Total()
+	return up
 }
 
 func TrafficDown() int64 {
-	trafficMu.Lock()
-	defer trafficMu.Unlock()
-	return lastDown
+	_, down := statistic.DefaultManager.Total()
+	return down
 }
