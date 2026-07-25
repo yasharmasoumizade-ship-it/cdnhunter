@@ -237,6 +237,7 @@ class CdnVpnService : VpnService() {
                             exitCountryCode = info.cc
                             exitCity = info.city
                             exitGeoConfigId = configId
+                            persistAccurateGeo(configId, info.cc, info.city)
                         }
                     } catch (_: Exception) {
                         // Leave exitCountryCode blank — UI falls back to the
@@ -273,6 +274,39 @@ class CdnVpnService : VpnService() {
     private fun stopVpn() {
         job?.cancel()
         stopVpnInternal()
+    }
+
+    // Writes the tunnel-verified (accurate) country/city for one saved config
+    // straight into the same SharedPreferences record AppScreen's
+    // loadConfigs/saveConfigs read and write (key "saved_configs", one line
+    // per config: "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved").
+    // Without this, the accurate result only ever lived in the in-memory
+    // exitCountryCode/exitCity vars above — gone the moment the app restarts,
+    // so the next app-open flag went right back to the pre-connect (on-device,
+    // sometimes CDN-edge-instead-of-real-server) estimate. This makes the
+    // accurate one stick, so future app opens show it immediately without
+    // waiting to reconnect.
+    private fun persistAccurateGeo(configId: String, cc: String, city: String) {
+        try {
+            val prefs = getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE)
+            val sep = "\u0001"
+            val raw = prefs.getString("saved_configs", "") ?: return
+            if (raw.isBlank()) return
+            var changed = false
+            val updated = raw.split("\n").map { line ->
+                val parts = line.split(sep)
+                val uri = parts.getOrNull(0)?.trim().orEmpty()
+                if (uri.isBlank() || uri.hashCode().toString() != configId) return@map line
+                changed = true
+                val pingMs = parts.getOrNull(3) ?: "-1"
+                listOf(uri, cc, city, pingMs, "1").joinToString(sep)
+            }
+            if (changed) {
+                prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CdnVpnService", "persistAccurateGeo failed: ${e.message}")
+        }
     }
 
     // Actual teardown, shared by the external-stop path (stopVpn) and the
