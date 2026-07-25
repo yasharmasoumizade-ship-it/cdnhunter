@@ -24,6 +24,45 @@ object VpnConfigBuilder {
         return renderYaml(proxy, tunFd)
     }
 
+    /**
+     * A minimal mihomo config for headless geo-probing: only a mixed-port +
+     * the one proxy, no "tun" block at all. mihomo defaults tun.enable to
+     * false when the key is absent, so this never touches VpnService/TUN —
+     * no VPN permission prompt, doesn't interfere with an actually-connected
+     * tunnel (as long as the caller checks MihomoBridge.isRunning() first;
+     * the mihomo core itself is a process-wide singleton, so this must never
+     * run while a real connection is active). Uses different mixed-port /
+     * external-controller values than the real VPN config so a lingering
+     * probe process can never collide with it.
+     */
+    fun buildProbeConfigFromUri(uri: String): String {
+        val proxy = ConfigUriParser.parseToProxy(uri) ?: defaultProxy()
+        proxy["name"] = "proxy"
+        val root = linkedMapOf<String, Any>(
+            "mixed-port" to PROBE_MIXED_PORT,
+            "external-controller" to "127.0.0.1:$PROBE_CONTROLLER_PORT",
+            "allow-lan" to false,
+            "mode" to "rule",
+            "log-level" to "warning",
+            "ipv6" to false,
+            "proxies" to listOf(proxy),
+            "proxy-groups" to listOf(
+                linkedMapOf(
+                    "name" to "PROXY",
+                    "type" to "select",
+                    "proxies" to listOf("proxy"),
+                )
+            ),
+            "rules" to listOf("MATCH,PROXY"),
+        )
+        val sb = StringBuilder()
+        writeYamlValue(sb, root, 0)
+        return sb.toString()
+    }
+
+    const val PROBE_MIXED_PORT = 10810
+    const val PROBE_CONTROLLER_PORT = 10811
+
     private fun defaultProxy(): LinkedHashMap<String, Any> =
         linkedMapOf("name" to "proxy", "type" to "direct")
 
