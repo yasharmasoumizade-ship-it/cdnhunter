@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -509,6 +511,11 @@ private fun VpnTab() {
     // these track exactly one connection's lifetime, not an all-time total.
     var totalDownloadBytes by remember { mutableStateOf(0L) }
     var totalUploadBytes   by remember { mutableStateOf(0L) }
+    // Rolling history of recent speed samples (KB/s), used to draw the live
+    // sparkline chart inside each stat card. Capped so it never grows unbounded.
+    val downloadHistory = remember { mutableStateListOf<Float>() }
+    val uploadHistory = remember { mutableStateListOf<Float>() }
+    val maxHistoryPoints = 40
 
     val geoService = remember { GeoService() }
 
@@ -555,9 +562,15 @@ private fun VpnTab() {
                 totalDownloadBytes = curDown
                 totalUploadBytes   = curUp
                 lastDown = curDown; lastUp = curUp
+
+                downloadHistory.add(downloadKBps.toFloat())
+                if (downloadHistory.size > maxHistoryPoints) downloadHistory.removeAt(0)
+                uploadHistory.add(uploadKBps.toFloat())
+                if (uploadHistory.size > maxHistoryPoints) uploadHistory.removeAt(0)
             } else {
                 connectedSinceMs = 0L; elapsedSec = 0L; downloadKBps = 0.0; uploadKBps = 0.0
                 totalDownloadBytes = 0L; totalUploadBytes = 0L
+                downloadHistory.clear(); uploadHistory.clear()
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
             }
 
@@ -782,13 +795,13 @@ private fun VpnTab() {
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     StatBox(
-                                        Icons.Rounded.ArrowDownward, "DOWNLOAD", downloadKBps, AnanasAccent,
-                                        sessionTotal = sessionTotal,
+                                        Icons.Rounded.ArrowDownward, "DOWNLOAD", AnanasAccent,
+                                        sessionTotal = sessionTotal, history = downloadHistory,
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
                                     StatBox(
-                                        Icons.Rounded.ArrowUpward, "UPLOAD", uploadKBps, AnanasText,
-                                        sessionTotal = sessionTotal,
+                                        Icons.Rounded.ArrowUpward, "UPLOAD", AnanasText,
+                                        sessionTotal = sessionTotal, history = uploadHistory,
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
                                 }
@@ -1560,8 +1573,7 @@ private fun ProfileScreen(onBack: () -> Unit) {
     }
 }
 @Composable
-private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor: Color, sessionTotal: String?, modifier: Modifier) {
-    val (value, unit) = formatSpeed(kbps)
+private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessionTotal: String?, history: List<Float>, modifier: Modifier) {
     Box(
         modifier.clip(RoundedCornerShape(16.dp)).background(AnanasCard)
             .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(14.dp)
@@ -1573,20 +1585,79 @@ private fun StatBox(icon: ImageVector, label: String, kbps: Double, accentColor:
                     Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.3.sp)
                 }
                 Spacer(Modifier.height(5.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                    Spacer(Modifier.width(4.dp))
-                    Text(unit, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AnanasMuted)
-                }
+                Text(
+                    sessionTotal ?: "0 B",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi
+                )
             }
-            // Session total (download+upload combined) — shown identically in both
-            // cards so their layout/height always matches regardless of connection state.
-            Text(
-                if (sessionTotal != null) "Session: $sessionTotal" else " ",
-                fontSize = 10.sp, fontWeight = FontWeight.Medium, color = AnanasMuted,
-                modifier = Modifier.padding(top = 8.dp)
+            // Live sparkline: recent speed history as a smooth gradient-filled line,
+            // like Psiphon's connection graph. Height stays fixed regardless of
+            // history size so the card layout never shifts.
+            SpeedSparkline(
+                history = history, color = accentColor,
+                modifier = Modifier.fillMaxWidth().height(32.dp).padding(top = 8.dp)
             )
         }
+    }
+}
+
+// Smooth sparkline: a gradient-filled area under a curved line through the recent
+// speed samples. Auto-scales to the current data's own max so small and large
+// transfers both look proportionate rather than flat or clipped.
+@Composable
+private fun SpeedSparkline(history: List<Float>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        if (history.size < 2) {
+            // Flat baseline while there's not enough data yet — still looks intentional.
+            drawLine(
+                color.copy(alpha = 0.25f),
+                Offset(0f, h - 1f), Offset(w, h - 1f),
+                strokeWidth = 2f
+            )
+            return@Canvas
+        }
+        val maxVal = (history.maxOrNull() ?: 1f).coerceAtLeast(1f)
+        val stepX = w / (history.size - 1).toFloat()
+        val points = history.mapIndexed { i, v ->
+            val x = i * stepX
+            val y = h - (v / maxVal) * (h * 0.85f) - h * 0.05f
+            Offset(x, y)
+        }
+
+        // Smooth path through the points using quadratic mid-point interpolation.
+        val linePath = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            for (i in 1 until points.size) {
+                val p0 = points[i - 1]
+                val p1 = points[i]
+                val midX = (p0.x + p1.x) / 2f
+                val midY = (p0.y + p1.y) / 2f
+                quadraticTo(p0.x, p0.y, midX, midY)
+            }
+            lineTo(points.last().x, points.last().y)
+        }
+
+        val fillPath = Path().apply {
+            addPath(linePath)
+            lineTo(points.last().x, h)
+            lineTo(points.first().x, h)
+            close()
+        }
+
+        drawPath(
+            fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(color.copy(alpha = 0.32f), color.copy(alpha = 0.0f)),
+                startY = 0f, endY = h
+            )
+        )
+        drawPath(
+            linePath,
+            color = color.copy(alpha = 0.9f),
+            style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
     }
 }
 
