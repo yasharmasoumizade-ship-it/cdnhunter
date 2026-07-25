@@ -214,7 +214,7 @@ class CdnVpnService : VpnService() {
                         if (!retryStarted) {
                             lastError = "mihomo failed to start (retry): ${MihomoBridge.lastError}"
                             debugLog += "\nFAILED on retry: ${MihomoBridge.lastError}"
-                            stopVpnInternal()
+                            stopVpnInternal(keepTunAlive = false)
                             return@launch
                         }
                         debugLog += "\nmihomo restarted OK with support-x25519mlkem768"
