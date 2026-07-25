@@ -789,19 +789,20 @@ private fun VpnTab() {
                                 }
                             }
                             item(key = "stats") {
-                                val sessionTotal = if (connected) formatBytes(totalDownloadBytes + totalUploadBytes) else null
+                                val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
+                                val uploadTotal = if (connected) formatBytes(totalUploadBytes) else null
                                 Row(
                                     Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 2.dp, bottom = 6.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     StatBox(
                                         Icons.Rounded.ArrowDownward, "DOWNLOAD", AnanasAccent,
-                                        sessionTotal = sessionTotal, history = downloadHistory,
+                                        sessionTotal = downloadTotal, history = downloadHistory,
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
                                     StatBox(
                                         Icons.Rounded.ArrowUpward, "UPLOAD", AnanasText,
-                                        sessionTotal = sessionTotal, history = uploadHistory,
+                                        sessionTotal = uploadTotal, history = uploadHistory,
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
                                 }
