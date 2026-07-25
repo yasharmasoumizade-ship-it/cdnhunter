@@ -125,12 +125,18 @@ data class SavedConfig(
     val geoResolved: Boolean = false,
 )
 
-// Measures round-trip time of a raw TCP connect to the server's host:port.
+// Measures round-trip time of a raw TCP connect to the server's host:port. DNS
+// resolution happens first and is NOT included in the timed window -- v2rayNG
+// and other clients report the connect RTT to the resolved server IP itself,
+// not "however long the whole lookup+connect took", so timing from before
+// resolution would report inflated numbers that don't match what other apps
+// show for the same server.
 private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
     return try {
+        val addr = java.net.InetAddress.getByName(host)
         val started = System.currentTimeMillis()
         java.net.Socket().use { socket ->
-            socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
+            socket.connect(java.net.InetSocketAddress(addr, port), timeoutMs)
         }
         (System.currentTimeMillis() - started).toInt()
     } catch (e: Exception) {
@@ -139,14 +145,17 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
 }
 
 // Resolves country/city + ping for a single config. Runs on IO dispatcher.
-// Always resolves the country from a real IP-based geo lookup (this is what Hiddify
-// actually does) — a flag emoji in the config's remark is just a label the server
-// owner typed in and can be wrong or stale, so it's never used as the source of
-// truth for the server's actual location.
+// Geo is looked up against cfg.sni (the TLS SNI / real destination host) when
+// present, falling back to cfg.address only if there's no sni. address is
+// often just the tunnel/CDN entry point the client connects to -- for
+// reality/ECH/domain-fronted configs the actual backend server is identified
+// by SNI, and geo-IP on the front address would report the tunnel hop's
+// country instead of the real server's.
 private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val ping = measurePingMs(cfg.address, cfg.port)
-        val info = try { geo.lookupGeoInfo(cfg.address) } catch (e: Exception) { null }
+        val geoTarget = cfg.sni.ifBlank { cfg.address }
+        val info = try { geo.lookupGeoInfo(geoTarget) } catch (e: Exception) { null }
         cfg.copy(
             pingMs = ping,
             // Fall back to the emoji-derived code only if the real lookup fails entirely.
@@ -341,6 +350,36 @@ private fun pingQualityLabel(ms: Int): String = when {
     ms < 80   -> "Low load"
     ms < 180  -> "Medium load"
     else      -> "High load"
+}
+
+// 0 filled/gray = no ping response, 1 filled/red = high load, 2 filled/amber =
+// medium load, 3 filled/green = low load -- same tiers as pingQualityLabel.
+@Composable
+private fun PingBars(pingMs: Int, modifier: Modifier = Modifier, barWidth: Dp = 3.dp, gap: Dp = 2.dp) {
+    val filled = when {
+        pingMs < 0   -> 0
+        pingMs < 80  -> 3
+        pingMs < 180 -> 2
+        else         -> 1
+    }
+    val color = when {
+        pingMs < 0   -> AnanasFaint
+        filled == 3  -> AnanasAccent
+        filled == 2  -> AnanasAmber
+        else         -> AnanasRed
+    }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Bottom) {
+        val heights = listOf(6.dp, 10.dp, 14.dp)
+        for (i in 0 until 3) {
+            Box(
+                Modifier
+                    .width(barWidth)
+                    .height(heights[i])
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (i < filled) color else AnanasFaint.copy(alpha = 0.4f))
+            )
+        }
+    }
 }
 
 private val countryNames = mapOf(
@@ -1001,7 +1040,10 @@ private fun ServerRow(
                             }
                         } else {
                             val sub = if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}" else "Tap to connect"
-                            Text(sub, fontSize = 11.5.sp, fontWeight = FontWeight.Normal, color = AnanasMuted)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(sub, fontSize = 11.5.sp, fontWeight = FontWeight.Normal, color = AnanasMuted)
+                                if (cfg.geoResolved) PingBars(cfg.pingMs)
+                            }
                         }
                     }
                 }
@@ -1259,7 +1301,10 @@ private fun LocationsScreen(
                                 } else if (cfg.id == activeId) {
                                     Icon(Icons.Rounded.Check, null, tint = AnanasAccent, modifier = Modifier.size(16.dp))
                                 } else if (cfg.pingMs >= 0) {
-                                    Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
+                                        PingBars(cfg.pingMs)
+                                    }
                                 }
                                 Icon(
                                     Icons.Rounded.DeleteOutline, null, tint = AnanasFaint,
