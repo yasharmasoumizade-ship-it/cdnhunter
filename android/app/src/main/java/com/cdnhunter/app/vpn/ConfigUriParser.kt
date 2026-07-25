@@ -192,6 +192,7 @@ object ConfigUriParser {
                 val realityOpts = linkedMapOf<String, Any>()
                 (params["pbk"] ?: "").takeIf { it.isNotBlank() }?.let { realityOpts["public-key"] = it }
                 (params["sid"] ?: "").let { realityOpts["short-id"] = it } // mihomo accepts empty short-id
+                realityOpts["support-x25519mlkem768"] = true
                 if (realityOpts.isNotEmpty()) p["reality-opts"] = realityOpts
                 // Note: "spx" (REALITY spider-x path) has no mihomo equivalent field
                 // and is silently dropped -- it only affects what a passive prober
