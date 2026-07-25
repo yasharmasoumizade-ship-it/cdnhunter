@@ -12,12 +12,13 @@ import java.net.URLDecoder
  */
 object ConfigUriParser {
 
-    /** Returns a LinkedHashMap ready to be YAML-serialized as one `proxies:` entry, or null. */
-    fun parseToProxy(uri: String): LinkedHashMap<String, Any>? {
+    /** Returns a LinkedHashMap ready to be YAML-serialized as one `proxies:` entry, or null.
+     *  forceX25519Mlkem768: only meaningful for reality proxies — see applyTransport(). */
+    fun parseToProxy(uri: String, forceX25519Mlkem768: Boolean = false): LinkedHashMap<String, Any>? {
         val trimmed = uri.trim()
         return when {
             trimmed.startsWith("trojan://") -> parseTrojan(trimmed)
-            trimmed.startsWith("vless://") -> parseVless(trimmed)
+            trimmed.startsWith("vless://") -> parseVless(trimmed, forceX25519Mlkem768)
             trimmed.startsWith("vmess://") -> parseVmess(trimmed)
             trimmed.startsWith("ss://") -> parseShadowsocks(trimmed)
             else -> null
@@ -49,7 +50,7 @@ object ConfigUriParser {
         return p
     }
 
-    private fun parseVless(uri: String): LinkedHashMap<String, Any> {
+    private fun parseVless(uri: String, forceX25519Mlkem768: Boolean = false): LinkedHashMap<String, Any> {
         val body = uri.removePrefix("vless://")
         val uuid = body.substringBefore("@")
         val rest = body.substringAfter("@").substringBefore("#")
@@ -69,7 +70,7 @@ object ConfigUriParser {
         )
         val flow = params["flow"] ?: ""
         if (flow.isNotBlank()) p["flow"] = flow
-        applyTransport(p, params)
+        applyTransport(p, params, forceX25519Mlkem768)
         return p
     }
 
@@ -156,8 +157,16 @@ object ConfigUriParser {
         return str
     }
 
-    /** Applies TLS/REALITY + transport (ws/grpc/h2/tcp) settings directly onto the flat proxy map. */
-    private fun applyTransport(p: LinkedHashMap<String, Any>, params: Map<String, String>) {
+    /** Applies TLS/REALITY + transport (ws/grpc/h2/tcp) settings directly onto the flat proxy map.
+     *  forceX25519Mlkem768: whether to set reality-opts.support-x25519mlkem768 for a
+     *  "reality" security block. This can't be a fixed value — some Xray-core server
+     *  versions (v26.7.11+) require it, but forcing it on against a server that doesn't
+     *  expect the post-quantum ClientHello computes a mismatched shared secret and fails
+     *  auth outright (REALITY's handshake is a strict binary match, not a soft TLS
+     *  negotiation with a graceful fallback). The caller (CdnVpnService) tries false
+     *  first and retries with true only if the first attempt's coreLog shows
+     *  "REALITY authentication failed". */
+    private fun applyTransport(p: LinkedHashMap<String, Any>, params: Map<String, String>, forceX25519Mlkem768: Boolean = false) {
         val network = params["type"] ?: "tcp"
         val security = params["security"] ?: ""
 
@@ -192,7 +201,7 @@ object ConfigUriParser {
                 val realityOpts = linkedMapOf<String, Any>()
                 (params["pbk"] ?: "").takeIf { it.isNotBlank() }?.let { realityOpts["public-key"] = it }
                 (params["sid"] ?: "").let { realityOpts["short-id"] = it } // mihomo accepts empty short-id
-                realityOpts["support-x25519mlkem768"] = true
+                if (forceX25519Mlkem768) realityOpts["support-x25519mlkem768"] = true
                 if (realityOpts.isNotEmpty()) p["reality-opts"] = realityOpts
                 // Note: "spx" (REALITY spider-x path) has no mihomo equivalent field
                 // and is silently dropped -- it only affects what a passive prober
