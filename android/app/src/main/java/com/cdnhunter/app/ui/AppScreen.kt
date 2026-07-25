@@ -492,6 +492,9 @@ private fun VpnTab() {
     // these track exactly one connection's lifetime, not an all-time total.
     var totalDownloadBytes by remember { mutableStateOf(0L) }
     var totalUploadBytes   by remember { mutableStateOf(0L) }
+    var exitCountryCode by remember { mutableStateOf("") }
+    var exitCity by remember { mutableStateOf("") }
+    var exitGeoConfigId by remember { mutableStateOf("") }
     // Rolling history of recent speed samples (KB/s), used to draw the live
     // sparkline chart inside each stat card. Capped so it never grows unbounded.
     val downloadHistory = remember { mutableStateListOf<Float>() }
@@ -548,11 +551,16 @@ private fun VpnTab() {
                 if (downloadHistory.size > maxHistoryPoints) downloadHistory.removeAt(0)
                 uploadHistory.add(uploadKBps.toFloat())
                 if (uploadHistory.size > maxHistoryPoints) uploadHistory.removeAt(0)
+
+                exitCountryCode = CdnVpnService.exitCountryCode
+                exitCity = CdnVpnService.exitCity
+                exitGeoConfigId = CdnVpnService.exitGeoConfigId
             } else {
                 connectedSinceMs = 0L; elapsedSec = 0L; downloadKBps = 0.0; uploadKBps = 0.0
                 totalDownloadBytes = 0L; totalUploadBytes = 0L
                 downloadHistory.clear(); uploadHistory.clear()
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
+                exitCountryCode = ""; exitCity = ""; exitGeoConfigId = ""
             }
 
             delay(1000)
@@ -757,7 +765,8 @@ private fun VpnTab() {
                                 item(key = "active-${cfg.id}") {
                                     SelectedServerSummaryCard(
                                         cfg = cfg, connected = connected,
-                                        onClick = { screen = AnanasScreen.LOCATIONS }
+                                        onClick = { screen = AnanasScreen.LOCATIONS },
+                                        exitCountryCode = exitCountryCode, exitCity = exitCity, exitGeoConfigId = exitGeoConfigId,
                                     )
                                 }
                             }
@@ -1065,10 +1074,24 @@ private fun ServerRow(
 
 // ── Selected-server summary card (Home, top) — simple row + chevron to Locations ─
 @Composable
-private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onClick: () -> Unit) {
-    val countryName = remember(cfg.countryCode) { countryCodeToName(cfg.countryCode) }
+private fun SelectedServerSummaryCard(
+    cfg: SavedConfig, connected: Boolean, onClick: () -> Unit,
+    exitCountryCode: String = "", exitCity: String = "", exitGeoConfigId: String = "",
+) {
+    // Once connected, prefer the tunnel-verified real exit location over the
+    // pre-connect estimate (cfg.countryCode/cfg.city, resolved by looking up
+    // the config's hostname directly — wrong for any domain behind a CDN,
+    // since that reports the CDN edge's location, not the real backend
+    // server's). CdnVpnService populates exitCountryCode/exitCity by asking a
+    // geo-IP service through the active tunnel itself once connected; only
+    // trust it when exitGeoConfigId matches this config, so a lookup from a
+    // previous connection can never be shown against the wrong server.
+    val useExitGeo = connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
+    val effectiveCc = if (useExitGeo) exitCountryCode else cfg.countryCode
+    val effectiveCity = if (useExitGeo) exitCity else cfg.city
+    val countryName = remember(effectiveCc) { countryCodeToName(effectiveCc) }
     val locationLine = when {
-        countryName.isNotBlank() && cfg.city.isNotBlank() -> "$countryName · ${cfg.city}"
+        countryName.isNotBlank() && effectiveCity.isNotBlank() -> "$countryName · $effectiveCity"
         countryName.isNotBlank() -> countryName
         !cfg.geoResolved -> "Resolving location…"
         else -> cfg.displayName
@@ -1087,7 +1110,7 @@ private fun SelectedServerSummaryCard(cfg: SavedConfig, connected: Boolean, onCl
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            CountryFlagBadge(cfg.countryCode, 32.dp)
+            CountryFlagBadge(effectiveCc, 32.dp)
             Column {
                 Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
