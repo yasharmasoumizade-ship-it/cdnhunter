@@ -1410,7 +1410,7 @@ private fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
-    var autoReconnect by remember { mutableStateOf(true) }
+    var autoReconnect by remember { mutableStateOf(vpnPrefs.getBoolean("auto_reconnect_enabled", true)) }
     // Backed by the same "kill_switch_enabled" key CdnVpnService reads
     // (isKillSwitchEnabled()) before deciding whether to hold a dead TUN up
     // after an unexpected disconnect -- this toggle is now the actual, live
@@ -1464,7 +1464,10 @@ private fun SettingsScreen(
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
                     Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
-                    autoReconnect, { autoReconnect = it }
+                    autoReconnect, {
+                        autoReconnect = it
+                        vpnPrefs.edit().putBoolean("auto_reconnect_enabled", it).apply()
+                    }
                 )
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
