@@ -237,7 +237,8 @@ private fun NetworkSettingsTab(context: Context) {
                         mtuPreset = "default"
                         AppSettings.setMtu(context, 1500)
                         AppSettings.setMtuPreset(context, "default")
-                    }
+                    },
+                    modifier = Modifier.weight(1f)
                 )
 
                 MtuPresetButton(
@@ -250,7 +251,8 @@ private fun NetworkSettingsTab(context: Context) {
                         mtuPreset = "safe"
                         AppSettings.setMtu(context, 1432)
                         AppSettings.setMtuPreset(context, "safe")
-                    }
+                    },
+                    modifier = Modifier.weight(1f)
                 )
 
                 MtuPresetButton(
@@ -263,7 +265,8 @@ private fun NetworkSettingsTab(context: Context) {
                         mtuPreset = "vpn_optimized"
                         AppSettings.setMtu(context, 1280)
                         AppSettings.setMtuPreset(context, "vpn_optimized")
-                    }
+                    },
+                    modifier = Modifier.weight(1f)
                 )
 
                 MtuPresetButton(
@@ -276,7 +279,8 @@ private fun NetworkSettingsTab(context: Context) {
                         mtuPreset = "iran_isp"
                         AppSettings.setMtu(context, 1280)
                         AppSettings.setMtuPreset(context, "iran_isp")
-                    }
+                    },
+                    modifier = Modifier.weight(1f)
                 )
             }
 
@@ -453,13 +457,12 @@ private fun MtuPresetButton(
     mtu: Int,
     preset: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier
-            .weight(1f)
-            .height(60.dp),
+        modifier = modifier.height(60.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (selected)
                 MaterialTheme.colorScheme.primary
