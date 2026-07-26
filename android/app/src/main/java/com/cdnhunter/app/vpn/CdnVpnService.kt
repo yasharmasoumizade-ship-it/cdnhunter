@@ -5,6 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -49,6 +53,16 @@ class CdnVpnService : VpnService() {
         // descriptor.
         var killSwitchDrainJob: Job? = null
 
+        // Auto-reconnect: on an unexpected drop, retry this many times with
+        // exponential backoff (1s, 2s, 4s, capped at 15s) before giving up
+        // and falling back to the kill switch (if enabled) or a full
+        // disconnect (if not). Kept small and bounded rather than infinite —
+        // if the server/network is genuinely down, retrying forever just
+        // drains battery and delays the kill switch actually protecting the
+        // user, which is the more important guarantee once retries have
+        // clearly stopped helping.
+        const val MAX_RECONNECT_ATTEMPTS = 3
+
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
@@ -70,11 +84,74 @@ class CdnVpnService : VpnService() {
     private var tunRawFd: Int? = null
     private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // How many consecutive auto-reconnect attempts have happened for the
+    // current connection lifecycle. Reset to 0 on any deliberate stopVpn()
+    // (user-initiated disconnect) or once a connection actually succeeds
+    // (isRunning.set(true) in startVpn()) -- so a later, unrelated drop
+    // always gets its own fresh MAX_RECONNECT_ATTEMPTS budget rather than
+    // inheriting an exhausted count from a previous, already-recovered
+    // outage.
+    private var reconnectAttempt = 0
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        registerNetworkCallback()
+    }
+
+    // Tracks whether the underlying network (not the VPN interface itself)
+    // was available the last time we checked -- used to detect "network came
+    // back after being fully down" specifically, as opposed to every minor
+    // network change (switching Wi-Fi access points, etc.), which mihomo/the
+    // OS usually ride out on their own without our help.
+    private var hadNetwork = true
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        connectivityManager = cm
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // Only reconnect on the transition from "had no usable
+                // network at all" to "network is back" -- everyday changes
+                // (moving between Wi-Fi networks, a second network appearing
+                // alongside an existing one) fire onAvailable too, but
+                // mihomo's existing connection usually survives those fine
+                // on its own; forcing a reconnect on every single one would
+                // be disruptive for no benefit.
+                if (!hadNetwork) {
+                    hadNetwork = true
+                    if (isAutoReconnectEnabled() && !isRunning.get() && !killSwitchBlocking.get()
+                        && getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getString("active_config_id", "").isNullOrBlank().not()
+                    ) {
+                        debugLog += "\nNetwork restored after being fully down — auto-reconnecting."
+                        reconnectAttempt = 0
+                        startVpn()
+                    }
+                }
+            }
+            override fun onLost(network: Network) {
+                // Only mark "no network" once NO network with internet
+                // capability remains at all (ConnectivityManager keeps
+                // calling this per-network; onAvailable above is what
+                // actually confirms one exists again).
+                if (cm.activeNetwork == null) hadNetwork = false
+            }
+        }
+        networkCallback = callback
+        try {
+            cm.registerNetworkCallback(request, callback)
+        } catch (_: Exception) {
+            // Some OEM/Android versions restrict this for background
+            // services -- auto-reconnect still works via the normal
+            // mihomo-error retry path in startVpn(), just without this
+            // additional "network came back" trigger.
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -94,6 +171,9 @@ class CdnVpnService : VpnService() {
 
     private fun isKillSwitchEnabled(): Boolean =
         getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("kill_switch_enabled", false)
+
+    private fun isAutoReconnectEnabled(): Boolean =
+        getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("auto_reconnect_enabled", true)
 
     private fun startVpn() {
         if (isRunning.get()) return
@@ -250,6 +330,7 @@ class CdnVpnService : VpnService() {
                 }
 
                 isRunning.set(true)
+                reconnectAttempt = 0
                 uploadBytes = 0L
                 downloadBytes = 0L
                 updateNotification("Connected")
@@ -291,15 +372,48 @@ class CdnVpnService : VpnService() {
                 // that only makes real errors harder to spot in the log.
                 throw e
             } catch (e: Exception) {
+                val wasRunning = isRunning.get()
                 lastError = e.message ?: "Unknown error"
                 debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
                 debugLog = debugLog.takeLast(8000)
-                val holdKillSwitch = isRunning.get() && isKillSwitchEnabled()
                 isRunning.set(false)
+
+                // Auto-reconnect: try a bounded number of times with backoff
+                // before giving up. Kill switch is the backstop AFTER these
+                // retries are exhausted, not competing with them — if both
+                // are on, we retry first and only fall back to holding the
+                // kill switch once every retry attempt has failed. A retry
+                // "succeeding" here just means startVpn() ran again without
+                // throwing before the retry budget ran out; if it also fails
+                // it re-enters this same catch block recursively, so the
+                // retry count must be tracked outside this single catch
+                // invocation (see reconnectAttempt below).
+                if (isAutoReconnectEnabled() && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempt++
+                    val backoffMs = (1000L * (1 shl (reconnectAttempt - 1))).coerceAtMost(15000L)
+                    debugLog += "\nAuto-reconnect: attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS in ${backoffMs}ms"
+                    updateNotification("Reconnecting… ($reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)")
+                    // Must fully close the fd/mihomo before retrying — startVpn()
+                    // establishes a brand new tun, and the old one has to be gone
+                    // first or we'd leak it (same double-close hazard the kill
+                    // switch join logic exists to avoid). stopService = false:
+                    // this is a retry, not a real disconnect -- calling
+                    // stopSelf() here would race the startVpn() call right
+                    // below, potentially tearing down this service instance
+                    // mid-reconnect.
+                    stopVpnInternal(keepTunAlive = false, stopService = false)
+                    delay(backoffMs)
+                    if (isRunning.get()) return@launch // a newer connect attempt already took over
+                    startVpn()
+                    return@launch
+                }
+
+                val holdKillSwitch = wasRunning && isKillSwitchEnabled()
+                reconnectAttempt = 0
                 if (holdKillSwitch) {
                     killSwitchBlocking.set(true)
                     updateNotification("Blocked - connection lost (Kill Switch on)")
-                    debugLog += "\nKill switch: holding TUN up with traffic blocked after unexpected disconnect."
+                    debugLog += "\nAuto-reconnect gave up after $MAX_RECONNECT_ATTEMPTS attempts — kill switch holding TUN up with traffic blocked."
                     stopVpnInternal(keepTunAlive = true)
                     return@launch
                 }
@@ -316,6 +430,7 @@ class CdnVpnService : VpnService() {
 
     private suspend fun stopVpn() {
         job?.cancel()
+        reconnectAttempt = 0
         stopVpnInternal(keepTunAlive = false)
     }
 
@@ -352,10 +467,13 @@ class CdnVpnService : VpnService() {
         }
     }
 
-    // Actual teardown, shared by the external-stop path (stopVpn) and the
-    // internal error-recovery path in startVpn's catch block, which must not
-    // cancel `job` since it IS the job currently running this code.
-    private suspend fun stopVpnInternal(keepTunAlive: Boolean) {
+    // Actual teardown, shared by the external-stop path (stopVpn), the
+    // internal error-recovery path in startVpn's catch block (which must not
+    // cancel `job` since it IS the job currently running this code), and the
+    // auto-reconnect retry path (which needs mihomo/fd torn down but the
+    // Android service itself kept alive for the immediately-following
+    // startVpn() call -- see stopService below).
+    private suspend fun stopVpnInternal(keepTunAlive: Boolean, stopService: Boolean = true) {
         isRunning.set(false)
         MihomoBridge.stop()
         exitCountryCode = ""
@@ -414,8 +532,10 @@ class CdnVpnService : VpnService() {
         // drop our references.
         tunRawFd = null
         tunFd = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (stopService) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     // Reads and discards packets from the tun fd for as long as the kill
@@ -528,6 +648,13 @@ class CdnVpnService : VpnService() {
     // is already being torn down by the OS, so blocking briefly to actually
     // finish mihomo's shutdown and release the tun fd is correct — cancelling
     // `scope` first would abandon that teardown mid-flight and leak the fd.
-    override fun onDestroy() { job?.cancel(); kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }; scope.cancel(); instance = null; super.onDestroy() }
+    override fun onDestroy() {
+        job?.cancel()
+        kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }
+        scope.cancel()
+        networkCallback?.let { try { connectivityManager?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        instance = null
+        super.onDestroy()
+    }
     override fun onRevoke() { job?.cancel(); kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }; super.onRevoke() }
 }
