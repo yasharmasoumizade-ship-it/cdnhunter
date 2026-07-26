@@ -582,17 +582,17 @@ class CdnVpnService : VpnService() {
                 .addAddress("fd00:1:1:1::1", 128)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
-                // Set to 9000 per explicit request (previously 1500). Heads up:
-                // 9000 (jumbo-frame territory) assumes every hop between here and
-                // the real destination also supports frames that large — mobile
-                // data and most Wi-Fi/ISP paths cap out at standard Ethernet 1500,
-                // so packets mihomo builds for a 9000-byte interface can get
-                // silently dropped once they reach the real physical interface —
-                // this was the previous reason for lowering it to 1500. Revert
-                // this back to 1500 if connections stop working again.
+                // MTU is now user-adjustable via Settings UI (AppSettings.mtu()).
+                // Default is 9000 (jumbo-frame territory) — assumes every hop
+                // between here and the real destination also supports frames
+                // that large. Mobile data and most Wi-Fi/ISP paths cap out at
+                // standard Ethernet 1500, so packets mihomo builds for a
+                // 9000-byte interface can get silently dropped once they reach
+                // the real physical interface. Users can lower this in Settings
+                // if connections stop working.
                 // NOTE: must stay in sync with "mtu" in VpnConfigBuilder's mihomo
-                // tun config — a mismatch there causes the same silent-drop issue.
-                .setMtu(9000)
+                // tun config — both now read from AppSettings.mtu().
+                .setMtu(AppSettings.mtu(this))
                 .setBlocking(false)
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)

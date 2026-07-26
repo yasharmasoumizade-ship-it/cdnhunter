@@ -1523,7 +1523,7 @@ private fun SettingsScreen(
                         onClick = {
                             mtuMode = "auto"
                             showCustomInput = false
-                            AppSettings.setMtu(context, 1280)
+                            AppSettings.setMtu(context, 9000)
                             AppSettings.setMtuPreset(context, "auto")
                         },
                         modifier = Modifier
@@ -1576,7 +1576,7 @@ private fun SettingsScreen(
                     )
                 } else {
                     Text(
-                        "Current: 1280 bytes (Auto)",
+                        "Current: 9000 bytes (Auto)",
                         fontSize = 11.sp,
                         color = AnanasMuted,
                         modifier = Modifier.padding(top = 12.dp)
@@ -1584,7 +1584,7 @@ private fun SettingsScreen(
                 }
 
                 Text(
-                    "ℹ️ Auto = 1280 (Iran-optimized)",
+                    "ℹ️ Auto = 9000 (jumbo-frame default)",
                     fontSize = 9.sp,
                     color = AnanasMuted,
                     modifier = Modifier.padding(top = 12.dp)

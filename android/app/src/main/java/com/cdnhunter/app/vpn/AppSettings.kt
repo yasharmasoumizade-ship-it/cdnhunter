@@ -49,9 +49,9 @@ object AppSettings {
     private const val KEY_AUTO_RECONNECT_ENABLED = "auto_reconnect_enabled"
     private const val KEY_MAX_RETRY_ATTEMPTS = "max_retry_attempts"
 
-    const val DEFAULT_MTU = 1280  // Iran-optimized default (was 9000)
-    const val MIN_MTU = 1100       // Practical minimum for VPN
-    const val MAX_MTU = 1500       // Standard Ethernet MTU
+    const val DEFAULT_MTU = 9000  // jumbo-frame; matches CdnVpnService + VpnConfigBuilder
+    const val MIN_MTU = 576       // smallest MTU any IPv4 path is guaranteed to carry
+    const val MAX_MTU = 9000      // jumbo-frame ceiling
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

@@ -14,21 +14,22 @@ object VpnConfigBuilder {
     fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
         val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val userConfig = prefs.getString("user_config", "") ?: ""
-        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768)
+        val mtu = AppSettings.mtu(ctx)
+        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768, mtu)
     }
 
     /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
-    fun buildConfigFromUri(uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
+    fun buildConfigFromUri(uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false, mtu: Int = 9000): String {
         val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
-        return renderYaml(proxy, tunFd)
+        return renderYaml(proxy, tunFd, mtu)
     }
 
 
     private fun defaultProxy(): LinkedHashMap<String, Any> =
         linkedMapOf("name" to "proxy", "type" to "direct")
 
-    private fun renderYaml(proxy: LinkedHashMap<String, Any>, tunFd: Int): String {
+    private fun renderYaml(proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 9000): String {
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
             "external-controller" to "127.0.0.1:10809",
@@ -105,11 +106,11 @@ object VpnConfigBuilder {
                 "auto-detect-interface" to false,
                 "dns-hijack" to listOf("any:53"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
-                // (also 9000, per explicit request) — a mismatch here means mihomo
-                // builds packets sized for a different MTU than the actual
-                // OS-level tun device, and they get silently dropped once
-                // they leave the tun.
-                "mtu" to 9000,
+                // — a mismatch here means mihomo builds packets sized for a
+                // different MTU than the actual OS-level tun device, and they
+                // get silently dropped once they leave the tun.
+                // Now read from AppSettings (user-adjustable in Settings UI).
+                "mtu" to mtu,
             ),
             // Sniffs the real destination straight out of the TLS ClientHello/HTTP
             // Host header for any connection, regardless of what DNS resolved (or
