@@ -54,6 +54,7 @@ import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
+import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
