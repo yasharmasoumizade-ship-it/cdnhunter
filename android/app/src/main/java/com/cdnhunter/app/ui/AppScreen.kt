@@ -56,6 +56,9 @@ import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.core.graphics.drawable.toBitmap
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 // Dark theme
@@ -512,7 +515,7 @@ fun AppScreen() {
 }
 
 // ── ANANAS navigation (Home ⇄ Locations / My Configs / Settings / Profile) ─────
-private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE }
+private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNNEL }
 
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -898,10 +901,12 @@ private fun VpnTab() {
 
     AnanasScreen.SETTINGS -> SettingsScreen(
         onProfileClick = { screen = AnanasScreen.PROFILE },
+        onSplitTunnelClick = { screen = AnanasScreen.SPLIT_TUNNEL },
         onBack = { screen = AnanasScreen.HOME }
     )
 
     AnanasScreen.PROFILE -> ProfileScreen(onBack = { screen = AnanasScreen.HOME })
+    AnanasScreen.SPLIT_TUNNEL -> SplitTunnelScreen(onBack = { screen = AnanasScreen.SETTINGS })
     }
 }
 
@@ -1406,7 +1411,7 @@ private fun LocationsScreen(
 // ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
 @Composable
 private fun SettingsScreen(
-    onProfileClick: () -> Unit = {}, onBack: () -> Unit = {},
+    onProfileClick: () -> Unit = {}, onSplitTunnelClick: () -> Unit = {}, onBack: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
@@ -1477,6 +1482,17 @@ private fun SettingsScreen(
                         vpnPrefs.edit().putBoolean("kill_switch_enabled", it).apply()
                     }
                 )
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                run {
+                    val splitApps = AppSettings.splitTunnelApps(context)
+                    val splitMode = AppSettings.splitTunnelMode(context)
+                    val summary = when {
+                        splitApps.isEmpty() -> null
+                        splitMode == "include" -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} only"
+                        else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
+                    }
+                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasAccent, showChevron = true, onClick = onSplitTunnelClick)
+                }
             }
 
             Spacer(Modifier.height(26.dp))
@@ -1569,9 +1585,11 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean) {
+private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth()
+            .let { if (onClick != null) it.clickable { onClick() } else it }
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1686,6 +1704,143 @@ private fun ProfileScreen(onBack: () -> Unit) {
             MenuRow(Icons.Rounded.History, "Payment history", AnanasMuted, AnanasText, AnanasCard2)
             Divider(color = AnanasDivider, thickness = 1.dp)
             MenuRow(Icons.Rounded.Logout, "Sign out", AnanasRed, AnanasRed, Color(0xFF1C1416), showChevron = false)
+        }
+    }
+}
+
+private data class InstalledAppInfo(val packageName: String, val label: String, val icon: android.graphics.drawable.Drawable?)
+
+@Composable
+private fun SplitTunnelScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(AppSettings.splitTunnelMode(context)) }
+    var selected by remember { mutableStateOf(AppSettings.splitTunnelApps(context)) }
+    var search by remember { mutableStateOf("") }
+    // Loading installed apps (PackageManager.getInstalledApplications) can
+    // take a noticeable moment on a device with many apps -- do it off the
+    // main thread once, not on every recomposition.
+    var apps by remember { mutableStateOf<List<InstalledAppInfo>?>(null) }
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.IO) {
+            val pm = context.packageManager
+            pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                .filter { it.packageName != context.packageName } // excluding ourselves is pointless -- see establishTun()
+                .mapNotNull { appInfo ->
+                    try {
+                        InstalledAppInfo(
+                            packageName = appInfo.packageName,
+                            label = pm.getApplicationLabel(appInfo).toString(),
+                            icon = try { pm.getApplicationIcon(appInfo.packageName) } catch (_: Exception) { null }
+                        )
+                    } catch (_: Exception) { null }
+                }
+                .sortedBy { it.label.lowercase() }
+        }
+    }
+    val filtered = remember(apps, search) {
+        val list = apps ?: emptyList()
+        if (search.isBlank()) list else list.filter { it.label.contains(search, ignoreCase = true) }
+    }
+
+    fun persist(newSelected: Set<String>, newMode: String) {
+        selected = newSelected
+        mode = newMode
+        AppSettings.setSplitTunnelApps(context, newSelected)
+        AppSettings.setSplitTunnelMode(context, newMode)
+    }
+
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                Text("Split tunneling", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
+            }
+
+            // Mode picker: exclude (VPN off just for selected apps, on for
+            // everything else -- e.g. excluding a banking app) vs include
+            // (VPN ONLY for selected apps, off for everything else).
+            // Switching modes doesn't clear the selection -- the same app
+            // list just gets reinterpreted under the new mode, matching how
+            // most VPN apps with this feature behave (Windscribe included).
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("exclude" to "Exclude selected", "include" to "Only selected").forEach { (value, label) ->
+                    val isSelected = mode == value
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) AnanasAccent.copy(0.16f) else AnanasCard)
+                            .border(1.dp, if (isSelected) AnanasAccent.copy(0.5f) else AnanasBorder, RoundedCornerShape(12.dp))
+                            .clickable { persist(selected, value) }
+                            .padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (isSelected) AnanasAccent else AnanasMuted)
+                    }
+                }
+            }
+
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(12.dp)).background(AnanasCard).border(1.dp, AnanasBorder, RoundedCornerShape(12.dp))
+            ) {
+                TextField(
+                    value = search, onValueChange = { search = it },
+                    placeholder = { Text("Search apps", fontSize = 13.sp, color = AnanasFaint) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null, tint = AnanasFaint, modifier = Modifier.size(18.dp)) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = AnanasText, unfocusedTextColor = AnanasText,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (apps == null) {
+                Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AnanasAccent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+                    items(filtered, key = { it.packageName }) { app ->
+                        val isChecked = selected.contains(app.packageName)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    persist(if (isChecked) selected - app.packageName else selected + app.packageName, mode)
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (app.icon != null) {
+                                Image(
+                                    bitmap = app.icon.toBitmap(width = 84, height = 84).asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
+                                )
+                            } else {
+                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(AnanasCard2))
+                            }
+                            Text(app.label, fontSize = 13.5.sp, color = AnanasText, modifier = Modifier.weight(1f))
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    persist(if (checked) selected + app.packageName else selected - app.packageName, mode)
+                                },
+                                colors = CheckboxDefaults.colors(checkedColor = AnanasAccent, uncheckedColor = AnanasFaint)
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
         }
     }
 }
