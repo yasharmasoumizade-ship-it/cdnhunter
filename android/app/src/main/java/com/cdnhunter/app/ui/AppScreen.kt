@@ -1497,6 +1497,76 @@ private fun SettingsScreen(
             }
 
             Spacer(Modifier.height(26.dp))
+            Text("NETWORK", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 14.dp)
+            ) {
+                var mtuValue by remember { mutableStateOf(AppSettings.mtu(context).toFloat()) }
+                var mtuPreset by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
+
+                Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Text("Current: ${mtuValue.toInt()} bytes", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 8.dp))
+
+                Slider(
+                    value = mtuValue,
+                    onValueChange = {
+                        mtuValue = it
+                        AppSettings.setMtu(context, it.toInt())
+                        AppSettings.setMtuPreset(context, "custom")
+                        mtuPreset = "custom"
+                    },
+                    valueRange = 1100f..1500f,
+                    steps = 20,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 12.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    for ((label, mtu, preset) in listOf(
+                        Triple("1500", 1500, "default"),
+                        Triple("1432", 1432, "safe"),
+                        Triple("1280", 1280, "vpn_optimized"),
+                        Triple("Iran", 1280, "iran_isp")
+                    )) {
+                        Button(
+                            onClick = {
+                                mtuValue = mtu.toFloat()
+                                mtuPreset = preset
+                                AppSettings.setMtu(context, mtu)
+                                AppSettings.setMtuPreset(context, preset)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (mtuPreset == preset) AnanasAccent else AnanasCard2
+                            ),
+                            contentPadding = PaddingValues(4.dp)
+                        ) {
+                            Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                Text(
+                    "ℹ️ Lower MTU = less filtering but more packets",
+                    fontSize = 9.sp,
+                    color = AnanasMuted,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+
+            Spacer(Modifier.height(26.dp))
             Text("GENERAL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
 
@@ -1507,6 +1577,142 @@ private fun SettingsScreen(
                 SettingsRow(Icons.Rounded.NotificationsNone, "Notifications", null, AnanasMuted, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsRow(Icons.Rounded.Language, "Language", "English", AnanasMuted, showChevron = true)
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 14.dp)
+            ) {
+                var theme by remember { mutableStateOf(AppSettings.theme(context)) }
+                var amoledMode by remember { mutableStateOf(AppSettings.amoledMode(context)) }
+
+                Text("Theme", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (themeOption in listOf("Light", "Dark", "Auto")) {
+                        Button(
+                            onClick = {
+                                theme = themeOption.lowercase()
+                                AppSettings.setTheme(context, theme)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2
+                            )
+                        ) {
+                            Text(themeOption, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("AMOLED Mode", fontSize = 12.sp, color = AnanasTextHi)
+                    Switch(
+                        checked = amoledMode,
+                        onCheckedChange = {
+                            amoledMode = it
+                            AppSettings.setAmoledMode(context, it)
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Text("AD BLOCKING", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 14.dp)
+            ) {
+                var adBlockerEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
+                var blockAds by remember { mutableStateOf(AppSettings.blockAds(context)) }
+                var blockTrackers by remember { mutableStateOf(AppSettings.blockTrackers(context)) }
+                var blockMalware by remember { mutableStateOf(AppSettings.blockMalware(context)) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Ad Blocker", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                    Switch(
+                        checked = adBlockerEnabled,
+                        onCheckedChange = {
+                            adBlockerEnabled = it
+                            AppSettings.setAdBlockerEnabled(context, it)
+                        }
+                    )
+                }
+
+                if (adBlockerEnabled) {
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Block Ads", fontSize = 11.sp, color = AnanasMuted)
+                            Switch(
+                                checked = blockAds,
+                                onCheckedChange = {
+                                    blockAds = it
+                                    AppSettings.setBlockAds(context, it)
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Block Trackers", fontSize = 11.sp, color = AnanasMuted)
+                            Switch(
+                                checked = blockTrackers,
+                                onCheckedChange = {
+                                    blockTrackers = it
+                                    AppSettings.setBlockTrackers(context, it)
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Block Malware", fontSize = 11.sp, color = AnanasMuted)
+                            Switch(
+                                checked = blockMalware,
+                                onCheckedChange = {
+                                    blockMalware = it
+                                    AppSettings.setBlockMalware(context, it)
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             val clip = LocalClipboardManager.current
