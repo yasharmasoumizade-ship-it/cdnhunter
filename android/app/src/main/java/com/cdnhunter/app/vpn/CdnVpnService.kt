@@ -593,11 +593,41 @@ class CdnVpnService : VpnService() {
                 // NOTE: must stay in sync with "mtu" in VpnConfigBuilder's mihomo
                 // tun config — a mismatch there causes the same silent-drop issue.
                 .setMtu(9000)
-                .addDisallowedApplication(packageName)
                 .setBlocking(false)
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)
                 .addRoute("::", 0)
+
+            // Split tunneling. Android only allows EITHER
+            // addAllowedApplication calls OR addDisallowedApplication calls
+            // on a single Builder, never a mix of both -- it throws
+            // UnsupportedOperationException if you try. So the two modes
+            // have to be mutually exclusive branches, not just "add this
+            // app to whichever list."
+            val splitApps = AppSettings.splitTunnelApps(this)
+            if (AppSettings.splitTunnelMode(this) == "include" && splitApps.isNotEmpty()) {
+                // Only the selected apps use the VPN; everything else
+                // (including this app itself, deliberately left out) goes
+                // direct.
+                for (pkg in splitApps) {
+                    try { builder.addAllowedApplication(pkg) } catch (_: Exception) {
+                        // App was uninstalled since being added to the list, or
+                        // some other lookup failure -- skip it rather than
+                        // aborting the whole VPN setup over one stale entry.
+                    }
+                }
+            } else {
+                // Default / "exclude" mode: everything uses the VPN except
+                // this app itself (required -- otherwise its own traffic to
+                // the proxy server would loop back into its own tunnel) plus
+                // whatever the user explicitly excluded.
+                builder.addDisallowedApplication(packageName)
+                for (pkg in splitApps) {
+                    try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {
+                        // Same as above -- stale/uninstalled package, skip it.
+                    }
+                }
+            }
 
             builder.establish()
         } catch (e: Exception) {
