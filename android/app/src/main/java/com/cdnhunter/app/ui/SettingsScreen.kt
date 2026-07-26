@@ -1,5 +1,6 @@
 package com.cdnhunter.app.ui
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,7 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.vpn.AppSettings
 
 /**
@@ -67,7 +70,7 @@ fun SettingsScreen() {
 }
 
 @Composable
-private fun VpnSettingsTab(context: android.content.Context) {
+private fun VpnSettingsTab(context: Context) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,7 +154,7 @@ private fun VpnSettingsTab(context: android.content.Context) {
 }
 
 @Composable
-private fun NetworkSettingsTab(context: android.content.Context) {
+private fun NetworkSettingsTab(context: Context) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -296,7 +299,7 @@ private fun NetworkSettingsTab(context: android.content.Context) {
 }
 
 @Composable
-private fun AppearanceSettingsTab(context: android.content.Context) {
+private fun AppearanceSettingsTab(context: Context) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -347,7 +350,7 @@ private fun AppearanceSettingsTab(context: android.content.Context) {
 }
 
 @Composable
-private fun AdvancedSettingsTab(context: android.content.Context) {
+private fun AdvancedSettingsTab(context: Context) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -466,8 +469,9 @@ private fun MtuPresetButton(
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.lineHeight(1.2.dp)
+            style = MaterialTheme.typography.labelSmall.copy(lineHeight = 1.2.sp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
