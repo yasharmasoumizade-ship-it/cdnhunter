@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
@@ -1505,78 +1507,88 @@ private fun SettingsScreen(
                     .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
                     .padding(horizontal = 14.dp, vertical = 14.dp)
             ) {
-                var mtuValue by remember { mutableStateOf(AppSettings.mtu(context).toFloat()) }
-                var mtuPreset by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
+                var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
+                var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
+                var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
 
                 Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                Text("Current: ${mtuValue.toInt()} bytes", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 8.dp))
-
-                Slider(
-                    value = mtuValue,
-                    onValueChange = {
-                        mtuValue = it
-                        AppSettings.setMtu(context, it.toInt())
-                        AppSettings.setMtuPreset(context, "custom")
-                        mtuPreset = "custom"
-                    },
-                    valueRange = 1100f..1500f,
-                    steps = 20,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 12.dp)
-                )
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    for ((label, mtu, preset) in listOf(
-                        Triple("1500", 1500, "default"),
-                        Triple("1432", 1432, "safe"),
-                        Triple("1280", 1280, "vpn_optimized"),
-                        Triple("Iran", 1280, "iran_isp")
-                    )) {
-                        Button(
-                            onClick = {
-                                mtuValue = mtu.toFloat()
-                                mtuPreset = preset
-                                AppSettings.setMtu(context, mtu)
-                                AppSettings.setMtuPreset(context, preset)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (mtuPreset == preset) AnanasAccent else AnanasCard2
-                            ),
-                            contentPadding = PaddingValues(4.dp)
-                        ) {
-                            Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
+                    Button(
+                        onClick = {
+                            mtuMode = "auto"
+                            showCustomInput = false
+                            AppSettings.setMtu(context, 1280)
+                            AppSettings.setMtuPreset(context, "auto")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2
+                        )
+                    ) {
+                        Text("Auto", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = {
+                            mtuMode = "custom"
+                            showCustomInput = true
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2
+                        )
+                    ) {
+                        Text("Custom", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
+                if (showCustomInput) {
+                    TextField(
+                        value = customMtuText,
+                        onValueChange = {
+                            customMtuText = it
+                            it.toIntOrNull()?.let { value ->
+                                if (value in 1100..1500) {
+                                    AppSettings.setMtu(context, value)
+                                    AppSettings.setMtuPreset(context, "custom")
+                                }
+                            }
+                        },
+                        label = { Text("Enter MTU (1100-1500)", fontSize = 10.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = AnanasCard2,
+                            unfocusedContainerColor = AnanasCard2
+                        )
+                    )
+                } else {
+                    Text(
+                        "Current: 1280 bytes (Auto)",
+                        fontSize = 11.sp,
+                        color = AnanasMuted,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+
                 Text(
-                    "ℹ️ Lower MTU = less filtering but more packets",
+                    "ℹ️ Auto = 1280 (Iran-optimized)",
                     fontSize = 9.sp,
                     color = AnanasMuted,
                     modifier = Modifier.padding(top = 12.dp)
                 )
-            }
-
-            Spacer(Modifier.height(26.dp))
-            Text("GENERAL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
-
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-            ) {
-                SettingsRow(Icons.Rounded.NotificationsNone, "Notifications", null, AnanasMuted, showChevron = true)
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                SettingsRow(Icons.Rounded.Language, "Language", "English", AnanasMuted, showChevron = true)
             }
 
             Spacer(Modifier.height(26.dp))
