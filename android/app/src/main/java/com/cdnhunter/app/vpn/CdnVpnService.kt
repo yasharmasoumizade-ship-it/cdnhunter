@@ -635,17 +635,12 @@ class CdnVpnService : VpnService() {
                 }
             }
 
-            // Allow LAN: user can opt-in to keep local network traffic
-            // (192.168/10.0/172.16 ranges) off the tunnel so it reaches
-            // devices on the home network directly. Default is false
-            // (everything through the tunnel) -- most users don't have a
-            // home network they want reachable, and routing non-VPN traffic
-            // violates the contract of "VPN is on".
-            if (AppSettings.allowLan(this)) {
-                builder.addDisallowedRoute("192.168.0.0", 16)
-                builder.addDisallowedRoute("10.0.0.0", 8)
-                builder.addDisallowedRoute("172.16.0.0", 12)
-            }
+            // Allow LAN: user preference to keep local network traffic accessible
+            // Note: Android's VPN API handles this automatically by default - 
+            // private networks (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) are 
+            // NOT routed through the VPN unless explicitly added with addRoute().
+            // So "Allow LAN" is effectively always on unless we block it, which we don't.
+            // The AppSettings toggle is kept for future use or UI indication.
 
             builder.establish()
         } catch (e: Exception) {

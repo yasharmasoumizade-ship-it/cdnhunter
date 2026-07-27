@@ -2097,23 +2097,6 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
         }
     }
 }
-            }
-            Column {
-                Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
-                Text(desc, fontSize = 10.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp))
-            }
-        }
-        Switch(
-            checked = checked, onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = AnanasAccent,
-                uncheckedThumbColor = Color(0xFF6B6B70),
-                uncheckedTrackColor = AnanasCard2
-            )
-        )
-    }
-}
 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
 @Composable
