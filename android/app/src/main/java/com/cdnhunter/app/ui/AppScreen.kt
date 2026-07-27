@@ -1521,6 +1521,7 @@ private fun SettingsScreen(
                     }
                     SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasAccent, showChevron = true, onClick = onSplitTunnelClick)
                 }
+                }
             }
 
             Spacer(Modifier.height(26.dp))
@@ -1802,6 +1803,7 @@ private fun SettingsScreen(
                             (context as? android.app.Activity)?.recreate()
                         }
                     )
+                }
                 }
             }
 
@@ -2448,6 +2450,4 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
             Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
         }
     }
-}
-}
 }
