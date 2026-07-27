@@ -1430,6 +1430,8 @@ private fun LocationsScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(30.dp))  // Bottom padding for scrolling
         }
     }
 }
@@ -1528,282 +1530,58 @@ private fun SettingsScreen(
             Text("NETWORK", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
 
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 14.dp)
-            ) {
-                var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
-                var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
-                var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
-
-                Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            mtuMode = "auto"
-                            showCustomInput = false
-                            AppSettings.setMtu(context, 1500)
-                            AppSettings.setMtuPreset(context, "auto")
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2,
-                            contentColor = if (mtuMode == "auto") Color.White else AnanasText
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(
-                            defaultElevation = 2.dp,
-                            pressedElevation = 4.dp
-                        )
-                    ) {
-                        Text("Auto", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-
-                    Button(
-                        onClick = {
-                            mtuMode = "custom"
-                            showCustomInput = true
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2,
-                            contentColor = if (mtuMode == "custom") Color.White else AnanasText
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(
-                            defaultElevation = 2.dp,
-                            pressedElevation = 4.dp
-                        )
-                    ) {
-                        Text("Custom", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                if (showCustomInput) {
-                    TextField(
-                        value = customMtuText,
-                        onValueChange = {
-                            customMtuText = it
-                            it.toIntOrNull()?.let { value ->
-                                if (value in 576..9000) {
-                                    AppSettings.setMtu(context, value)
-                                    AppSettings.setMtuPreset(context, "custom")
-                                }
-                            }
-                        },
-                        label = { Text("Enter MTU (576-9000)", fontSize = 10.sp) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = AnanasCard2,
-                            unfocusedContainerColor = AnanasCard2
-                        )
-                    )
-                } else {
-                    Text(
-                        "Current: 1500 bytes (Auto)",
-                        fontSize = 11.sp,
-                        color = AnanasMuted,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
-                }
-
-                Text(
-                    "ℹ️ Auto = 1500 (standard Ethernet)",
-                    fontSize = 9.sp,
-                    color = AnanasMuted,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-            ) {
-                var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
-                var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
-                var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
-
-                SettingsToggleRow(
-                    Icons.Rounded.Router, "Allow LAN", "Access local network devices while VPN is on",
-                    allowLan, {
-                        allowLan = it
-                        AppSettings.setAllowLan(context, it)
-                    }
-                )
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                SettingsToggleRow(
-                    Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through the tunnel",
-                    ipv6Enabled, {
-                        ipv6Enabled = it
-                        AppSettings.setIpv6Enabled(context, it)
-                    }
-                )
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                SettingsToggleRow(
-                    Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS to prevent ISP tampering",
-                    useDoh, {
-                        useDoh = it
-                        AppSettings.setUseDoh(context, it)
-                    }
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-            ) {
-                var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
-                var customDnsInput by remember { mutableStateOf(AppSettings.customDnsServers(context).joinToString("\n")) }
-
-                SettingsToggleRow(
-                    Icons.Rounded.Settings, "Custom DNS", "Use your own DNS servers",
-                    customDnsEnabled, {
-                        customDnsEnabled = it
-                        AppSettings.setCustomDnsEnabled(context, it)
-                    }
-                )
-
-                if (customDnsEnabled) {
-                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp)
-                    ) {
-                        Text(
-                            "Enter DNS servers (one per line):",
-                            fontSize = 10.sp,
-                            color = AnanasMuted,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        // Minimal text field for DNS servers
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(AnanasCard2, RoundedCornerShape(8.dp))
-                                .border(1.dp, AnanasBorder, RoundedCornerShape(8.dp))
-                                .padding(10.dp)
-                                .heightIn(min = 60.dp, max = 120.dp)
-                        ) {
-                            BasicTextField(
-                                value = customDnsInput,
-                                onValueChange = { newValue ->
-                                    customDnsInput = newValue
-                                    // Save on each keystroke
-                                    val servers = newValue.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-                                    AppSettings.setCustomDnsServers(context, servers)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 11.sp,
-                                    color = AnanasTextHi,
-                                    fontFamily = FontFamily.Monospace
-                                ),
-                                decorationBox = { innerTextField ->
-                                    if (customDnsInput.isEmpty()) {
-                                        Text(
-                                            "1.1.1.1\n8.8.8.8",
-                                            fontSize = 11.sp,
-                                            color = AnanasMuted,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            )
-                        }
-                        Text(
-                            "💡 IPs (plain DNS), domains (DoH), or URLs",
-                            fontSize = 8.sp,
-                            color = AnanasMuted,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(26.dp))
-            Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
-
             Surface(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
                 color = AnanasCard,
                 shadowElevation = 2.dp
             ) {
-                Column(
-                    Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-                ) {
-                    var theme by remember { mutableStateOf(AppSettings.theme(context)) }
-                    var amoledMode by remember { mutableStateOf(AppSettings.amoledMode(context)) }
+                Column {
+                    var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
+                    var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
+                    var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
 
-                    Text("Theme", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        for (themeOption in listOf("Light", "Dark", "Auto")) {
-                            Button(
-                                onClick = {
-                                    theme = themeOption.lowercase()
-                                    AppSettings.setTheme(context, theme)
-                                    // Restart activity to apply new theme
-                                    (context as? android.app.Activity)?.recreate()
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2,
-                                    contentColor = if (theme == themeOption.lowercase()) Color.White else AnanasText
-                                ),
-                                elevation = ButtonDefaults.buttonElevation(
-                                    defaultElevation = 2.dp,
-                                    pressedElevation = 4.dp
-                                )
-                            ) {
-                                Text(themeOption, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
+                    SettingsToggleRow(
+                        Icons.Rounded.Router, "Allow LAN", "Access local network devices",
+                        allowLan, {
+                            allowLan = it
+                            AppSettings.setAllowLan(context, it)
                         }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("AMOLED Mode", fontSize = 12.sp, color = AnanasTextHi)
-                    Switch(
-                        checked = amoledMode,
-                        onCheckedChange = {
-                            amoledMode = it
-                            AppSettings.setAmoledMode(context, it)
-                            // Restart activity to apply new colors
-                            (context as? android.app.Activity)?.recreate()
+                    )
+                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                    SettingsToggleRow(
+                        Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through VPN",
+                        ipv6Enabled, {
+                            ipv6Enabled = it
+                            AppSettings.setIpv6Enabled(context, it)
+                        }
+                    )
+                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                    SettingsToggleRow(
+                        Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries",
+                        useDoh, {
+                            useDoh = it
+                            AppSettings.setUseDoh(context, it)
                         }
                     )
                 }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Surface(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                color = AnanasCard,
+                shadowElevation = 2.dp
+            ) {
+                Column {
+                    var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
+
+                    SettingsToggleRow(
+                        Icons.Rounded.Settings, "Custom DNS", "Use your own DNS servers",
+                        customDnsEnabled, {
+                            customDnsEnabled = it
+                            AppSettings.setCustomDnsEnabled(context, it)
+                        }
+                    )
                 }
             }
 
@@ -1811,80 +1589,21 @@ private fun SettingsScreen(
             Text("AD BLOCKING", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
 
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 14.dp)
+            Surface(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                color = AnanasCard,
+                shadowElevation = 2.dp
             ) {
-                var adBlockerEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
-                var blockAds by remember { mutableStateOf(AppSettings.blockAds(context)) }
-                var blockTrackers by remember { mutableStateOf(AppSettings.blockTrackers(context)) }
-                var blockMalware by remember { mutableStateOf(AppSettings.blockMalware(context)) }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Ad Blocker", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                    Switch(
-                        checked = adBlockerEnabled,
-                        onCheckedChange = {
+                Column {
+                    var adBlockerEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
+                    
+                    SettingsToggleRow(
+                        Icons.Rounded.Block, "Block Ads", "Blocks ad and tracker domains",
+                        adBlockerEnabled, {
                             adBlockerEnabled = it
                             AppSettings.setAdBlockerEnabled(context, it)
                         }
                     )
-                }
-
-                if (adBlockerEnabled) {
-                    Column(modifier = Modifier.padding(top = 12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Block Ads", fontSize = 11.sp, color = AnanasMuted)
-                            Switch(
-                                checked = blockAds,
-                                onCheckedChange = {
-                                    blockAds = it
-                                    AppSettings.setBlockAds(context, it)
-                                }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Block Trackers", fontSize = 11.sp, color = AnanasMuted)
-                            Switch(
-                                checked = blockTrackers,
-                                onCheckedChange = {
-                                    blockTrackers = it
-                                    AppSettings.setBlockTrackers(context, it)
-                                }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Block Malware", fontSize = 11.sp, color = AnanasMuted)
-                            Switch(
-                                checked = blockMalware,
-                                onCheckedChange = {
-                                    blockMalware = it
-                                    AppSettings.setBlockMalware(context, it)
-                                }
-                            )
-                        }
-                    }
                 }
             }
 
