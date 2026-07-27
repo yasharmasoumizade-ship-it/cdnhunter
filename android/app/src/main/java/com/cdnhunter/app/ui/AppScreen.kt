@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,21 +90,26 @@ val LightBorder   = Color(0xFFE5E5EA)
 val GreenBorder   = Color(0xFF34C759)
 
 // ── ANANAS Home/Connected reference palette ──────────────────────────────────
-val AnanasBg       = Color(0xFF050505)
-val AnanasScreenBg = Color(0xFF0B0B0D)
-val AnanasCard     = Color(0xFF131316)
-val AnanasCard2    = Color(0xFF151519)
-val AnanasBorder   = Color(0xFF1E1F24)
-val AnanasBorder2  = Color(0xFF232328)
-val AnanasDivider  = Color(0xFF17171B)
-val AnanasAccent   = Color(0xFF4ADE9C)
-val AnanasAmber    = Color(0xFFE6A23C)
-val AnanasRed      = Color(0xFFE0605C)
-val AnanasTextHi   = Color(0xFFFAFAFA)
-val AnanasText     = Color(0xFFF0F0F2)
-val AnanasMuted    = Color(0xFF6E7078)
-val AnanasFaint    = Color(0xFF3A3C44)
-val AnanasVless    = Color(0xFF64D2FF)
+// Modernized Material Design 3 Inspired Colors - Professional & Cohesive
+val AnanasBg       = Color(0xFF050505)   // Near black background
+val AnanasScreenBg = Color(0xFF0B0B0D)   // Slightly lighter
+val AnanasCard     = Color(0xFF131316)   // Card surface
+val AnanasCard2    = Color(0xFF151519)   // Secondary card
+val AnanasBorder   = Color(0xFF1E1F24)   // Border colors
+val AnanasBorder2  = Color(0xFF232328)   // Alternative border
+val AnanasDivider  = Color(0xFF17171B)   // Divider
+val AnanasAccent   = Color(0xFF10B981)   // Modern green (improved from 0xFF4ADE9C)
+val AnanasAccentLight = Color(0xFF34D399)
+val AnanasAccentDark  = Color(0xFF059669)
+val AnanasAmber    = Color(0xFFD97706)   // Warm amber
+val AnanasRed      = Color(0xFFEF4444)   // Modern red
+val AnanasBlue     = Color(0xFF3B82F6)   // Modern blue
+val AnanasPurple   = Color(0xFF8B5CF6)   // Modern purple
+val AnanasTextHi   = Color(0xFFFAFAFA)   // Primary text
+val AnanasText     = Color(0xFFF0F0F2)   // Secondary text
+val AnanasMuted    = Color(0xFF6E7078)   // Muted text
+val AnanasFaint    = Color(0xFF3A3C44)   // Faint text
+val AnanasVless    = Color(0xFF64D2FF)   // VLESS color
 
 @Composable
 fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
@@ -1534,7 +1540,7 @@ private fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
                         onClick = {
@@ -1545,12 +1551,18 @@ private fun SettingsScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(40.dp),
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2
+                            containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2,
+                            contentColor = if (mtuMode == "auto") Color.White else AnanasText
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 2.dp,
+                            pressedElevation = 4.dp
                         )
                     ) {
-                        Text("Auto", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Auto", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     Button(
@@ -1560,12 +1572,18 @@ private fun SettingsScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(40.dp),
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2
+                            containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2,
+                            contentColor = if (mtuMode == "custom") Color.White else AnanasText
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 2.dp,
+                            pressedElevation = 4.dp
                         )
                     ) {
-                        Text("Custom", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Custom", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
@@ -1721,45 +1739,54 @@ private fun SettingsScreen(
             Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
 
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 14.dp)
+            Surface(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                color = AnanasCard,
+                shadowElevation = 2.dp
             ) {
-                var theme by remember { mutableStateOf(AppSettings.theme(context)) }
-                var amoledMode by remember { mutableStateOf(AppSettings.amoledMode(context)) }
-
-                Text("Theme", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Column(
+                    Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
-                    for (themeOption in listOf("Light", "Dark", "Auto")) {
-                        Button(
-                            onClick = {
-                                theme = themeOption.lowercase()
-                                AppSettings.setTheme(context, theme)
-                                // Restart activity to apply new theme
-                                (context as? android.app.Activity)?.recreate()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2
-                            )
-                        ) {
-                            Text(themeOption, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    var theme by remember { mutableStateOf(AppSettings.theme(context)) }
+                    var amoledMode by remember { mutableStateOf(AppSettings.amoledMode(context)) }
+
+                    Text("Theme", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        for (themeOption in listOf("Light", "Dark", "Auto")) {
+                            Button(
+                                onClick = {
+                                    theme = themeOption.lowercase()
+                                    AppSettings.setTheme(context, theme)
+                                    // Restart activity to apply new theme
+                                    (context as? android.app.Activity)?.recreate()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2,
+                                    contentColor = if (theme == themeOption.lowercase()) Color.White else AnanasText
+                                ),
+                                elevation = ButtonDefaults.buttonElevation(
+                                    defaultElevation = 2.dp,
+                                    pressedElevation = 4.dp
+                                )
+                            ) {
+                                Text(themeOption, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
-                }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 18.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1935,34 +1962,139 @@ private fun SettingsScreen(
 
 @Composable
 private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
-    Row(
-        Modifier.fillMaxWidth()
-            .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(horizontal = 14.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .let { if (onClick != null) it.clickable { onClick() } else it },
+        color = AnanasCard,
+        shadowElevation = 2.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = iconTint, modifier = Modifier.size(15.dp))
+        Row(
+            Modifier.fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                // Icon container with colored background
+                Surface(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                    color = iconTint.copy(alpha = 0.15f)
+                ) {
+                    Icon(
+                        icon, null,
+                        tint = iconTint,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .align(Alignment.Center)
+                    )
+                }
+                // Label column
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        label,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AnanasTextHi
+                    )
+                    if (value != null) {
+                        Text(
+                            value,
+                            fontSize = 12.sp,
+                            color = AnanasMuted,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
+                }
             }
-            Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (value != null) Text(value, fontSize = 12.5.sp, color = AnanasMuted)
-            if (showChevron) Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+            
+            if (showChevron) {
+                Icon(
+                    Icons.Rounded.ChevronRight, null,
+                    tint = AnanasMuted,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
-        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp)),
+        color = AnanasCard,
+        shadowElevation = 2.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp))
+        Row(
+            Modifier.fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                // Icon container with accent color
+                Surface(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                    color = AnanasAccent.copy(alpha = 0.15f)
+                ) {
+                    Icon(
+                        icon, null,
+                        tint = AnanasAccent,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .align(Alignment.Center)
+                    )
+                }
+                // Label column
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        label,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AnanasTextHi
+                    )
+                    Text(
+                        desc,
+                        fontSize = 12.sp,
+                        color = AnanasMuted,
+                        modifier = Modifier.padding(top = 3.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            
+            // Modern switch with better styling
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.scale(1.15f),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = AnanasAccent,
+                    uncheckedThumbColor = AnanasMuted.copy(alpha = 0.6f),
+                    uncheckedTrackColor = AnanasCard2
+                )
+            )
+        }
+    }
+}
             }
             Column {
                 Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
