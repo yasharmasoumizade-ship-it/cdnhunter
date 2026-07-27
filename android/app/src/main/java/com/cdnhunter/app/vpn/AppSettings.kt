@@ -38,6 +38,8 @@ object AppSettings {
     // Custom DNS
     private const val KEY_CUSTOM_DNS_ENABLED = "custom_dns_enabled"
     private const val KEY_CUSTOM_DNS_SERVERS = "custom_dns_servers"  // comma-separated
+    private const val KEY_PRIMARY_DNS = "primary_dns"
+    private const val KEY_SECONDARY_DNS = "secondary_dns"
     
     // Server Management
     private const val KEY_FAVORITE_SERVERS = "favorite_servers"
@@ -141,6 +143,14 @@ object AppSettings {
         val csv = servers.joinToString(",")
         prefs(ctx).edit().putString(KEY_CUSTOM_DNS_SERVERS, csv).apply()
     }
+    
+    // Primary DNS (e.g., 8.8.8.8)
+    fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "8.8.8.8") ?: "8.8.8.8"
+    fun setPrimaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_PRIMARY_DNS, value).apply()
+    
+    // Secondary DNS (e.g., 8.8.4.4) - optional
+    fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "8.8.4.4") ?: "8.8.4.4"
+    fun setSecondaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_SECONDARY_DNS, value).apply()
 
     // ============ Server Management ============
     fun favoriteServers(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_FAVORITE_SERVERS, emptySet()) ?: emptySet()
