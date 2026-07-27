@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import android.net.VpnService
@@ -1439,7 +1440,7 @@ private fun SettingsScreen(
     // (isKillSwitchEnabled()) before deciding whether to hold a dead TUN up
     // after an unexpected disconnect -- this toggle is now the actual, live
     // switch for that behavior, not a decorative local-only state.
-    var killSwitch by remember { mutableStateOf(vpnPrefs.getBoolean("kill_switch_enabled", false)) }
+    var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(context)) }
 
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -1498,7 +1499,7 @@ private fun SettingsScreen(
                     Icons.Rounded.Lock, "Kill switch", "Block traffic if VPN disconnects unexpectedly",
                     killSwitch, {
                         killSwitch = it
-                        vpnPrefs.edit().putBoolean("kill_switch_enabled", it).apply()
+                        AppSettings.setKillSwitchEnabled(context, it)
                     }
                 )
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
@@ -1617,7 +1618,7 @@ private fun SettingsScreen(
                 var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
 
                 SettingsToggleRow(
-                    Icons.Rounded.Lan, "Allow LAN", "Access local network devices while VPN is on",
+                    Icons.Rounded.Router, "Allow LAN", "Access local network devices while VPN is on",
                     allowLan, {
                         allowLan = it
                         AppSettings.setAllowLan(context, it)
@@ -1650,7 +1651,7 @@ private fun SettingsScreen(
                 var customDnsInput by remember { mutableStateOf(AppSettings.customDnsServers(context).joinToString("\n")) }
 
                 SettingsToggleRow(
-                    Icons.Rounded.Dns, "Custom DNS", "Use your own DNS servers",
+                    Icons.Rounded.Settings, "Custom DNS", "Use your own DNS servers",
                     customDnsEnabled, {
                         customDnsEnabled = it
                         AppSettings.setCustomDnsEnabled(context, it)

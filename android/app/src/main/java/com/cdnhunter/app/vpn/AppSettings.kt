@@ -51,6 +51,11 @@ object AppSettings {
     const val MIN_MTU = 576       // smallest MTU any IPv4 path is guaranteed to carry
     const val MAX_MTU = 9000      // jumbo-frame ceiling (allow custom up to 9000)
 
+    // Theme modes
+    const val THEME_LIGHT = "light"
+    const val THEME_DARK = "dark"
+    const val THEME_SYSTEM = "system"
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun useDoh(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_USE_DOH, true)

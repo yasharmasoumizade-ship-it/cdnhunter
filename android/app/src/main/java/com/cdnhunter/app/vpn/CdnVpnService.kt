@@ -170,7 +170,7 @@ class CdnVpnService : VpnService() {
     }
 
     private fun isKillSwitchEnabled(): Boolean =
-        getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("kill_switch_enabled", false)
+        AppSettings.killSwitchEnabled(this)
 
     private fun isAutoReconnectEnabled(): Boolean =
         getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("auto_reconnect_enabled", true)
@@ -603,7 +603,6 @@ class CdnVpnService : VpnService() {
             if (ipv6Enabled) {
                 builder.addRoute("::", 0)
             }
-            builder
 
             // Split tunneling. Android only allows EITHER
             // addAllowedApplication calls OR addDisallowedApplication calls
@@ -634,6 +633,18 @@ class CdnVpnService : VpnService() {
                         // Same as above -- stale/uninstalled package, skip it.
                     }
                 }
+            }
+
+            // Allow LAN: user can opt-in to keep local network traffic
+            // (192.168/10.0/172.16 ranges) off the tunnel so it reaches
+            // devices on the home network directly. Default is false
+            // (everything through the tunnel) -- most users don't have a
+            // home network they want reachable, and routing non-VPN traffic
+            // violates the contract of "VPN is on".
+            if (AppSettings.allowLan(this)) {
+                builder.addDisallowedRoute("192.168.0.0", 16)
+                builder.addDisallowedRoute("10.0.0.0", 8)
+                builder.addDisallowedRoute("172.16.0.0", 12)
             }
 
             builder.establish()
