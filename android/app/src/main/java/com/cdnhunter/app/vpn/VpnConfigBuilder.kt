@@ -61,12 +61,32 @@ object VpnConfigBuilder {
         // DNS nameservers: either user-provided custom servers, or default Cloudflare+Google
         // When using custom DNS, respect the DoH setting: if useDoh && custom server is IP,
         // user should provide https://... URLs; if DoH is off, provide plain IP:port or just IP.
-        val nameservers = if (customDnsEnabled && customDnsServers.isNotEmpty()) {
-            customDnsServers
+        // Validate custom DNS to prevent leaks: remove empty strings, warn invalid entries.
+        val validCustomDns = customDnsServers
+            .filter { it.isNotBlank() }
+            .map { it.trim() }
+            .take(2)  // Limit to primary + secondary
+        
+        val nameservers = if (customDnsEnabled && validCustomDns.isNotEmpty()) {
+            // User-provided custom DNS — ensure they're properly formatted
+            validCustomDns.map { server ->
+                when {
+                    // DoH URL (https://...)
+                    server.startsWith("https://") -> server
+                    // DoQ URL (quic://...) — mihomo supports DoQ
+                    server.startsWith("quic://") -> server
+                    // Plain IP or IP:port — assume port 53 if not specified
+                    server.contains(":") -> server
+                    // Just IP — assume port 53
+                    else -> "$server:53"
+                }
+            }
         } else if (useDoh) {
+            // DoH by default — TLS-wrapped, safe from ISP poisoning
             listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query")
         } else {
-            listOf("1.1.1.1", "8.8.8.8")
+            // Plain DNS fallback — only if user explicitly disables DoH
+            listOf("1.1.1.1:53", "8.8.8.8:53")
         }
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,

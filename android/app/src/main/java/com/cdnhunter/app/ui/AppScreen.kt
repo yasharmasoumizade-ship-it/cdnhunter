@@ -1807,40 +1807,71 @@ private fun SettingsScreen(
                         Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                             // Primary DNS
+                            val isPrimaryValid = AppSettings.isValidDnsServer(primaryDns)
                             TextField(
                                 value = primaryDns,
                                 onValueChange = {
                                     primaryDns = it
-                                    AppSettings.setPrimaryDns(context, it)
+                                    if (AppSettings.isValidDnsServer(it)) {
+                                        AppSettings.setPrimaryDns(context, it)
+                                    }
                                 },
                                 label = { Text("Primary DNS", fontSize = 10.sp) },
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = AnanasCard2,
-                                    unfocusedContainerColor = AnanasCard2
+                                    unfocusedContainerColor = AnanasCard2,
+                                    focusedIndicatorColor = if (isPrimaryValid) AnanasAccent else AnanasRed,
+                                    unfocusedIndicatorColor = if (isPrimaryValid) AnanasBorder else AnanasRed.copy(0.5f)
                                 ),
                                 singleLine = true,
-                                placeholder = { Text("8.8.8.8", fontSize = 10.sp, color = AnanasMuted.copy(0.5f)) }
+                                isError = !isPrimaryValid && primaryDns.isNotBlank(),
+                                placeholder = { Text("8.8.8.8 or https://8.8.8.8/dns-query", fontSize = 9.sp, color = AnanasMuted.copy(0.5f)) }
                             )
+                            if (!isPrimaryValid && primaryDns.isNotBlank()) {
+                                Text("Invalid DNS format", fontSize = 9.sp, color = AnanasRed, modifier = Modifier.padding(top = 2.dp))
+                            }
                             
                             // Secondary DNS
+                            val isSecondaryValid = secondaryDns.isBlank() || AppSettings.isValidDnsServer(secondaryDns)
                             TextField(
                                 value = secondaryDns,
                                 onValueChange = {
                                     secondaryDns = it
-                                    AppSettings.setSecondaryDns(context, it)
+                                    if (it.isBlank() || AppSettings.isValidDnsServer(it)) {
+                                        AppSettings.setSecondaryDns(context, it)
+                                    }
                                 },
                                 label = { Text("Secondary DNS (optional)", fontSize = 10.sp) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = AnanasCard2,
-                                    unfocusedContainerColor = AnanasCard2
+                                    unfocusedContainerColor = AnanasCard2,
+                                    focusedIndicatorColor = if (isSecondaryValid) AnanasAccent else AnanasRed,
+                                    unfocusedIndicatorColor = if (isSecondaryValid) AnanasBorder else AnanasRed.copy(0.5f)
                                 ),
                                 singleLine = true,
-                                placeholder = { Text("8.8.4.4", fontSize = 10.sp, color = AnanasMuted.copy(0.5f)) }
+                                isError = !isSecondaryValid && secondaryDns.isNotBlank(),
+                                placeholder = { Text("8.8.4.4 or quic://dns.google:853", fontSize = 9.sp, color = AnanasMuted.copy(0.5f)) }
                             )
+                            if (!isSecondaryValid && secondaryDns.isNotBlank()) {
+                                Text("Invalid DNS format", fontSize = 9.sp, color = AnanasRed, modifier = Modifier.padding(top = 2.dp))
+                            }
+                            
+                            // DNS Leak Protection Info
+                            Spacer(Modifier.height(8.dp))
+                            Box(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(AnanasCard2.copy(0.5f)).padding(10.dp)
+                            ) {
+                                Column {
+                                    Text("DNS Leak Protection", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent)
+                                    Text("• All DNS queries are hijacked and routed through the tunnel", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 3.dp))
+                                    Text("• DoH (HTTPS) is recommended for security", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+                                    Text("• Formats: IP, IP:port, https://... or quic://...", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+                                }
+                            }
                         }
                     }
                 }

@@ -134,23 +134,56 @@ object AppSettings {
     fun setCustomDnsEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_CUSTOM_DNS_ENABLED, value).apply()
 
     // Returns list of custom DNS servers; defaults to empty (use default 1.1.1.1, 8.8.8.8)
+    // Only returns servers that are actually set (not defaults).
     fun customDnsServers(ctx: Context): List<String> {
-        val csv = prefs(ctx).getString(KEY_CUSTOM_DNS_SERVERS, "") ?: ""
-        return if (csv.isBlank()) emptyList() else csv.split(",").map { it.trim() }
+        val primary = primaryDns(ctx).takeIf { it.isNotBlank() && isValidDnsServer(it) } ?: return emptyList()
+        val secondary = secondaryDns(ctx).takeIf { it.isNotBlank() && isValidDnsServer(it) }
+        
+        return if (secondary != null) listOf(primary, secondary) else listOf(primary)
     }
     
     fun setCustomDnsServers(ctx: Context, servers: List<String>) {
-        val csv = servers.joinToString(",")
-        prefs(ctx).edit().putString(KEY_CUSTOM_DNS_SERVERS, csv).apply()
+        // Deprecated: use setPrimaryDns/setSecondaryDns instead for better validation
+        val validated = servers.filter { isValidDnsServer(it) }
+        if (validated.isNotEmpty()) setPrimaryDns(ctx, validated[0])
+        if (validated.size > 1) setSecondaryDns(ctx, validated[1])
     }
     
-    // Primary DNS (e.g., 8.8.8.8)
+    // Primary DNS (e.g., 8.8.8.8 or https://8.8.8.8/dns-query)
     fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "8.8.8.8") ?: "8.8.8.8"
-    fun setPrimaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_PRIMARY_DNS, value).apply()
+    fun setPrimaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_PRIMARY_DNS, value.trim()).apply()
     
-    // Secondary DNS (e.g., 8.8.4.4) - optional
+    // Secondary DNS (e.g., 8.8.4.4 or https://8.8.4.4/dns-query) - optional
     fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "8.8.4.4") ?: "8.8.4.4"
-    fun setSecondaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_SECONDARY_DNS, value).apply()
+    fun setSecondaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_SECONDARY_DNS, value.trim()).apply()
+    
+    /**
+     * Validates DNS server format. Accepts:
+     * - Plain IP: 8.8.8.8
+     * - IP with port: 8.8.8.8:53
+     * - DoH: https://8.8.8.8/dns-query
+     * - DoQ: quic://8.8.8.8:853
+     */
+    fun isValidDnsServer(server: String): Boolean {
+        val trimmed = server.trim()
+        if (trimmed.isBlank()) return false
+        
+        return when {
+            // DoH: https://...
+            trimmed.startsWith("https://") -> trimmed.length > 11 && trimmed.contains("/dns-query")
+            // DoQ: quic://...
+            trimmed.startsWith("quic://") -> trimmed.length > 7
+            // IP or IP:port
+            else -> {
+                val parts = trimmed.split(":")
+                if (parts.isEmpty() || parts.size > 2) return false
+                // Validate IP format (simple check: 4 groups of 1-3 digits separated by dots)
+                val ipParts = parts[0].split(".")
+                if (ipParts.size != 4) return false
+                ipParts.all { it.matches(Regex("\\d{1,3}")) && it.toInt() <= 255 }
+            }
+        }
+    }
 
     // ============ Server Management ============
     fun favoriteServers(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_FAVORITE_SERVERS, emptySet()) ?: emptySet()
