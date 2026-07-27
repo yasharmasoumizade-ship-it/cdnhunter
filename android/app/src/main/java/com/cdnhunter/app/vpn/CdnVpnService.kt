@@ -456,8 +456,11 @@ class CdnVpnService : VpnService() {
                 val uri = parts.getOrNull(0)?.trim().orEmpty()
                 if (uri.isBlank() || uri.hashCode().toString() != configId) return@map line
                 changed = true
-                val pingMs = parts.getOrNull(3) ?: "-1"
-                listOf(uri, cc, city, pingMs, "1", "1").joinToString(sep)
+                
+                // Preserve original ping (don't overwrite!)
+                val originalPingMs = parts.getOrNull(3) ?: "-1"
+                // Update: uri, countryCode, city, pingMs (preserved), geoResolved, accurateGeoResolved
+                listOf(uri, cc, city, originalPingMs, "1", "1").joinToString(sep)
             }
             if (changed) {
                 prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()

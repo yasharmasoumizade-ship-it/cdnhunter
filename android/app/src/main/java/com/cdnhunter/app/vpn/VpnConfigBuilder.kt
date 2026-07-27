@@ -162,7 +162,11 @@ object VpnConfigBuilder {
                 // solving a problem protect() already solves, at the cost of this
                 // Android-14+ failure mode.
                 "auto-detect-interface" to false,
-                "dns-hijack" to listOf("any:53"),
+                // DNS hijacking: catch BOTH plain DNS (UDP:53) AND DoH/DoQ (TCP:443/UDP:443)
+                // DoH = DNS over HTTPS (port 443 encrypted)
+                // DoQ = DNS over QUIC (UDP 443)
+                // This ensures NO DNS query escapes the tunnel, regardless of method
+                "dns-hijack" to listOf("any:53", "tcp/443", "udp/443"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
                 // — a mismatch here means mihomo builds packets sized for a
                 // different MTU than the actual OS-level tun device, and they
