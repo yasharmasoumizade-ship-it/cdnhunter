@@ -35,11 +35,9 @@ object AppSettings {
     private const val KEY_ACCENT_COLOR = "accent_color"
     private const val KEY_AMOLED_MODE = "amoled_mode"
     
-    // Notifications & Sounds
-    private const val KEY_ALERTS_ENABLED = "alerts_enabled"
-    private const val KEY_CONNECT_SOUND = "connect_sound"
-    private const val KEY_DISCONNECT_SOUND = "disconnect_sound"
-    private const val KEY_SILENT_MODE = "silent_mode"
+    // Custom DNS
+    private const val KEY_CUSTOM_DNS_ENABLED = "custom_dns_enabled"
+    private const val KEY_CUSTOM_DNS_SERVERS = "custom_dns_servers"  // comma-separated
     
     // Server Management
     private const val KEY_FAVORITE_SERVERS = "favorite_servers"
@@ -124,18 +122,20 @@ object AppSettings {
     fun amoledMode(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AMOLED_MODE, false)
     fun setAmoledMode(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_AMOLED_MODE, value).apply()
 
-    // ============ Notification Settings ============
-    fun alertsEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_ALERTS_ENABLED, true)
-    fun setAlertsEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_ALERTS_ENABLED, value).apply()
+    // ============ Custom DNS Settings ============
+    fun customDnsEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_CUSTOM_DNS_ENABLED, false)
+    fun setCustomDnsEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_CUSTOM_DNS_ENABLED, value).apply()
 
-    fun connectSound(ctx: Context): String = prefs(ctx).getString(KEY_CONNECT_SOUND, "beep") ?: "beep"
-    fun setConnectSound(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_CONNECT_SOUND, value).apply()
-
-    fun disconnectSound(ctx: Context): String = prefs(ctx).getString(KEY_DISCONNECT_SOUND, "none") ?: "none"
-    fun setDisconnectSound(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_DISCONNECT_SOUND, value).apply()
-
-    fun silentMode(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SILENT_MODE, false)
-    fun setSilentMode(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_SILENT_MODE, value).apply()
+    // Returns list of custom DNS servers; defaults to empty (use default 1.1.1.1, 8.8.8.8)
+    fun customDnsServers(ctx: Context): List<String> {
+        val csv = prefs(ctx).getString(KEY_CUSTOM_DNS_SERVERS, "") ?: ""
+        return if (csv.isBlank()) emptyList() else csv.split(",").map { it.trim() }
+    }
+    
+    fun setCustomDnsServers(ctx: Context, servers: List<String>) {
+        val csv = servers.joinToString(",")
+        prefs(ctx).edit().putString(KEY_CUSTOM_DNS_SERVERS, csv).apply()
+    }
 
     // ============ Server Management ============
     fun favoriteServers(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_FAVORITE_SERVERS, emptySet()) ?: emptySet()

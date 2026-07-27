@@ -22,9 +22,11 @@ object VpnConfigBuilder {
         val blockAds = AppSettings.blockAds(ctx)
         val blockTrackers = AppSettings.blockTrackers(ctx)
         val blockMalware = AppSettings.blockMalware(ctx)
+        val customDnsEnabled = AppSettings.customDnsEnabled(ctx)
+        val customDnsServers = AppSettings.customDnsServers(ctx)
         return buildConfigFromUri(
             userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh,
-            adBlocker, blockAds, blockTrackers, blockMalware
+            adBlocker, blockAds, blockTrackers, blockMalware, customDnsEnabled, customDnsServers
         )
     }
 
@@ -33,13 +35,15 @@ object VpnConfigBuilder {
         uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false,
         mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
         adBlocker: Boolean = false, blockAds: Boolean = true,
-        blockTrackers: Boolean = true, blockMalware: Boolean = true
+        blockTrackers: Boolean = true, blockMalware: Boolean = true,
+        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
     ): String {
         val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
         return renderYaml(
             proxy, tunFd, mtu, allowLan, ipv6, useDoh,
-            adBlocker, blockAds, blockTrackers, blockMalware
+            adBlocker, blockAds, blockTrackers, blockMalware,
+            customDnsEnabled, customDnsServers
         )
     }
 
@@ -51,11 +55,15 @@ object VpnConfigBuilder {
         proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 1500,
         allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
         adBlocker: Boolean = false, blockAds: Boolean = true,
-        blockTrackers: Boolean = true, blockMalware: Boolean = true
+        blockTrackers: Boolean = true, blockMalware: Boolean = true,
+        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
     ): String {
-        // DNS nameservers: DoH (encrypted, anti-poisoning) when enabled, plain UDP
-        // when disabled (faster but exposed to ISP-level DNS tampering).
-        val nameservers = if (useDoh) {
+        // DNS nameservers: either user-provided custom servers, or default Cloudflare+Google
+        // When using custom DNS, respect the DoH setting: if useDoh && custom server is IP,
+        // user should provide https://... URLs; if DoH is off, provide plain IP:port or just IP.
+        val nameservers = if (customDnsEnabled && customDnsServers.isNotEmpty()) {
+            customDnsServers
+        } else if (useDoh) {
             listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query")
         } else {
             listOf("1.1.1.1", "8.8.8.8")

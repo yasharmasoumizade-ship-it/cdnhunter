@@ -1641,6 +1641,81 @@ private fun SettingsScreen(
                 )
             }
 
+            Spacer(Modifier.height(10.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            ) {
+                var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
+                var customDnsInput by remember { mutableStateOf(AppSettings.customDnsServers(context).joinToString("\n")) }
+
+                SettingsToggleRow(
+                    Icons.Rounded.Dns, "Custom DNS", "Use your own DNS servers",
+                    customDnsEnabled, {
+                        customDnsEnabled = it
+                        AppSettings.setCustomDnsEnabled(context, it)
+                    }
+                )
+
+                if (customDnsEnabled) {
+                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            "Enter DNS servers (one per line):",
+                            fontSize = 10.sp,
+                            color = AnanasMuted,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        // Minimal text field for DNS servers
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(AnanasCard2, RoundedCornerShape(8.dp))
+                                .border(1.dp, AnanasBorder, RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                                .heightIn(min = 60.dp, max = 120.dp)
+                        ) {
+                            BasicTextField(
+                                value = customDnsInput,
+                                onValueChange = { newValue ->
+                                    customDnsInput = newValue
+                                    // Save on each keystroke
+                                    val servers = newValue.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+                                    AppSettings.setCustomDnsServers(context, servers)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 11.sp,
+                                    color = AnanasTextHi,
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                decorationBox = { innerTextField ->
+                                    if (customDnsInput.isEmpty()) {
+                                        Text(
+                                            "1.1.1.1\n8.8.8.8",
+                                            fontSize = 11.sp,
+                                            color = AnanasMuted,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                        }
+                        Text(
+                            "💡 IPs (plain DNS), domains (DoH), or URLs",
+                            fontSize = 8.sp,
+                            color = AnanasMuted,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(26.dp))
             Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
