@@ -18,17 +18,29 @@ object VpnConfigBuilder {
         val allowLan = AppSettings.allowLan(ctx)
         val ipv6 = AppSettings.ipv6Enabled(ctx)
         val useDoh = AppSettings.useDoh(ctx)
-        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh)
+        val adBlocker = AppSettings.adBlockerEnabled(ctx)
+        val blockAds = AppSettings.blockAds(ctx)
+        val blockTrackers = AppSettings.blockTrackers(ctx)
+        val blockMalware = AppSettings.blockMalware(ctx)
+        return buildConfigFromUri(
+            userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh,
+            adBlocker, blockAds, blockTrackers, blockMalware
+        )
     }
 
     /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
     fun buildConfigFromUri(
         uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false,
-        mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true
+        mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
+        adBlocker: Boolean = false, blockAds: Boolean = true,
+        blockTrackers: Boolean = true, blockMalware: Boolean = true
     ): String {
         val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
-        return renderYaml(proxy, tunFd, mtu, allowLan, ipv6, useDoh)
+        return renderYaml(
+            proxy, tunFd, mtu, allowLan, ipv6, useDoh,
+            adBlocker, blockAds, blockTrackers, blockMalware
+        )
     }
 
 
@@ -37,7 +49,9 @@ object VpnConfigBuilder {
 
     private fun renderYaml(
         proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 1500,
-        allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true
+        allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
+        adBlocker: Boolean = false, blockAds: Boolean = true,
+        blockTrackers: Boolean = true, blockMalware: Boolean = true
     ): String {
         // DNS nameservers: DoH (encrypted, anti-poisoning) when enabled, plain UDP
         // when disabled (faster but exposed to ISP-level DNS tampering).
@@ -146,24 +160,56 @@ object VpnConfigBuilder {
             // more reliable without an unnecessary round trip through a foreign
             // proxy, and this never affects anything actually blocked in Iran
             // (which lives outside these rulesets by definition).
-            "rule-providers" to linkedMapOf(
-                "ir-domain" to linkedMapOf(
+            //
+            // Ad/tracker/malware blocking is user-toggleable (AppSettings.adBlocker*
+            // — see Settings > AD BLOCKING). When enabled we pull domain blocklists
+            // from well-known clash-compatible sources and REJECT them before any
+            // proxy/MATCH rule, so the request never leaves the device.
+            "rule-providers" to buildMap {
+                put("ir-domain", linkedMapOf(
                     "type" to "http",
                     "format" to "text",
                     "behavior" to "domain",
                     "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ir.txt",
                     "path" to "./ruleset/ir-domain.txt",
                     "interval" to 86400,
-                ),
-                "ir-ip" to linkedMapOf(
+                ))
+                put("ir-ip", linkedMapOf(
                     "type" to "http",
                     "format" to "yaml",
                     "behavior" to "ipcidr",
                     "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ircidr.yaml",
                     "path" to "./ruleset/ir-ip.yaml",
                     "interval" to 86400,
-                ),
-            ),
+                ))
+                // Ad blocker rule-providers — only added when the user has the
+                // corresponding toggle on, so disabled users pay no download
+                // cost and the rule engine has nothing extra to match.
+                if (adBlocker) {
+                    // Ads + trackers (Loyalsoldier reject list covers both in one file).
+                    if (blockAds || blockTrackers) {
+                        put("ad-block", linkedMapOf(
+                            "type" to "http",
+                            "format" to "text",
+                            "behavior" to "domain",
+                            "url" to "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt",
+                            "path" to "./ruleset/ad-block.txt",
+                            "interval" to 86400,
+                        ))
+                    }
+                    // Malware domains (Loyalsoldier's separate anti-malware list).
+                    if (blockMalware) {
+                        put("malware-block", linkedMapOf(
+                            "type" to "http",
+                            "format" to "text",
+                            "behavior" to "domain",
+                            "url" to "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/banad.txt",
+                            "path" to "./ruleset/malware-block.txt",
+                            "interval" to 86400,
+                        ))
+                    }
+                }
+            },
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
                 linkedMapOf(
@@ -172,21 +218,30 @@ object VpnConfigBuilder {
                     "proxies" to listOf("proxy"),
                 )
             ),
-            "rules" to listOf(
+            "rules" to buildList {
                 // Keep private/LAN ranges off the tunnel to avoid a traffic loop.
-                "IP-CIDR,10.0.0.0/8,DIRECT",
-                "IP-CIDR,172.16.0.0/12,DIRECT",
-                "IP-CIDR,192.168.0.0/16,DIRECT",
-                "IP-CIDR,169.254.0.0/16,DIRECT",
-                "IP-CIDR,127.0.0.0/8,DIRECT",
+                add("IP-CIDR,10.0.0.0/8,DIRECT")
+                add("IP-CIDR,172.16.0.0/12,DIRECT")
+                add("IP-CIDR,192.168.0.0/16,DIRECT")
+                add("IP-CIDR,169.254.0.0/16,DIRECT")
+                add("IP-CIDR,127.0.0.0/8,DIRECT")
+                // Ad/tracker/malware blocking — REJECT before anything else so
+                // the request dies on the device and never reaches the proxy.
+                // Only the rules for the providers that were actually added
+                // above go in here; if the provider wasn't added (toggle off),
+                // the RULE-SET would match nothing and is omitted.
+                if (adBlocker) {
+                    if (blockAds || blockTrackers) add("RULE-SET,ad-block,REJECT")
+                    if (blockMalware) add("RULE-SET,malware-block,REJECT")
+                }
                 // If the rule-provider fetch fails (e.g. no internet yet on first
                 // ever launch), these RULE-SET lines just never match anything and
                 // everything falls through to MATCH,PROXY same as before --
                 // non-fatal either way.
-                "RULE-SET,ir-domain,DIRECT",
-                "RULE-SET,ir-ip,DIRECT",
-                "MATCH,PROXY",
-            ),
+                add("RULE-SET,ir-domain,DIRECT")
+                add("RULE-SET,ir-ip,DIRECT")
+                add("MATCH,PROXY")
+            },
         )
         val sb = StringBuilder()
         writeYamlValue(sb, root, 0)
