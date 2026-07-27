@@ -112,7 +112,7 @@ fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
 }
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
-val LocalThemeMode = androidx.compose.runtime.staticCompositionLocalOf { ThemeMode.LIGHT }
+val LocalThemeMode = androidx.compose.runtime.compositionLocalOf { ThemeMode.SYSTEM }
 
 // ── Saved config data class ───────────────────────────────────────────────────
 data class SavedConfig(
@@ -509,11 +509,27 @@ private fun formatBytes(bytes: Long): String {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppScreen() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Read theme from AppSettings and recompose when it changes
+    var themeSetting by remember { mutableStateOf(AppSettings.theme(context)) }
+    var amoledSetting by remember { mutableStateOf(AppSettings.amoledMode(context)) }
+    
+    // Convert to ThemeMode enum
+    val themeMode = when (themeSetting) {
+        AppSettings.THEME_LIGHT  -> ThemeMode.LIGHT
+        AppSettings.THEME_DARK   -> ThemeMode.DARK
+        else                     -> ThemeMode.SYSTEM
+    }
+    
     Box(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(AnanasBg, AnanasScreenBg, AnanasBg)))
     ) {
-        VpnTab() // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
+        CompositionLocalProvider(
+            LocalThemeMode provides themeMode
+        ) {
+            VpnTab() // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
+        }
     }
 }
 
@@ -1649,6 +1665,8 @@ private fun SettingsScreen(
                             onClick = {
                                 theme = themeOption.lowercase()
                                 AppSettings.setTheme(context, theme)
+                                // Restart activity to apply new theme
+                                (context as? android.app.Activity)?.recreate()
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -1675,6 +1693,8 @@ private fun SettingsScreen(
                         onCheckedChange = {
                             amoledMode = it
                             AppSettings.setAmoledMode(context, it)
+                            // Restart activity to apply new colors
+                            (context as? android.app.Activity)?.recreate()
                         }
                     )
                 }
