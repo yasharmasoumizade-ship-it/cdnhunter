@@ -2429,3 +2429,25 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
             Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
         }
     }
+}
+
+// ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
+@Composable
+private fun EmptyHomeState(onAdd: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.size(76.dp).clip(CircleShape).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, CircleShape)
+                    .clickable { onAdd() },
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Rounded.Add, null, tint = AnanasMuted, modifier = Modifier.size(26.dp)) }
+            Spacer(Modifier.height(16.dp))
+            Text("No configs yet", fontSize = 15.sp, color = AnanasTextHi, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
+        }
+    }
+}
+}
+}
