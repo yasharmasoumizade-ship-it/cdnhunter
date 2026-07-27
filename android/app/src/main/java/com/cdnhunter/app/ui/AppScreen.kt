@@ -1591,6 +1591,40 @@ private fun SettingsScreen(
                 )
             }
 
+            Spacer(Modifier.height(10.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            ) {
+                var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
+                var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
+                var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
+
+                SettingsToggleRow(
+                    Icons.Rounded.Lan, "Allow LAN", "Access local network devices while VPN is on",
+                    allowLan, {
+                        allowLan = it
+                        AppSettings.setAllowLan(context, it)
+                    }
+                )
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsToggleRow(
+                    Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through the tunnel",
+                    ipv6Enabled, {
+                        ipv6Enabled = it
+                        AppSettings.setIpv6Enabled(context, it)
+                    }
+                )
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                SettingsToggleRow(
+                    Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS to prevent ISP tampering",
+                    useDoh, {
+                        useDoh = it
+                        AppSettings.setUseDoh(context, it)
+                    }
+                )
+            }
+
             Spacer(Modifier.height(26.dp))
             Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
