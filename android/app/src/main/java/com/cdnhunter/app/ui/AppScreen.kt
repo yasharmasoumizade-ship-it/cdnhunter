@@ -1595,10 +1595,79 @@ private fun SettingsScreen(
                 shadowElevation = 2.dp
             ) {
                 Column {
+                    var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
+                    var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
+                    var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
                     var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
                     var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
                     var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
 
+                    // MTU Section
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                            Text("Default: 1500 bytes", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    mtuMode = "auto"
+                                    showCustomInput = false
+                                    AppSettings.setMtu(context, 1500)
+                                    AppSettings.setMtuPreset(context, "auto")
+                                },
+                                modifier = Modifier.height(34.dp).width(60.dp).clip(RoundedCornerShape(8.dp)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2,
+                                    contentColor = if (mtuMode == "auto") Color.White else AnanasText
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("Auto", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Button(
+                                onClick = { showCustomInput = !showCustomInput; mtuMode = "custom" },
+                                modifier = Modifier.height(34.dp).width(70.dp).clip(RoundedCornerShape(8.dp)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2,
+                                    contentColor = if (mtuMode == "custom") Color.White else AnanasText
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("Custom", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    if (showCustomInput) {
+                        Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                        TextField(
+                            value = customMtuText,
+                            onValueChange = {
+                                customMtuText = it
+                                it.toIntOrNull()?.let { value ->
+                                    if (value in 576..9000) {
+                                        AppSettings.setMtu(context, value)
+                                        AppSettings.setMtuPreset(context, "custom")
+                                    }
+                                }
+                            },
+                            label = { Text("MTU (576-9000)", fontSize = 10.sp) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = AnanasCard2,
+                                unfocusedContainerColor = AnanasCard2
+                            ),
+                            singleLine = true
+                        )
+                    }
+
+                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                     SettingsToggleRow(
                         Icons.Rounded.Router, "Allow LAN", "Access local network devices",
                         allowLan, {
@@ -1641,6 +1710,48 @@ private fun SettingsScreen(
                             AppSettings.setCustomDnsEnabled(context, it)
                         }
                     )
+                }
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+            Spacer(Modifier.height(10.dp))
+
+            Surface(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                color = AnanasCard,
+                shadowElevation = 2.dp
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    var theme by remember { mutableStateOf(AppSettings.theme(context)) }
+
+                    Text("Theme", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, modifier = Modifier.padding(bottom = 12.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        for (themeOption in listOf("Light", "Dark", "Auto")) {
+                            Button(
+                                onClick = {
+                                    theme = themeOption.lowercase()
+                                    AppSettings.setTheme(context, theme)
+                                    (context as? android.app.Activity)?.recreate()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2,
+                                    contentColor = if (theme == themeOption.lowercase()) Color.White else AnanasText
+                                ),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                            ) {
+                                Text(themeOption, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
                 }
             }
 
