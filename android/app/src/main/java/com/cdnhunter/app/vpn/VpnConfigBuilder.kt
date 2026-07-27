@@ -71,7 +71,7 @@ object VpnConfigBuilder {
             // User-provided custom DNS — ensure they're properly formatted
             validCustomDns.map { server ->
                 when {
-                    // DoH URL (https://...)
+                    // DoH URL (https://...) — Clash will use as-is
                     server.startsWith("https://") -> server
                     // DoQ URL (quic://...) — mihomo supports DoQ
                     server.startsWith("quic://") -> server
@@ -162,11 +162,14 @@ object VpnConfigBuilder {
                 // solving a problem protect() already solves, at the cost of this
                 // Android-14+ failure mode.
                 "auto-detect-interface" to false,
-                // DNS hijacking: catch BOTH plain DNS (UDP:53) AND DoH/DoQ (TCP:443/UDP:443)
-                // DoH = DNS over HTTPS (port 443 encrypted)
-                // DoQ = DNS over QUIC (UDP 443)
-                // This ensures NO DNS query escapes the tunnel, regardless of method
-                "dns-hijack" to listOf("any:53", "tcp/443", "udp/443"),
+                // DNS hijacking: catch plain DNS queries (UDP:53 and TCP:53)
+                // Note: DoH (DNS over HTTPS on port 443) cannot be intercepted at TUN level
+                // since it uses encrypted HTTPS traffic. Instead, we rely on:
+                // 1. SNI sniffer to detect DNS-over-HTTPS domains
+                // 2. Clash rules to route HTTPS through proxy (which decrypts via cert pinning)
+                // 3. Users enabling DoH within Clash config (not system-level)
+                // For maximum compatibility: hijack port 53 only (plain DNS)
+                "dns-hijack" to listOf("any:53"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
                 // — a mismatch here means mihomo builds packets sized for a
                 // different MTU than the actual OS-level tun device, and they
