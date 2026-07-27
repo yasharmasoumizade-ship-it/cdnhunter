@@ -721,7 +721,7 @@ private fun VpnTab() {
             if (pingMonitorJobs[cfg.id] == null) {
                 pingMonitorJobs[cfg.id] = launch {
                     try {
-                        while (isActive && configs.find { it.id == cfg.id } != null) {
+                        while (this.isActive && configs.find { it.id == cfg.id } != null) {
                             val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
                             if (newPing != cfg.pingMs) {
                                 configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
