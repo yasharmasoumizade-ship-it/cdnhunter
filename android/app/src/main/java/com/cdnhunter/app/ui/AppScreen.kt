@@ -2429,4 +2429,3 @@ private fun EmptyHomeState(onAdd: () -> Unit) {
             Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
         }
     }
-}
