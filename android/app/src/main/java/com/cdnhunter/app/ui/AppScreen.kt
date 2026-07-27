@@ -1487,11 +1487,13 @@ private fun SettingsScreen(
             Text("CONNECTION", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
             Spacer(Modifier.height(10.dp))
 
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            Surface(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                color = AnanasCard,
+                shadowElevation = 2.dp
             ) {
-                SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
+                Column {
+                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
                     Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
