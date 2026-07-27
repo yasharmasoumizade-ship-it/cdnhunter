@@ -2106,8 +2106,10 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
         Switch(
             checked = checked, onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White, checkedTrackColor = AnanasAccent, checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = Color(0xFF6B6B70), uncheckedTrackColor = AnanasCard2, uncheckedBorderColor = AnanasBorder2
+                checkedThumbColor = Color.White,
+                checkedTrackColor = AnanasAccent,
+                uncheckedThumbColor = Color(0xFF6B6B70),
+                uncheckedTrackColor = AnanasCard2
             )
         )
     }
