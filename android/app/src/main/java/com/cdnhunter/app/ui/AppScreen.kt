@@ -941,103 +941,146 @@ private fun VpnTab() {
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     val infinite = rememberInfiniteTransition(label = "power")
 
-    // Concentric ripple waves expanding outward from the core while connected —
-    // like a radar/sonar ping, staggered so a new ring starts as the previous one
-    // is still fading, giving a continuous outward pulse instead of one static ring.
+    // Elegant ripple waves while connected
     val rippleProgress1 by infinite.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2400, easing = LinearOutSlowInEasing)), label = "ripple1"
+        0f, 1f, infiniteRepeatable(tween(2000, easing = LinearOutSlowInEasing)), label = "ripple1"
     )
     val rippleProgress2 by infinite.animateFloat(
         0f, 1f,
-        infiniteRepeatable(tween(2400, easing = LinearOutSlowInEasing), initialStartOffset = StartOffset(1200)),
+        infiniteRepeatable(tween(2000, easing = LinearOutSlowInEasing), initialStartOffset = StartOffset(1000)),
         label = "ripple2"
     )
 
-    // Smooth dual-arc scan while connecting — two short arcs chasing each other
-    // around the ring, replacing the plain circular spinner.
+    // Smooth rotating scan for connecting state
     val scanRotation by infinite.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "scan"
+        0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "scan"
     )
 
-    // Soft breathing glow on the core while connected.
+    // Soft breathing glow
     val breathe by infinite.animateFloat(
-        0.5f, 1f,
-        infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        0.4f, 1f,
+        infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "breathe"
     )
 
-    Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
-        // Ripple waves: only while connected, drawn behind everything else.
+    // Scale pulse on click feedback
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isPressed) 0.92f else 1f, label = "press")
+
+    Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
+        // Ripple waves: only while connected
         if (connected) {
             listOf(rippleProgress1, rippleProgress2).forEach { progress ->
-                Canvas(Modifier.size(200.dp)) {
+                Canvas(Modifier.size(180.dp)) {
                     val maxRadius = this.size.minDimension / 2f
-                    val radius = maxRadius * (0.42f + progress * 0.58f)
-                    val alpha = (1f - progress).coerceIn(0f, 1f) * 0.55f
+                    val radius = maxRadius * (0.45f + progress * 0.55f)
+                    val alpha = (1f - progress).coerceIn(0f, 1f) * 0.4f
                     drawCircle(
                         color = AnanasAccent.copy(alpha = alpha),
                         radius = radius,
-                        style = Stroke(width = 1.6.dp.toPx())
+                        style = Stroke(width = 1.2.dp.toPx())
                     )
                 }
             }
         }
 
-        // Static outer ring — brighter and breathing softly when connected.
+        // Outer ring with breathing effect when connected
         Box(
             Modifier
-                .size(200.dp)
+                .size(180.dp)
                 .clip(CircleShape)
-                .border(1.dp, if (connected) AnanasAccent.copy(alpha = breathe * 0.7f) else AnanasBorder2, CircleShape)
+                .border(
+                    1.2.dp,
+                    if (connected) AnanasAccent.copy(alpha = breathe * 0.6f) else AnanasBorder2,
+                    CircleShape
+                )
         )
 
-        // Dual-arc scan while connecting — two short arcs 180° apart, chasing
-        // each other around the ring for a livelier "searching" feel than a
-        // single spinner arc.
+        // Dual-arc scan while connecting
         if (connecting) {
-            Canvas(Modifier.size(176.dp).rotate(scanRotation)) {
+            Canvas(Modifier.size(160.dp).rotate(scanRotation)) {
                 drawArc(
                     color = AnanasAccent,
-                    startAngle = 0f, sweepAngle = 26f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                    startAngle = 0f, sweepAngle = 30f, useCenter = false,
+                    style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
                 )
                 drawArc(
-                    color = AnanasAccent.copy(alpha = 0.5f),
-                    startAngle = 180f, sweepAngle = 26f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                    color = AnanasAccent.copy(alpha = 0.3f),
+                    startAngle = 180f, sweepAngle = 30f, useCenter = false,
+                    style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
         }
 
-        // core power button — enlarged for more visual weight
-        Box(
-            Modifier
-                .size(160.dp) // 140dp core + 10dp ring-shadow spread on each side
-                .clip(CircleShape)
-                .background(
-                    if (connected) Brush.radialGradient(
-                        listOf(AnanasAccent.copy(0.16f * breathe), Color.Transparent), radius = 220f
-                    )
-                    else Brush.radialGradient(listOf(Color.Transparent, Color.Transparent))
-                ),
-            contentAlignment = Alignment.Center
-        ) {}
+        // Core button with gradient background
         Box(
             Modifier
                 .size(140.dp)
+                .scale(scale)
                 .clip(CircleShape)
-                .background(Color(0xFF101210))
-                .border(1.5.dp, if (connected) Color(0xFF2A4638) else AnanasBorder2, CircleShape)
-                .clickable(enabled = !connecting) { onClick() },
+                .background(
+                    if (connected) Brush.radialGradient(
+                        colors = listOf(
+                            AnanasAccent.copy(alpha = 0.08f * breathe),
+                            Color.Transparent
+                        ),
+                        radius = 200f
+                    )
+                    else Brush.radialGradient(
+                        colors = listOf(Color.Transparent, Color.Transparent)
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {}
+
+        // Main button - Modern flat design with subtle shadow
+        Box(
+            Modifier
+                .size(130.dp)
+                .clip(CircleShape)
+                .background(
+                    if (connected)
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF1a1a1c),
+                                Color(0xFF0f0f10)
+                            ),
+                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                            end = androidx.compose.ui.geometry.Offset(130f, 130f)
+                        )
+                    else
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF16161a),
+                                Color(0xFF0d0d0f)
+                            ),
+                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                            end = androidx.compose.ui.geometry.Offset(130f, 130f)
+                        )
+                )
+                .border(
+                    1.5.dp,
+                    if (connected) AnanasAccent.copy(alpha = 0.4f) else Color(0xFF323235),
+                    CircleShape
+                )
+                .clickable(enabled = !connecting) {
+                    isPressed = true
+                    onClick()
+                },
             contentAlignment = Alignment.Center
         ) {
             if (connecting) {
-                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.5.dp, modifier = Modifier.size(34.dp))
+                // Minimal connecting indicator
+                CircularProgressIndicator(
+                    color = AnanasAccent,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(32.dp)
+                )
             } else {
                 Icon(
                     Icons.Rounded.PowerSettingsNew, null,
-                    tint = if (connected) AnanasAccent else AnanasMuted,
-                    modifier = Modifier.size(46.dp)
+                    tint = if (connected) AnanasAccent else Color(0xFF808084),
+                    modifier = Modifier.size(48.dp)
                 )
             }
         }
