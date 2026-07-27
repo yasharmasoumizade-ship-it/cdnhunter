@@ -1763,6 +1763,7 @@ private fun SettingsScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
             Surface(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
                 color = AnanasCard,
@@ -1770,14 +1771,78 @@ private fun SettingsScreen(
             ) {
                 Column {
                     var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
+                    var primaryDns by remember { mutableStateOf(AppSettings.primaryDns(context)) }
+                    var secondaryDns by remember { mutableStateOf(AppSettings.secondaryDns(context)) }
+                    var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
 
-                    SettingsToggleRow(
-                        Icons.Rounded.Settings, "Custom DNS", "Use your own DNS servers",
-                        customDnsEnabled, {
-                            customDnsEnabled = it
-                            AppSettings.setCustomDnsEnabled(context, it)
+                    // Custom DNS Toggle
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Custom DNS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                            Text("Use your own DNS servers", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
                         }
-                    )
+                        Switch(
+                            checked = customDnsEnabled,
+                            onCheckedChange = {
+                                customDnsEnabled = it
+                                showDnsInputs = it
+                                AppSettings.setCustomDnsEnabled(context, it)
+                            },
+                            modifier = Modifier.scale(1.15f),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = AnanasAccent,
+                                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.6f),
+                                uncheckedTrackColor = AnanasCard2
+                            )
+                        )
+                    }
+
+                    // DNS Inputs (shown when enabled)
+                    if (showDnsInputs) {
+                        Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            // Primary DNS
+                            TextField(
+                                value = primaryDns,
+                                onValueChange = {
+                                    primaryDns = it
+                                    AppSettings.setPrimaryDns(context, it)
+                                },
+                                label = { Text("Primary DNS", fontSize = 10.sp) },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = AnanasCard2,
+                                    unfocusedContainerColor = AnanasCard2
+                                ),
+                                singleLine = true,
+                                placeholder = { Text("8.8.8.8", fontSize = 10.sp, color = AnanasMuted.copy(0.5f)) }
+                            )
+                            
+                            // Secondary DNS
+                            TextField(
+                                value = secondaryDns,
+                                onValueChange = {
+                                    secondaryDns = it
+                                    AppSettings.setSecondaryDns(context, it)
+                                },
+                                label = { Text("Secondary DNS (optional)", fontSize = 10.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = AnanasCard2,
+                                    unfocusedContainerColor = AnanasCard2
+                                ),
+                                singleLine = true,
+                                placeholder = { Text("8.8.4.4", fontSize = 10.sp, color = AnanasMuted.copy(0.5f)) }
+                            )
+                        }
+                    }
                 }
             }
 
