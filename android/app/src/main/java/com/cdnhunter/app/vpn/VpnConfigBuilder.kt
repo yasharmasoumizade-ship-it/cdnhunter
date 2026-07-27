@@ -15,28 +15,44 @@ object VpnConfigBuilder {
         val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
         val userConfig = prefs.getString("user_config", "") ?: ""
         val mtu = AppSettings.mtu(ctx)
-        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768, mtu)
+        val allowLan = AppSettings.allowLan(ctx)
+        val ipv6 = AppSettings.ipv6Enabled(ctx)
+        val useDoh = AppSettings.useDoh(ctx)
+        return buildConfigFromUri(userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh)
     }
 
     /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
-    fun buildConfigFromUri(uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false, mtu: Int = 9000): String {
+    fun buildConfigFromUri(
+        uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false,
+        mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true
+    ): String {
         val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
-        return renderYaml(proxy, tunFd, mtu)
+        return renderYaml(proxy, tunFd, mtu, allowLan, ipv6, useDoh)
     }
 
 
     private fun defaultProxy(): LinkedHashMap<String, Any> =
         linkedMapOf("name" to "proxy", "type" to "direct")
 
-    private fun renderYaml(proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 9000): String {
+    private fun renderYaml(
+        proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 1500,
+        allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true
+    ): String {
+        // DNS nameservers: DoH (encrypted, anti-poisoning) when enabled, plain UDP
+        // when disabled (faster but exposed to ISP-level DNS tampering).
+        val nameservers = if (useDoh) {
+            listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query")
+        } else {
+            listOf("1.1.1.1", "8.8.8.8")
+        }
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
             "external-controller" to "127.0.0.1:10809",
-            "allow-lan" to false,
+            "allow-lan" to allowLan,
             "mode" to "rule",
             "log-level" to "error",
-            "ipv6" to false,
+            "ipv6" to ipv6,
             "dns" to linkedMapOf(
                 "enable" to true,
                 "listen" to "0.0.0.0:1053",
@@ -65,8 +81,8 @@ object VpnConfigBuilder {
                 // regardless of which proxy the actual traffic uses afterward.
                 // DoH (by IP, so no extra hostname lookup is needed to bootstrap
                 // it) is TLS-wrapped end to end and can't be selectively poisoned
-                // the same way.
-                "nameserver" to listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"),
+                // the same way. Now user-toggleable via AppSettings.useDoh().
+                "nameserver" to nameservers,
             ),
             // Wire mihomo directly to the TUN device Android already created via
             // VpnService.Builder.establish(). Without this block mihomo only opened

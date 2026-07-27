@@ -576,27 +576,34 @@ class CdnVpnService : VpnService() {
 
     private fun establishTun(): ParcelFileDescriptor? {
         return try {
+            val ipv6Enabled = AppSettings.ipv6Enabled(this)
             val builder = Builder()
                 .setSession("CDN Hunter VPN")
                 .addAddress("10.10.10.10", 32)
-                .addAddress("fd00:1:1:1::1", 128)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
+            // IPv6 address + route only added when the user has IPv6 enabled
+            // in Settings — matches the mihomo "ipv6" config flag set in
+            // VpnConfigBuilder so both sides agree on whether v6 traffic is
+            // routed through the tunnel at all.
+            if (ipv6Enabled) {
+                builder.addAddress("fd00:1:1:1::1", 128)
+            }
+            builder
                 // MTU is now user-adjustable via Settings UI (AppSettings.mtu()).
-                // Default is 9000 (jumbo-frame territory) — assumes every hop
-                // between here and the real destination also supports frames
-                // that large. Mobile data and most Wi-Fi/ISP paths cap out at
-                // standard Ethernet 1500, so packets mihomo builds for a
-                // 9000-byte interface can get silently dropped once they reach
-                // the real physical interface. Users can lower this in Settings
-                // if connections stop working.
+                // Default is 1500 (standard Ethernet) — works on all mobile/ISP
+                // paths. Users who know their network supports jumbo frames can
+                // raise it up to 9000 via Custom in Settings.
                 // NOTE: must stay in sync with "mtu" in VpnConfigBuilder's mihomo
                 // tun config — both now read from AppSettings.mtu().
                 .setMtu(AppSettings.mtu(this))
                 .setBlocking(false)
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)
-                .addRoute("::", 0)
+            if (ipv6Enabled) {
+                builder.addRoute("::", 0)
+            }
+            builder
 
             // Split tunneling. Android only allows EITHER
             // addAllowedApplication calls OR addDisallowedApplication calls
