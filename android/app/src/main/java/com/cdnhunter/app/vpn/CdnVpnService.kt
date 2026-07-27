@@ -173,7 +173,7 @@ class CdnVpnService : VpnService() {
         AppSettings.killSwitchEnabled(this)
 
     private fun isAutoReconnectEnabled(): Boolean =
-        getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getBoolean("auto_reconnect_enabled", true)
+        AppSettings.autoReconnectEnabled(this)
 
     private fun startVpn() {
         if (isRunning.get()) return
