@@ -1523,7 +1523,7 @@ private fun SettingsScreen(
                         onClick = {
                             mtuMode = "auto"
                             showCustomInput = false
-                            AppSettings.setMtu(context, 9000)
+                            AppSettings.setMtu(context, 1500)
                             AppSettings.setMtuPreset(context, "auto")
                         },
                         modifier = Modifier
@@ -1558,13 +1558,13 @@ private fun SettingsScreen(
                         onValueChange = {
                             customMtuText = it
                             it.toIntOrNull()?.let { value ->
-                                if (value in 1100..1500) {
+                                if (value in 576..9000) {
                                     AppSettings.setMtu(context, value)
                                     AppSettings.setMtuPreset(context, "custom")
                                 }
                             }
                         },
-                        label = { Text("Enter MTU (1100-1500)", fontSize = 10.sp) },
+                        label = { Text("Enter MTU (576-9000)", fontSize = 10.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp),
@@ -1576,7 +1576,7 @@ private fun SettingsScreen(
                     )
                 } else {
                     Text(
-                        "Current: 9000 bytes (Auto)",
+                        "Current: 1500 bytes (Auto)",
                         fontSize = 11.sp,
                         color = AnanasMuted,
                         modifier = Modifier.padding(top = 12.dp)
@@ -1584,7 +1584,7 @@ private fun SettingsScreen(
                 }
 
                 Text(
-                    "ℹ️ Auto = 9000 (jumbo-frame default)",
+                    "ℹ️ Auto = 1500 (standard Ethernet)",
                     fontSize = 9.sp,
                     color = AnanasMuted,
                     modifier = Modifier.padding(top = 12.dp)
