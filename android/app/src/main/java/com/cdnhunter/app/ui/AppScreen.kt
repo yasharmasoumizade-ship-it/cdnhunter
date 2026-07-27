@@ -194,6 +194,23 @@ private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedCon
         )
     }
 
+// Periodic ping monitor — continuously measures latency every 3 seconds
+// Similar to v2rayng's live ping display. Updates the config in-memory as ping changes.
+private suspend fun monitorPingContinuously(
+    cfg: SavedConfig,
+    onPingUpdate: (SavedConfig) -> Unit,
+    cancelCheck: () -> Boolean = { false }
+) {
+    while (!cancelCheck()) {
+        val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
+        if (newPing != cfg.pingMs) {
+            val updated = cfg.copy(pingMs = newPing)
+            onPingUpdate(updated)
+        }
+        delay(3000)  // Update ping every 3 seconds
+    }
+}
+
 // Note: the accurate (through-the-tunnel) geo check runs inside CdnVpnService
 // itself, right after a real connection succeeds — see the coroutine launched
 // after isRunning.set(true) in CdnVpnService.startVpn(), which calls
@@ -693,6 +710,38 @@ private fun VpnTab() {
     }
     LaunchedEffect(connecting) {
         if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
+    }
+
+    // Continuous ping monitoring — live update like v2rayng
+    // Updates all configs' ping values every 3 seconds in background
+    val pingMonitorJobs = remember { mutableMapOf<String, kotlinx.coroutines.Job>() }
+    LaunchedEffect(configs.size) {
+        // Start ping monitoring for new configs
+        for (cfg in configs) {
+            if (pingMonitorJobs[cfg.id] == null) {
+                pingMonitorJobs[cfg.id] = launch {
+                    try {
+                        while (isActive && configs.find { it.id == cfg.id } != null) {
+                            val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
+                            if (newPing != cfg.pingMs) {
+                                configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
+                            }
+                            delay(3000)
+                        }
+                    } finally {
+                        pingMonitorJobs.remove(cfg.id)
+                    }
+                }
+            }
+        }
+        
+        // Cancel ping jobs for removed configs
+        pingMonitorJobs.forEach { (id, job) ->
+            if (configs.find { it.id == id } == null) {
+                job.cancel()
+                pingMonitorJobs.remove(id)
+            }
+        }
     }
 
     // Unwraps a possibly-wrapped Compose Context down to the hosting Activity.
