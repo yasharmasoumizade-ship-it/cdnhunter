@@ -560,19 +560,32 @@ private fun VpnTab() {
         )
     }
     var showAddMenu by remember { mutableStateOf(false) }
-    var screen by remember { mutableStateOf(AnanasScreen.HOME) }
-    // System back button: on any sub-screen, go back to Home instead of exiting the
-    // app. Only when already on Home does back fall through to the default (exit)
-    // behavior. Without this, pressing back on Locations/Settings/Profile/My Configs
-    // closed the whole app instead of navigating up.
-    androidx.activity.compose.BackHandler(enabled = screen != AnanasScreen.HOME) {
-        screen = AnanasScreen.HOME
+    
+    // Navigation stack for proper back button handling
+    val navigationStack = remember { mutableStateListOf(AnanasScreen.HOME) }
+    val currentScreen = navigationStack.lastOrNull() ?: AnanasScreen.HOME
+    
+    fun navigateTo(screen: AnanasScreen) {
+        if (navigationStack.lastOrNull() != screen) {
+            navigationStack.add(screen)
+        }
     }
-    // Hoisted here (not inside the HOME branch) so it survives navigating away from
-    // and back to Home. Re-creating this fresh every time HOME recomposes (which
-    // happens every time you return from another tab) tore down and rebuilt the
-    // sheet's swipeable-state, sometimes mid-animation-frame — this was the actual
-    // cause of the freeze when coming back to Home from another tab.
+    
+    fun navigateBack() {
+        if (navigationStack.size > 1) {
+            navigationStack.removeAt(navigationStack.lastIndex)
+        }
+    }
+    
+    // System back button: pop from stack, or exit if at HOME
+    androidx.activity.compose.BackHandler(enabled = currentScreen != AnanasScreen.HOME || navigationStack.size > 1) {
+        navigateBack()
+    }
+    
+    // Hoisted OUTSIDE AnimatedContent so it survives navigation away and back.
+    // Re-creating this fresh every recomposition tore down and rebuilt the
+    // sheet's swipeable-state, sometimes mid-animation-frame — causing freezes
+    // when returning to Home. Now it's only created once and reused.
     val homeSheetState = rememberBottomSheetScaffoldState(
         bottomSheetState = rememberStandardBottomSheetState(
             initialValue = SheetValue.PartiallyExpanded,
@@ -609,9 +622,11 @@ private fun VpnTab() {
     // `configs`, which re-triggered it again — an effect storm that could hang the UI
     // thread (worst when switching tabs forces a recomposition). Keying on a joined
     // id string only changes identity when configs are actually added/removed.
-    val configIdsKey = remember(configs) { configs.map { it.id }.sorted().joinToString(",") }
+    val configCountAndIds = remember(configs.size, configs.firstOrNull()?.id, configs.lastOrNull()?.id) {
+        Triple(configs.size, configs.firstOrNull()?.id, configs.lastOrNull()?.id)
+    }
     val enrichingIds = remember { mutableSetOf<String>() }
-    LaunchedEffect(configIdsKey) {
+    LaunchedEffect(configCountAndIds) {
         val toEnrich = configs.filter { !it.geoResolved && it.id !in enrichingIds }
         for (cfg in toEnrich) {
             enrichingIds += cfg.id
@@ -786,11 +801,24 @@ private fun VpnTab() {
     val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
     val otherConfigs  = configs.filter { it.id != activeConfig?.id }
 
-    when (screen) {
+    AnimatedContent(
+        targetState = currentScreen,
+        transitionSpec = {
+            slideInHorizontally(
+                initialOffsetX = { it },  // Slide from right for forward nav
+                animationSpec = tween(350, easing = EaseInOutQuad)
+            ) togetherWith slideOutHorizontally(
+                targetOffsetX = { -it },  // Slide out to left
+                animationSpec = tween(350, easing = EaseInOutQuad)
+            )
+        },
+        label = "screenTransition"
+    ) { targetScreen ->
+        when (targetScreen) {
     AnanasScreen.HOME -> {
         if (configs.isEmpty()) {
             Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-                EmptyHomeState { screen = AnanasScreen.LOCATIONS }
+                EmptyHomeState { navigateTo(AnanasScreen.LOCATIONS) }
             }
         } else {
             BottomSheetScaffold(
@@ -823,7 +851,7 @@ private fun VpnTab() {
                                 Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
                                 Text(
                                     "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
-                                    modifier = Modifier.clickable { screen = AnanasScreen.LOCATIONS }
+                                    modifier = Modifier.clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                 )
                             }
                             otherConfigs.forEachIndexed { idx, cfg ->
@@ -840,8 +868,8 @@ private fun VpnTab() {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AnanasIconButton(Icons.Rounded.Menu) { screen = AnanasScreen.SETTINGS }
-                            AnanasIconButton(Icons.Rounded.Person) { screen = AnanasScreen.PROFILE }
+                            AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
+                            AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
                         }
 
                         // ── Power button + status ────────────────────────────────
@@ -875,7 +903,7 @@ private fun VpnTab() {
                                 item(key = "active-${cfg.id}") {
                                     SelectedServerSummaryCard(
                                         cfg = cfg, connected = connected,
-                                        onClick = { screen = AnanasScreen.LOCATIONS },
+                                        onClick = { navigateTo(AnanasScreen.LOCATIONS) },
                                         exitCountryCode = exitCountryCode, exitCity = exitCity, exitGeoConfigId = exitGeoConfigId,
                                     )
                                 }
@@ -917,8 +945,8 @@ private fun VpnTab() {
         }
         LocationsScreen(
             configs = configs, activeId = activeId, connected = connected,
-            onBack = { screen = AnanasScreen.HOME },
-            onConnect = { selectConfig(it); screen = AnanasScreen.HOME },
+            onBack = { navigateBack() },
+            onConnect = { selectConfig(it); navigateBack() },
             onDelete = { deleteConfig(it) },
             showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },
             onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
@@ -926,13 +954,14 @@ private fun VpnTab() {
     }
 
     AnanasScreen.SETTINGS -> SettingsScreen(
-        onProfileClick = { screen = AnanasScreen.PROFILE },
-        onSplitTunnelClick = { screen = AnanasScreen.SPLIT_TUNNEL },
-        onBack = { screen = AnanasScreen.HOME }
+        onProfileClick = { navigateTo(AnanasScreen.PROFILE) },
+        onSplitTunnelClick = { navigateTo(AnanasScreen.SPLIT_TUNNEL) },
+        onBack = { navigateBack() }
     )
 
-    AnanasScreen.PROFILE -> ProfileScreen(onBack = { screen = AnanasScreen.HOME })
-    AnanasScreen.SPLIT_TUNNEL -> SplitTunnelScreen(onBack = { screen = AnanasScreen.SETTINGS })
+    AnanasScreen.PROFILE -> ProfileScreen(onBack = { navigateBack() })
+    AnanasScreen.SPLIT_TUNNEL -> SplitTunnelScreen(onBack = { navigateBack() })
+        }
     }
 }
 
