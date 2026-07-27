@@ -996,13 +996,18 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
 
     // Scale pulse on click feedback
     var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isPressed) 0.88f else 1f, label = "press")
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1f,
+        animationSpec = tween(durationMillis = 200, easing = EaseInOutQuad),
+        finishedListener = { if (isPressed) isPressed = false },
+        label = "press"
+    )
 
-    Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
         // Enhanced ripple waves: only while connected - now more visible
         if (connected) {
             // Primary ripple - solid, vibrant
-            Canvas(Modifier.size(200.dp)) {
+            Canvas(Modifier.size(280.dp)) {
                 val maxRadius = this.size.minDimension / 2f
                 val radius = maxRadius * (0.40f + rippleProgress1 * 0.60f)
                 val alpha = (1f - rippleProgress1).coerceIn(0f, 1f) * 0.55f
@@ -1014,7 +1019,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             }
             
             // Secondary ripple - more visible, stronger color
-            Canvas(Modifier.size(200.dp)) {
+            Canvas(Modifier.size(280.dp)) {
                 val maxRadius = this.size.minDimension / 2f
                 val radius = maxRadius * (0.40f + rippleProgress2 * 0.60f)
                 val alpha = (1f - rippleProgress2).coerceIn(0f, 1f) * 0.65f
@@ -1026,21 +1031,11 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             }
         }
 
-        // Outer ring with enhanced breathing effect when connected
-        Box(
-            Modifier
-                .size(200.dp)
-                .clip(CircleShape)
-                .border(
-                    1.5.dp,
-                    if (connected) AnanasAccent.copy(alpha = (breathe * 0.7f).coerceIn(0.3f, 0.8f)) else Color(0xFF323235),
-                    CircleShape
-                )
-        )
+        // Outer ring removed - cleaner look (no border)
 
         // Dual-arc scan while connecting - more visible
         if (connecting) {
-            Canvas(Modifier.size(170.dp).rotate(scanRotation)) {
+            Canvas(Modifier.size(240.dp).rotate(scanRotation)) {
                 // Primary arc - bright
                 drawArc(
                     color = AnanasAccent,
@@ -1059,7 +1054,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         // Glow background for core
         Box(
             Modifier
-                .size(150.dp)
+                .size(210.dp)
                 .scale(scale)
                 .clip(CircleShape)
                 .background(
@@ -1077,10 +1072,10 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             contentAlignment = Alignment.Center
         ) {}
 
-        // Main button - Enhanced with stronger presence
+        // Main button - Larger and improved
         Box(
             Modifier
-                .size(140.dp)
+                .size(200.dp)
                 .scale(scale)
                 .clip(CircleShape)
                 .background(
@@ -1091,7 +1086,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                                 Color(0xFF0a0a0c)
                             ),
                             start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            end = androidx.compose.ui.geometry.Offset(140f, 140f)
+                            end = androidx.compose.ui.geometry.Offset(200f, 200f)
                         )
                     else
                         Brush.linearGradient(
@@ -1100,13 +1095,8 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                                 Color(0xFF0d0d0f)
                             ),
                             start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            end = androidx.compose.ui.geometry.Offset(140f, 140f)
+                            end = androidx.compose.ui.geometry.Offset(200f, 200f)
                         )
-                )
-                .border(
-                    2.dp,
-                    if (connected) AnanasAccent.copy(alpha = breathe * 0.5f) else Color(0xFF353538),
-                    CircleShape
                 )
                 .clickable(enabled = !connecting) {
                     isPressed = true
@@ -1119,13 +1109,13 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 CircularProgressIndicator(
                     color = AnanasAccent,
                     strokeWidth = 2.2.dp,
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(44.dp)
                 )
             } else {
                 Icon(
                     Icons.Rounded.PowerSettingsNew, null,
                     tint = if (connected) AnanasAccent else Color(0xFF7e8084),
-                    modifier = Modifier.size(52.dp)
+                    modifier = Modifier.size(64.dp)
                 )
             }
         }
