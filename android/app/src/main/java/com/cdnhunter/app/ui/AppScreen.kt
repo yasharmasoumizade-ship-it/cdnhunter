@@ -1992,13 +1992,13 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
                         .clip(RoundedCornerShape(10.dp)),
                     color = iconTint.copy(alpha = 0.15f)
                 ) {
-                    Icon(
-                        icon, null,
-                        tint = iconTint,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .align(Alignment.Center)
-                    )
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            icon, null,
+                            tint = iconTint,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 // Label column
                 Column(modifier = Modifier.weight(1f)) {
@@ -2057,13 +2057,13 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
                         .clip(RoundedCornerShape(10.dp)),
                     color = AnanasAccent.copy(alpha = 0.15f)
                 ) {
-                    Icon(
-                        icon, null,
-                        tint = AnanasAccent,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .align(Alignment.Center)
-                    )
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            icon, null,
+                            tint = AnanasAccent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 // Label column
                 Column(modifier = Modifier.weight(1f)) {
@@ -2412,25 +2412,6 @@ private fun AnanasIconButton(icon: ImageVector, onClick: () -> Unit) {
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) { Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(18.dp)) }
-}
-
-// ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
-@Composable
-private fun EmptyHomeState(onAdd: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier.size(76.dp).clip(CircleShape).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, CircleShape)
-                    .clickable { onAdd() },
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.Rounded.Add, null, tint = AnanasMuted, modifier = Modifier.size(26.dp)) }
-            Spacer(Modifier.height(16.dp))
-            Text("No configs yet", fontSize = 15.sp, color = AnanasTextHi, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(6.dp))
-            Text("Tap + to add a trojan / vless / vmess config", fontSize = 12.sp, color = AnanasMuted)
-        }
-    }
 }
 
 // ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
