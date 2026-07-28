@@ -131,7 +131,9 @@ object SubscriptionParser {
                 port = port,
                 network = "tcp",  // Assume TCP for now
                 sni = host,
-                isImported = false  // Will be set by caller
+                isImported = false,  // Will be set by caller
+                subscriptionId = null,
+                subscriptionName = null
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse config: $line", e)
