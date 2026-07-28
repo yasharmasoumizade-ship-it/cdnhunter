@@ -1819,10 +1819,16 @@ private fun SettingsScreen(
                     )
                     Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                     SettingsToggleRow(
-                        Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries",
+                        Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
                         useDoh, {
                             useDoh = it
                             AppSettings.setUseDoh(context, it)
+                            // Notify VPN service of settings change
+                            android.widget.Toast.makeText(
+                                context, 
+                                if (it) "DoH enabled (reconnect to apply)" else "DoH disabled (reconnect to apply)",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     )
                 }
