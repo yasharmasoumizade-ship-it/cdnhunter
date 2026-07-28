@@ -1045,18 +1045,37 @@ private fun VpnTab() {
                         }
                 ) {
                     Column(Modifier.fillMaxSize()) {
+                        // ── Premium top bar ──
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 18.dp, bottom = 20.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
-                            AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
+                            Text(
+                                "CDN Hunter",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AnanasTextHi,
+                                letterSpacing = (-0.5).sp
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
+                                AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
+                            }
                         }
 
                         // ── Power button + status ────────────────────────────────
                         Column(
-                            Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 16.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 24.dp, bottom = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             PowerButton(
@@ -1064,23 +1083,23 @@ private fun VpnTab() {
                                 connecting = connecting,
                                 onClick = { activeConfig?.let { connectConfig(it) } }
                             )
-                            Spacer(Modifier.height(16.dp))
-                            // Status shown only as visual indicator in Connect button itself
-                            Spacer(Modifier.height(3.dp))
                             if (connected) {
+                                Spacer(Modifier.height(16.dp))
                                 Text(
                                     formatElapsed(elapsedSec),
-                                    fontSize = 12.sp, 
-                                    fontWeight = FontWeight.Medium, 
-                                    color = AnanasMuted, 
-                                    letterSpacing = 0.3.sp
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = AnanasAccent,
+                                    letterSpacing = (-0.2).sp
                                 )
                             }
                         }
 
                         LazyColumn(
-                            Modifier.weight(1f).padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            Modifier
+                                .weight(1f)
+                                .padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
                             activeConfig?.let { cfg ->
@@ -1096,8 +1115,8 @@ private fun VpnTab() {
                                 val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                 val uploadTotal = if (connected) formatBytes(totalUploadBytes) else null
                                 Row(
-                                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 2.dp, bottom = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     StatBox(
                                         Icons.Rounded.ArrowDownward, "DOWNLOAD", AnanasAccent,
@@ -1105,7 +1124,7 @@ private fun VpnTab() {
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
                                     StatBox(
-                                        Icons.Rounded.ArrowUpward, "UPLOAD", AnanasText,
+                                        Icons.Rounded.ArrowUpward, "UPLOAD", Color(0xFF00D0FF),
                                         sessionTotal = uploadTotal, history = uploadHistory,
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                     )
@@ -2447,29 +2466,29 @@ private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessio
             .background(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFF1a2a2f).copy(alpha = 0.8f),
-                        Color(0xFF0f1517).copy(alpha = 0.9f)
+                        accentColor.copy(alpha = 0.08f),
+                        accentColor.copy(alpha = 0.04f)
                     ),
                     start = Offset(0f, 0f),
                     end = Offset(100f, 100f)
                 )
             )
-            .border(1.5.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-            .padding(16.dp)
+            .border(1.2.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(18.dp)
     ) {
         Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
             // ── Header: Icon + Label ──
             Row(
                 verticalAlignment = Alignment.CenterVertically, 
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Icon with background glow
                 Box(
                     Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(accentColor.copy(alpha = 0.12f))
+                        .background(accentColor.copy(alpha = 0.15f))
                         .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -2477,24 +2496,24 @@ private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessio
                         icon, 
                         null, 
                         tint = accentColor, 
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Text(
                     label, 
-                    fontSize = 11.sp, 
-                    fontWeight = FontWeight.SemiBold, 
+                    fontSize = 10.sp, 
+                    fontWeight = FontWeight.Bold, 
                     color = AnanasMuted.copy(alpha = 0.9f),
                     letterSpacing = 0.5.sp
                 )
             }
             
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             
             // ── Total value ──
             Text(
                 sessionTotal ?: "0 B",
-                fontSize = 18.sp, 
+                fontSize = 20.sp, 
                 fontWeight = FontWeight.Bold, 
                 color = accentColor,
                 letterSpacing = (-0.5).sp
@@ -2506,7 +2525,7 @@ private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessio
                 color = accentColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(38.dp)
                     .padding(top = 10.dp)
             )
         }
