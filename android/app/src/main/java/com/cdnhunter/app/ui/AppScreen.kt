@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.detectTapGestures
 import com.cdnhunter.app.ui.components.PremiumConnectButton
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
@@ -616,6 +617,17 @@ private fun VpnTab() {
             skipHiddenState = true
         )
     )
+    
+    // Auto-collapse Quick Switch after 4 seconds of inactivity
+    LaunchedEffect(homeSheetState.bottomSheetState.currentValue) {
+        if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
+            kotlinx.coroutines.delay(4000)  // 4 seconds
+            if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
+                homeSheetState.bottomSheetState.partialExpand()
+            }
+        }
+    }
+    
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
@@ -917,7 +929,24 @@ private fun VpnTab() {
                     }
                 }
             ) { innerPadding ->
-                Box(Modifier.fillMaxSize().padding(innerPadding).background(AnanasScreenBg)) {
+                val coroutineScope = rememberCoroutineScope()
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .background(AnanasScreenBg)
+                        // Dismiss Quick Switch on outside tap
+                        .pointerInput(homeSheetState) {
+                            detectTapGestures {
+                                // Only collapse if sheet is expanded
+                                if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
+                                    coroutineScope.launch {
+                                        homeSheetState.bottomSheetState.partialExpand()
+                                    }
+                                }
+                            }
+                        }
+                ) {
                     Column(Modifier.fillMaxSize()) {
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
