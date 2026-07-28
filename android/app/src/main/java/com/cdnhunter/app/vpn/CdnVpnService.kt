@@ -334,6 +334,12 @@ class CdnVpnService : VpnService() {
                 uploadBytes = 0L
                 downloadBytes = 0L
                 updateNotification("Connected")
+                
+                // ⚠️ IMPORTANT: Check if system DoH is enabled and warn user
+                // System DoH (Private DNS in Android Settings) queries bypass our TUN
+                // because they use HTTPS port 443, which we cannot intercept.
+                // User should disable "Private DNS" while VPN is active.
+                checkAndWarnAboutSystemDoH()
 
                 // Resolve the server's REAL location by asking a geo-IP service
                 // through the tunnel itself, not by resolving the config's
@@ -702,6 +708,34 @@ class CdnVpnService : VpnService() {
     // is already being torn down by the OS, so blocking briefly to actually
     // finish mihomo's shutdown and release the tun fd is correct — cancelling
     // `scope` first would abandon that teardown mid-flight and leak the fd.
+    
+    /**
+     * Check if system DoH (Private DNS) is enabled and warn user if so.
+     * System DoH queries bypass VPN because they use HTTPS port 443,
+     * which cannot be intercepted at TUN level.
+     */
+    private fun checkAndWarnAboutSystemDoH() {
+        try {
+            val privateDnsMode = android.provider.Settings.Global.getString(
+                contentResolver,
+                "private_dns_mode"
+            ) ?: "off"
+            
+            val isDoHEnabled = privateDnsMode != "off"
+            if (isDoHEnabled) {
+                // System DoH is enabled - show warning
+                updateNotification("⚠️ Disable Private DNS in Settings to prevent DNS leaks")
+                android.util.Log.w("CdnVpnService", 
+                    "⚠️ WARNING: System Private DNS (DoH) is enabled. " +
+                    "Disable it in Android Settings > Network > Private DNS to prevent DNS leaks! " +
+                    "System DoH queries bypass VPN because they use encrypted HTTPS port 443."
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("CdnVpnService", "Could not check DoH status: ${e.message}")
+        }
+    }
+    
     override fun onDestroy() {
         job?.cancel()
         kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }
