@@ -552,7 +552,6 @@ private fun formatBytes(bytes: Long): String {
 @Composable
 fun AppScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     // Read theme from AppSettings and recompose when it changes
     var themeSetting by remember { mutableStateOf(AppSettings.theme(context)) }
     var amoledSetting by remember { mutableStateOf(AppSettings.amoledMode(context)) }
@@ -584,6 +583,7 @@ private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNN
 @Composable
 private fun VpnTab() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val haptic  = LocalHapticFeedback.current
     val clip    = LocalClipboardManager.current
 
