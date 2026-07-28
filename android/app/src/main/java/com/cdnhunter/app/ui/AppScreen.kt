@@ -471,7 +471,8 @@ private fun parseConfig(uri: String): SavedConfig? {
 }
 
 // Each saved line is
-// "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved" —
+// "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved
+//  \u0001isImported\u0001subscriptionId\u0001subscriptionName" —
 // the \u0001 separator can't appear in a URI or in geo text, so this is safe
 // without escaping. Persisting the geo fields (not just the uri) means a
 // resolved config's flag/ping survives an app restart instead of re-resolving
@@ -504,6 +505,11 @@ private fun loadConfigs(context: Context): List<SavedConfig> {
             // Older saves (5 fields) never ran the accurate probe — default false
             // so they get picked up by it once instead of being silently skipped.
             accurateGeoResolved = parts.getOrNull(5) == "1",
+            // Older saves (6 fields, from before subscription import existed) had
+            // no isImported/subscription* — default to "not imported", not null-string.
+            isImported = parts.getOrNull(6) == "1",
+            subscriptionId = parts.getOrNull(7)?.takeIf { it.isNotEmpty() },
+            subscriptionName = parts.getOrNull(8)?.takeIf { it.isNotEmpty() },
         )
     }
 }
@@ -516,6 +522,9 @@ private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
             cfg.uri, cfg.countryCode, cfg.city, cfg.pingMs.toString(),
             if (cfg.geoResolved) "1" else "0",
             if (cfg.accurateGeoResolved) "1" else "0",
+            if (cfg.isImported) "1" else "0",
+            cfg.subscriptionId.orEmpty(),
+            cfg.subscriptionName.orEmpty(),
         ).joinToString(CONFIG_FIELD_SEP)
     }
     context.getSharedPreferences("cdnhunter_vpn", 0)
@@ -543,6 +552,7 @@ private fun formatBytes(bytes: Long): String {
 @Composable
 fun AppScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     // Read theme from AppSettings and recompose when it changes
     var themeSetting by remember { mutableStateOf(AppSettings.theme(context)) }
     var amoledSetting by remember { mutableStateOf(AppSettings.amoledMode(context)) }
@@ -829,8 +839,61 @@ private fun VpnTab() {
     }
 
     // Shared by clipboard-instant-add and QR-scan-add: parse, save, toast — no dialog.
+    // An http(s):// link is treated as a subscription (fetched, base64-decoded if
+    // needed, one proxy per line) rather than a single config — that's the only
+    // thing that made "Invalid config link" fire for subscription links before:
+    // parseConfig only ever understood vless/trojan/vmess/ss/socks5 URIs directly.
     fun addConfigFromUri(uri: String, sourceLabel: String) {
-        val cfg = parseConfig(uri.trim())
+        val trimmed = uri.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            android.widget.Toast.makeText(context, "Fetching subscription…", android.widget.Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                val subId = java.util.UUID.randomUUID().toString()
+                val subName = try { java.net.URI(trimmed).host ?: "Subscription" } catch (e: Exception) { "Subscription" }
+                val added = withContext(Dispatchers.IO) {
+                    try {
+                        val response = java.net.URL(trimmed).readText(Charsets.UTF_8)
+                        // Subscriptions are commonly the whole body base64-encoded
+                        // (V2RayN/Clash convention); fall back to raw text if it isn't.
+                        val decoded = try {
+                            String(java.util.Base64.getDecoder().decode(response.trim()), Charsets.UTF_8)
+                        } catch (e: Exception) {
+                            response
+                        }
+                        decoded.split("\n", "\r\n")
+                            .map { it.trim() }
+                            .filter {
+                                it.startsWith("vless://") || it.startsWith("trojan://") ||
+                                    it.startsWith("vmess://") || it.startsWith("ss://") ||
+                                    it.startsWith("socks5://")
+                            }
+                            // Reuse the SAME per-line parser as manual add (ConfigUriParser-backed,
+                            // captures every proxy field) rather than a stripped-down duplicate —
+                            // otherwise imported servers would be missing uuid/cipher/tls/reality
+                            // fields and simply fail to connect.
+                            .mapNotNull { line -> parseConfig(line) }
+                            .map { it.copy(isImported = true, subscriptionId = subId, subscriptionName = subName) }
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                }
+                if (added.isEmpty()) {
+                    android.widget.Toast.makeText(context, "No valid servers found in subscription", android.widget.Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val existingUris = configs.map { it.uri }.toSet()
+                val newOnes = added.filter { it.uri !in existingUris }
+                if (newOnes.isEmpty()) {
+                    android.widget.Toast.makeText(context, "Already added", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                configs = configs + newOnes
+                saveConfigs(context, configs)
+                android.widget.Toast.makeText(context, "Added ${newOnes.size} server(s) from subscription", android.widget.Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        val cfg = parseConfig(trimmed)
         if (cfg == null) {
             android.widget.Toast.makeText(context, "Invalid config link", android.widget.Toast.LENGTH_SHORT).show()
             return
