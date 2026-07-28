@@ -1468,6 +1468,17 @@ private fun LocationsScreen(
         if (query.isBlank()) configs
         else configs.filter { it.displayName.contains(query, ignoreCase = true) }
     }
+    
+    // Separate Main (manual) vs Imported (subscription)
+    val mainConfigs = remember(filtered) {
+        filtered.filter { !it.isImported }
+    }
+    val importedConfigs = remember(filtered) {
+        filtered.filter { it.isImported }
+    }
+    val importedBySubscription = remember(importedConfigs) {
+        importedConfigs.groupBy { it.subscriptionId }
+    }
 
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -1523,43 +1534,54 @@ private fun LocationsScreen(
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
-                    items(filtered, key = { it.id }) { cfg ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { onConnect(cfg) }.padding(vertical = 13.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                                CountryFlagBadge(cfg.countryCode, 32.dp)
-                                Column {
-                                    Text(cfg.displayName, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = AnanasText, letterSpacing = (-0.1).sp)
-                                    Text(
-                                        if (cfg.id == activeId && connected) "Connected"
-                                        else if (cfg.id == activeId) "Selected"
-                                        else if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}"
-                                        else "Tap to select",
-                                        fontSize = 11.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
-                                    )
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                if (cfg.id == activeId && connected) {
-                                    Box(Modifier.size(6.dp).clip(CircleShape).background(AnanasAccent))
-                                } else if (cfg.id == activeId) {
-                                    Icon(Icons.Rounded.Check, null, tint = AnanasAccent, modifier = Modifier.size(16.dp))
-                                } else if (cfg.pingMs >= 0) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("${cfg.pingMs}ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted)
-                                        PingBars(cfg.pingMs)
+                    // ========== MAIN SECTION ==========
+                    if (mainConfigs.isNotEmpty()) {
+                        item(key = "main_header") {
+                            LocationSectionHeader("📌", "MAIN", "Manually added")
+                        }
+                        items(mainConfigs, key = { it.id }) { cfg ->
+                            ServerListItem(cfg, activeId, connected, onConnect, onDelete)
+                        }
+                    }
+                    
+                    // ========== IMPORTED SECTION ==========
+                    if (importedConfigs.isNotEmpty()) {
+                        item(key = "imported_header") {
+                            LocationSectionHeader("📥", "IMPORTED SUBSCRIPTIONS")
+                        }
+                        
+                        // For each subscription group
+                        for ((subId, cfgs) in importedBySubscription) {
+                            if (subId != null && cfgs.isNotEmpty()) {
+                                val subName = cfgs.first().subscriptionName ?: "Subscription"
+                                
+                                item(key = "sub_header_$subId") {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            subName,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = AnanasTextHi
+                                        )
+                                        Text(
+                                            "${cfgs.size} servers",
+                                            fontSize = 10.sp,
+                                            color = AnanasMuted
+                                        )
                                     }
                                 }
-                                Icon(
-                                    Icons.Rounded.DeleteOutline, null, tint = AnanasFaint,
-                                    modifier = Modifier.size(18.dp).clickable { onDelete(cfg) }
-                                )
-                                Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+                                
+                                items(cfgs, key = { it.id }) { cfg ->
+                                    ServerListItem(cfg, activeId, connected, onConnect, onDelete)
+                                }
                             }
                         }
-                        Divider(color = AnanasDivider, thickness = 1.dp)
                     }
                 }
             }
