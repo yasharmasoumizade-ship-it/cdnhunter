@@ -1063,26 +1063,7 @@ private fun VpnTab() {
                                 onClick = { activeConfig?.let { connectConfig(it) } }
                             )
                             Spacer(Modifier.height(16.dp))
-                            val statusColor = when { connected -> AnanasAccent; connecting -> AnanasAccent; else -> AnanasMuted }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (connecting) {
-                                    CircularProgressIndicator(color = statusColor, strokeWidth = 2.dp, modifier = Modifier.size(15.dp))
-                                } else {
-                                    Icon(
-                                        if (connected) Icons.Rounded.Shield else Icons.Rounded.LockOpen,
-                                        contentDescription = null,
-                                        tint = statusColor,
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                }
-                                Text(
-                                    when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Disconnected" },
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = statusColor,
-                                    letterSpacing = (-0.2).sp
-                                )
-                            }
+                            // Status shown only as visual indicator in Connect button itself
                             Spacer(Modifier.height(3.dp))
                             if (connected) {
                                 Text(
