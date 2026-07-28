@@ -328,19 +328,51 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
         modifier
             .size(size)
             .clip(RoundedCornerShape(corner))
-            .background(Color(0xFF1A1A1E))
+            .background(
+                when {
+                    cc.length == 2 -> Color(0xFF1A1A1E)  // Flag background
+                    else -> Color(0xFF252529)              // Placeholder - slightly lighter
+                }
+            )
     ) {
         if (cc.length == 2) {
+            // Try to load flag SVG
             coil.compose.AsyncImage(
                 model = "file:///android_asset/flags/$cc.svg",
                 imageLoader = getFlagImageLoader(context),
                 contentDescription = countryCode,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                contentAlignment = Alignment.Center,
             )
         } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(size * 0.3f).clip(CircleShape).background(AnanasFaint))
+            // Fallback: Show loading skeleton or globe icon
+            Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                // Modern minimal loading pulse
+                Box(
+                    Modifier
+                        .size(size * 0.4f)
+                        .clip(CircleShape)
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    AnanasAccent.copy(alpha = 0.3f),
+                                    Color.Transparent
+                                ),
+                                radius = (size * 0.2f).value
+                            )
+                        )
+                )
+                // Globe icon
+                androidx.compose.material3.Icon(
+                    Icons.Rounded.Public,
+                    contentDescription = "Loading flag",
+                    modifier = Modifier.size(size * 0.5f),
+                    tint = AnanasMuted
+                )
             }
         }
     }
@@ -1033,13 +1065,27 @@ private fun VpnTab() {
                             )
                             Spacer(Modifier.height(16.dp))
                             Text(
-                                when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Not protected" },
-                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
+                                when { 
+                                    connected -> "🛡️ Protected" 
+                                    connecting -> "⟳ Connecting…"
+                                    else -> "🔓 Disconnected"
+                                },
+                                fontSize = 16.sp, 
+                                fontWeight = FontWeight.SemiBold, 
+                                color = when {
+                                    connected -> AnanasAccent
+                                    connecting -> AnanasAccent
+                                    else -> AnanasMuted
+                                },
+                                letterSpacing = (-0.2).sp
                             )
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                if (connected) formatElapsed(elapsedSec) else "Tap to connect",
-                                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, letterSpacing = 0.3.sp
+                                if (connected) formatElapsed(elapsedSec) else "Tap button to connect",
+                                fontSize = 12.sp, 
+                                fontWeight = FontWeight.Medium, 
+                                color = AnanasMuted, 
+                                letterSpacing = 0.3.sp
                             )
                         }
 
