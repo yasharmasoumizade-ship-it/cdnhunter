@@ -1330,25 +1330,61 @@ private fun SelectedServerSummaryCard(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF1a2a2f).copy(alpha = 0.7f),
+                        Color(0xFF0f1517).copy(alpha = 0.85f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(100f, 100f)
+                )
+            )
+            .border(1.5.dp, AnanasAccent.copy(alpha = 0.1f), RoundedCornerShape(18.dp))
             .clickable { onClick() }
-            .padding(horizontal = 17.dp, vertical = 15.dp),
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            CountryFlagBadge(effectiveCc, 32.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            // Flag badge with glow
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AnanasAccent.copy(alpha = 0.08f))
+                    .border(1.dp, AnanasAccent.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                CountryFlagBadge(effectiveCc, 36.dp)
+            }
+            
             Column {
-                Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
-                    if (connected) "${cfg.network.uppercase()} · Active" else pingLine,
-                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
+                    locationLine, 
+                    fontSize = 14.sp, 
+                    fontWeight = FontWeight.SemiBold, 
+                    color = AnanasText.copy(alpha = 0.95f)
+                )
+                Text(
+                    if (connected) "🟢 ${cfg.network.uppercase()} · متصل" else pingLine,
+                    fontSize = 11.sp, 
+                    color = AnanasMuted.copy(alpha = 0.85f), 
+                    modifier = Modifier.padding(top = 3.dp)
                 )
             }
         }
-        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
+        Icon(
+            Icons.Rounded.ChevronRight, 
+            null, 
+            tint = AnanasAccent.copy(alpha = 0.3f), 
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -2387,27 +2423,72 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
 @Composable
 private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessionTotal: String?, history: List<Float>, modifier: Modifier) {
     Box(
-        modifier.clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp)).padding(14.dp)
+        modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF1a2a2f).copy(alpha = 0.8f),
+                        Color(0xFF0f1517).copy(alpha = 0.9f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(100f, 100f)
+                )
+            )
+            .border(1.5.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(16.dp)
     ) {
         Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Icon(icon, null, tint = accentColor, modifier = Modifier.size(12.dp))
-                    Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.3.sp)
+            // ── Header: Icon + Label ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically, 
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Icon with background glow
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accentColor.copy(alpha = 0.12f))
+                        .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        icon, 
+                        null, 
+                        tint = accentColor, 
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
-                Spacer(Modifier.height(5.dp))
                 Text(
-                    sessionTotal ?: "0 B",
-                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi
+                    label, 
+                    fontSize = 11.sp, 
+                    fontWeight = FontWeight.SemiBold, 
+                    color = AnanasMuted.copy(alpha = 0.9f),
+                    letterSpacing = 0.5.sp
                 )
             }
-            // Live sparkline: recent speed history as a smooth gradient-filled line,
-            // like Psiphon's connection graph. Height stays fixed regardless of
-            // history size so the card layout never shifts.
+            
+            Spacer(Modifier.height(10.dp))
+            
+            // ── Total value ──
+            Text(
+                sessionTotal ?: "0 B",
+                fontSize = 18.sp, 
+                fontWeight = FontWeight.Bold, 
+                color = accentColor,
+                letterSpacing = (-0.5).sp
+            )
+            
+            // ── Sparkline with gradient ──
             SpeedSparkline(
-                history = history, color = accentColor,
-                modifier = Modifier.fillMaxWidth().height(32.dp).padding(top = 8.dp)
+                history = history, 
+                color = accentColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .padding(top = 10.dp)
             )
         }
     }
