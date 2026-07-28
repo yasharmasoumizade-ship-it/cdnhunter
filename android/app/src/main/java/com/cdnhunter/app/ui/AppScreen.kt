@@ -967,13 +967,15 @@ private fun VpnTab() {
     AnimatedContent(
         targetState = currentScreen,
         transitionSpec = {
+            val durationMs = 250  // Faster transitions
             slideInHorizontally(
-                initialOffsetX = { it },  // Slide from right for forward nav
-                animationSpec = tween(350, easing = EaseInOutQuad)
-            ) togetherWith slideOutHorizontally(
-                targetOffsetX = { -it },  // Slide out to left
-                animationSpec = tween(350, easing = EaseInOutQuad)
-            )
+                initialOffsetX = { it },
+                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
+            ) + fadeIn(animationSpec = tween(durationMs, easing = FastOutSlowInEasing)) togetherWith 
+            slideOutHorizontally(
+                targetOffsetX = { -it },
+                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
+            ) + fadeOut(animationSpec = tween(durationMs / 2, easing = FastOutSlowInEasing))
         },
         label = "screenTransition"
     ) { targetScreen ->
@@ -1702,6 +1704,17 @@ private fun SettingsScreen(
                         else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                     }
                     SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasAccent, showChevron = true, onClick = onSplitTunnelClick)
+                }
+                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                run {
+                    var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
+                    SettingsToggleRow(
+                        Icons.Rounded.Block, "Ad blocker", "Block ads & tracking domains",
+                        adBlockEnabled, {
+                            adBlockEnabled = it
+                            AppSettings.setAdBlockerEnabled(context, it)
+                        }
+                    )
                 }
                 }
             }
