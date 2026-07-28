@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.cdnhunter.app.ui.components.PremiumConnectButton
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -1022,159 +1023,22 @@ private fun VpnTab() {
 
 // ── Power button: pulsing rings + rotating sweep arc (ANANAS reference) ────────
 @Composable
+@Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
-    val infinite = rememberInfiniteTransition(label = "power")
-
-    // Primary ripple wave - stronger presence
-    val rippleProgress1 by infinite.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2200, easing = LinearOutSlowInEasing)), label = "ripple1"
+    PremiumConnectButton(
+        connected = connected,
+        connecting = connecting,
+        onClick = onClick,
+        colors = com.cdnhunter.app.ui.components.ButtonColors(
+            accentGreen = AnanasAccent,
+            accentGreenDim = AnanasAccent.copy(alpha = 0.7f),
+            backgroundDark = Color(0xFF18181b),
+            backgroundDarker = Color(0xFF0d0d0f),
+            textPrimary = AnanasText,
+            textMuted = AnanasMuted,
+            divider = AnanasDivider
+        )
     )
-    
-    // Secondary ripple wave - more vibrant and delayed
-    val rippleProgress2 by infinite.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(2200, easing = LinearOutSlowInEasing), initialStartOffset = StartOffset(1100)),
-        label = "ripple2"
-    )
-
-    // Smooth rotating scan for connecting state
-    val scanRotation by infinite.animateFloat(
-        0f, 360f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "scan"
-    )
-
-    // Breathing glow - more dramatic
-    val breathe by infinite.animateFloat(
-        0.3f, 1f,
-        infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe"
-    )
-
-    // Scale pulse on click feedback
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
-        animationSpec = tween(durationMillis = 200, easing = EaseInOutQuad),
-        finishedListener = { if (isPressed) isPressed = false },
-        label = "press"
-    )
-
-    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Enhanced ripple waves: only while connected - now more visible
-        if (connected) {
-            // Primary ripple - solid, vibrant
-            Canvas(Modifier.size(280.dp)) {
-                val maxRadius = this.size.minDimension / 2f
-                val radius = maxRadius * (0.40f + rippleProgress1 * 0.60f)
-                val alpha = (1f - rippleProgress1).coerceIn(0f, 1f) * 0.55f
-                drawCircle(
-                    color = AnanasAccent.copy(alpha = alpha),
-                    radius = radius,
-                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-            
-            // Secondary ripple - more visible, stronger color
-            Canvas(Modifier.size(280.dp)) {
-                val maxRadius = this.size.minDimension / 2f
-                val radius = maxRadius * (0.40f + rippleProgress2 * 0.60f)
-                val alpha = (1f - rippleProgress2).coerceIn(0f, 1f) * 0.65f
-                drawCircle(
-                    color = AnanasAccent.copy(alpha = alpha),
-                    radius = radius,
-                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-        }
-
-        // Outer ring removed - cleaner look (no border)
-
-        // Dual-arc scan while connecting - more visible
-        if (connecting) {
-            Canvas(Modifier.size(240.dp).rotate(scanRotation)) {
-                // Primary arc - bright
-                drawArc(
-                    color = AnanasAccent,
-                    startAngle = 0f, sweepAngle = 35f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                )
-                // Secondary arc - dimmer
-                drawArc(
-                    color = AnanasAccent.copy(alpha = 0.4f),
-                    startAngle = 180f, sweepAngle = 35f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-        }
-
-        // Glow background for core
-        Box(
-            Modifier
-                .size(210.dp)
-                .scale(scale)
-                .clip(CircleShape)
-                .background(
-                    if (connected) Brush.radialGradient(
-                        colors = listOf(
-                            AnanasAccent.copy(alpha = 0.12f * breathe),
-                            Color.Transparent
-                        ),
-                        radius = 180f
-                    )
-                    else Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color.Transparent)
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {}
-
-        // Main button - Larger and improved
-        Box(
-            Modifier
-                .size(200.dp)
-                .scale(scale)
-                .clip(CircleShape)
-                .background(
-                    if (connected)
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF1c1c1f),
-                                Color(0xFF0a0a0c)
-                            ),
-                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            end = androidx.compose.ui.geometry.Offset(200f, 200f)
-                        )
-                    else
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF18181b),
-                                Color(0xFF0d0d0f)
-                            ),
-                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            end = androidx.compose.ui.geometry.Offset(200f, 200f)
-                        )
-                )
-                .clickable(enabled = !connecting) {
-                    isPressed = true
-                    onClick()
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (connecting) {
-                // Minimal connecting indicator with better styling
-                CircularProgressIndicator(
-                    color = AnanasAccent,
-                    strokeWidth = 2.2.dp,
-                    modifier = Modifier.size(44.dp)
-                )
-            } else {
-                Icon(
-                    Icons.Rounded.PowerSettingsNew, null,
-                    tint = if (connected) AnanasAccent else Color(0xFF7e8084),
-                    modifier = Modifier.size(64.dp)
-                )
-            }
-        }
-    }
 }
 
 // ── Add-config sheet: sliding bottom sheet with QR scan / clipboard ──
