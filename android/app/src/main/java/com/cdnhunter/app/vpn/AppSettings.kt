@@ -211,4 +211,54 @@ object AppSettings {
 
     fun maxRetryAttempts(ctx: Context): Int = prefs(ctx).getInt(KEY_MAX_RETRY_ATTEMPTS, 3)
     fun setMaxRetryAttempts(ctx: Context, value: Int) = prefs(ctx).edit().putInt(KEY_MAX_RETRY_ATTEMPTS, value.coerceIn(1, 5)).apply()
+    
+    // ============ SUBSCRIPTIONS ============
+    private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
+    
+    /**
+     * Get all saved subscriptions
+     */
+    fun getSubscriptions(ctx: Context): List<Subscription> {
+        return try {
+            val json = prefs(ctx).getString(KEY_SUBSCRIPTIONS, "[]") ?: "[]"
+            // Simple JSON parse (without full Gson to keep it lightweight)
+            // For now, return empty and implement when UI is ready
+            emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
+    /**
+     * Save all subscriptions
+     */
+    fun saveSubscriptions(ctx: Context, subscriptions: List<Subscription>) {
+        try {
+            // Serialize to JSON (simple format)
+            val json = subscriptions.joinToString(",") { sub ->
+                """{"id":"${sub.id}","name":"${sub.name}","url":"${sub.url}","lastUpdated":${sub.lastUpdated},"enabled":${sub.enabled}}"""
+            }
+            prefs(ctx).edit().putString(KEY_SUBSCRIPTIONS, "[$json]").apply()
+        } catch (e: Exception) {
+            android.util.Log.e("AppSettings", "Failed to save subscriptions", e)
+        }
+    }
+    
+    /**
+     * Add a new subscription
+     */
+    fun addSubscription(ctx: Context, subscription: Subscription) {
+        val current = getSubscriptions(ctx).toMutableList()
+        current.add(subscription)
+        saveSubscriptions(ctx, current)
+    }
+    
+    /**
+     * Remove subscription by ID
+     */
+    fun removeSubscription(ctx: Context, subscriptionId: String) {
+        val current = getSubscriptions(ctx).filter { it.id != subscriptionId }
+        saveSubscriptions(ctx, current)
+    }
 }
+
