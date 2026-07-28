@@ -343,6 +343,7 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
                 contentDescription = countryCode,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                contentAlignment = Alignment.Center,
             )
         } else {
             // Fallback: Show loading skeleton or globe icon
@@ -1063,21 +1064,26 @@ private fun VpnTab() {
                                 onClick = { activeConfig?.let { connectConfig(it) } }
                             )
                             Spacer(Modifier.height(16.dp))
-                            Text(
-                                when { 
-                                    connected -> "🛡️ Protected" 
-                                    connecting -> "⟳ Connecting…"
-                                    else -> "🔓 Disconnected"
-                                },
-                                fontSize = 16.sp, 
-                                fontWeight = FontWeight.SemiBold, 
-                                color = when {
-                                    connected -> AnanasAccent
-                                    connecting -> AnanasAccent
-                                    else -> AnanasMuted
-                                },
-                                letterSpacing = (-0.2).sp
-                            )
+                            val statusColor = when { connected -> AnanasAccent; connecting -> AnanasAccent; else -> AnanasMuted }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (connecting) {
+                                    CircularProgressIndicator(color = statusColor, strokeWidth = 2.dp, modifier = Modifier.size(15.dp))
+                                } else {
+                                    Icon(
+                                        if (connected) Icons.Rounded.Shield else Icons.Rounded.LockOpen,
+                                        contentDescription = null,
+                                        tint = statusColor,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Text(
+                                    when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Disconnected" },
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = statusColor,
+                                    letterSpacing = (-0.2).sp
+                                )
+                            }
                             Spacer(Modifier.height(3.dp))
                             Text(
                                 if (connected) formatElapsed(elapsedSec) else "Tap button to connect",
