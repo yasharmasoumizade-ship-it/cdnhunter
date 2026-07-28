@@ -343,7 +343,6 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
                 contentDescription = countryCode,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                contentAlignment = Alignment.Center,
             )
         } else {
             // Fallback: Show loading skeleton or globe icon
