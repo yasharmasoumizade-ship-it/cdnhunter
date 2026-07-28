@@ -1053,7 +1053,6 @@ private fun VpnTab() {
 
 // ── Power button: pulsing rings + rotating sweep arc (ANANAS reference) ────────
 @Composable
-@Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     PremiumConnectButton(
         connected = connected,
