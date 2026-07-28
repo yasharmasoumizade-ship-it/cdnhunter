@@ -144,6 +144,11 @@ data class SavedConfig(
     // which is wrong for CDN-fronted/reality configs) so we know which configs
     // still need the accurate check and don't redo it every reconnect.
     val accurateGeoResolved: Boolean = false,
+    
+    // Subscription tracking
+    val isImported: Boolean = false,         // Is this from a subscription?
+    val subscriptionId: String? = null,      // Which subscription (if imported)?
+    val subscriptionName: String? = null,    // Subscription display name (if imported)
 )
 
 // Measures round-trip time of a raw TCP connect to the server's host:port. DNS
