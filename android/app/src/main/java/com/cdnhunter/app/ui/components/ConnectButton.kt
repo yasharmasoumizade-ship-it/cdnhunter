@@ -81,16 +81,6 @@ fun PremiumConnectButton(
         label = "breathe"
     )
 
-    val pulseOpacity by infinite.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-
     val spinnerRotation by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -268,29 +258,52 @@ fun PremiumConnectButton(
             }
         }
 
-        // ── Floating particle effect (connected only) ──
+        // ── Light beam entering from outside (connected only) ──
         if (connected) {
-            repeat(3) { index ->
-                val angle = (index * 120).toFloat()
-                val distance by infinite.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 30f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(2400, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
+            // Beam starts from top-left, enters circle
+            val beamProgress by infinite.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(3500, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "beamProgress"
+            )
+            
+            val beamStartX = 100f - (beamProgress * 180f)
+            val beamStartY = 100f - (beamProgress * 180f)
+            val beamEndX = 100f + (beamProgress * 80f)
+            val beamEndY = 100f + (beamProgress * 80f)
+            
+            Canvas(modifier = Modifier.size(300.dp)) {
+                // Gradient beam: outer glow + bright core
+                val beamWidth = 25f * beamProgress
+                
+                // Outer glow (soft)
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            colors.accentGreen.copy(alpha = 0f),
+                            colors.accentGreen.copy(alpha = 0.4f),
+                            colors.accentGreen.copy(alpha = 0f)
+                        ),
+                        start = Offset(beamStartX, beamStartY),
+                        end = Offset(beamEndX, beamEndY)
                     ),
-                    label = "particle$index"
+                    strokeWidth = beamWidth * 3f,
+                    cap = StrokeCap.Round,
+                    start = Offset(beamStartX, beamStartY),
+                    end = Offset(beamEndX, beamEndY)
                 )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(
-                            x = (distance * kotlin.math.cos(Math.toRadians(angle.toDouble())) / 4).dp,
-                            y = (distance * kotlin.math.sin(Math.toRadians(angle.toDouble())) / 4).dp
-                        )
-                        .size(4.dp)
-                        .clip(CircleShape)
-                        .background(colors.accentGreen.copy(alpha = pulseOpacity * 0.4f))
+                
+                // Core beam (bright)
+                drawLine(
+                    color = colors.accentGreen.copy(alpha = 0.8f * beamProgress),
+                    strokeWidth = beamWidth,
+                    cap = StrokeCap.Round,
+                    start = Offset(beamStartX, beamStartY),
+                    end = Offset(beamEndX, beamEndY)
                 )
             }
         }
