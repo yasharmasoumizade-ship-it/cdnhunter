@@ -94,7 +94,7 @@ object SubscriptionParser {
      * Parse a single config line (vless://, trojan://, etc)
      * Returns a generic map that can be converted to SavedConfig later
      */
-    private fun parseConfig(line: String): Map<String, Any>? {
+    private fun parseConfig(line: String): Map<String, Any?>? {
         return try {
             // Use existing ConfigUriParser if available, or manual parsing
             val uri = java.net.URI(line)
