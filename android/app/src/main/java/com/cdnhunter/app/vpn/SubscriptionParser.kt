@@ -1,7 +1,6 @@
 package com.cdnhunter.app.vpn
 
 import android.util.Log
-import com.cdnhunter.app.ui.AppScreen.SavedConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -62,10 +61,10 @@ object SubscriptionParser {
                                                it.startsWith("socks5://")) }
                 .mapNotNull { line ->
                     parseConfig(line)?.let { cfg ->
-                        cfg.copy(
-                            isImported = true,
-                            subscriptionId = UUID.randomUUID().toString(),
-                            subscriptionName = name
+                        cfg + mapOf(
+                            "isImported" to true,
+                            "subscriptionId" to UUID.randomUUID().toString(),
+                            "subscriptionName" to name
                         )
                     }
                 }
@@ -93,8 +92,9 @@ object SubscriptionParser {
 
     /**
      * Parse a single config line (vless://, trojan://, etc)
+     * Returns a generic map that can be converted to SavedConfig later
      */
-    private fun parseConfig(line: String): SavedConfig? {
+    private fun parseConfig(line: String): Map<String, Any>? {
         return try {
             // Use existing ConfigUriParser if available, or manual parsing
             val uri = java.net.URI(line)
@@ -122,18 +122,18 @@ object SubscriptionParser {
                 host.take(20)
             }
             
-            SavedConfig(
-                id = line.hashCode().toString(),
-                uri = line,
-                displayName = displayName,
-                proto = scheme ?: "?",
-                address = host,
-                port = port,
-                network = "tcp",  // Assume TCP for now
-                sni = host,
-                isImported = false,  // Will be set by caller
-                subscriptionId = null,
-                subscriptionName = null
+            mapOf(
+                "id" to line.hashCode().toString(),
+                "uri" to line,
+                "displayName" to displayName,
+                "proto" to (scheme ?: "?"),
+                "address" to host,
+                "port" to port,
+                "network" to "tcp",
+                "sni" to host,
+                "isImported" to false,
+                "subscriptionId" to null,
+                "subscriptionName" to null
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse config: $line", e)
