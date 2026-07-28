@@ -16,13 +16,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.cdnhunter.app.ui.AppScreen.SavedConfig
-import com.cdnhunter.app.vpn.Subscription
+
+// SavedConfig is defined in AppScreen.kt (same package)
+// Use full package path if AppScreen.kt hasn't exported it yet
 
 /**
  * Helper to split configs into Main (manual) and Imported (subscription)
  */
-fun List<SavedConfig>.separateBySource(): Pair<List<SavedConfig>, Map<Subscription, List<SavedConfig>>> {
+fun List<SavedConfig>.separateBySource(): Pair<List<SavedConfig>, Map<String?, List<SavedConfig>>> {
     val main = filter { !it.isImported }
     // For now, subscriptions are loaded separately
     return main to emptyMap()
