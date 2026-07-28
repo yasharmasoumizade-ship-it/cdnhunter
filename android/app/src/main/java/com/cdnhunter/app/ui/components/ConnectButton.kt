@@ -7,14 +7,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
@@ -25,19 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.sin
-
-// ═══════════════════════════════════════════════════════════════════════
-// CONNECT BUTTON — clean, minimal power toggle
-//
-// Deliberately simple: one background layer, two thin rings when connected,
-// one spinner when connecting, one icon. Earlier revisions stacked a
-// breathing ring + 3 repeating ripple circles + a radial background glow +
-// an icon glow canvas + an icon drop-shadow blur all on top of each other —
-// which is what actually reads as "messy" at the center: several
-// semi-transparent green layers overlapping never look crisp, no matter how
-// each one looks in isolation. This version keeps only what's needed to
-// read the three states (off / connecting / connected) at a glance.
-// ═══════════════════════════════════════════════════════════════════════
+import kotlin.math.PI
 
 data class ButtonColors(
     val accentGreen: Color = Color(0xFF00D084),
@@ -55,10 +40,12 @@ val AnanasButtonColors = ButtonColors(
 )
 
 /**
- * Ultra-modern Connect button with premium animations
- * - Disconnected: Minimal grey with subtle glow
- * - Connecting: Smooth gradient pulse + modern loader
- * - Connected: Vibrant green with floating effect & breathing aura
+ * Ultra-modern Connect button with liquid animation
+ * 
+ * States:
+ * - OFF: Minimal grey button
+ * - CONNECTING: Liquid filling animation (flowing inward)
+ * - CONNECTED: Subtle floating effect
  */
 @Composable
 fun PremiumConnectButton(
@@ -68,27 +55,31 @@ fun PremiumConnectButton(
     colors: ButtonColors = AnanasButtonColors,
     modifier: Modifier = Modifier
 ) {
-    val infinite = rememberInfiniteTransition(label = "modernButton")
+    val infinite = rememberInfiniteTransition(label = "liquidButton")
 
-    // ── Primary animations ──
-    val breatheScale by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.08f,
+    // ── Liquid particles animation (connecting only) ──
+    val liquidProgress by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = FastOutSlowInEasing),
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "liquidProgress"
+    )
+
+    // ── Floating effect (connected only) ──
+    val floatOffsetY by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "breathe"
+        label = "float"
     )
 
-    val spinnerRotation by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(animation = tween(1200, easing = LinearEasing)),
-        label = "spinner"
-    )
-
-    // ── Interaction states ──
+    // ── Press interaction ──
     var isPressed by remember { mutableStateOf(false) }
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 0.92f else 1f,
@@ -97,26 +88,7 @@ fun PremiumConnectButton(
         label = "pressScale"
     )
 
-    val buttonBgColor by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF0a3d2a)
-            connecting -> Color(0xFF1a2a3a)
-            else -> Color(0xFF1a1a1e)
-        },
-        animationSpec = tween(600, easing = FastOutSlowInEasing),
-        label = "bgColor"
-    )
-
-    val borderColor by animateColorAsState(
-        targetValue = when {
-            connected -> colors.accentGreen.copy(alpha = 0.5f)
-            connecting -> colors.accentGreen.copy(alpha = 0.3f)
-            else -> colors.textMuted.copy(alpha = 0.2f)
-        },
-        animationSpec = tween(600, easing = FastOutSlowInEasing),
-        label = "borderColor"
-    )
-
+    // ── Color transitions ──
     val iconColor by animateColorAsState(
         targetValue = if (connected) colors.accentGreen else colors.textMuted,
         animationSpec = tween(600, easing = FastOutSlowInEasing),
@@ -125,9 +97,9 @@ fun PremiumConnectButton(
 
     val shadowElev by animateFloatAsState(
         targetValue = when {
-            connected -> 20f
-            connecting -> 12f
-            else -> 6f
+            connected -> 16f
+            connecting -> 8f
+            else -> 4f
         },
         animationSpec = tween(400, easing = FastOutSlowInEasing),
         label = "shadow"
@@ -137,74 +109,29 @@ fun PremiumConnectButton(
         modifier = modifier.size(200.dp),
         contentAlignment = Alignment.Center
     ) {
-        // ── Outer glow aura (connected only) ──
-        if (connected) {
-            Canvas(
-                modifier = Modifier
-                    .size(260.dp)
-                    .scale(breatheScale)
-            ) {
-                drawCircle(
-                    color = colors.accentGreen.copy(alpha = 0.08f),
-                    radius = size.minDimension / 2f,
-                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-        }
-
-        // ── Middle ring (connected breathing) ──
-        if (connected) {
-            Canvas(
-                modifier = Modifier
-                    .size(220.dp)
-                    .scale(breatheScale)
-            ) {
-                drawCircle(
-                    color = colors.accentGreen.copy(alpha = 0.15f),
-                    radius = size.minDimension / 2f - 6.dp.toPx(),
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-        }
-
-        // ── Connecting: rotating gradient arc ──
-        if (connecting) {
-            Canvas(
-                modifier = Modifier
-                    .size(180.dp)
-                    .rotate(spinnerRotation)
-            ) {
-                drawArc(
-                    color = colors.accentGreen,
-                    startAngle = 0f,
-                    sweepAngle = 120f,
-                    useCenter = false,
-                    style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-        }
-
-        // ── Main button ──
+        // ── Main button with liquid effect ──
         Box(
             modifier = Modifier
                 .size(170.dp)
+                .offset(y = if (connected) floatOffsetY.dp else 0.dp)
                 .scale(pressScale)
                 .clip(CircleShape)
                 .shadow(
                     elevation = shadowElev.dp,
                     shape = CircleShape,
                     clip = false,
-                    ambientColor = if (connected) colors.accentGreen.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.2f),
-                    spotColor = if (connected) colors.accentGreen.copy(alpha = 0.4f) else Color.Transparent
+                    ambientColor = if (connected) colors.accentGreen.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.15f),
+                    spotColor = if (connected) colors.accentGreen.copy(alpha = 0.3f) else Color.Transparent
                 )
                 .background(
                     brush = Brush.radialGradient(
-                        colors = when {
-                            connected -> listOf(
-                                Color(0xFF1a5a3d).copy(alpha = 0.6f),
-                                buttonBgColor
+                        colors = if (connected) {
+                            listOf(
+                                Color(0xFF1a5a3d).copy(alpha = 0.5f),
+                                Color(0xFF0a3d2a)
                             )
-                            else -> listOf(
+                        } else {
+                            listOf(
                                 Color(0xFF25252a),
                                 Color(0xFF15151a)
                             )
@@ -214,8 +141,12 @@ fun PremiumConnectButton(
                     )
                 )
                 .border(
-                    width = 2.dp,
-                    color = borderColor,
+                    width = 1.5.dp,
+                    color = when {
+                        connected -> colors.accentGreen.copy(alpha = 0.4f)
+                        connecting -> colors.accentGreen.copy(alpha = 0.2f)
+                        else -> colors.textMuted.copy(alpha = 0.1f)
+                    },
                     shape = CircleShape
                 )
                 .clickable(enabled = !connecting) {
@@ -224,86 +155,64 @@ fun PremiumConnectButton(
                 },
             contentAlignment = Alignment.Center
         ) {
+            // ── Liquid animation (only during connecting) ──
             if (connecting) {
-                // Modern loader with smooth spinner
-                Box(contentAlignment = Alignment.Center) {
-                    Canvas(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .rotate(spinnerRotation)
-                    ) {
-                        drawArc(
-                            color = colors.accentGreen.copy(alpha = 0.8f),
-                            startAngle = 0f,
-                            sweepAngle = 90f,
-                            useCenter = false,
-                            style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
+                Canvas(modifier = Modifier.size(170.dp)) {
+                    val centerX = size.width / 2
+                    val centerY = size.height / 2
+                    val radius = size.minDimension / 2
+
+                    // Liquid particles flowing inward
+                    repeat(12) { index ->
+                        val angle = (index * 30f) * (PI / 180f)
+                        val distance = radius * (1f - liquidProgress)
+                        val x = centerX + (distance * cos(angle)).toFloat()
+                        val y = centerY + (distance * sin(angle)).toFloat()
+
+                        // Particle size decreases as it approaches center
+                        val particleSize = 6f * (1f - liquidProgress)
+                        val alpha = (1f - liquidProgress).coerceIn(0f, 1f)
+
+                        drawCircle(
+                            color = colors.accentGreen.copy(alpha = alpha * 0.8f),
+                            radius = particleSize,
+                            center = Offset(x, y)
                         )
                     }
-                    Icon(
-                        imageVector = Icons.Rounded.PowerSettingsNew,
-                        contentDescription = "Connecting",
-                        tint = colors.accentGreen.copy(alpha = 0.6f),
-                        modifier = Modifier.size(60.dp)
+
+                    // Central liquid blob
+                    val blobAlpha = 0.3f * liquidProgress
+                    val blobRadius = (radius * 0.5f) * liquidProgress
+                    drawCircle(
+                        color = colors.accentGreen.copy(alpha = blobAlpha),
+                        radius = blobRadius,
+                        center = Offset(centerX, centerY)
                     )
                 }
-            } else {
-                // Power icon with smooth color transition
-                Icon(
-                    imageVector = Icons.Rounded.PowerSettingsNew,
-                    contentDescription = if (connected) "Disconnect" else "Connect",
-                    tint = iconColor,
-                    modifier = Modifier.size(80.dp)
-                )
             }
+
+            // ── Power icon ──
+            Icon(
+                imageVector = Icons.Rounded.PowerSettingsNew,
+                contentDescription = if (connected) "Disconnect" else "Connect",
+                tint = iconColor,
+                modifier = Modifier
+                    .size(75.dp)
+                    .scale(if (connecting) 0.85f else 1f)
+            )
         }
 
-        // ── Light beam entering from outside (connected only) ──
+        // ── Connected state glow ring ──
         if (connected) {
-            // Beam starts from top-left, enters circle
-            val beamProgress by infinite.animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(3500, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "beamProgress"
-            )
-            
-            val beamStartX = 100f - (beamProgress * 180f)
-            val beamStartY = 100f - (beamProgress * 180f)
-            val beamEndX = 100f + (beamProgress * 80f)
-            val beamEndY = 100f + (beamProgress * 80f)
-            
-            Canvas(modifier = Modifier.size(300.dp)) {
-                // Gradient beam: outer glow + bright core
-                val beamWidth = 25f * beamProgress
-                
-                // Outer glow (soft)
-                drawLine(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            colors.accentGreen.copy(alpha = 0f),
-                            colors.accentGreen.copy(alpha = 0.4f),
-                            colors.accentGreen.copy(alpha = 0f)
-                        ),
-                        start = Offset(beamStartX, beamStartY),
-                        end = Offset(beamEndX, beamEndY)
-                    ),
-                    strokeWidth = beamWidth * 3f,
-                    cap = StrokeCap.Round,
-                    start = Offset(beamStartX, beamStartY),
-                    end = Offset(beamEndX, beamEndY)
-                )
-                
-                // Core beam (bright)
-                drawLine(
-                    color = colors.accentGreen.copy(alpha = 0.8f * beamProgress),
-                    strokeWidth = beamWidth,
-                    cap = StrokeCap.Round,
-                    start = Offset(beamStartX, beamStartY),
-                    end = Offset(beamEndX, beamEndY)
+            Canvas(
+                modifier = Modifier
+                    .size(190.dp)
+                    .offset(y = floatOffsetY.dp)
+            ) {
+                drawCircle(
+                    color = colors.accentGreen.copy(alpha = 0.12f),
+                    radius = size.minDimension / 2,
+                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
         }
