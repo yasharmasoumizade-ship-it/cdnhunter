@@ -1045,69 +1045,120 @@ private fun VpnTab() {
                         }
                 ) {
                     Column(Modifier.fillMaxSize()) {
+                        // ── Premium top bar ──
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 16.dp, bottom = 24.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
-                            AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
+                            Column {
+                                Text(
+                                    "CDN Hunter",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AnanasTextHi,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Text(
+                                    if (connected) "🟢 Protected" else "🔓 Unprotected",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (connected) AnanasAccent else AnanasMuted,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
+                                AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
+                            }
                         }
 
-                        // ── Power button + status ────────────────────────────────
-                        Column(
-                            Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        // ── Connect button section (premium) ──
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = 28.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            PowerButton(
-                                connected = connected,
-                                connecting = connecting,
-                                onClick = { activeConfig?.let { connectConfig(it) } }
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            // Status shown only as visual indicator in Connect button itself
-                            Spacer(Modifier.height(3.dp))
-                            if (connected) {
-                                Text(
-                                    formatElapsed(elapsedSec),
-                                    fontSize = 12.sp, 
-                                    fontWeight = FontWeight.Medium, 
-                                    color = AnanasMuted, 
-                                    letterSpacing = 0.3.sp
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                PowerButton(
+                                    connected = connected,
+                                    connecting = connecting,
+                                    onClick = { activeConfig?.let { connectConfig(it) } }
                                 )
+                                if (connected) {
+                                    Spacer(Modifier.height(16.dp))
+                                    Text(
+                                        formatElapsed(elapsedSec),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AnanasAccent,
+                                        letterSpacing = (-0.2).sp
+                                    )
+                                }
                             }
                         }
 
                         LazyColumn(
-                            Modifier.weight(1f).padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            Modifier
+                                .weight(1f)
+                                .padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
+                            // ── Premium server card ──
                             activeConfig?.let { cfg ->
                                 item(key = "active-${cfg.id}") {
-                                    SelectedServerSummaryCard(
-                                        cfg = cfg, connected = connected,
-                                        onClick = { navigateTo(AnanasScreen.LOCATIONS) },
-                                        exitCountryCode = exitCountryCode, exitCity = exitCity, exitGeoConfigId = exitGeoConfigId,
+                                    PremiumServerCard(
+                                        cfg = cfg, 
+                                        connected = connected,
+                                        exitCountryCode = exitCountryCode,
+                                        exitCity = exitCity,
+                                        exitGeoConfigId = exitGeoConfigId,
+                                        onClick = { navigateTo(AnanasScreen.LOCATIONS) }
                                     )
                                 }
                             }
+                            
+                            // ── Premium stats cards ──
                             item(key = "stats") {
                                 val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                 val uploadTotal = if (connected) formatBytes(totalUploadBytes) else null
                                 Row(
-                                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 2.dp, bottom = 6.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(IntrinsicSize.Min),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    StatBox(
-                                        Icons.Rounded.ArrowDownward, "DOWNLOAD", AnanasAccent,
-                                        sessionTotal = downloadTotal, history = downloadHistory,
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    PremiumStatBox(
+                                        Icons.Rounded.ArrowDownward, 
+                                        "DOWNLOAD", 
+                                        AnanasAccent,
+                                        sessionTotal = downloadTotal, 
+                                        history = downloadHistory,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
                                     )
-                                    StatBox(
-                                        Icons.Rounded.ArrowUpward, "UPLOAD", AnanasText,
-                                        sessionTotal = uploadTotal, history = uploadHistory,
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    PremiumStatBox(
+                                        Icons.Rounded.ArrowUpward, 
+                                        "UPLOAD", 
+                                        Color(0xFF00D0FF),
+                                        sessionTotal = uploadTotal, 
+                                        history = uploadHistory,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
                                     )
                                 }
                             }
@@ -1387,6 +1438,169 @@ private fun SelectedServerSummaryCard(
             tint = AnanasAccent.copy(alpha = 0.3f), 
             modifier = Modifier.size(18.dp)
         )
+    }
+}
+
+// ── Premium Server Card (Proton-style) ──────────────────────────────────────
+@Composable
+private fun PremiumServerCard(
+    cfg: SavedConfig, connected: Boolean, 
+    exitCountryCode: String = "", exitCity: String = "", exitGeoConfigId: String = "",
+    onClick: () -> Unit
+) {
+    val useExitGeo = connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
+    val effectiveCc = if (useExitGeo) exitCountryCode else cfg.countryCode
+    val effectiveCity = if (useExitGeo) exitCity else cfg.city
+    val countryName = remember(effectiveCc) { countryCodeToName(effectiveCc) }
+    val locationLine = when {
+        countryName.isNotBlank() && effectiveCity.isNotBlank() -> "$countryName · $effectiveCity"
+        countryName.isNotBlank() -> countryName
+        !cfg.geoResolved -> "Resolving location…"
+        else -> cfg.displayName
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF0f4c3a).copy(alpha = 0.4f),
+                        Color(0xFF0a2820).copy(alpha = 0.6f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(200f, 200f)
+                )
+            )
+            .border(1.2.dp, AnanasAccent.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
+            .clickable { onClick() }
+            .padding(20.dp)
+    ) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Large flag with glow
+                Box(
+                    Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(AnanasAccent.copy(alpha = 0.12f))
+                        .border(1.5.dp, AnanasAccent.copy(alpha = 0.2f), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CountryFlagBadge(effectiveCc, 48.dp)
+                }
+                
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        locationLine,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AnanasTextHi,
+                        letterSpacing = (-0.3).sp
+                    )
+                    Text(
+                        if (connected) "🟢 متصل" else "${cfg.pingMs}ms",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AnanasAccent,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    null,
+                    tint = AnanasAccent.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── Premium Stat Box (Proton-style) ────────────────────────────────────────
+@Composable
+private fun PremiumStatBox(
+    icon: ImageVector, 
+    label: String, 
+    accentColor: Color, 
+    sessionTotal: String?, 
+    history: List<Float>, 
+    modifier: Modifier
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        accentColor.copy(alpha = 0.08f),
+                        accentColor.copy(alpha = 0.04f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(100f, 100f)
+                )
+            )
+            .border(1.2.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(16.dp)
+    ) {
+        Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+            // ── Header: Icon + Label ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accentColor.copy(alpha = 0.15f))
+                        .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        icon,
+                        null,
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    label,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AnanasMuted.copy(alpha = 0.9f),
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── Total value ──
+            Text(
+                sessionTotal ?: "0 B",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = accentColor,
+                letterSpacing = (-0.5).sp
+            )
+
+            // ── Sparkline ──
+            SpeedSparkline(
+                history = history,
+                color = accentColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .padding(top = 10.dp)
+            )
+        }
     }
 }
 
