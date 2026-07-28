@@ -1084,13 +1084,15 @@ private fun VpnTab() {
                                 )
                             }
                             Spacer(Modifier.height(3.dp))
-                            Text(
-                                if (connected) formatElapsed(elapsedSec) else "Tap button to connect",
-                                fontSize = 12.sp, 
-                                fontWeight = FontWeight.Medium, 
-                                color = AnanasMuted, 
-                                letterSpacing = 0.3.sp
-                            )
+                            if (connected) {
+                                Text(
+                                    formatElapsed(elapsedSec),
+                                    fontSize = 12.sp, 
+                                    fontWeight = FontWeight.Medium, 
+                                    color = AnanasMuted, 
+                                    letterSpacing = 0.3.sp
+                                )
+                            }
                         }
 
                         LazyColumn(
