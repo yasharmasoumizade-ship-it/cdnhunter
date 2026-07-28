@@ -88,6 +88,7 @@ object VpnConfigBuilder {
             // Plain DNS fallback — only if user explicitly disables DoH
             listOf("1.1.1.1:53", "8.8.8.8:53")
         }
+        
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
             "external-controller" to "127.0.0.1:10809",
@@ -114,16 +115,24 @@ object VpnConfigBuilder {
                 // default-nameserver stays plain IP (bootstrap only, used if a
                 // nameserver entry below were ever a hostname instead of an IP).
                 "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
-                // Plain UDP:53 to 1.1.1.1/8.8.8.8 is exactly what an ISP-level
-                // censor intercepts and poisons -- e.g. facebook/google domains
-                // coming back with a bogus sinkhole IP even though mihomo itself
-                // reports no error. mihomo's own DNS client dials these directly
-                // over the protected (non-tunneled) socket, same as any other
-                // outbound, so plain UDP here is fully exposed to that tampering
-                // regardless of which proxy the actual traffic uses afterward.
-                // DoH (by IP, so no extra hostname lookup is needed to bootstrap
-                // it) is TLS-wrapped end to end and can't be selectively poisoned
-                // the same way. Now user-toggleable via AppSettings.useDoh().
+                // ===== DNS CONFIGURATION =====
+                // IMPORTANT: System DoH (Android Settings > Private DNS) can BYPASS the VPN!
+                // 
+                // WHY:
+                // - System DoH uses HTTPS (port 443) with encrypted queries
+                // - TUN-level dns-hijack only catches UDP:53 and TCP:53 (plain DNS)
+                // - HTTPS traffic on 443 is NOT intercepted → DoH queries escape tunnel!
+                //
+                // SOLUTION:
+                // 1. Clash's nameserver config handles DoH queries through Clash proxy
+                // 2. SNI sniffer detects HTTPS traffic to DNS servers
+                // 3. Rules route DNS domains (dns.google, 1.1.1.1, etc) through proxy
+                // 
+                // USER MUST:
+                // - Disable "Private DNS" in Android Settings when VPN is active
+                // - OR Clash will try to tunnel DoH but may create DNS loops
+                //
+                // Clash-side DoH: these HTTPS URLs will be proxied through Clash
                 "nameserver" to nameservers,
             ),
             // Wire mihomo directly to the TUN device Android already created via
