@@ -437,7 +437,9 @@ class CdnVpnService : VpnService() {
     // Writes the tunnel-verified (accurate) country/city for one saved config
     // straight into the same SharedPreferences record AppScreen's
     // loadConfigs/saveConfigs read and write (key "saved_configs", one line
-    // per config: "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved").
+    // per config:
+    // "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved
+    //  \u0001isImported\u0001subscriptionId\u0001subscriptionName").
     // Without this, the accurate result only ever lived in the in-memory
     // exitCountryCode/exitCity vars above — gone the moment the app restarts,
     // so the next app-open flag went right back to the pre-connect (on-device,
@@ -456,11 +458,17 @@ class CdnVpnService : VpnService() {
                 val uri = parts.getOrNull(0)?.trim().orEmpty()
                 if (uri.isBlank() || uri.hashCode().toString() != configId) return@map line
                 changed = true
-                
-                // Preserve original ping (don't overwrite!)
+
+                // Preserve original ping and the isImported/subscription fields —
+                // this function only ever knows about geo, so any field beyond that
+                // must come straight from the existing line, not get silently
+                // dropped (which used to un-mark subscription-imported configs).
                 val originalPingMs = parts.getOrNull(3) ?: "-1"
-                // Update: uri, countryCode, city, pingMs (preserved), geoResolved, accurateGeoResolved
-                listOf(uri, cc, city, originalPingMs, "1", "1").joinToString(sep)
+                val isImported = parts.getOrNull(6) ?: "0"
+                val subscriptionId = parts.getOrNull(7) ?: ""
+                val subscriptionName = parts.getOrNull(8) ?: ""
+                listOf(uri, cc, city, originalPingMs, "1", "1", isImported, subscriptionId, subscriptionName)
+                    .joinToString(sep)
             }
             if (changed) {
                 prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()
