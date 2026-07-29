@@ -1063,44 +1063,81 @@ private fun VpnTab() {
                             contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
                             activeConfig?.let { cfg ->
-                                item(key = "active-${cfg.id}") {
-                                    SelectedServerSummaryCard(
-                                        cfg = cfg, connected = connected,
-                                        onClick = { navigateTo(AnanasScreen.LOCATIONS) },
-                                        exitCountryCode = exitCountryCode, exitCity = exitCity, exitGeoConfigId = exitGeoConfigId,
-                                    )
-                                }
-                            }
-                            item(key = "stats") {
-                                val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
-                                val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 2.dp, bottom = 6.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(AnanasCard)
-                                        .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
-                                        horizontalArrangement = Arrangement.SpaceEvenly,
-                                        verticalAlignment = Alignment.CenterVertically
+                                item(key = "merged-${cfg.id}") {
+                                    val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
+                                    val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(AnanasCard)
+                                            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                                            .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                     ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Icon(Icons.Rounded.ArrowDownward, null, tint = AnanasAccent, modifier = Modifier.size(13.dp))
-                                                Text("DOWNLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                                        ) {
+                                            // Server row
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(11.dp)
+                                                ) {
+                                                    CountryFlagBadge(
+                                                        if (connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()) exitCountryCode else cfg.countryCode,
+                                                        32.dp
+                                                    )
+                                                    Column {
+                                                        val useExitGeo = connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
+                                                        val effectiveCc = if (useExitGeo) exitCountryCode else cfg.countryCode
+                                                        val effectiveCity = if (useExitGeo) exitCity else cfg.city
+                                                        val countryName = countryCodeToName(effectiveCc)
+                                                        val locationLine = when {
+                                                            countryName.isNotBlank() && effectiveCity.isNotBlank() -> "$countryName · $effectiveCity"
+                                                            countryName.isNotBlank() -> countryName
+                                                            !cfg.geoResolved -> "Resolving location…"
+                                                            else -> cfg.displayName
+                                                        }
+                                                        val pingLine = if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}" else "—"
+                                                        Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                                                        Text(
+                                                            if (connected) "${cfg.network.uppercase()} · Active" else pingLine,
+                                                            fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
                                             }
-                                            Text(downloadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
-                                        }
-                                        Box(Modifier.width(1.dp).height(40.dp).background(AnanasDivider))
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Icon(Icons.Rounded.ArrowUpward, null, tint = AnanasAccent, modifier = Modifier.size(13.dp))
-                                                Text("UPLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                            // Divider
+                                            Box(Modifier.fillMaxWidth().height(1.dp).background(AnanasDivider))
+                                            // Stats row
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        Icon(Icons.Rounded.ArrowDownward, null, tint = AnanasMuted, modifier = Modifier.size(12.dp))
+                                                        Text("DOWNLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                                    }
+                                                    Text(downloadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
+                                                }
+                                                Box(Modifier.width(1.dp).height(36.dp).background(AnanasDivider))
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        Icon(Icons.Rounded.ArrowUpward, null, tint = AnanasMuted, modifier = Modifier.size(12.dp))
+                                                        Text("UPLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                                    }
+                                                    Text(uploadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
+                                                }
                                             }
-                                            Text(uploadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
                                         }
                                     }
                                 }
@@ -1395,61 +1432,25 @@ private fun SelectedServerSummaryCard(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF1a2a2f).copy(alpha = 0.7f),
-                        Color(0xFF0f1517).copy(alpha = 0.85f)
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(100f, 100f)
-                )
-            )
-            .border(1.5.dp, AnanasAccent.copy(alpha = 0.1f), RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+            .padding(horizontal = 17.dp, vertical = 15.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically, 
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            // Flag badge with glow
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(AnanasAccent.copy(alpha = 0.08f))
-                    .border(1.dp, AnanasAccent.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                CountryFlagBadge(effectiveCc, 36.dp)
-            }
-            
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            CountryFlagBadge(effectiveCc, 32.dp)
             Column {
-                Text(
-                    locationLine, 
-                    fontSize = 14.sp, 
-                    fontWeight = FontWeight.SemiBold, 
-                    color = AnanasText.copy(alpha = 0.95f)
-                )
+                Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                 Text(
                     if (connected) "${cfg.network.uppercase()} · Active" else pingLine,
-                    fontSize = 11.sp, 
-                    color = AnanasMuted.copy(alpha = 0.85f), 
-                    modifier = Modifier.padding(top = 3.dp)
+                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
                 )
             }
         }
-        Icon(
-            Icons.Rounded.ChevronRight, 
-            null, 
-            tint = AnanasAccent.copy(alpha = 0.3f), 
-            modifier = Modifier.size(18.dp)
-        )
+        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
     }
 }
 
