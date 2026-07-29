@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -27,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
@@ -320,8 +322,56 @@ private fun getFlagImageLoader(context: Context): coil.ImageLoader =
 
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    // Disabled: showing placeholder instead of flag
-    CountryCodeBadge(countryCode, size)
+    val cc = countryCode.lowercase().trim()
+    val context = LocalContext.current
+    if (cc.isBlank()) {
+        CountryCodeBadge(countryCode, size)
+        return
+    }
+    Box(
+        modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color(0xFF1c1c1f)),
+        contentAlignment = Alignment.Center
+    ) {
+        coil.compose.AsyncImage(
+            model = coil.request.ImageRequest.Builder(context)
+                .data("file:///android_asset/flags/$cc.svg")
+                .crossfade(true)
+                .build(),
+            imageLoader = getFlagImageLoader(context),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().clip(CircleShape),
+            error = null,
+        )
+        // Glass highlight: soft diagonal sheen + inner ring, so the flag reads
+        // as a polished glossy sphere rather than a flat cropped image.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = 0.04f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f)
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(1f, 1f)
+                    )
+                )
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .border(0.75.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+        )
+    }
 }
 
 private fun pingQualityLabel(ms: Int): String = when {
@@ -1099,8 +1149,8 @@ private fun VpnTab() {
                                             uploadBytes = totalUploadBytes,
                                             downloadHistory = downloadHistory,
                                             uploadHistory = uploadHistory,
-                                            currentDownloadKbps = downloadKbps.toFloat(),
-                                            currentUploadKbps = uploadKbps.toFloat(),
+                                            currentDownloadKbps = downloadKBps.toFloat(),
+                                            currentUploadKbps = uploadKBps.toFloat(),
                                             modifier = Modifier.fillMaxWidth()
                                         )
                                     }
