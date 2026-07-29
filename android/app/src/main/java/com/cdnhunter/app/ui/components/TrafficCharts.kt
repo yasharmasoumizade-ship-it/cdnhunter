@@ -20,8 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.log10
-import kotlin.math.abs
 
 // ── Formatting helper: convert bytes to appropriate unit ──────────────────────────
 fun formatTrafficBytes(bytes: Long): Pair<String, String> {
