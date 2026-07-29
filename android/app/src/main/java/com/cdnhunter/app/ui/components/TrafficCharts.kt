@@ -178,7 +178,8 @@ fun SparklineChart(
         }
         
         // Fill area under curve
-        val fillPath = Path(path)
+        val fillPath = Path()
+        fillPath.addPath(path)
         fillPath.lineTo(points.last().x, maxHeight)
         fillPath.lineTo(points.first().x, maxHeight)
         fillPath.close()

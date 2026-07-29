@@ -5,3 +5,6 @@ __pycache__/
 # sitting alongside the freshly-built one is exactly what caused the
 # duplicate-class/libgojni.so build failures fixed in past commits.
 android/app/libs/*.aar
+android/gradle/wrapper/gradle-wrapper.jar
+android/.gradle/
+android/local.properties

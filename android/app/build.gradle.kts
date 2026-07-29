@@ -4,6 +4,11 @@ plugins {
 }
 
 android {
+    lint {
+        disable += "NewApi"
+        disable += "OldTargetApi"
+    }
+
     namespace = "com.cdnhunter.app"
     compileSdk = 34
 

@@ -1453,7 +1453,7 @@ private fun ServerListItem(
                 Modifier
                     .fillMaxHeight()
                     .width(3.dp)
-                    .align(Alignment.CenterStart)
+                    .align(Alignment.Start)
                     .background(Color(0xFF4ADE9C), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
             )
         }
