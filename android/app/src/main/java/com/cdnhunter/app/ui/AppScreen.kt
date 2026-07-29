@@ -1074,7 +1074,14 @@ private fun VpnTab() {
                             item(key = "stats") {
                                 val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                 val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
-                                AnanasCard(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp)) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 2.dp, bottom = 6.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(AnanasCard)
+                                        .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                                ) {
                                     Row(
                                         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
                                         horizontalArrangement = Arrangement.SpaceEvenly,
