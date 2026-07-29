@@ -1025,56 +1025,19 @@ private fun VpnTab() {
                     }
                 }
             ) { innerPadding ->
-                val coroutineScope = rememberCoroutineScope()
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .background(AnanasScreenBg)
-                        // Dismiss Quick Switch on outside tap
-                        .pointerInput(homeSheetState) {
-                            detectTapGestures {
-                                // Only collapse if sheet is expanded
-                                if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
-                                    coroutineScope.launch {
-                                        homeSheetState.bottomSheetState.partialExpand()
-                                    }
-                                }
-                            }
-                        }
-                ) {
+                Box(Modifier.fillMaxSize().padding(innerPadding).background(AnanasScreenBg)) {
                     Column(Modifier.fillMaxSize()) {
-                        // ── Premium top bar ──
                         Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .padding(top = 18.dp, bottom = 20.dp),
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "CDN Hunter",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AnanasTextHi,
-                                letterSpacing = (-0.5).sp
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
-                                AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
-                            }
+                            AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
+                            AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
                         }
 
-                        // ── Power button + status ────────────────────────────────
                         Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .padding(top = 22.dp, bottom = 16.dp),
+                            Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             PowerButton(
@@ -1084,7 +1047,7 @@ private fun VpnTab() {
                             )
                             Spacer(Modifier.height(16.dp))
                             Text(
-                                when { connected -> "Protected"; connecting -> "Connecting…"; else -> "Not protected" },
+                                when { connected -> "Protected"; connecting -> "Connecting\u2026"; else -> "Not protected" },
                                 fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
                             )
                             Spacer(Modifier.height(3.dp))
@@ -1095,10 +1058,8 @@ private fun VpnTab() {
                         }
 
                         LazyColumn(
-                            Modifier
-                                .weight(1f)
-                                .padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            Modifier.weight(1f).padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                             contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
                             activeConfig?.let { cfg ->
@@ -1112,21 +1073,29 @@ private fun VpnTab() {
                             }
                             item(key = "stats") {
                                 val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
-                                val uploadTotal = if (connected) formatBytes(totalUploadBytes) else null
-                                Row(
-                                    Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    StatBox(
-                                        Icons.Rounded.ArrowDownward, "DOWNLOAD", AnanasAccent,
-                                        sessionTotal = downloadTotal, history = downloadHistory,
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
-                                    )
-                                    StatBox(
-                                        Icons.Rounded.ArrowUpward, "UPLOAD", Color(0xFF00D0FF),
-                                        sessionTotal = uploadTotal, history = uploadHistory,
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
-                                    )
+                                val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
+                                AnanasCard(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp)) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Icon(Icons.Rounded.ArrowDownward, null, tint = AnanasAccent, modifier = Modifier.size(13.dp))
+                                                Text("DOWNLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                            }
+                                            Text(downloadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
+                                        }
+                                        Box(Modifier.width(1.dp).height(40.dp).background(AnanasDivider))
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Icon(Icons.Rounded.ArrowUpward, null, tint = AnanasAccent, modifier = Modifier.size(13.dp))
+                                                Text("UPLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                            }
+                                            Text(uploadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1135,7 +1104,6 @@ private fun VpnTab() {
             }
         }
     }
-
     AnanasScreen.LOCATIONS -> {
         // Re-sync from disk every time this screen is entered — a defensive
         // measure so the Locations list can never show "no configs" while
