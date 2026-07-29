@@ -61,6 +61,9 @@ import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
+import com.cdnhunter.app.ui.components.TrafficChartCard
+import com.cdnhunter.app.ui.components.DetailedTrafficBreakdown
+import com.cdnhunter.app.ui.components.RealTimeTrafficStats
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1139,6 +1142,21 @@ private fun VpnTab() {
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                                
+                                // Traffic charts - detailed breakdown with sparklines
+                                if (connected) {
+                                    item(key = "traffic-charts-${cfg.id}") {
+                                        DetailedTrafficBreakdown(
+                                            downloadBytes = totalDownloadBytes,
+                                            uploadBytes = totalUploadBytes,
+                                            downloadHistory = downloadHistory,
+                                            uploadHistory = uploadHistory,
+                                            currentDownloadKbps = downloadKbps.toFloat(),
+                                            currentUploadKbps = uploadKbps.toFloat(),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
                                 }
                             }
