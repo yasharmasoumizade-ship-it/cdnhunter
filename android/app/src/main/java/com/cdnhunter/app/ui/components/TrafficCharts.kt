@@ -172,10 +172,7 @@ fun DetailedTrafficBreakdown(
                 .fillMaxWidth()
                 .height(280.dp),
             contentPadding = PaddingValues(horizontal = 12.dp),
-            pageSpacing = 12.dp,
-            pageNestedScrollConnection = remember {
-                object : NestedScrollConnection {}
-            }
+            pageSpacing = 12.dp
         ) { page ->
             Box(
                 Modifier
