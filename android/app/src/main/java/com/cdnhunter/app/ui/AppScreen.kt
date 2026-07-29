@@ -1437,7 +1437,7 @@ private fun SelectedServerSummaryCard(
                     color = AnanasText.copy(alpha = 0.95f)
                 )
                 Text(
-                    if (connected) "🟢 ${cfg.network.uppercase()} · متصل" else pingLine,
+                    if (connected) "${cfg.network.uppercase()} · Active" else pingLine,
                     fontSize = 11.sp, 
                     color = AnanasMuted.copy(alpha = 0.85f), 
                     modifier = Modifier.padding(top = 3.dp)
