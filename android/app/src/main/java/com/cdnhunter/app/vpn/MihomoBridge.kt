@@ -1,7 +1,7 @@
 package com.cdnhunter.app.vpn
 
 import android.net.VpnService
-import mobile.Mobile
+import com.cdnhunter.mihomo.mobile.Mobile
 
 object MihomoBridge {
 
@@ -20,7 +20,7 @@ object MihomoBridge {
     // — cheap, just overwrites the same hook on the Go side.
     fun setProtector(service: VpnService) {
         try {
-            Mobile.setProtector(object : mobile.Protector {
+            Mobile.setProtector(object : com.cdnhunter.mihomo.mobile.Protector {
                 // gomobile maps Go's `int` to Java/Kotlin `Long` (Go's int has no
                 // fixed width, so the binding always widens to long) — the fd
                 // itself is a normal 32-bit descriptor, so narrow it back down
