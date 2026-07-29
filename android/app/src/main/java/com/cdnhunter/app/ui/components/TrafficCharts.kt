@@ -270,9 +270,9 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ScaleItem("1 KB", "1,024 B", Color(0xFF4ADE9C))
-                ScaleItem("1 MB", "1,024 KB", Color(0xFF64D2FF))
-                ScaleItem("1 GB", "1,024 MB", Color(0xFFFFD60A))
+                ScaleItem(Modifier.weight(1f), "1 KB", "1,024 B", Color(0xFF4ADE9C))
+                ScaleItem(Modifier.weight(1f), "1 MB", "1,024 KB", Color(0xFF64D2FF))
+                ScaleItem(Modifier.weight(1f), "1 GB", "1,024 MB", Color(0xFFFFD60A))
             }
             
             // Progress bar showing typical session
@@ -295,9 +295,9 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ScaleItem(label: String, description: String, color: Color) {
+private fun ScaleItem(modifier: Modifier = Modifier, label: String, description: String, color: Color) {
     Column(
-        Modifier.weight(1f),
+        modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
