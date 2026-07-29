@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +61,8 @@ fun TrafficChartCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF131316))
-            .border(1.dp, Color(0xFF1E1F24), RoundedCornerShape(16.dp))
+            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(16.dp))
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
             .padding(16.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -103,6 +105,8 @@ fun TrafficChartCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color(0xFF1E1F24))
+                    .border(1.5.dp, Color(0xFF2F2F34), RoundedCornerShape(10.dp))
+                    .shadow(elevation = 4.dp, shape = RoundedCornerShape(10.dp))
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -254,7 +258,8 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF0B0B0D))
-            .border(1.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
+            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -355,7 +360,8 @@ fun RealTimeTrafficStats(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF131316))
-            .border(1.dp, Color(0xFF1E1F24), RoundedCornerShape(14.dp))
+            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(14.dp))
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(14.dp))
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
