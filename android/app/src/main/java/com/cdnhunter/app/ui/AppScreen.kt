@@ -320,63 +320,8 @@ private fun getFlagImageLoader(context: Context): coil.ImageLoader =
 
 @Composable
 private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val cc = countryCode.lowercase()
-    // circle-flags SVGs are drawn as full circles filling their viewbox, so cropping
-    // one into a rounded square still shows the flag's stripes/emblem correctly.
-    val corner = size * 0.22f
-
-    Box(
-        modifier
-            .size(size)
-            .clip(RoundedCornerShape(corner))
-            .background(
-                when {
-                    cc.length == 2 -> Color(0xFF1A1A1E)  // Flag background
-                    else -> Color(0xFF252529)              // Placeholder - slightly lighter
-                }
-            )
-    ) {
-        if (cc.length == 2) {
-            // Try to load flag SVG
-            coil.compose.AsyncImage(
-                model = "file:///android_asset/flags/$cc.svg",
-                imageLoader = getFlagImageLoader(context),
-                contentDescription = countryCode,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
-        } else {
-            // Fallback: Show loading skeleton or globe icon
-            Box(
-                Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                // Modern minimal loading pulse
-                Box(
-                    Modifier
-                        .size(size * 0.4f)
-                        .clip(CircleShape)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    AnanasAccent.copy(alpha = 0.3f),
-                                    Color.Transparent
-                                ),
-                                radius = (size * 0.2f).value
-                            )
-                        )
-                )
-                // Globe icon
-                androidx.compose.material3.Icon(
-                    Icons.Rounded.Public,
-                    contentDescription = "Loading flag",
-                    modifier = Modifier.size(size * 0.5f),
-                    tint = AnanasMuted
-                )
-            }
-        }
-    }
+    // Disabled: showing placeholder instead of flag
+    CountryCodeBadge(countryCode, size)
 }
 
 private fun pingQualityLabel(ms: Int): String = when {
@@ -1074,7 +1019,8 @@ private fun VpnTab() {
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(AnanasCard)
-                                            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                                            .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                                            .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
                                             .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                     ) {
                                         Column(
@@ -1342,6 +1288,257 @@ private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, h
         Column {
             Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AnanasBg else AnanasTextHi)
             Text(subtitle, fontSize = 11.5.sp, color = if (highlight) AnanasBg.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+        }
+    }
+}
+
+
+// ── Location Section Header (improved styling, no emoji) ──────────────────────
+@Composable
+private fun LocationSectionHeader(title: String, subtitle: String = "") {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+            color = AnanasTextHi
+        )
+        if (subtitle.isNotEmpty()) {
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = AnanasMuted,
+                letterSpacing = 0.3.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
+}
+
+// ── Country Badge Placeholder (no flag emoji) ────────────────────────────────
+@Composable
+private fun CountryCodeBadge(countryCode: String, size: Dp = 32.dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.22f))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF2A2A2A),
+                        Color(0xFF1F1F1F)
+                    )
+                )
+            )
+            .border(1.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(size * 0.22f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = countryCode.uppercase().take(2),
+            fontSize = (size * 0.4f).value.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFAAAAAA),
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+// ── Server List Item (improved styling, clean location display) ──────────────
+@Composable
+private fun ServerListItem(
+    cfg: SavedConfig, activeId: String, connected: Boolean,
+    onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit
+) {
+    val isActive = cfg.id == activeId
+    val badgeColor = when (cfg.proto.lowercase()) {
+        "trojan" -> Color(0xFF4ADE9C)
+        "vless"  -> Color(0xFF64D2FF)
+        "vmess"  -> Color(0xFFFFD60A)
+        else     -> Color(0xFF8B8B8B)
+    }
+    
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Remove Server", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
+            text = { Text("Remove ${cfg.displayName}?", fontSize = 12.sp) },
+            confirmButton = {
+                Button(
+                    onClick = { onDelete(cfg); showDeleteDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) { Text("Remove", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showDeleteDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
+                ) { Text("Cancel", fontSize = 11.sp) }
+            }
+        )
+    }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onConnect(cfg) }
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(14.dp)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1E)),
+        border = BorderStroke(
+            1.5.dp,
+            if (isActive) Color(0xFF4ADE9C).copy(alpha = 0.5f) else Color(0xFF2A2A2E)
+        ),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        if (isActive) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(3.dp)
+                    .align(Alignment.CenterStart)
+                    .background(Color(0xFF4ADE9C), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
+            )
+        }
+        
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = if (isActive) 15.dp else 16.dp,
+                    top = 14.dp,
+                    end = 14.dp,
+                    bottom = 14.dp
+                )
+        ) {
+            // Header row with country + name + actions
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Country code badge (no flag)
+                    CountryCodeBadge(cfg.countryCode, 36.dp)
+                    
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = cfg.displayName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFAFAFA),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        
+                        if (isActive && connected) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF4ADE9C))
+                                )
+                                Text(
+                                    "ACTIVE",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4ADE9C),
+                                    letterSpacing = 0.2.sp
+                                )
+                            }
+                        } else {
+                            val statusText = if (cfg.pingMs >= 0) {
+                                "${cfg.pingMs} ms"
+                            } else {
+                                "Ready to connect"
+                            }
+                            Text(
+                                text = statusText,
+                                fontSize = 10.sp,
+                                color = Color(0xFF8B8B8B),
+                                letterSpacing = 0.2.sp
+                            )
+                        }
+                    }
+                }
+                
+                // Action buttons
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(
+                        onClick = { /* Show QR */ },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(Color(0xFF252529))
+                            .border(1.5.dp, Color(0xFF2F2F33), RoundedCornerShape(9.dp))
+                    ) {
+                        Icon(Icons.Rounded.QrCode2, null, tint = Color(0xFFC0C0C0), modifier = Modifier.size(16.dp))
+                    }
+                    
+                    IconButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(Color(0xFF252529))
+                            .border(1.5.dp, Color(0xFF2F2F33), RoundedCornerShape(9.dp))
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+            
+            // Protocol tags
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(badgeColor.copy(alpha = 0.15f))
+                        .border(1.dp, badgeColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = cfg.proto.uppercase(),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor,
+                        letterSpacing = 0.3.sp
+                    )
+                }
+                
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF3A3A3F).copy(alpha = 0.6f))
+                        .border(1.dp, Color(0xFF4A4A4F), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = cfg.network.uppercase(),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFA0A0A0),
+                        letterSpacing = 0.2.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -1646,7 +1843,7 @@ private fun LocationsScreen(
                     // ========== MAIN SECTION ==========
                     if (mainConfigs.isNotEmpty()) {
                         item(key = "main_header") {
-                            LocationSectionHeader("📌", "MAIN", "Manually added")
+                            LocationSectionHeader("MAIN", "Manually added")
                         }
                         items(mainConfigs, key = { it.id }) { cfg ->
                             ServerListItem(cfg, activeId, connected, onConnect, onDelete)
@@ -1656,7 +1853,7 @@ private fun LocationsScreen(
                     // ========== IMPORTED SECTION ==========
                     if (importedConfigs.isNotEmpty()) {
                         item(key = "imported_header") {
-                            LocationSectionHeader("📥", "IMPORTED SUBSCRIPTIONS")
+                            LocationSectionHeader("IMPORTED SUBSCRIPTIONS")
                         }
                         
                         // For each subscription group
