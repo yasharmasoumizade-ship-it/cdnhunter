@@ -2,7 +2,6 @@ package com.cdnhunter.app.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,9 +42,9 @@ data class SpeedDataPoint(
 fun TrafficChartCard(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    dataPoints: List<Float>,  // KB/s values
-    currentValue: Float,       // KB/s
-    totalBytes: Long,          // Cumulative bytes
+    dataPoints: List<Float>,
+    currentValue: Float,
+    totalBytes: Long,
     accentColor: Color = Color(0xFF4ADE9C),
     isDownload: Boolean = true,
     modifier: Modifier = Modifier
@@ -59,12 +58,14 @@ fun TrafficChartCard(
             .background(Color(0xFF0B0B0D))
             .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
             .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        contentAlignment = Alignment.TopStart
+            .padding(14.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Header with icon and title
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Box(
                     Modifier
                         .size(28.dp)
@@ -75,8 +76,19 @@ fun TrafficChartCard(
                     Icon(icon, null, tint = accentColor, modifier = Modifier.size(14.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = accentColor.copy(0.8f), letterSpacing = 0.5.sp)
-                    Text("${totalValue} ${totalUnit}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFAFAFA))
+                    Text(
+                        title,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor.copy(0.8f),
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        "$totalValue $totalUnit",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFAFAFA)
+                    )
                 }
             }
 
@@ -88,7 +100,10 @@ fun TrafficChartCard(
                     .background(accentColor.copy(0.05f))
                     .padding(10.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Box(
                         Modifier
                             .size(4.dp)
@@ -97,7 +112,9 @@ fun TrafficChartCard(
                     )
                     Text(
                         if (currentValue > 1024) "%.1f MB/s".format(currentValue / 1024f) else "%.0f KB/s".format(currentValue),
-                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = accentColor
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentColor
                     )
                 }
             }
@@ -110,13 +127,6 @@ fun TrafficChartCard(
                     val maxValue = dataPoints.maxOrNull() ?: 1f
                     val range = maxValue.coerceAtLeast(1f)
                     
-                    // Draw grid lines
-                    val gridColor = Color(0xFF1E1F24).copy(alpha = 0.3f)
-                    for (i in 0..4) {
-                        val y = (i.toFloat() / 4f) * height
-                        drawLine(gridColor, Offset(0f, y), Offset(width, y), strokeWidth = 0.5f)
-                    }
-                    
                     // Draw area under curve
                     val path = Path()
                     dataPoints.forEachIndexed { index, value ->
@@ -128,9 +138,12 @@ fun TrafficChartCard(
                     path.lineTo(0f, height)
                     path.close()
                     
-                    drawPath(path, brush = Brush.verticalGradient(
-                        colors = listOf(accentColor.copy(0.3f), accentColor.copy(0.05f))
-                    ))
+                    drawPath(
+                        path,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(accentColor.copy(0.3f), accentColor.copy(0.05f))
+                        )
+                    )
                     
                     // Draw line
                     val linePath = Path()
@@ -147,6 +160,7 @@ fun TrafficChartCard(
 }
 
 // ── Horizontal carousel for traffic breakdown ──────────────────────────────────────
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DetailedTrafficBreakdown(
     downloadBytes: Long,
@@ -157,15 +171,20 @@ fun DetailedTrafficBreakdown(
     currentUploadKbps: Float = 0f,
     modifier: Modifier = Modifier
 ) {
-    val downloadColor = Color(0xFF64D2FF)  // Teal
-    val uploadColor = Color(0xFFFFD60A)    // Yellow
+    val downloadColor = Color(0xFF64D2FF)
+    val uploadColor = Color(0xFFFFD60A)
     
     val pagerState = rememberPagerState(pageCount = { 3 })
     
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Traffic Statistics", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFAFAFA))
+        Text(
+            "Traffic Statistics",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFFFAFAFA)
+        )
         
-        // Horizontal Pager with smooth animations
+        // Horizontal Pager
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
@@ -174,45 +193,30 @@ fun DetailedTrafficBreakdown(
             contentPadding = PaddingValues(horizontal = 12.dp),
             pageSpacing = 12.dp
         ) { page ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF0B0B0D))
-                    .animateContentSize(
-                        animationSpec = spring(
-                            dampingRatio = 0.8f,
-                            stiffness = 400f
-                        )
-                    )
-            ) {
-                when (page) {
-                    0 -> TrafficChartCard(
-                        title = "DOWNLOAD",
-                        icon = Icons.Rounded.ArrowDownward,
-                        dataPoints = downloadHistory,
-                        currentValue = currentDownloadKbps,
-                        totalBytes = downloadBytes,
-                        accentColor = downloadColor,
-                        isDownload = true,
-                        modifier = Modifier.padding(0.dp)
-                    )
-                    1 -> TrafficChartCard(
-                        title = "UPLOAD",
-                        icon = Icons.Rounded.ArrowUpward,
-                        dataPoints = uploadHistory,
-                        currentValue = currentUploadKbps,
-                        totalBytes = uploadBytes,
-                        accentColor = uploadColor,
-                        isDownload = false,
-                        modifier = Modifier.padding(0.dp)
-                    )
-                    2 -> TrafficScaleReference(modifier = Modifier.padding(0.dp))
-                }
+            when (page) {
+                0 -> TrafficChartCard(
+                    title = "DOWNLOAD",
+                    icon = Icons.Rounded.ArrowDownward,
+                    dataPoints = downloadHistory,
+                    currentValue = currentDownloadKbps,
+                    totalBytes = downloadBytes,
+                    accentColor = downloadColor,
+                    isDownload = true
+                )
+                1 -> TrafficChartCard(
+                    title = "UPLOAD",
+                    icon = Icons.Rounded.ArrowUpward,
+                    dataPoints = uploadHistory,
+                    currentValue = currentUploadKbps,
+                    totalBytes = uploadBytes,
+                    accentColor = uploadColor,
+                    isDownload = false
+                )
+                2 -> TrafficScaleReference()
             }
         }
         
-        // Indicator dots with smooth animation
+        // Indicator dots
         Row(
             Modifier
                 .fillMaxWidth()
@@ -224,11 +228,13 @@ fun DetailedTrafficBreakdown(
                 val isSelected = pagerState.currentPage == index
                 val width by animateDpAsState(
                     targetValue = if (isSelected) 24.dp else 8.dp,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                    label = "indicator_width_$index"
                 )
                 val alpha by animateFloatAsState(
                     targetValue = if (isSelected) 1f else 0.4f,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                    label = "indicator_alpha_$index"
                 )
                 
                 Box(
@@ -264,7 +270,10 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
             .padding(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Box(
                     Modifier
                         .size(28.dp)
@@ -272,9 +281,19 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
                         .background(Color(0xFF4ADE9C).copy(0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.Info, null, tint = Color(0xFF4ADE9C), modifier = Modifier.size(14.dp))
+                    Icon(
+                        Icons.Rounded.Info,
+                        null,
+                        tint = Color(0xFF4ADE9C),
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
-                Text("Scale Reference", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFAFAFA))
+                Text(
+                    "Scale Reference",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFAFAFA)
+                )
             }
             
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -288,7 +307,10 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ScaleItem(value: String, subtext: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         Box(
             Modifier
                 .size(6.dp)
@@ -296,7 +318,12 @@ private fun ScaleItem(value: String, subtext: String, color: Color) {
                 .background(color)
         )
         Column(modifier = Modifier.weight(1f)) {
-            Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFAFAFA))
+            Text(
+                value,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFFAFAFA)
+            )
             Text(subtext, fontSize = 9.sp, color = Color(0xFF6E7078))
         }
     }
@@ -309,7 +336,13 @@ fun TrafficProgressBar(bytes: Long, modifier: Modifier = Modifier) {
     
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$value $unit", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFAFAFA), modifier = Modifier.weight(1f))
+            Text(
+                "$value $unit",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFAFAFA),
+                modifier = Modifier.weight(1f)
+            )
             Text("Used", fontSize = 9.sp, color = Color(0xFF6E7078))
         }
         Box(
@@ -320,7 +353,8 @@ fun TrafficProgressBar(bytes: Long, modifier: Modifier = Modifier) {
                 .background(Color(0xFF232328))
         ) {
             val progress = when {
-                bytes < 1024 * 1024 * 1024 -> (bytes.toFloat() / (1024 * 1024 * 1024).toFloat()).coerceIn(0f, 1f)
+                bytes < 1024 * 1024 * 1024 -> (bytes.toFloat() / (1024 * 1024 * 1024).toFloat())
+                    .coerceIn(0f, 1f)
                 else -> 1f
             }
             Box(
@@ -336,85 +370,6 @@ fun TrafficProgressBar(bytes: Long, modifier: Modifier = Modifier) {
                         }
                     )
             )
-        }
-    }
-}
-
-// ── Real-time stats panel (for home screen) ───────────────────────────────────────
-@Composable
-fun RealTimeStatsPanel(
-    downloadHistory: List<Float>,
-    uploadHistory: List<Float>,
-    modifier: Modifier = Modifier
-) {
-    val downloadKbps = downloadHistory.lastOrNull() ?: 0f
-    val uploadKbps = uploadHistory.lastOrNull() ?: 0f
-    
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF1A1B1F).copy(alpha = 0.8f),
-                        Color(0xFF0B0B0D)
-                    )
-                )
-            )
-            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
-            .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("Live Stats", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFAFAFA), letterSpacing = 0.5.sp)
-        
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatBox(
-                label = "Download",
-                icon = Icons.Rounded.ArrowDownward,
-                value = downloadKbps,
-                color = Color(0xFF64D2FF),
-                modifier = Modifier.weight(1f)
-            )
-            StatBox(
-                label = "Upload",
-                icon = Icons.Rounded.ArrowUpward,
-                value = uploadKbps,
-                color = Color(0xFFFFD60A),
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatBox(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    value: Float,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(color.copy(0.08f))
-            .border(0.5.dp, color.copy(0.2f), RoundedCornerShape(8.dp))
-            .padding(10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(14.dp))
-            Text(label, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = color.copy(0.8f))
-            Text(
-                if (value > 1024) "%.1f".format(value / 1024f) else "%.0f".format(value),
-                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color
-            )
-            Text(if (value > 1024) "MB/s" else "KB/s", fontSize = 8.sp, color = color.copy(0.6f))
         }
     }
 }
