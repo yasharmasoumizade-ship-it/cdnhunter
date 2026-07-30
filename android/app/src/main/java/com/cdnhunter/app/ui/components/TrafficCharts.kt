@@ -57,7 +57,6 @@ fun TrafficChartCard(
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF0B0B0D))
             .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp))
             .padding(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -266,7 +265,6 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF0B0B0D))
             .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp))
             .padding(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
