@@ -1061,19 +1061,29 @@ private fun VpnTab() {
                             activeConfig?.let { cfg ->
                                     val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                     val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
+                                    // One unified card, same size/style whether showing server
+                                    // info or traffic stats. When connected, an internal
+                                    // HorizontalPager lets the user swipe between the two --
+                                    // NOT two separate stacked cards. When not connected there's
+                                    // nothing to page between, so it's just the server info with
+                                    // no pager overhead.
+                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 2 else 1 })
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(AnanasCard)
                                             .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                                            .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                     ) {
-                                        Column(
-                                            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                                        ) {
+                                        HorizontalPager(state = cardPagerState) { page ->
+                                            if (page == 0) {
+                                                Column(
+                                                    Modifier.fillMaxWidth()
+                                                        .clickable { navigateTo(AnanasScreen.LOCATIONS) }
+                                                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                                ) {
                                             // Server row
                                             Row(
                                                 Modifier.fillMaxWidth(),
@@ -1133,38 +1143,43 @@ private fun VpnTab() {
                                                     Text(uploadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
                                                 }
                                             }
+                                                }
+                                            } else {
+                                                // Page 2: traffic stats, swiped into view on the
+                                                // SAME card -- DetailedTrafficBreakdown still has
+                                                // its own internal pager for Download/Upload/Scale
+                                                // sub-pages, nested one level deeper.
+                                                Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                                    DetailedTrafficBreakdown(
+                                                        downloadBytes = totalDownloadBytes,
+                                                        uploadBytes = totalUploadBytes,
+                                                        downloadHistory = downloadHistory,
+                                                        uploadHistory = uploadHistory,
+                                                        currentDownloadKbps = downloadKBps.toFloat(),
+                                                        currentUploadKbps = uploadKBps.toFloat(),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
-                                
-                                // Traffic charts - detailed breakdown with sparklines. Already
-                                // has its own internal HorizontalPager for left/right swiping
-                                // between traffic stat pages (see TrafficCharts.kt) -- it just
-                                // needs to sit directly below the main card without requiring
-                                // a scroll-down first, which is what moving this out of a
-                                // LazyColumn's item {} into a plain Column achieves. Wrapped in
-                                // a card matching the server card above exactly (same corner
-                                // radius, background, border) so it reads as one consistent
-                                // design language rather than a bare, borderless block.
-                                if (connected) {
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(AnanasCard)
-                                            .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                                            .padding(horizontal = 18.dp, vertical = 16.dp)
-                                    ) {
-                                        DetailedTrafficBreakdown(
-                                            downloadBytes = totalDownloadBytes,
-                                            uploadBytes = totalUploadBytes,
-                                            downloadHistory = downloadHistory,
-                                            uploadHistory = uploadHistory,
-                                            currentDownloadKbps = downloadKBps.toFloat(),
-                                            currentUploadKbps = uploadKBps.toFloat(),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
+                                    if (connected) {
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            repeat(2) { index ->
+                                                val isSelected = cardPagerState.currentPage == index
+                                                Box(
+                                                    Modifier
+                                                        .padding(horizontal = 3.dp)
+                                                        .size(if (isSelected) 7.dp else 6.dp)
+                                                        .clip(CircleShape)
+                                                        .background(if (isSelected) AnanasAccent else AnanasBorder2)
+                                                )
+                                            }
+                                        }
                                     }
-                                }
                             }
                         }
                     }
