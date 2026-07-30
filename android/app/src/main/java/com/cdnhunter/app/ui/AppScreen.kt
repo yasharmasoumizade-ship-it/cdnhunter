@@ -1141,17 +1141,29 @@ private fun VpnTab() {
                                 // between traffic stat pages (see TrafficCharts.kt) -- it just
                                 // needs to sit directly below the main card without requiring
                                 // a scroll-down first, which is what moving this out of a
-                                // LazyColumn's item {} into a plain Column achieves.
+                                // LazyColumn's item {} into a plain Column achieves. Wrapped in
+                                // a card matching the server card above exactly (same corner
+                                // radius, background, border) so it reads as one consistent
+                                // design language rather than a bare, borderless block.
                                 if (connected) {
-                                    DetailedTrafficBreakdown(
-                                        downloadBytes = totalDownloadBytes,
-                                        uploadBytes = totalUploadBytes,
-                                        downloadHistory = downloadHistory,
-                                        uploadHistory = uploadHistory,
-                                        currentDownloadKbps = downloadKBps.toFloat(),
-                                        currentUploadKbps = uploadKBps.toFloat(),
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(AnanasCard)
+                                            .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
+                                            .padding(horizontal = 18.dp, vertical = 16.dp)
+                                    ) {
+                                        DetailedTrafficBreakdown(
+                                            downloadBytes = totalDownloadBytes,
+                                            uploadBytes = totalUploadBytes,
+                                            downloadHistory = downloadHistory,
+                                            uploadHistory = uploadHistory,
+                                            currentDownloadKbps = downloadKBps.toFloat(),
+                                            currentUploadKbps = uploadKBps.toFloat(),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
                                 }
                             }
                         }
