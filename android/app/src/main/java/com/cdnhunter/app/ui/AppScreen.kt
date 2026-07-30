@@ -1054,13 +1054,11 @@ private fun VpnTab() {
                             )
                         }
 
-                        LazyColumn(
+                        Column(
                             Modifier.weight(1f).padding(horizontal = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
                             activeConfig?.let { cfg ->
-                                item(key = "merged-${cfg.id}") {
                                     val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                     val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
                                     Box(
@@ -1069,7 +1067,6 @@ private fun VpnTab() {
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(AnanasCard)
                                             .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                                            .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
                                             .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                     ) {
                                         Column(
@@ -1138,21 +1135,23 @@ private fun VpnTab() {
                                             }
                                         }
                                     }
-                                }
                                 
-                                // Traffic charts - detailed breakdown with sparklines
+                                // Traffic charts - detailed breakdown with sparklines. Already
+                                // has its own internal HorizontalPager for left/right swiping
+                                // between traffic stat pages (see TrafficCharts.kt) -- it just
+                                // needs to sit directly below the main card without requiring
+                                // a scroll-down first, which is what moving this out of a
+                                // LazyColumn's item {} into a plain Column achieves.
                                 if (connected) {
-                                    item(key = "traffic-charts-${cfg.id}") {
-                                        DetailedTrafficBreakdown(
-                                            downloadBytes = totalDownloadBytes,
-                                            uploadBytes = totalUploadBytes,
-                                            downloadHistory = downloadHistory,
-                                            uploadHistory = uploadHistory,
-                                            currentDownloadKbps = downloadKBps.toFloat(),
-                                            currentUploadKbps = uploadKBps.toFloat(),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
+                                    DetailedTrafficBreakdown(
+                                        downloadBytes = totalDownloadBytes,
+                                        uploadBytes = totalUploadBytes,
+                                        downloadHistory = downloadHistory,
+                                        uploadHistory = uploadHistory,
+                                        currentDownloadKbps = downloadKBps.toFloat(),
+                                        currentUploadKbps = uploadKBps.toFloat(),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
                             }
                         }
@@ -1438,8 +1437,7 @@ private fun ServerListItem(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onConnect(cfg) }
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(14.dp)),
+            .clickable { onConnect(cfg) },
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1E)),
         border = BorderStroke(
             1.5.dp,
@@ -1888,7 +1886,7 @@ private fun LocationsScreen(
                     Text("Tap + above to add one", fontSize = 12.sp, color = AnanasMuted)
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 40.dp)) {
                     // ========== MAIN SECTION ==========
                     if (mainConfigs.isNotEmpty()) {
                         item(key = "main_header") {
@@ -1940,8 +1938,6 @@ private fun LocationsScreen(
                     }
                 }
             }
-
-            Spacer(Modifier.height(30.dp))  // Bottom padding for scrolling
         }
     }
 }
@@ -2000,9 +1996,9 @@ private fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
 
             Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
                 color = AnanasCard,
-                shadowElevation = 2.dp
             ) {
                 Column {
                     SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
@@ -2052,9 +2048,9 @@ private fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
 
             Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
                 color = AnanasCard,
-                shadowElevation = 2.dp
             ) {
                 Column {
                     var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
@@ -2165,9 +2161,9 @@ private fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             Spacer(Modifier.height(10.dp))
             Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
                 color = AnanasCard,
-                shadowElevation = 2.dp
             ) {
                 Column {
                     var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
@@ -2282,9 +2278,9 @@ private fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
 
             Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
                 color = AnanasCard,
-                shadowElevation = 2.dp
             ) {
                 Column(Modifier.padding(16.dp)) {
                     var theme by remember { mutableStateOf(AppSettings.theme(context)) }
@@ -2324,9 +2320,9 @@ private fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
 
             Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
                 color = AnanasCard,
-                shadowElevation = 2.dp
             ) {
                 Column {
                     var adBlockerEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
@@ -2423,9 +2419,9 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, AnanasBorder, RoundedCornerShape(12.dp))
             .let { if (onClick != null) it.clickable { onClick() } else it },
         color = AnanasCard,
-        shadowElevation = 2.dp
     ) {
         Row(
             Modifier.fillMaxWidth()
@@ -2488,9 +2484,9 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)),
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, AnanasBorder, RoundedCornerShape(12.dp)),
         color = AnanasCard,
-        shadowElevation = 2.dp
     ) {
         Row(
             Modifier.fillMaxWidth()
@@ -2730,7 +2726,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     CircularProgressIndicator(color = AnanasAccent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+                LazyColumn(Modifier.weight(1f).padding(horizontal = 20.dp)) {
                     items(filtered, key = { it.packageName }) { app ->
                         val isChecked = selected.contains(app.packageName)
                         Row(
