@@ -54,10 +54,7 @@ fun TrafficChartCard(
     Box(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF0B0B0D))
-            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
-            .padding(14.dp)
+            .padding(4.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Header with icon and title
@@ -189,7 +186,7 @@ fun DetailedTrafficBreakdown(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(280.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp),
             pageSpacing = 12.dp
         ) { page ->
             when (page) {
@@ -262,10 +259,7 @@ fun TrafficScaleReference(modifier: Modifier = Modifier) {
     Box(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF0B0B0D))
-            .border(1.5.dp, Color(0xFF1E1F24), RoundedCornerShape(12.dp))
-            .padding(14.dp)
+            .padding(4.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
