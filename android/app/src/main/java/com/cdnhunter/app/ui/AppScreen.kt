@@ -65,7 +65,6 @@ import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
 import com.cdnhunter.app.ui.components.TrafficChartCard
 import com.cdnhunter.app.ui.components.DetailedTrafficBreakdown
-import com.cdnhunter.app.ui.components.RealTimeTrafficStats
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
