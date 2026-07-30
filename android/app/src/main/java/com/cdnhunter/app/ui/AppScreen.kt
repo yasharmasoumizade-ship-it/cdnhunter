@@ -606,7 +606,7 @@ fun AppScreen() {
 private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNNEL }
 
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun VpnTab() {
     val context = LocalContext.current
