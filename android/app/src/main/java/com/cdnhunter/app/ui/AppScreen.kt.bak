@@ -1234,29 +1234,11 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     // backdrop glow's opacity/size. Everything else (ripple rings, rotating
     // scan arc, radial press glow, linear button-face gradient) was removed
     // per request -- just this one smooth, calm motion behind the button.
-    // Aurora backdrop: several very soft, independently breathing pools of
-    // light spread across the top and out to the left/right, fading away
-    // toward the bottom. Deliberately not a ring around the button.
     val infinite = rememberInfiniteTransition(label = "power")
     val breathe by infinite.animateFloat(
-        0.55f, 1f,
-        infiniteRepeatable(tween(4200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        0.6f, 1f,
+        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "breathe"
-    )
-    val waveA by infinite.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(7000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "waveA"
-    )
-    val waveB by infinite.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(9500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "waveB"
-    )
-    val waveC by infinite.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(12500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "waveC"
     )
 
     var isPressed by remember { mutableStateOf(false) }
@@ -1267,6 +1249,10 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "press"
     )
 
+    // State color: blue while off, yellow while connecting, green while
+    // connected -- matching the existing AnanasAccent green used elsewhere
+    // for the connected state, so this isn't a different green from the rest
+    // of the app.
     val backdropColor by animateColorAsState(
         targetValue = when {
             connected -> AnanasAccent
@@ -1277,52 +1263,43 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "backdropColor"
     )
 
-    // Two sibling hues around the state color give the glow its aurora feel
-    // instead of one flat tint.
-    val mix: (Color, Color, Float) -> Color = { a, b, t ->
-        Color(
-            a.red + (b.red - a.red) * t,
-            a.green + (b.green - a.green) * t,
-            a.blue + (b.blue - a.blue) * t,
-            1f
-        )
-    }
-    val auroraA = backdropColor
-    val auroraB = mix(backdropColor, Color(0xFF7C4DFF), 0.45f)
-    val auroraC = mix(backdropColor, Color(0xFF00E5FF), 0.40f)
-
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(width = 480.dp, height = 400.dp)) {
+        // Soft animated backdrop glow, offset toward the top-right (per
+        // request: mostly right + top, a little into the bottom) rather than
+        // centered behind the button -- a single large, heavily-feathered
+        // radial gradient rather than the multiple sharp-edged rings/arcs
+        // this replaced.
+        Canvas(Modifier.size(420.dp)) {
             val w = size.width
             val h = size.height
-            fun pool(color: Color, cx: Float, cy: Float, rf: Float, a: Float) {
-                val r = w * rf
-                val c = Offset(w * cx, h * cy)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            color.copy(alpha = a),
-                            color.copy(alpha = a * 0.45f),
-                            Color.Transparent
-                        ),
-                        center = c,
-                        radius = r
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        backdropColor.copy(alpha = 0.30f * breathe),
+                        backdropColor.copy(alpha = 0.14f * breathe),
+                        Color.Transparent
                     ),
-                    radius = r,
-                    center = c
-                )
-            }
-            // top, wide and highest
-            pool(auroraA, 0.50f, 0.28f - waveB * 0.02f, 0.60f, 0.34f * breathe)
-            // upper left
-            pool(auroraC, 0.24f - waveA * 0.04f, 0.34f, 0.44f, 0.30f * (0.55f + 0.45f * waveA))
-            // upper right
-            pool(auroraB, 0.76f + waveB * 0.04f, 0.30f, 0.46f, 0.32f * (0.50f + 0.50f * waveB))
-            // shoulders, reaching down the sides
-            pool(auroraA, 0.30f, 0.55f, 0.34f, 0.16f * (0.6f + 0.4f * waveC))
-            pool(auroraC, 0.71f, 0.53f, 0.32f, 0.14f * (0.6f + 0.4f * waveA))
-            // faint hint below so it does not cut off hard
-            pool(auroraB, 0.50f, 0.74f, 0.30f, 0.07f * breathe)
+                    center = Offset(w * 0.62f, h * 0.34f),
+                    radius = w * 0.62f
+                ),
+                radius = w * 0.62f,
+                center = Offset(w * 0.62f, h * 0.34f)
+            )
+            // A second, smaller soft pool reaching a little into the bottom
+            // (per request: "کمی پایین") so the glow doesn't end too sharply
+            // above center.
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        backdropColor.copy(alpha = 0.10f * breathe),
+                        Color.Transparent
+                    ),
+                    center = Offset(w * 0.55f, h * 0.62f),
+                    radius = w * 0.40f
+                ),
+                radius = w * 0.40f,
+                center = Offset(w * 0.55f, h * 0.62f)
+            )
         }
         Box(
             Modifier.size(200.dp).scale(scale).clip(CircleShape)
