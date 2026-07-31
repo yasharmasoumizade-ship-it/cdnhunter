@@ -120,35 +120,46 @@ fun TrafficChartCard(
                 Canvas(Modifier.fillMaxWidth().height(40.dp)) {
                     val width = size.width
                     val height = size.height
-                    val maxValue = dataPoints.maxOrNull() ?: 1f
-                    val range = maxValue.coerceAtLeast(1f)
-                    
-                    // Draw area under curve
-                    val path = Path()
-                    dataPoints.forEachIndexed { index, value ->
-                        val x = (index.toFloat() / dataPoints.size) * width
-                        val y = height - (value / range) * (height * 0.9f)
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-                    path.lineTo(width, height)
-                    path.lineTo(0f, height)
-                    path.close()
-                    
-                    drawPath(
-                        path,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(accentColor.copy(0.3f), accentColor.copy(0.05f))
+                    // Snapshot to a local, fixed-size list before doing any math —
+                    // dataPoints is backed by a mutableStateListOf that the polling
+                    // coroutine can still be appending/removing from concurrently;
+                    // reading .size once and indexing separately (the old approach)
+                    // could race a mutation mid-frame. A plain list snapshot can't.
+                    val points = dataPoints.toList()
+                    val count = points.size
+                    if (count > 0 && width > 0f && height > 0f) {
+                        val maxValue = points.maxOrNull() ?: 1f
+                        val range = maxValue.coerceAtLeast(1f)
+
+                        // Draw area under curve
+                        val path = Path()
+                        points.forEachIndexed { index, value ->
+                            val x = (index.toFloat() / count) * width
+                            val y = (height - (value / range) * (height * 0.9f))
+                                .coerceIn(0f, height)
+                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        path.lineTo(width, height)
+                        path.lineTo(0f, height)
+                        path.close()
+
+                        drawPath(
+                            path,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(accentColor.copy(0.3f), accentColor.copy(0.05f))
+                            )
                         )
-                    )
-                    
-                    // Draw line
-                    val linePath = Path()
-                    dataPoints.forEachIndexed { index, value ->
-                        val x = (index.toFloat() / dataPoints.size) * width
-                        val y = height - (value / range) * (height * 0.9f)
-                        if (index == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
+
+                        // Draw line
+                        val linePath = Path()
+                        points.forEachIndexed { index, value ->
+                            val x = (index.toFloat() / count) * width
+                            val y = (height - (value / range) * (height * 0.9f))
+                                .coerceIn(0f, height)
+                            if (index == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
+                        }
+                        drawPath(linePath, color = accentColor, style = Stroke(width = 2f))
                     }
-                    drawPath(linePath, color = accentColor, style = Stroke(width = 2f))
                 }
             }
         }
@@ -171,21 +182,14 @@ fun DetailedTrafficBreakdown(
     val uploadColor = Color(0xFFFFD60A)
     
     val pagerState = rememberPagerState(pageCount = { 3 })
-    
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            "Traffic Statistics",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFFAFAFA)
-        )
-        
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // Horizontal Pager
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(280.dp),
+                .height(140.dp),
             contentPadding = PaddingValues(horizontal = 4.dp),
             pageSpacing = 12.dp
         ) { page ->
