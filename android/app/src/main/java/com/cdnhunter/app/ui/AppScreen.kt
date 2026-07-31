@@ -28,6 +28,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.rotate
@@ -1230,36 +1232,19 @@ private fun VpnTab() {
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
-    // Real aurora light clings to a horizon line and ripples along it -- not
-    // a spread of soft round blobs floating in open space. This backdrop is
-    // built the same way: several thin, semi-transparent ribbons drawn as
-    // wavy arcs whose radius wobbles along their own length (a sine-based
-    // per-segment offset, not just the whole shape's center moving), all
-    // tightly hugging the button's own circular edge rather than spreading
-    // out into the wider background.
+    // Rotating conic-gradient aurora ring hugging the button's edge, with a
+    // soft blurred glow layer behind it. Colors shift smoothly with state:
+    // off = blue/violet, connecting = amber/red, connected = teal/blue-green.
     val infinite = rememberInfiniteTransition(label = "power")
-    val breathe by infinite.animateFloat(
-        0.6f, 1f,
-        infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe"
-    )
-    // Phase offsets drive the wobble traveling slowly around the ring, at
-    // different speeds per ribbon so they drift in and out of sync with
-    // each other rather than moving as one rigid unit.
-    val phase1 by infinite.animateFloat(
-        0f, (2 * Math.PI).toFloat(),
-        infiniteRepeatable(tween(9000, easing = LinearEasing)),
-        label = "phase1"
-    )
-    val phase2 by infinite.animateFloat(
-        (2 * Math.PI).toFloat(), 0f,
-        infiniteRepeatable(tween(12000, easing = LinearEasing)),
-        label = "phase2"
-    )
-    val phase3 by infinite.animateFloat(
-        0f, (2 * Math.PI).toFloat(),
+    val rotation by infinite.animateFloat(
+        0f, 360f,
         infiniteRepeatable(tween(7000, easing = LinearEasing)),
-        label = "phase3"
+        label = "auroraRotation"
+    )
+    val breathe by infinite.animateFloat(
+        0.75f, 1f,
+        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breathe"
     )
 
     var isPressed by remember { mutableStateOf(false) }
@@ -1270,93 +1255,71 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "press"
     )
 
-    val backdropColor by animateColorAsState(
+    // Two-color aurora sweep per state.
+    val colorA by animateColorAsState(
         targetValue = when {
-            connected -> AnanasAccent
-            connecting -> Color(0xFFFFD60A)
-            else -> Color(0xFF3B82F6)
+            connected -> Color(0xFF34D9A8)   // teal/jade
+            connecting -> Color(0xFFFFC93C)  // amber/yellow
+            else -> Color(0xFF3B6FFF)        // blue
         },
-        animationSpec = tween(700, easing = FastOutSlowInEasing),
-        label = "backdropColor"
+        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorA"
     )
-    // A second hue drifting alongside the state color gives the ribbon its
-    // multi-color aurora feel instead of one flat tint.
-    val secondHue = when {
-        connected -> Color(0xFF34D9C4)   // teal, complements the green accent
-        connecting -> Color(0xFFFF9F45)  // amber, complements the yellow
-        else -> Color(0xFF7C5CFF)        // violet, complements the blue
-    }
+    val colorB by animateColorAsState(
+        targetValue = when {
+            connected -> Color(0xFF3FA8E0)   // light blue
+            connecting -> Color(0xFFFF5A5A)  // red
+            else -> Color(0xFF8A5CFF)        // violet
+        },
+        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorB"
+    )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Canvas only slightly larger than the button itself (200dp face +
-        // ~50dp of ribbon reach on each side) -- the aurora stays anchored
-        // to the button's own outline rather than spreading into the wider
-        // 280dp backdrop area behind it.
-        Canvas(Modifier.size(280.dp)) {
-            val c = Offset(size.width / 2f, size.height / 2f)
-            val baseRadius = size.minDimension / 2f - 16.dp.toPx()
-
-            // Draws one wavy ribbon: a path built from many small segments
-            // around the given angular range, each segment's radius nudged
-            // by a sine wave (so the ribbon's distance from center actually
-            // undulates along its length, not just pulses as a whole) plus
-            // a slow phase offset so the wave appears to travel around the
-            // ring over time.
-            fun wavyRibbon(
-                color: Color, alpha: Float, strokeWidth: Float,
-                startDeg: Float, sweepDeg: Float,
-                waveAmplitude: Float, waveCount: Float, phase: Float,
-                radiusOffset: Float
-            ) {
-                val path = Path()
-                val segments = 48
-                for (i in 0..segments) {
-                    val t = i / segments.toFloat()
-                    val angleDeg = startDeg + sweepDeg * t
-                    val angleRad = Math.toRadians(angleDeg.toDouble())
-                    val wobble = kotlin.math.sin(t * waveCount * 2 * Math.PI.toFloat() + phase) * waveAmplitude
-                    val r = baseRadius + radiusOffset + wobble
-                    val x = c.x + r * kotlin.math.cos(angleRad).toFloat()
-                    val y = c.y + r * kotlin.math.sin(angleRad).toFloat()
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                drawPath(
-                    path = path,
-                    color = color.copy(alpha = alpha),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                )
-            }
-
-            // Heavier from the top/left/right (-220°..40°, a 260° sweep),
-            // leaving the bottom ~100° noticeably lighter -- covered only by
-            // the last, faint ribbon below rather than the same intensity
-            // as the rest.
-            wavyRibbon(
-                color = backdropColor, alpha = 0.50f * breathe, strokeWidth = 7.dp.toPx(),
-                startDeg = -220f, sweepDeg = 260f,
-                waveAmplitude = 7.dp.toPx(), waveCount = 3f, phase = phase1,
-                radiusOffset = 4.dp.toPx()
+        // Soft blurred glow behind the ring for depth.
+        Canvas(
+            Modifier
+                .size(260.dp)
+                .graphicsLayer { rotationZ = rotation }
+                .blur(22.dp)
+        ) {
+            val stroke = 26.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(
+                    listOf(colorA.copy(alpha = 0.55f * breathe), colorB.copy(alpha = 0.55f * breathe), colorA.copy(alpha = 0.55f * breathe))
+                ),
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
             )
-            wavyRibbon(
-                color = secondHue, alpha = 0.34f * breathe, strokeWidth = 5.dp.toPx(),
-                startDeg = -210f, sweepDeg = 240f,
-                waveAmplitude = 5.dp.toPx(), waveCount = 4f, phase = phase2,
-                radiusOffset = 6.dp.toPx()
+        }
+        // Crisp rotating aurora ring hugging the button edge.
+        Canvas(
+            Modifier
+                .size(224.dp)
+                .graphicsLayer { rotationZ = rotation }
+        ) {
+            val stroke = 4.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(
+                    listOf(
+                        colorA.copy(alpha = 0.9f * breathe),
+                        colorB.copy(alpha = 0.9f * breathe),
+                        colorA.copy(alpha = 0.35f * breathe),
+                        colorB.copy(alpha = 0.9f * breathe),
+                        colorA.copy(alpha = 0.9f * breathe),
+                    )
+                ),
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
             )
-            // Thin, brighter accent riding partway along for shimmer/definition.
-            wavyRibbon(
-                color = Color.White, alpha = 0.18f * breathe, strokeWidth = 2.dp.toPx(),
-                startDeg = -160f, sweepDeg = 130f,
-                waveAmplitude = 5.dp.toPx(), waveCount = 5f, phase = phase3,
-                radiusOffset = 2.dp.toPx()
-            )
-            // Faint hint continuing across the bottom so the ribbon doesn't
-            // cut off sharply, but noticeably dimmer than the rest.
-            wavyRibbon(
-                color = backdropColor, alpha = 0.14f * breathe, strokeWidth = 6.dp.toPx(),
-                startDeg = 30f, sweepDeg = 120f,
-                waveAmplitude = 6.dp.toPx(), waveCount = 2f, phase = phase1,
-                radiusOffset = 4.dp.toPx()
+        }
+        if (connecting) {
+            CircularProgressIndicator(
+                color = Color.White.copy(alpha = 0.5f),
+                strokeWidth = 1.5.dp,
+                modifier = Modifier.size(232.dp)
             )
         }
         Box(
@@ -1393,6 +1356,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         }
     }
 }
+
 
 // ── Add-config sheet: sliding bottom sheet with QR scan / clipboard ──
 @OptIn(ExperimentalMaterial3Api::class)
