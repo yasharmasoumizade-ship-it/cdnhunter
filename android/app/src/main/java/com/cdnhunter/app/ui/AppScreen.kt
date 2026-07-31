@@ -1359,30 +1359,6 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 radiusOffset = 4.dp.toPx()
             )
         }
-        if (connected) {
-            Canvas(Modifier.size(280.dp)) {
-                val maxRadius = this.size.minDimension / 2f
-                val radius = maxRadius * (0.40f + rippleProgress1 * 0.60f)
-                val alpha = (1f - rippleProgress1).coerceIn(0f, 1f) * 0.55f
-                drawCircle(color = AnanasAccent.copy(alpha = alpha), radius = radius,
-                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
-            }
-            Canvas(Modifier.size(280.dp)) {
-                val maxRadius = this.size.minDimension / 2f
-                val radius = maxRadius * (0.40f + rippleProgress2 * 0.60f)
-                val alpha = (1f - rippleProgress2).coerceIn(0f, 1f) * 0.65f
-                drawCircle(color = AnanasAccent.copy(alpha = alpha), radius = radius,
-                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round))
-            }
-        }
-        if (connecting) {
-            Canvas(Modifier.size(240.dp).rotate(scanRotation)) {
-                drawArc(color = AnanasAccent, startAngle = 0f, sweepAngle = 35f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
-                drawArc(color = AnanasAccent.copy(alpha = 0.4f), startAngle = 180f, sweepAngle = 35f, useCenter = false,
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
-            }
-        }
         Box(
             Modifier.size(210.dp).scale(scale).clip(CircleShape)
                 .background(
