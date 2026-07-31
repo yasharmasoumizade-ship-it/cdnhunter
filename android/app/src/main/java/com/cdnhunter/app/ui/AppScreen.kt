@@ -1263,47 +1263,138 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "backdropColor"
     )
 
+    // Aurora ribbons: each one slowly drifts its start angle back and forth
+    // and breathes its stroke width, independently and out of phase, so the
+    // combined shape constantly and subtly reshapes itself the way real
+    // aurora light does -- not just a single opacity pulse on one fixed
+    // shape. Kept tightly around the button's own edge (radius only
+    // slightly larger than the 200dp button face) rather than spreading
+    // into the wider background.
+    val auroraDrift1 by infinite.animateFloat(
+        -18f, 18f,
+        infiniteRepeatable(tween(4200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraDrift1"
+    )
+    val auroraDrift2 by infinite.animateFloat(
+        20f, -20f,
+        infiniteRepeatable(tween(5200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraDrift2"
+    )
+    val auroraDrift3 by infinite.animateFloat(
+        -12f, 12f,
+        infiniteRepeatable(tween(3400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraDrift3"
+    )
+    val auroraWidth1 by infinite.animateFloat(
+        0.75f, 1f,
+        infiniteRepeatable(tween(3000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraWidth1"
+    )
+    val auroraWidth2 by infinite.animateFloat(
+        1f, 0.7f,
+        infiniteRepeatable(tween(3800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraWidth2"
+    )
+
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Soft animated backdrop glow, offset toward the top-right (per
-        // request: mostly right + top, a little into the bottom) rather than
-        // centered behind the button -- a single large, heavily-feathered
-        // radial gradient rather than the multiple sharp-edged rings/arcs
-        // this replaced.
-        Canvas(Modifier.size(420.dp)) {
-            val w = size.width
-            val h = size.height
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        backdropColor.copy(alpha = 0.30f * breathe),
-                        backdropColor.copy(alpha = 0.14f * breathe),
-                        Color.Transparent
-                    ),
-                    center = Offset(w * 0.62f, h * 0.34f),
-                    radius = w * 0.62f
-                ),
-                radius = w * 0.62f,
-                center = Offset(w * 0.62f, h * 0.34f)
+        // Aurora-style halo hugging the button's edge: several overlapping,
+        // wavy, multi-colored ribbon arcs (not one diffuse radial blob) that
+        // each slowly drift and breathe independently, giving the combined
+        // shape the shifting, undulating quality of real aurora light while
+        // staying visually anchored to the button's own outline. Heavier
+        // from the top/left/right, lighter from the bottom (the ~90° gap
+        // centered on straight-down).
+        Canvas(Modifier.size(270.dp)) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            fun arcAt(radius: Float, startAngle: Float, sweep: Float, color: Color, alpha: Float, strokeWidth: Float) {
+                drawArc(
+                    color = color.copy(alpha = alpha),
+                    startAngle = startAngle,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = Offset(c.x - radius, c.y - radius),
+                    size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            val baseRadius = size.minDimension / 2f + 6.dp.toPx()
+            // Ribbon 1: the button's own state color, widest and closest.
+            arcAt(
+                radius = baseRadius + 2.dp.toPx(),
+                startAngle = -225f + auroraDrift1, sweepAngle = 260f,
+                color = backdropColor, alpha = 0.55f * breathe * auroraWidth1,
+                strokeWidth = 10.dp.toPx() * auroraWidth1
             )
-            // A second, smaller soft pool reaching a little into the bottom
-            // (per request: "کمی پایین") so the glow doesn't end too sharply
-            // above center.
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        backdropColor.copy(alpha = 0.10f * breathe),
-                        Color.Transparent
-                    ),
-                    center = Offset(w * 0.55f, h * 0.62f),
-                    radius = w * 0.40f
-                ),
-                radius = w * 0.40f,
-                center = Offset(w * 0.55f, h * 0.62f)
+            // Ribbon 2: a cooler complementary hue drifting the opposite
+            // way, giving the multi-color aurora look rather than a single
+            // flat tint.
+            val secondHue = when {
+                connected -> Color(0xFF34D9C4)   // teal-green, complements the green accent
+                connecting -> Color(0xFFFF9F45)  // warm amber, complements the yellow
+                else -> Color(0xFF7C5CFF)        // violet, complements the blue
+            }
+            arcAt(
+                radius = baseRadius + 15.dp.toPx(),
+                startAngle = -200f + auroraDrift2, sweepAngle = 230f,
+                color = secondHue, alpha = 0.38f * breathe * auroraWidth2,
+                strokeWidth = 8.dp.toPx() * auroraWidth2
+            )
+            // Ribbon 3: a thinner, brighter highlight riding along the first
+            // ribbon's path for a bit of shimmer/definition, not just soft
+            // haze.
+            arcAt(
+                radius = baseRadius + 2.dp.toPx(),
+                startAngle = -160f + auroraDrift3, sweepAngle = 120f,
+                color = backdropColor,
+                alpha = 0.30f * breathe,
+                strokeWidth = 3.dp.toPx()
             )
         }
+        if (connected) {
+            Canvas(Modifier.size(280.dp)) {
+                val maxRadius = this.size.minDimension / 2f
+                val radius = maxRadius * (0.40f + rippleProgress1 * 0.60f)
+                val alpha = (1f - rippleProgress1).coerceIn(0f, 1f) * 0.55f
+                drawCircle(color = AnanasAccent.copy(alpha = alpha), radius = radius,
+                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
+            }
+            Canvas(Modifier.size(280.dp)) {
+                val maxRadius = this.size.minDimension / 2f
+                val radius = maxRadius * (0.40f + rippleProgress2 * 0.60f)
+                val alpha = (1f - rippleProgress2).coerceIn(0f, 1f) * 0.65f
+                drawCircle(color = AnanasAccent.copy(alpha = alpha), radius = radius,
+                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round))
+            }
+        }
+        if (connecting) {
+            Canvas(Modifier.size(240.dp).rotate(scanRotation)) {
+                drawArc(color = AnanasAccent, startAngle = 0f, sweepAngle = 35f, useCenter = false,
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+                drawArc(color = AnanasAccent.copy(alpha = 0.4f), startAngle = 180f, sweepAngle = 35f, useCenter = false,
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+            }
+        }
+        Box(
+            Modifier.size(210.dp).scale(scale).clip(CircleShape)
+                .background(
+                    if (connected) Brush.radialGradient(
+                        colors = listOf(AnanasAccent.copy(alpha = 0.12f * breathe), Color.Transparent), radius = 180f
+                    ) else Brush.radialGradient(colors = listOf(Color.Transparent, Color.Transparent))
+                ),
+            contentAlignment = Alignment.Center
+        ) {}
         Box(
             Modifier.size(200.dp).scale(scale).clip(CircleShape)
-                .background(Color(0xFF141416))
+                .background(
+                    if (connected)
+                        Brush.linearGradient(colors = listOf(Color(0xFF1c1c1f), Color(0xFF0a0a0c)),
+                            start = Offset(0f, 0f),
+                            end = Offset(200f, 200f))
+                    else
+                        Brush.linearGradient(colors = listOf(Color(0xFF18181b), Color(0xFF0d0d0f)),
+                            start = Offset(0f, 0f),
+                            end = Offset(200f, 200f))
+                )
                 .clickable(enabled = !connecting) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
         ) {
