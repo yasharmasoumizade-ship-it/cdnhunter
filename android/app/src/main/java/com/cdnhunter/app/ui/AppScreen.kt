@@ -1075,14 +1075,25 @@ private fun VpnTab() {
                                             .background(AnanasCard)
                                             .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
                                     ) {
-                                        HorizontalPager(state = cardPagerState) { page ->
+                                        // Fixed height so the card doesn't visually grow/shrink
+                                        // when swiping between pages -- page 1 (traffic
+                                        // breakdown: title + 280dp inner pager + indicator dots)
+                                        // is much taller than page 0 (server info)'s natural
+                                        // content height. 400dp comfortably fits the taller page
+                                        // with a little headroom; page 0 is vertically centered
+                                        // within it so it doesn't look stranded at the top.
+                                        HorizontalPager(
+                                            state = cardPagerState,
+                                            modifier = if (connected) Modifier.height(400.dp) else Modifier.wrapContentHeight()
+                                        ) { page ->
                                             if (page == 0) {
                                                 Column(
                                                     Modifier.fillMaxWidth()
+                                                        .fillMaxHeight()
                                                         .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                                         .padding(horizontal = 18.dp, vertical = 16.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                                    verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
                                                 ) {
                                             // Server row
                                             Row(
