@@ -1088,11 +1088,10 @@ private fun VpnTab() {
                                             if (page == 0) {
                                                 Column(
                                                     Modifier.fillMaxWidth()
-                                                        .fillMaxHeight()
                                                         .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                                         .padding(horizontal = 18.dp, vertical = 16.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
+                                                    verticalArrangement = Arrangement.spacedBy(14.dp)
                                                 ) {
                                             // Server row
                                             Row(
