@@ -60,6 +60,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import com.cdnhunter.app.engine.GeoService
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
@@ -1071,6 +1073,18 @@ private fun VpnTab() {
                                     // nothing to page between, so it's just the server info with
                                     // no pager overhead.
                                     val cardPagerState = rememberPagerState(pageCount = { if (connected) 2 else 1 })
+                                    // Page 0 (server info) has the same structure regardless of
+                                    // connected state -- only the text inside changes -- so its
+                                    // natural height is constant. Measure it once, then pin the
+                                    // pager to that exact value in BOTH states instead of
+                                    // switching between wrapContentHeight() (disconnected) and a
+                                    // hand-picked 210dp (connected) that didn't actually match it,
+                                    // which is what caused the card to visibly resize on connect.
+                                    var page0HeightPx by remember { mutableStateOf(0) }
+                                    val density = LocalDensity.current
+                                    val pagerHeightModifier = if (page0HeightPx > 0)
+                                        Modifier.height(with(density) { page0HeightPx.toDp() })
+                                    else Modifier.wrapContentHeight()
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
@@ -1079,18 +1093,16 @@ private fun VpnTab() {
                                             .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
                                     ) {
                                         // Fixed height so the card doesn't visually grow/shrink
-                                        // when swiping between pages. Sized to the server-info
-                                        // page's natural (smaller) content height -- the traffic
-                                        // page's inner pager is sized down to fit within this,
-                                        // rather than inflating the whole card to fit the traffic
-                                        // page as before.
+                                        // when swiping between pages, or when connecting/
+                                        // disconnecting -- see page0HeightPx above.
                                         HorizontalPager(
                                             state = cardPagerState,
-                                            modifier = if (connected) Modifier.height(210.dp) else Modifier.wrapContentHeight()
+                                            modifier = pagerHeightModifier
                                         ) { page ->
                                             if (page == 0) {
                                                 Column(
                                                     Modifier.fillMaxWidth()
+                                                        .onSizeChanged { if (it.height > 0) page0HeightPx = it.height }
                                                         .clickable { navigateTo(AnanasScreen.LOCATIONS) }
                                                         .padding(horizontal = 18.dp, vertical = 16.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1259,7 +1271,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             connecting -> Color(0xFFFFC93C)
             else -> Color(0xFF3B6FFF)
         },
-        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorA"
+        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorA"
     )
     val colorB by animateColorAsState(
         targetValue = when {
@@ -1267,7 +1279,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             connecting -> Color(0xFFFF5A5A)
             else -> Color(0xFF8A5CFF)
         },
-        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorB"
+        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
@@ -1290,13 +1302,9 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 modifier = Modifier.size(280.dp)
             )
         }
-        if (connecting) {
-            CircularProgressIndicator(
-                color = Color.White.copy(alpha = 0.5f),
-                strokeWidth = 1.5.dp,
-                modifier = Modifier.size(232.dp)
-            )
-        }
+        // No spinner anymore -- the aurora glow's own color sweep (amber while
+        // connecting) plus the icon's matching color transition below already
+        // communicate "in progress" without a separate ring.
         Box(
             Modifier.size(200.dp).scale(scale).clip(CircleShape)
                 .background(
@@ -1308,13 +1316,13 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 .clickable(enabled = !connecting) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
         ) {
-            if (connecting) {
-                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.2.dp, modifier = Modifier.size(44.dp))
-            } else {
-                Icon(Icons.Rounded.PowerSettingsNew, null,
-                    tint = if (connected) AnanasAccent else Color(0xFF7e8084),
-                    modifier = Modifier.size(64.dp))
-            }
+            // Same colorA driving the aurora glow above, so the icon and the ring
+            // always land on the same hue at the same moment instead of the icon
+            // hard-cutting to a different color the instant connecting flips --
+            // one animated color, two places using it.
+            Icon(Icons.Rounded.PowerSettingsNew, null,
+                tint = colorA,
+                modifier = Modifier.size(64.dp))
         }
     }
 }
