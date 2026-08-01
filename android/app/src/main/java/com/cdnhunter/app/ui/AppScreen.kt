@@ -1084,7 +1084,10 @@ private fun VpnTab() {
                                     val density = LocalDensity.current
                                     val pagerHeightModifier = if (page0HeightPx > 0)
                                         Modifier.height(with(density) { page0HeightPx.toDp() })
-                                    else Modifier.wrapContentHeight()
+                                    else Modifier.height(210.dp) // bounded fallback until measured --
+                                    // NOT wrapContentHeight(): page 2 (traffic) nests its own
+                                    // HorizontalPager inside DetailedTrafficBreakdown, and a
+                                    // Pager measured with an unbounded/infinite height crashes.
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
