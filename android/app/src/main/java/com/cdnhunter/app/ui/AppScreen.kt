@@ -1233,17 +1233,16 @@ private fun VpnTab() {
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
-    val infinite = rememberInfiniteTransition(label = "power")
-    val rotation by infinite.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(11000, easing = LinearEasing)),
-        label = "auroraRotation"
-    )
-    val breathe by infinite.animateFloat(
-        0.75f, 1f,
-        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe"
-    )
+    // Drives the shader's u_time uniform via a continuous frame clock — the
+    // noise-based ribbon motion (not a fixed rotation) comes entirely from how
+    // the shader maps time, so this just needs to increase steadily forever.
+    var timeMs by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) {
+        val start = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now -> timeMs = (now - start) / 1_000_000f }
+        }
+    }
 
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -1253,42 +1252,30 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "press"
     )
 
-    val colorA by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF34D9A8)
-            connecting -> Color(0xFFFFC93C)
-            else -> Color(0xFF3B6FFF)
-        },
-        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorA"
-    )
-    val colorB by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF3FA8E0)
-            connecting -> Color(0xFFFF5A5A)
-            else -> Color(0xFF8A5CFF)
-        },
-        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorB"
+    val palette = when {
+        connected -> AuroraPalette.CONNECTED
+        connecting -> AuroraPalette.CONNECTING
+        else -> AuroraPalette.DISCONNECTED
+    }
+    val iconTint by animateColorAsState(
+        targetValue = when { connected -> AnanasAccent; connecting -> Color(0xFFFFC93C); else -> Color(0xFF7e8084) },
+        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "iconTint"
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Aurora glow ring behind the button. Ported from a hand-authored GLSL
-        // fragment shader (rotating angular sweep + sine-blended two-color aurora,
-        // thin ring at radius 0.66, glow falloff = pow(smoothstep, 2.5), breathing
-        // 87.5%-100%, hard circular cutout so nothing ever escapes the disc).
+        // Aurora glow ring behind the button. Ported from a hand-authored GLSL/WebGL
+        // fragment shader: 2D simplex noise drives three independently-drifting
+        // "ribbon" layers (different radius/width/speed/frequency each), organic
+        // wavy edges (not a uniform ring), per-pixel shimmer, noise-driven color
+        // blending between the palette's three colors, a 2.6s breathing pulse, and a
+        // hard circular mask + center cutout so it never bleeds outside the circle.
         // Real AGSL RuntimeShader on API 33+ for pixel-accurate rendering; a Canvas
-        // approximation of the same math below API 33 where RuntimeShader doesn't exist.
+        // approximation (layered blurred arcs) below API 33 where RuntimeShader
+        // doesn't exist.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            AuroraShaderGlow(
-                colorA = colorA, colorB = colorB,
-                rotationDeg = rotation, breathe = breathe,
-                modifier = Modifier.size(280.dp)
-            )
+            AuroraShaderGlow(palette = palette, timeMs = timeMs, modifier = Modifier.size(280.dp))
         } else {
-            AuroraCanvasGlow(
-                colorA = colorA, colorB = colorB,
-                rotationDeg = rotation, breathe = breathe,
-                modifier = Modifier.size(280.dp)
-            )
+            AuroraCanvasGlow(palette = palette, timeMs = timeMs, modifier = Modifier.size(280.dp))
         }
         if (connecting) {
             CircularProgressIndicator(
@@ -1311,65 +1298,98 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             if (connecting) {
                 CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.2.dp, modifier = Modifier.size(44.dp))
             } else {
-                Icon(Icons.Rounded.PowerSettingsNew, null,
-                    tint = if (connected) AnanasAccent else Color(0xFF7e8084),
-                    modifier = Modifier.size(64.dp))
+                Icon(Icons.Rounded.PowerSettingsNew, null, tint = iconTint, modifier = Modifier.size(64.dp))
             }
         }
     }
 }
 
-// AGSL port of the Stitch-generated fragment shader. Uniforms/logic mirror it 1:1:
-// angular sweep sine-blend between two colors, thin ring at r=0.66 (w=0.03),
-// outer glow = pow(smoothstep(1.0, r, dist), 2.5), breathing pulse 0.875-1.0,
-// hard cutout at the ring radius so the glow never bleeds past a perfect circle.
+// Three colors per connection state, matching the app's existing state-color language.
+private data class AuroraPalette(val c1: Color, val c2: Color, val c3: Color) {
+    companion object {
+        val DISCONNECTED = AuroraPalette(Color(0xFF3B6FFF), Color(0xFF5A4FE0), Color(0xFF8A5CFF)) // blue/indigo/violet
+        val CONNECTING   = AuroraPalette(Color(0xFFFFC93C), Color(0xFFFF9838), Color(0xFFFF5A5A)) // amber/orange/red
+        val CONNECTED    = AuroraPalette(Color(0xFF33D9A8), Color(0xFF59F273), Color(0xFF40A9E0)) // teal/jade/sky-blue
+    }
+}
+
+// AGSL port of a hand-authored GLSL/WebGL aurora shader: simplex noise, three
+// independently-drifting ribbon layers (radius/width/speed/freq per layer),
+// per-pixel shimmer, noise-driven color blend, breathing pulse, circular mask.
 private const val AURORA_AGSL = """
     uniform float2 resolution;
-    uniform float rotation;   // radians
-    uniform float breathe;    // 0.75..1.0
-    uniform float4 colorA;
-    uniform float4 colorB;
+    uniform float uTime;
+    uniform float4 col1;
+    uniform float4 col2;
+    uniform float4 col3;
+
+    float2 hash(float2 p) {
+        p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
+        return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    }
+
+    float snoise(float2 p) {
+        const float K1 = 0.366025404;
+        const float K2 = 0.211324865;
+        float2 i = floor(p + (p.x + p.y) * K1);
+        float2 a = p - i + (i.x + i.y) * K2;
+        float2 o = (a.x > a.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+        float2 b = a - o + K2;
+        float2 c = a - 1.0 + 2.0 * K2;
+        float3 h = max(0.5 - float3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+        float3 n = h * h * h * h * float3(dot(a, hash(i + 0.0)), dot(b, hash(i + o)), dot(c, hash(i + 1.0)));
+        return dot(n, float3(70.0));
+    }
+
+    float getRibbon(float2 uv, float radius, float width, float speed, float freq, float offset) {
+        float angle = atan(uv.y, uv.x);
+        float dist = length(uv);
+        float wave = snoise(float2(angle * freq + uTime * speed, offset)) * 0.12;
+        float thickness = snoise(float2(angle * 2.5 - uTime * 0.4, offset * 1.5)) * 0.6 + 0.4;
+        float f = abs(dist - (radius + wave));
+        return smoothstep(width * thickness, 0.0, f);
+    }
 
     half4 main(float2 fragCoord) {
         float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
         uv.x *= resolution.x / resolution.y;
 
         float dist = length(uv);
-        float angle = atan(uv.y, uv.x) + rotation;
-        float sweep = 0.5 + 0.5 * sin(angle);
-        float3 aurora = mix(colorA.rgb, colorB.rgb, sweep);
+        float angle = atan(uv.y, uv.x);
 
-        float ringRadius = 0.66;
-        float ringWidth = 0.03;
-        float ringMask = smoothstep(ringWidth, 0.0, abs(dist - ringRadius));
+        float r1 = getRibbon(uv, 0.68, 0.05, 0.35, 3.2, 0.0);
+        float r2 = getRibbon(uv, 0.74, 0.12, -0.25, 2.8, 2.1);
+        float r3 = getRibbon(uv, 0.82, 0.22, 0.15, 1.5, 4.2);
 
-        float glowFalloff = smoothstep(1.0, ringRadius, dist);
-        float glowMask = pow(glowFalloff, 2.5);
+        float shimmer = snoise(float2(angle * 12.0, uTime * 3.0)) * 0.12 + 0.88;
 
-        float finalAlpha = (ringMask + glowMask * 0.6) * breathe;
-        float buttonCutout = smoothstep(ringRadius - 0.01, ringRadius, dist);
+        float colorMix = snoise(float2(angle * 1.8 + uTime * 0.15, 0.0)) * 0.5 + 0.5;
+        float3 auroraCol = mix(col1.rgb, col2.rgb, colorMix);
+        auroraCol = mix(auroraCol, col3.rgb, r2 * 0.6);
 
-        return half4(aurora * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
+        float alpha = (r1 * 1.4 + r2 * 0.8 + r3 * 0.4) * shimmer;
+
+        float breath = 0.875 + 0.125 * sin(uTime * 2.416);
+        alpha *= breath;
+
+        float mask = smoothstep(1.0, 0.92, dist);
+        float cutout = smoothstep(0.65, 0.66, dist);
+
+        return half4(auroraCol * alpha * mask * cutout, alpha * mask * cutout);
     }
 """
 
 @Composable
-private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraShaderGlow(palette: AuroraPalette, timeMs: Float, modifier: Modifier = Modifier) {
     val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         shader.setFloatUniform("resolution", w, h)
-        shader.setFloatUniform("rotation", Math.toRadians(rotationDeg.toDouble()).toFloat())
-        shader.setFloatUniform("breathe", breathe)
-        shader.setFloatUniform(
-            "colorA",
-            colorA.red, colorA.green, colorA.blue, 1f
-        )
-        shader.setFloatUniform(
-            "colorB",
-            colorB.red, colorB.green, colorB.blue, 1f
-        )
+        shader.setFloatUniform("uTime", timeMs / 1000f)
+        shader.setFloatUniform("col1", palette.c1.red, palette.c1.green, palette.c1.blue, 1f)
+        shader.setFloatUniform("col2", palette.c2.red, palette.c2.green, palette.c2.blue, 1f)
+        shader.setFloatUniform("col3", palette.c3.red, palette.c3.green, palette.c3.blue, 1f)
         drawContext.canvas.nativeCanvas.apply {
             val paint = android.graphics.Paint().apply { this.shader = shader }
             drawRect(0f, 0f, w, h, paint)
@@ -1377,31 +1397,45 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
     }
 }
 
-// Canvas approximation of the same shader for API < 33 (no RuntimeShader support):
-// a static (non-rotating-Canvas, so no bounding-box drift) blurred ring whose
-// rotation is expressed via drawArc's startAngle, plus a crisp ring on top —
-// same visual language (rotating two-color sweep, contained circular glow,
-// breathing opacity) without per-pixel shader math.
+// Canvas approximation for API < 33 (no RuntimeShader support): three overlapping
+// blurred rotating rings at different radii/speeds/colors from the same palette,
+// giving a layered drifting-aurora impression without per-pixel noise.
 @Composable
-private fun AuroraCanvasGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraCanvasGlow(palette: AuroraPalette, timeMs: Float, modifier: Modifier = Modifier) {
+    val angle1 = (timeMs / 1000f) * 18f   // slow
+    val angle2 = -(timeMs / 1000f) * 13f  // opposite direction, slightly slower
+    val angle3 = (timeMs / 1000f) * 9f    // slowest
+    val breath = 0.875f + 0.125f * kotlin.math.sin((timeMs / 1000f) * 2.416f)
+
     Box(modifier, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(266.dp).blur(18.dp)) {
-            val stroke = 34.dp.toPx()
+        Canvas(Modifier.size(272.dp).blur(20.dp)) {
+            val stroke = 30.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
-                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.85f * breathe,
+                brush = Brush.sweepGradient(listOf(palette.c3, palette.c1, palette.c2, palette.c3)),
+                startAngle = angle3, sweepAngle = 360f, useCenter = false,
+                alpha = 0.55f * breath,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
+            )
+        }
+        Canvas(Modifier.size(248.dp).blur(10.dp)) {
+            val stroke = 18.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(listOf(palette.c2, palette.c3, palette.c1, palette.c2)),
+                startAngle = angle2, sweepAngle = 360f, useCenter = false,
+                alpha = 0.7f * breath,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke / 2, stroke / 2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
         Canvas(Modifier.size(224.dp)) {
-            val stroke = 4.dp.toPx()
+            val stroke = 5.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
-                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.9f * breathe,
+                brush = Brush.sweepGradient(listOf(palette.c1, palette.c2, palette.c3, palette.c1)),
+                startAngle = angle1, sweepAngle = 360f, useCenter = false,
+                alpha = 0.9f * breath,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke / 2, stroke / 2),
                 size = Size(size.width - stroke, size.height - stroke)
@@ -1409,6 +1443,7 @@ private fun AuroraCanvasGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
         }
     }
 }
+
 
 
 
