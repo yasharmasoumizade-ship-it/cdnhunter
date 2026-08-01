@@ -1313,9 +1313,13 @@ private data class AuroraPalette(val c1: Color, val c2: Color, val c3: Color) {
     }
 }
 
-// AGSL port of a hand-authored GLSL/WebGL aurora shader: simplex noise, three
-// independently-drifting ribbon layers (radius/width/speed/freq per layer),
-// per-pixel shimmer, noise-driven color blend, breathing pulse, circular mask.
+// AGSL aurora ring shader: seamless simplex-noise-driven ribbon undulation
+// (noise fed by (cos,sin) of angle, not raw atan, to avoid a seam at the
+// angle wrap-around point), a fixed-width sharp core per ribbon (not a
+// noise-modulated width that can shrink toward zero and look like a jagged
+// spike -- that was the bug in the previous version), 3 independently
+// drifting ribbon layers, noise-driven color blend between the palette's
+// three colors, top-heavy angular coverage, and a slow breathing pulse.
 private const val AURORA_AGSL = """
     uniform float2 resolution;
     uniform float uTime;
@@ -1323,69 +1327,97 @@ private const val AURORA_AGSL = """
     uniform float4 col2;
     uniform float4 col3;
 
-    float2 hash(float2 p) {
-        p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
-        return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    // --- Noise Utility ---
+    // 2D Simplex-like noise for smooth, organic undulation without angle seams.
+    float mod289(float x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    float3 permute(float3 x) { return mod289(((x * 34.0) + 1.0) * x); }
+
+    float snoise(float2 v) {
+        const float4 C = float4(0.211324865405187, 0.366025403784439,
+                               -0.577350269189626, 0.024390243902439);
+        float2 i  = floor(v + dot(v, C.yy));
+        float2 x0 = v - i + dot(i, C.xx);
+        float2 i1 = (x0.x > x0.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+        float4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        float3 p = permute(permute(i.y + float3(0.0, i1.y, 1.0))
+            + i.x + float3(0.0, i1.x, 1.0));
+        float3 m = max(0.5 - float3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+        m = m * m;
+        m = m * m;
+        float3 x = 2.0 * fract(p * C.www) - 1.0;
+        float3 h = abs(x) - 0.5;
+        float3 ox = floor(x + 0.5);
+        float3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+        float3 g;
+        g.x  = a0.x  * x0.x  + h.x  * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
     }
 
-    float snoise(float2 p) {
-        const float K1 = 0.366025404;
-        const float K2 = 0.211324865;
-        float2 i = floor(p + (p.x + p.y) * K1);
-        float2 a = p - i + (i.x + i.y) * K2;
-        float2 o = (a.x > a.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
-        float2 b = a - o + K2;
-        float2 c = a - 1.0 + 2.0 * K2;
-        float3 h = max(0.5 - float3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
-        float3 n = h * h * h * h * float3(dot(a, hash(i + 0.0)), dot(b, hash(i + o)), dot(c, hash(i + 1.0)));
-        return dot(n, float3(70.0));
-    }
+    // --- Ribbon Function ---
+    // Calculates the contribution of a single aurora ribbon at a target radius.
+    float getRibbon(float dist, float angle, float targetRadius, float speed, float freq, float phase) {
+        // Generate seamless 2D noise by sampling a circle in noise-space.
+        // This avoids the 0/2PI discontinuity that caused a jagged spike in
+        // an earlier version of this shader.
+        float2 noiseCoord = float2(cos(angle * freq + phase), sin(angle * freq + phase));
+        float wave = snoise(noiseCoord + uTime * speed) * 0.08; // Wave displacement magnitude
 
-    float getRibbon(float2 uv, float radius, float width, float speed, float freq, float offset) {
-        float angle = atan(uv.y, uv.x);
-        float dist = length(uv);
-        // atan() jumps from +pi to -pi at the negative x-axis; feeding that raw
-        // angle into noise() creates a hard discontinuity right at that seam,
-        // which is exactly the spiky/star-shaped tear seen at the left edge of
-        // the ring. sin(angle*freq)/cos(angle*freq) wrap continuously with no
-        // jump, so the noise input is smooth all the way around the circle.
-        float2 angleDir = float2(cos(angle * freq), sin(angle * freq)) * 2.0;
-        float wave = snoise(angleDir + float2(uTime * speed, offset)) * 0.12;
-        float thickness = clamp(
-            snoise(float2(cos(angle * 2.5), sin(angle * 2.5)) * 2.0 - float2(uTime * 0.4, -offset * 1.5)) * 0.6 + 0.4,
-            0.18, 1.0
-        );
-        float f = abs(dist - (radius + wave));
-        float w = max(width * thickness, 0.001);
-        return smoothstep(w, 0.0, f);
+        // Calculate distance from the undulating ribbon core
+        float d = abs(dist - (targetRadius + wave));
+
+        // Sharp core (fixed narrow band), soft-feathered only right at the
+        // edge of that band -- NOT a width that depends on noise and can
+        // shrink toward zero, which is what produced a paper-thin jagged
+        // line instead of a proper glowing ribbon.
+        float core = 1.0 - smoothstep(0.005, 0.06, d);
+        return core;
     }
 
     half4 main(float2 fragCoord) {
-        float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
-        uv.x *= resolution.x / resolution.y;
-
+        // Normalize coordinates to [-1, 1] range
+        float2 uv = (fragCoord.xy / resolution.xy) * 2.0 - 1.0;
         float dist = length(uv);
+        // AGSL/GLSL ES uses the two-argument atan(y, x) form (no separate
+        // "atan2" name).
         float angle = atan(uv.y, uv.x);
 
-        float r1 = getRibbon(uv, 0.68, 0.05, 0.35, 3.2, 0.0);
-        float r2 = getRibbon(uv, 0.74, 0.12, -0.25, 2.8, 2.1);
-        float r3 = getRibbon(uv, 0.82, 0.22, 0.15, 1.5, 4.2);
+        // Hard masks: outer boundary (1.0) and inner button cutout (0.65)
+        if (dist > 1.0 || dist < 0.65) {
+            return half4(0.0, 0.0, 0.0, 0.0);
+        }
 
-        float shimmer = snoise(float2(cos(angle * 12.0), sin(angle * 12.0)) * 2.0 + float2(0.0, uTime * 3.0)) * 0.12 + 0.88;
+        // 1. Calculate 3 independent ribbons with different properties
+        // Ribbon 1: Inner (radius 0.68)
+        float r1 = getRibbon(dist, angle, 0.68, 0.12, 1.0, 0.0);
+        // Ribbon 2: Middle (radius 0.75)
+        float r2 = getRibbon(dist, angle, 0.75, -0.08, 1.5, 2.1);
+        // Ribbon 3: Outer (radius 0.85)
+        float r3 = getRibbon(dist, angle, 0.85, 0.05, 0.8, 4.5);
 
-        float colorMix = snoise(float2(cos(angle * 1.8), sin(angle * 1.8)) * 2.0 + float2(uTime * 0.15, 0.0)) * 0.5 + 0.5;
-        float3 auroraCol = mix(col1.rgb, col2.rgb, colorMix);
-        auroraCol = mix(auroraCol, col3.rgb, r2 * 0.6);
+        // 2. Color Blending
+        // Driven by large-scale noise to create organic color shifts along the ring
+        float colorNoise = snoise(float2(cos(angle), sin(angle)) * 0.5 + uTime * 0.1);
+        float4 baseColor = mix(col1, col2, smoothstep(-0.5, 0.0, colorNoise));
+        baseColor = mix(baseColor, col3, smoothstep(0.0, 0.5, colorNoise));
 
-        float alpha = (r1 * 1.4 + r2 * 0.8 + r3 * 0.4) * shimmer;
+        // 3. Angular Coverage (Heavier on top/sides, dimmer at bottom)
+        float topWeight = smoothstep(-0.8, 0.2, sin(angle + 1.57));
+        topWeight = mix(0.4, 1.0, topWeight); // Ensure bottom isn't completely black
 
-        float breath = 0.875 + 0.125 * sin(uTime * 2.416);
-        alpha *= breath;
+        // 4. Overall Breathing Pulse
+        float pulse = 0.85 + 0.15 * sin(uTime * 2.2); // ~2.8s cycle
 
-        float mask = smoothstep(1.0, 0.92, dist);
-        float cutout = smoothstep(0.65, 0.66, dist);
+        // 5. Final Composite
+        float combinedRibbons = r1 + r2 + r3;
+        float4 finalColor = baseColor * combinedRibbons * topWeight * pulse;
 
-        return half4(auroraCol * alpha * mask * cutout, alpha * mask * cutout);
+        return half4(finalColor);
     }
 """
 
