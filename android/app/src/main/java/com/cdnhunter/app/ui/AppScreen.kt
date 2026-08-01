@@ -69,7 +69,7 @@ import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
 import com.cdnhunter.app.ui.components.TrafficChartCard
-import com.cdnhunter.app.ui.components.DetailedTrafficBreakdown
+import com.cdnhunter.app.ui.components.TrafficScaleReference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1067,12 +1067,14 @@ private fun VpnTab() {
                                     val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                     val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
                                     // One unified card, same size/style whether showing server
-                                    // info or traffic stats. When connected, an internal
-                                    // HorizontalPager lets the user swipe between the two --
-                                    // NOT two separate stacked cards. When not connected there's
-                                    // nothing to page between, so it's just the server info with
-                                    // no pager overhead.
-                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 2 else 1 })
+                                    // info, or one of 3 traffic sub-pages (download/upload/scale)
+                                    // -- 4 pages total, all on ONE flat pager. This used to be a
+                                    // pager-inside-a-pager (server info | nested 3-page traffic
+                                    // pager), which is what crashed: a Pager nested inside another
+                                    // Pager's page is unsupported/unstable in Compose Foundation,
+                                    // regardless of how the outer height was constrained. Flat is
+                                    // both simpler and the only version that doesn't crash.
+                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 4 else 1 })
                                     // Page 0 (server info) has the same structure regardless of
                                     // connected state -- only the text inside changes -- so its
                                     // natural height is constant. Measure it once, then pin the
@@ -1084,10 +1086,7 @@ private fun VpnTab() {
                                     val density = LocalDensity.current
                                     val pagerHeightModifier = if (page0HeightPx > 0)
                                         Modifier.height(with(density) { page0HeightPx.toDp() })
-                                    else Modifier.height(210.dp) // bounded fallback until measured --
-                                    // NOT wrapContentHeight(): page 2 (traffic) nests its own
-                                    // HorizontalPager inside DetailedTrafficBreakdown, and a
-                                    // Pager measured with an unbounded/infinite height crashes.
+                                    else Modifier.height(210.dp) // bounded fallback until measured
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
@@ -1102,8 +1101,8 @@ private fun VpnTab() {
                                             state = cardPagerState,
                                             modifier = pagerHeightModifier
                                         ) { page ->
-                                            if (page == 0) {
-                                                Column(
+                                            when (page) {
+                                                0 -> Column(
                                                     Modifier.fillMaxWidth()
                                                         .onSizeChanged { if (it.height > 0) page0HeightPx = it.height }
                                                         .clickable { navigateTo(AnanasScreen.LOCATIONS) }
@@ -1171,21 +1170,36 @@ private fun VpnTab() {
                                                 }
                                             }
                                                 }
-                                            } else {
-                                                // Page 2: traffic stats, swiped into view on the
-                                                // SAME card -- DetailedTrafficBreakdown still has
-                                                // its own internal pager for Download/Upload/Scale
-                                                // sub-pages, nested one level deeper.
-                                                Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                                                    DetailedTrafficBreakdown(
-                                                        downloadBytes = totalDownloadBytes,
-                                                        uploadBytes = totalUploadBytes,
-                                                        downloadHistory = downloadHistory,
-                                                        uploadHistory = uploadHistory,
-                                                        currentDownloadKbps = downloadKBps.toFloat(),
-                                                        currentUploadKbps = uploadKBps.toFloat(),
-                                                        modifier = Modifier.fillMaxWidth()
+                                                // Pages 1-3: traffic sub-pages, now direct siblings of
+                                                // page 0 on the SAME flat pager instead of a nested
+                                                // pager-inside-a-pager (which crashed regardless of how
+                                                // the outer height was constrained).
+                                                1 -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                                    TrafficChartCard(
+                                                        title = "DOWNLOAD",
+                                                        icon = Icons.Rounded.ArrowDownward,
+                                                        dataPoints = downloadHistory,
+                                                        currentValue = downloadKBps.toFloat(),
+                                                        totalBytes = totalDownloadBytes,
+                                                        accentColor = Color(0xFF64D2FF),
+                                                        isDownload = true,
+                                                        modifier = Modifier.fillMaxSize()
                                                     )
+                                                }
+                                                2 -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                                    TrafficChartCard(
+                                                        title = "UPLOAD",
+                                                        icon = Icons.Rounded.ArrowUpward,
+                                                        dataPoints = uploadHistory,
+                                                        currentValue = uploadKBps.toFloat(),
+                                                        totalBytes = totalUploadBytes,
+                                                        accentColor = Color(0xFFFFD60A),
+                                                        isDownload = false,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                }
+                                                else -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                                    TrafficScaleReference(modifier = Modifier.fillMaxSize())
                                                 }
                                             }
                                         }
@@ -1195,14 +1209,20 @@ private fun VpnTab() {
                                             Modifier.fillMaxWidth().padding(top = 8.dp),
                                             horizontalArrangement = Arrangement.Center
                                         ) {
-                                            repeat(2) { index ->
+                                            repeat(4) { index ->
                                                 val isSelected = cardPagerState.currentPage == index
+                                                val dotColor = when (index) {
+                                                    0 -> AnanasAccent
+                                                    1 -> Color(0xFF64D2FF)
+                                                    2 -> Color(0xFFFFD60A)
+                                                    else -> Color(0xFF4ADE9C)
+                                                }
                                                 Box(
                                                     Modifier
                                                         .padding(horizontal = 3.dp)
                                                         .size(if (isSelected) 7.dp else 6.dp)
                                                         .clip(CircleShape)
-                                                        .background(if (isSelected) AnanasAccent else AnanasBorder2)
+                                                        .background(if (isSelected) dotColor else AnanasBorder2)
                                                 )
                                             }
                                         }
