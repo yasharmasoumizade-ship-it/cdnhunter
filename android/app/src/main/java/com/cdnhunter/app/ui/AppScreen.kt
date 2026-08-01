@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import com.cdnhunter.app.engine.GeoService
@@ -69,7 +70,6 @@ import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
 import com.cdnhunter.app.ui.components.TrafficChartCard
-import com.cdnhunter.app.ui.components.TrafficScaleReference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1074,7 +1074,7 @@ private fun VpnTab() {
                                     // Pager's page is unsupported/unstable in Compose Foundation,
                                     // regardless of how the outer height was constrained. Flat is
                                     // both simpler and the only version that doesn't crash.
-                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 4 else 1 })
+                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 3 else 1 })
                                     // Page 0 (server info) has the same structure regardless of
                                     // connected state -- only the text inside changes -- so its
                                     // natural height is constant. Measure it once, then pin the
@@ -1186,7 +1186,7 @@ private fun VpnTab() {
                                                         modifier = Modifier.fillMaxSize()
                                                     )
                                                 }
-                                                2 -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                                else -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
                                                     TrafficChartCard(
                                                         title = "UPLOAD",
                                                         icon = Icons.Rounded.ArrowUpward,
@@ -1198,9 +1198,6 @@ private fun VpnTab() {
                                                         modifier = Modifier.fillMaxSize()
                                                     )
                                                 }
-                                                else -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                                                    TrafficScaleReference(modifier = Modifier.fillMaxSize())
-                                                }
                                             }
                                         }
                                     }
@@ -1209,13 +1206,12 @@ private fun VpnTab() {
                                             Modifier.fillMaxWidth().padding(top = 8.dp),
                                             horizontalArrangement = Arrangement.Center
                                         ) {
-                                            repeat(4) { index ->
+                                            repeat(3) { index ->
                                                 val isSelected = cardPagerState.currentPage == index
                                                 val dotColor = when (index) {
                                                     0 -> AnanasAccent
                                                     1 -> Color(0xFF64D2FF)
-                                                    2 -> Color(0xFFFFD60A)
-                                                    else -> Color(0xFF4ADE9C)
+                                                    else -> Color(0xFFFFD60A)
                                                 }
                                                 Box(
                                                     Modifier
@@ -1305,7 +1301,9 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
     )
 
-    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(Modifier.size(280.dp).scale(scale), contentAlignment = Alignment.Center) {
         // Aurora glow ring behind the button. Ported from a hand-authored GLSL
         // fragment shader (rotating angular sweep + sine-blended two-color aurora,
         // thin ring at radius 0.66, glow falloff = pow(smoothstep, 2.5), breathing
@@ -1329,14 +1327,25 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         // connecting) plus the icon's matching color transition below already
         // communicate "in progress" without a separate ring.
         Box(
-            Modifier.size(200.dp).scale(scale).clip(CircleShape)
+            // Scale now lives on the OUTER Box above, applied to the glow and
+            // this button together -- previously only this inner box scaled
+            // down on press while the 280dp glow stayed full-size, opening a
+            // gap that briefly exposed the glow's own bright inner edge (the
+            // "line" between the button and the light). Locked together, they
+            // shrink and grow in lockstep so there's never a gap to see.
+            Modifier.size(200.dp).clip(CircleShape)
                 .background(
                     Brush.linearGradient(
                         colors = listOf(Color(0xFF1c1c1f), Color(0xFF0a0a0c)),
                         start = Offset(0f, 0f), end = Offset(200f, 200f)
                     )
                 )
-                .clickable(enabled = !connecting) { isPressed = true; onClick() },
+                .clickable(
+                    enabled = !connecting,
+                    interactionSource = interactionSource,
+                    indication = null, // press-scale is already the touch feedback; the
+                    // default ripple's own radial sweep was compounding with it.
+                ) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
         ) {
             // Same colorA driving the aurora glow above, so the icon and the ring
