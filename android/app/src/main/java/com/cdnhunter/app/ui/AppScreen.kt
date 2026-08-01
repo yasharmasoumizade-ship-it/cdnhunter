@@ -1274,41 +1274,23 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Glow: a plain (non-rotating, non-blurred) radial gradient disc behind the
-        // ring. Radial gradients are rotation-invariant by construction, so — unlike
-        // a rotated+blurred stroke, whose expanded blur bounding box drifts off-center
-        // as it spins and reads as a crooked square — this stays perfectly circular
-        // and centered at every frame. Two soft layers stacked for richer falloff.
-        Box(
-            Modifier
-                .size(272.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            colorA.copy(alpha = 0.30f * breathe),
-                            colorA.copy(alpha = 0.12f * breathe),
-                            Color.Transparent
-                        ),
-                        radius = 300f
-                    )
-                )
-        )
-        Box(
-            Modifier
-                .size(246.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            colorB.copy(alpha = 0.28f * breathe),
-                            colorB.copy(alpha = 0.10f * breathe),
-                            Color.Transparent
-                        ),
-                        radius = 260f
-                    )
-                )
-        )
+        // Glow: a blurred, static (non-rotating) ring drawn with an actual stroke,
+        // not a radial gradient — radial gradients need a radius in raw pixels, which
+        // silently collapsed to ~40% of the box size here and made the glow invisible
+        // and hidden behind the button. A static blurred stroke has no bounding-box
+        // drift (that only happened before because it was also rotating) and reads as
+        // a proper soft glow sitting behind the ring and the button.
+        Canvas(Modifier.size(266.dp).blur(18.dp)) {
+            val stroke = 34.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                startAngle = rotation, sweepAngle = 360f, useCenter = false,
+                alpha = 0.85f * breathe,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
+            )
+        }
         // Crisp rotating aurora ring hugging the button edge — sits on top of the glow.
         Canvas(
             Modifier
