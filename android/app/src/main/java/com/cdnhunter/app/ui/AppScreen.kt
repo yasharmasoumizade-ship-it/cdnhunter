@@ -7,6 +7,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
@@ -968,15 +969,8 @@ private fun VpnTab() {
     AnimatedContent(
         targetState = currentScreen,
         transitionSpec = {
-            val durationMs = 250  // Faster transitions
-            slideInHorizontally(
-                initialOffsetX = { it },
-                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-            ) + fadeIn(animationSpec = tween(durationMs, easing = FastOutSlowInEasing)) togetherWith 
-            slideOutHorizontally(
-                targetOffsetX = { -it },
-                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-            ) + fadeOut(animationSpec = tween(durationMs / 2, easing = FastOutSlowInEasing))
+            // No animation -- screen switches are instant now.
+            EnterTransition.None togetherWith ExitTransition.None
         },
         label = "screenTransition"
     ) { targetScreen ->
@@ -1284,22 +1278,40 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "press"
     )
 
-    val colorA by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF34D9A8)
-            connecting -> Color(0xFFFFC93C)
-            else -> Color(0xFF3B6FFF)
-        },
-        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorA"
+    val targetColorA = when {
+        connected -> Color(0xFF34D9A8)
+        connecting -> Color(0xFFFFC93C)
+        else -> Color(0xFF3B6FFF)
+    }
+    val targetColorB = when {
+        connected -> Color(0xFF3FA8E0)
+        connecting -> Color(0xFFFF5A5A)
+        else -> Color(0xFF8A5CFF)
+    }
+    // Icon tint: still a plain crossfade (a directional wipe doesn't read on
+    // something this small) but same calm 1700ms duration as the ring below,
+    // so both finish settling into the new state together.
+    val iconTint by animateColorAsState(
+        targetValue = targetColorA,
+        animationSpec = tween(1700, easing = FastOutSlowInEasing), label = "iconTint"
     )
-    val colorB by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF3FA8E0)
-            connecting -> Color(0xFFFF5A5A)
-            else -> Color(0xFF8A5CFF)
-        },
-        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
-    )
+
+    // Aurora ring: a real bottom-to-top wipe instead of a uniform crossfade.
+    // prevColorA/B hold whatever the ring was showing before this state change;
+    // wipeProgress sweeps 0->1 and the shader (see AURORA_AGSL) uses it to move
+    // a soft horizontal boundary from the bottom of the ring up to the top,
+    // revealing the new color first at the bottom, old color still visible
+    // above it until the boundary passes -- then prevColorA/B catch up so the
+    // next transition wipes from this new color, not the one from before that.
+    var prevColorA by remember { mutableStateOf(targetColorA) }
+    var prevColorB by remember { mutableStateOf(targetColorB) }
+    val wipeProgress = remember { Animatable(1f) }
+    LaunchedEffect(targetColorA, targetColorB) {
+        wipeProgress.snapTo(0f)
+        wipeProgress.animateTo(1f, tween(1700, easing = FastOutSlowInEasing))
+        prevColorA = targetColorA
+        prevColorB = targetColorB
+    }
 
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -1312,13 +1324,15 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         // approximation of the same math below API 33 where RuntimeShader doesn't exist.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             AuroraShaderGlow(
-                colorA = colorA, colorB = colorB,
+                prevColorA = prevColorA, prevColorB = prevColorB,
+                colorA = targetColorA, colorB = targetColorB, wipeProgress = wipeProgress.value,
                 rotationDeg = rotation, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
         } else {
             AuroraCanvasGlow(
-                colorA = colorA, colorB = colorB,
+                prevColorA = prevColorA, prevColorB = prevColorB,
+                colorA = targetColorA, colorB = targetColorB, wipeProgress = wipeProgress.value,
                 rotationDeg = rotation, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
@@ -1348,12 +1362,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 ) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
         ) {
-            // Same colorA driving the aurora glow above, so the icon and the ring
-            // always land on the same hue at the same moment instead of the icon
-            // hard-cutting to a different color the instant connecting flips --
-            // one animated color, two places using it.
+            // Calm 1700ms crossfade, same duration as the ring's wipe below so
+            // both settle into the new state together (a directional wipe like
+            // the ring's doesn't read on something this small, so this one
+            // stays a plain crossfade).
             Icon(Icons.Rounded.PowerSettingsNew, null,
-                tint = colorA,
+                tint = iconTint,
                 modifier = Modifier.size(64.dp))
         }
     }
@@ -1367,8 +1381,11 @@ private const val AURORA_AGSL = """
     uniform float2 resolution;
     uniform float rotation;   // radians
     uniform float breathe;    // 0.75..1.0
+    uniform float4 prevColorA;
+    uniform float4 prevColorB;
     uniform float4 colorA;
     uniform float4 colorB;
+    uniform float wipeProgress; // 0 = fully prev colors, 1 = fully new colors
 
     half4 main(float2 fragCoord) {
         float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
@@ -1377,7 +1394,18 @@ private const val AURORA_AGSL = """
         float dist = length(uv);
         float angle = atan(uv.y, uv.x) + rotation;
         float sweep = 0.5 + 0.5 * sin(angle);
-        float3 aurora = mix(colorA.rgb, colorB.rgb, sweep);
+
+        // fragCoord.y increases downward, so uv.y is -1 at the top of the ring
+        // and +1 at the bottom. boundary sweeps from above everything (+1.3,
+        // so the whole ring still reads as "prev") down to below everything
+        // (-1.3, fully "new") as wipeProgress goes 0->1 -- new color appears
+        // at the bottom first and the line climbs upward from there.
+        float boundary = 1.3 - wipeProgress * 2.6;
+        float band = 0.22; // soft edge width, gentler than a hard line
+        float revealed = smoothstep(boundary - band, boundary + band, uv.y);
+        float3 prevAurora = mix(prevColorA.rgb, prevColorB.rgb, sweep);
+        float3 nextAurora = mix(colorA.rgb, colorB.rgb, sweep);
+        float3 aurora = mix(nextAurora, prevAurora, revealed);
 
         float ringRadius = 0.66;
         float ringWidth = 0.03;
@@ -1394,7 +1422,10 @@ private const val AURORA_AGSL = """
 """
 
 @Composable
-private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraShaderGlow(
+    prevColorA: Color, prevColorB: Color, colorA: Color, colorB: Color, wipeProgress: Float,
+    rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier
+) {
     val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
     Canvas(modifier) {
         val w = size.width
@@ -1402,14 +1433,11 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
         shader.setFloatUniform("resolution", w, h)
         shader.setFloatUniform("rotation", Math.toRadians(rotationDeg.toDouble()).toFloat())
         shader.setFloatUniform("breathe", breathe)
-        shader.setFloatUniform(
-            "colorA",
-            colorA.red, colorA.green, colorA.blue, 1f
-        )
-        shader.setFloatUniform(
-            "colorB",
-            colorB.red, colorB.green, colorB.blue, 1f
-        )
+        shader.setFloatUniform("wipeProgress", wipeProgress)
+        shader.setFloatUniform("prevColorA", prevColorA.red, prevColorA.green, prevColorA.blue, 1f)
+        shader.setFloatUniform("prevColorB", prevColorB.red, prevColorB.green, prevColorB.blue, 1f)
+        shader.setFloatUniform("colorA", colorA.red, colorA.green, colorA.blue, 1f)
+        shader.setFloatUniform("colorB", colorB.red, colorB.green, colorB.blue, 1f)
         drawContext.canvas.nativeCanvas.apply {
             val paint = android.graphics.Paint().apply { this.shader = shader }
             drawRect(0f, 0f, w, h, paint)
@@ -1418,34 +1446,55 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
 }
 
 // Canvas approximation of the same shader for API < 33 (no RuntimeShader support):
-// a static (non-rotating-Canvas, so no bounding-box drift) blurred ring whose
-// rotation is expressed via drawArc's startAngle, plus a crisp ring on top —
-// same visual language (rotating two-color sweep, contained circular glow,
-// breathing opacity) without per-pixel shader math.
+// same bottom-to-top wipe, done here via clipRect instead of per-pixel shader math --
+// draw the "prev" colored rings everywhere, then draw the "next" colored rings again
+// clipped to the region already revealed (grows from the bottom edge upward).
 @Composable
-private fun AuroraCanvasGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraCanvasGlow(
+    prevColorA: Color, prevColorB: Color, colorA: Color, colorB: Color, wipeProgress: Float,
+    rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(266.dp).blur(18.dp)) {
             val stroke = 34.dp.toPx()
+            val topLeft = Offset(stroke / 2, stroke / 2)
+            val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                brush = Brush.sweepGradient(listOf(prevColorA, prevColorB, prevColorA, prevColorB, prevColorA)),
                 startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.85f * breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
-                size = Size(size.width - stroke, size.height - stroke)
+                alpha = 0.85f * breathe, style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = topLeft, size = arcSize
             )
+            // Revealed band grows from the bottom edge upward as wipeProgress -> 1.
+            val revealedTop = size.height * (1f - wipeProgress)
+            clipRect(top = revealedTop) {
+                drawArc(
+                    brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                    startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
+                    alpha = 0.85f * breathe, style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    topLeft = topLeft, size = arcSize
+                )
+            }
         }
         Canvas(Modifier.size(224.dp)) {
             val stroke = 4.dp.toPx()
+            val topLeft = Offset(stroke / 2, stroke / 2)
+            val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                brush = Brush.sweepGradient(listOf(prevColorA, prevColorB, prevColorA, prevColorB, prevColorA)),
                 startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.9f * breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
-                size = Size(size.width - stroke, size.height - stroke)
+                alpha = 0.9f * breathe, style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = topLeft, size = arcSize
             )
+            val revealedTop = size.height * (1f - wipeProgress)
+            clipRect(top = revealedTop) {
+                drawArc(
+                    brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                    startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
+                    alpha = 0.9f * breathe, style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    topLeft = topLeft, size = arcSize
+                )
+            }
         }
     }
 }
