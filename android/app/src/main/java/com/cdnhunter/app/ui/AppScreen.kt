@@ -1344,10 +1344,20 @@ private const val AURORA_AGSL = """
     float getRibbon(float2 uv, float radius, float width, float speed, float freq, float offset) {
         float angle = atan(uv.y, uv.x);
         float dist = length(uv);
-        float wave = snoise(float2(angle * freq + uTime * speed, offset)) * 0.12;
-        float thickness = snoise(float2(angle * 2.5 - uTime * 0.4, offset * 1.5)) * 0.6 + 0.4;
+        // atan() jumps from +pi to -pi at the negative x-axis; feeding that raw
+        // angle into noise() creates a hard discontinuity right at that seam,
+        // which is exactly the spiky/star-shaped tear seen at the left edge of
+        // the ring. sin(angle*freq)/cos(angle*freq) wrap continuously with no
+        // jump, so the noise input is smooth all the way around the circle.
+        float2 angleDir = float2(cos(angle * freq), sin(angle * freq)) * 2.0;
+        float wave = snoise(angleDir + float2(uTime * speed, offset)) * 0.12;
+        float thickness = clamp(
+            snoise(float2(cos(angle * 2.5), sin(angle * 2.5)) * 2.0 - float2(uTime * 0.4, -offset * 1.5)) * 0.6 + 0.4,
+            0.18, 1.0
+        );
         float f = abs(dist - (radius + wave));
-        return smoothstep(width * thickness, 0.0, f);
+        float w = max(width * thickness, 0.001);
+        return smoothstep(w, 0.0, f);
     }
 
     half4 main(float2 fragCoord) {
@@ -1361,9 +1371,9 @@ private const val AURORA_AGSL = """
         float r2 = getRibbon(uv, 0.74, 0.12, -0.25, 2.8, 2.1);
         float r3 = getRibbon(uv, 0.82, 0.22, 0.15, 1.5, 4.2);
 
-        float shimmer = snoise(float2(angle * 12.0, uTime * 3.0)) * 0.12 + 0.88;
+        float shimmer = snoise(float2(cos(angle * 12.0), sin(angle * 12.0)) * 2.0 + float2(0.0, uTime * 3.0)) * 0.12 + 0.88;
 
-        float colorMix = snoise(float2(angle * 1.8 + uTime * 0.15, 0.0)) * 0.5 + 0.5;
+        float colorMix = snoise(float2(cos(angle * 1.8), sin(angle * 1.8)) * 2.0 + float2(uTime * 0.15, 0.0)) * 0.5 + 0.5;
         float3 auroraCol = mix(col1.rgb, col2.rgb, colorMix);
         auroraCol = mix(auroraCol, col3.rgb, r2 * 0.6);
 
