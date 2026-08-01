@@ -1232,9 +1232,6 @@ private fun VpnTab() {
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
-    // Rotating conic-gradient aurora ring hugging the button's edge, with a
-    // soft radial glow behind it. Colors shift smoothly with state:
-    // off = blue/violet, connecting = amber/red, connected = teal/blue-green.
     val infinite = rememberInfiniteTransition(label = "power")
     val rotation by infinite.animateFloat(
         0f, 360f,
@@ -1255,63 +1252,41 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         label = "press"
     )
 
-    // Two-color aurora sweep per state.
     val colorA by animateColorAsState(
         targetValue = when {
-            connected -> Color(0xFF34D9A8)   // teal/jade
-            connecting -> Color(0xFFFFC93C)  // amber/yellow
-            else -> Color(0xFF3B6FFF)        // blue
+            connected -> Color(0xFF34D9A8)
+            connecting -> Color(0xFFFFC93C)
+            else -> Color(0xFF3B6FFF)
         },
         animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorA"
     )
     val colorB by animateColorAsState(
         targetValue = when {
-            connected -> Color(0xFF3FA8E0)   // light blue
-            connecting -> Color(0xFFFF5A5A)  // red
-            else -> Color(0xFF8A5CFF)        // violet
+            connected -> Color(0xFF3FA8E0)
+            connecting -> Color(0xFFFF5A5A)
+            else -> Color(0xFF8A5CFF)
         },
         animationSpec = tween(700, easing = FastOutSlowInEasing), label = "colorB"
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Glow: a blurred, static (non-rotating) ring drawn with an actual stroke,
-        // not a radial gradient — radial gradients need a radius in raw pixels, which
-        // silently collapsed to ~40% of the box size here and made the glow invisible
-        // and hidden behind the button. A static blurred stroke has no bounding-box
-        // drift (that only happened before because it was also rotating) and reads as
-        // a proper soft glow sitting behind the ring and the button.
-        Canvas(Modifier.size(266.dp).blur(18.dp)) {
-            val stroke = 34.dp.toPx()
-            drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
-                startAngle = rotation, sweepAngle = 360f, useCenter = false,
-                alpha = 0.85f * breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
-                size = Size(size.width - stroke, size.height - stroke)
+        // Aurora glow ring behind the button. Ported from a hand-authored GLSL
+        // fragment shader (rotating angular sweep + sine-blended two-color aurora,
+        // thin ring at radius 0.66, glow falloff = pow(smoothstep, 2.5), breathing
+        // 87.5%-100%, hard circular cutout so nothing ever escapes the disc).
+        // Real AGSL RuntimeShader on API 33+ for pixel-accurate rendering; a Canvas
+        // approximation of the same math below API 33 where RuntimeShader doesn't exist.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            AuroraShaderGlow(
+                colorA = colorA, colorB = colorB,
+                rotationDeg = rotation, breathe = breathe,
+                modifier = Modifier.size(280.dp)
             )
-        }
-        // Crisp rotating aurora ring hugging the button edge — sits on top of the glow.
-        Canvas(
-            Modifier
-                .size(224.dp)
-                .graphicsLayer { rotationZ = rotation }
-        ) {
-            val stroke = 4.dp.toPx()
-            drawArc(
-                brush = Brush.sweepGradient(
-                    listOf(
-                        colorA.copy(alpha = 0.9f * breathe),
-                        colorB.copy(alpha = 0.9f * breathe),
-                        colorA.copy(alpha = 0.35f * breathe),
-                        colorB.copy(alpha = 0.9f * breathe),
-                        colorA.copy(alpha = 0.9f * breathe),
-                    )
-                ),
-                startAngle = 0f, sweepAngle = 360f, useCenter = false,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
-                size = Size(size.width - stroke, size.height - stroke)
+        } else {
+            AuroraCanvasGlow(
+                colorA = colorA, colorB = colorB,
+                rotationDeg = rotation, breathe = breathe,
+                modifier = Modifier.size(280.dp)
             )
         }
         if (connecting) {
@@ -1322,25 +1297,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
             )
         }
         Box(
-            Modifier.size(210.dp).scale(scale).clip(CircleShape)
-                .background(
-                    if (connected) Brush.radialGradient(
-                        colors = listOf(AnanasAccent.copy(alpha = 0.12f * breathe), Color.Transparent), radius = 180f
-                    ) else Brush.radialGradient(colors = listOf(Color.Transparent, Color.Transparent))
-                ),
-            contentAlignment = Alignment.Center
-        ) {}
-        Box(
             Modifier.size(200.dp).scale(scale).clip(CircleShape)
                 .background(
-                    if (connected)
-                        Brush.linearGradient(colors = listOf(Color(0xFF1c1c1f), Color(0xFF0a0a0c)),
-                            start = Offset(0f, 0f),
-                            end = Offset(200f, 200f))
-                    else
-                        Brush.linearGradient(colors = listOf(Color(0xFF18181b), Color(0xFF0d0d0f)),
-                            start = Offset(0f, 0f),
-                            end = Offset(200f, 200f))
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF1c1c1f), Color(0xFF0a0a0c)),
+                        start = Offset(0f, 0f), end = Offset(200f, 200f)
+                    )
                 )
                 .clickable(enabled = !connecting) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
@@ -1355,6 +1317,98 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         }
     }
 }
+
+// AGSL port of the Stitch-generated fragment shader. Uniforms/logic mirror it 1:1:
+// angular sweep sine-blend between two colors, thin ring at r=0.66 (w=0.03),
+// outer glow = pow(smoothstep(1.0, r, dist), 2.5), breathing pulse 0.875-1.0,
+// hard cutout at the ring radius so the glow never bleeds past a perfect circle.
+private const val AURORA_AGSL = """
+    uniform float2 resolution;
+    uniform float rotation;   // radians
+    uniform float breathe;    // 0.75..1.0
+    uniform float4 colorA;
+    uniform float4 colorB;
+
+    half4 main(float2 fragCoord) {
+        float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+        uv.x *= resolution.x / resolution.y;
+
+        float dist = length(uv);
+        float angle = atan(uv.y, uv.x) + rotation;
+        float sweep = 0.5 + 0.5 * sin(angle);
+        float3 aurora = mix(colorA.rgb, colorB.rgb, sweep);
+
+        float ringRadius = 0.66;
+        float ringWidth = 0.03;
+        float ringMask = smoothstep(ringWidth, 0.0, abs(dist - ringRadius));
+
+        float glowFalloff = smoothstep(1.0, ringRadius, dist);
+        float glowMask = pow(glowFalloff, 2.5);
+
+        float finalAlpha = (ringMask + glowMask * 0.6) * breathe;
+        float buttonCutout = smoothstep(ringRadius - 0.01, ringRadius, dist);
+
+        return half4(aurora * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
+    }
+"""
+
+@Composable
+private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+    val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        shader.setFloatUniform("resolution", w, h)
+        shader.setFloatUniform("rotation", Math.toRadians(rotationDeg.toDouble()).toFloat())
+        shader.setFloatUniform("breathe", breathe)
+        shader.setFloatUniform(
+            "colorA",
+            colorA.red, colorA.green, colorA.blue, 1f
+        )
+        shader.setFloatUniform(
+            "colorB",
+            colorB.red, colorB.green, colorB.blue, 1f
+        )
+        drawContext.canvas.nativeCanvas.apply {
+            val paint = android.graphics.Paint().apply { this.shader = shader }
+            drawRect(0f, 0f, w, h, paint)
+        }
+    }
+}
+
+// Canvas approximation of the same shader for API < 33 (no RuntimeShader support):
+// a static (non-rotating-Canvas, so no bounding-box drift) blurred ring whose
+// rotation is expressed via drawArc's startAngle, plus a crisp ring on top —
+// same visual language (rotating two-color sweep, contained circular glow,
+// breathing opacity) without per-pixel shader math.
+@Composable
+private fun AuroraCanvasGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(266.dp).blur(18.dp)) {
+            val stroke = 34.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
+                alpha = 0.85f * breathe,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
+            )
+        }
+        Canvas(Modifier.size(224.dp)) {
+            val stroke = 4.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
+                alpha = 0.9f * breathe,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
+            )
+        }
+    }
+}
+
 
 
 // ── Add-config sheet: sliding bottom sheet with QR scan / clipboard ──
