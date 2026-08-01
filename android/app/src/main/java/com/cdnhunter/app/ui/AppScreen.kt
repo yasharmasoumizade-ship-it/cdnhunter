@@ -1258,8 +1258,10 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         else -> AuroraPalette.DISCONNECTED
     }
     val iconTint by animateColorAsState(
-        targetValue = when { connected -> AnanasAccent; connecting -> Color(0xFFFFC93C); else -> Color(0xFF7e8084) },
-        animationSpec = tween(700, easing = FastOutSlowInEasing), label = "iconTint"
+        targetValue = when { connected -> Color(0xFF15803D); connecting -> Color(0xFFFFC93C); else -> Color(0xFF7e8084) },
+        // Slower, gentler crossfade per request ("aram" / calm color change) --
+        // was 700ms, now 1100ms with the same easing curve.
+        animationSpec = tween(1100, easing = FastOutSlowInEasing), label = "iconTint"
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
@@ -1277,13 +1279,6 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         } else {
             AuroraCanvasGlow(palette = palette, timeMs = timeMs, modifier = Modifier.size(280.dp))
         }
-        if (connecting) {
-            CircularProgressIndicator(
-                color = Color.White.copy(alpha = 0.5f),
-                strokeWidth = 1.5.dp,
-                modifier = Modifier.size(232.dp)
-            )
-        }
         Box(
             Modifier.size(200.dp).scale(scale).clip(CircleShape)
                 .background(
@@ -1295,11 +1290,7 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 .clickable(enabled = !connecting) { isPressed = true; onClick() },
             contentAlignment = Alignment.Center
         ) {
-            if (connecting) {
-                CircularProgressIndicator(color = AnanasAccent, strokeWidth = 2.2.dp, modifier = Modifier.size(44.dp))
-            } else {
-                Icon(Icons.Rounded.PowerSettingsNew, null, tint = iconTint, modifier = Modifier.size(64.dp))
-            }
+            Icon(Icons.Rounded.PowerSettingsNew, null, tint = iconTint, modifier = Modifier.size(64.dp))
         }
     }
 }
@@ -1309,7 +1300,7 @@ private data class AuroraPalette(val c1: Color, val c2: Color, val c3: Color) {
     companion object {
         val DISCONNECTED = AuroraPalette(Color(0xFF3B6FFF), Color(0xFF5A4FE0), Color(0xFF8A5CFF)) // blue/indigo/violet
         val CONNECTING   = AuroraPalette(Color(0xFFFFC93C), Color(0xFFFF9838), Color(0xFFFF5A5A)) // amber/orange/red
-        val CONNECTED    = AuroraPalette(Color(0xFF33D9A8), Color(0xFF59F273), Color(0xFF40A9E0)) // teal/jade/sky-blue
+        val CONNECTED    = AuroraPalette(Color(0xFF0F5132), Color(0xFF15803D), Color(0xFF1E7A4A)) // dark green tones
     }
 }
 
