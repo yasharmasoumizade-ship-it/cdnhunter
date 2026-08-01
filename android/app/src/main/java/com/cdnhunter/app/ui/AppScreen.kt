@@ -1233,12 +1233,12 @@ private fun VpnTab() {
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     // Rotating conic-gradient aurora ring hugging the button's edge, with a
-    // soft blurred glow layer behind it. Colors shift smoothly with state:
+    // soft radial glow behind it. Colors shift smoothly with state:
     // off = blue/violet, connecting = amber/red, connected = teal/blue-green.
     val infinite = rememberInfiniteTransition(label = "power")
     val rotation by infinite.animateFloat(
         0f, 360f,
-        infiniteRepeatable(tween(7000, easing = LinearEasing)),
+        infiniteRepeatable(tween(11000, easing = LinearEasing)),
         label = "auroraRotation"
     )
     val breathe by infinite.animateFloat(
@@ -1274,25 +1274,42 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     )
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Soft blurred glow behind the ring for depth.
-        Canvas(
+        // Glow: a plain (non-rotating, non-blurred) radial gradient disc behind the
+        // ring. Radial gradients are rotation-invariant by construction, so — unlike
+        // a rotated+blurred stroke, whose expanded blur bounding box drifts off-center
+        // as it spins and reads as a crooked square — this stays perfectly circular
+        // and centered at every frame. Two soft layers stacked for richer falloff.
+        Box(
             Modifier
-                .size(260.dp)
-                .graphicsLayer { rotationZ = rotation }
-                .blur(22.dp)
-        ) {
-            val stroke = 26.dp.toPx()
-            drawArc(
-                brush = Brush.sweepGradient(
-                    listOf(colorA.copy(alpha = 0.55f * breathe), colorB.copy(alpha = 0.55f * breathe), colorA.copy(alpha = 0.55f * breathe))
-                ),
-                startAngle = 0f, sweepAngle = 360f, useCenter = false,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
-                size = Size(size.width - stroke, size.height - stroke)
-            )
-        }
-        // Crisp rotating aurora ring hugging the button edge.
+                .size(272.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            colorA.copy(alpha = 0.30f * breathe),
+                            colorA.copy(alpha = 0.12f * breathe),
+                            Color.Transparent
+                        ),
+                        radius = 300f
+                    )
+                )
+        )
+        Box(
+            Modifier
+                .size(246.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            colorB.copy(alpha = 0.28f * breathe),
+                            colorB.copy(alpha = 0.10f * breathe),
+                            Color.Transparent
+                        ),
+                        radius = 260f
+                    )
+                )
+        )
+        // Crisp rotating aurora ring hugging the button edge — sits on top of the glow.
         Canvas(
             Modifier
                 .size(224.dp)
