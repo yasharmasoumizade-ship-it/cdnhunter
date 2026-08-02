@@ -1146,18 +1146,17 @@ private fun VpnTab() {
                                             .background(
                                                 Brush.linearGradient(
                                                     colors = listOf(
-                                                        Color(0xFF1A1B20),
+                                                        Color(0xFF211C12),
                                                         AnanasCard,
-                                                        Color(0xFF101013),
+                                                        Color(0xFF12100C),
                                                     ),
                                                 )
                                             )
-                                            // Faint accent sheen from the top-left corner only --
-                                            // reads as "quality"/depth without tinting the whole
-                                            // card green.
+                                            // Calm gold sheen from the top-left corner only —
+                                            // warm and subtle, not a bright/flashy highlight.
                                             .background(
                                                 Brush.radialGradient(
-                                                    colors = listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent),
+                                                    colors = listOf(Color(0xFFD4AF6A).copy(alpha = 0.07f), Color.Transparent),
                                                     center = Offset(0f, 0f),
                                                     radius = 420f,
                                                 )
