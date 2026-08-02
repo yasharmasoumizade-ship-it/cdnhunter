@@ -877,6 +877,19 @@ private fun VpnTab() {
         if (cfg.id == activeId) activeId = ""
     }
 
+    // Deletes every config imported from one subscription in one go — the
+    // subscription group row is the only delete affordance for imported
+    // servers now (see ServerListItem/SubscriptionGroupRow); individual
+    // imported rows don't get their own swipe-delete.
+    fun deleteSubscription(subId: String) {
+        val toRemove = configs.filter { it.subscriptionId == subId }
+        if (toRemove.any { it.id == activeId } && connected) { CdnVpnService.stop(context); connected = false }
+        val updated = configs.filter { it.subscriptionId != subId }
+        configs = updated
+        saveConfigs(context, updated)
+        if (toRemove.any { it.id == activeId }) activeId = ""
+    }
+
     // Shared by clipboard-instant-add and QR-scan-add: parse, save, toast — no dialog.
     // An http(s):// link is treated as a subscription (fetched, base64-decoded if
     // needed, one proxy per line) rather than a single config — that's the only
@@ -1268,6 +1281,7 @@ private fun VpnTab() {
             onBack = { navigateBack() },
             onConnect = { selectConfig(it); navigateBack() },
             onDelete = { deleteConfig(it) },
+            onDeleteSubscription = { deleteSubscription(it) },
             showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },
             onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
         )
@@ -1590,14 +1604,14 @@ private fun CountryCodeBadge(countryCode: String, size: Dp = 32.dp) {
 private fun ServerListItem(
     cfg: SavedConfig, activeId: String, connected: Boolean,
     onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit,
-    indented: Boolean = false,
+    indented: Boolean = false, showDeleteSwipe: Boolean = true,
 ) {
     val isActive = cfg.id == activeId
     var removed by remember(cfg.id) { mutableStateOf(false) }
 
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
+            if (showDeleteSwipe && value == SwipeToDismissBoxValue.EndToStart) {
                 removed = true
                 true
             } else false
@@ -1611,63 +1625,89 @@ private fun ServerListItem(
         }
     }
 
+    val rowContent = @Composable {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(if (isActive) AnanasAccent.copy(alpha = 0.06f) else Color.Transparent)
+                .clickable { onConnect(cfg) }
+                .padding(start = if (indented) 42.dp else 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CountryFlagBadge(cfg.countryCode, 30.dp)
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    cfg.displayName,
+                    fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+                    color = if (isActive) AnanasTextHi else AnanasText,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                if (isActive && connected) {
+                    Text("Connected", fontSize = 11.sp, color = AnanasAccent)
+                }
+            }
+
+            // Static quality indicator (3-bar signal icon), not a live ping readout —
+            // Windscribe-style: reflects the last-known tier, doesn't imply an
+            // active measurement is happening on every recomposition.
+            if (cfg.pingMs >= 0) SignalBars(cfg.pingMs)
+
+            if (isActive) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(AnanasAccent))
+            }
+        }
+    }
+
     AnimatedVisibility(
         visible = !removed,
         exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140))
     ) {
-        SwipeToDismissBox(
-            state = dismissState,
-            enableDismissFromStartToEnd = false,
-            backgroundContent = {
-                Row(
-                    Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEF4444).copy(alpha = 0.85f))
-                        .padding(horizontal = 18.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-            }
-        ) {
-            Row(
+        if (showDeleteSwipe) {
+            SwipeToDismissBox(
+                state = dismissState,
+                enableDismissFromStartToEnd = false,
+                backgroundContent = {
+                    Row(
+                        Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEF4444).copy(alpha = 0.85f))
+                            .padding(horizontal = 18.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                },
+                content = rowContent,
+            )
+        } else {
+            // Imported (subscription) rows: no per-row delete at all — the
+            // whole subscription is deleted from its one group-header icon.
+            rowContent()
+        }
+    }
+}
+
+// Windscribe-style 3-bar signal/quality indicator — replaces a live "X ms"
+// readout with a static, glanceable tier: all 3 bars green (good), 2 bars
+// yellow (medium), 1 bar red (poor). No text, no per-frame measurement.
+@Composable
+private fun SignalBars(pingMs: Int) {
+    val (filled, color) = when {
+        pingMs < 150 -> 3 to Color(0xFF4ADE9C)
+        pingMs < 350 -> 2 to Color(0xFFFFD60A)
+        else         -> 1 to Color(0xFFEF4444)
+    }
+    val barHeights = listOf(6.dp, 9.dp, 12.dp)
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        barHeights.forEachIndexed { i, h ->
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .background(if (isActive) AnanasAccent.copy(alpha = 0.06f) else Color.Transparent)
-                    .clickable { onConnect(cfg) }
-                    .padding(start = if (indented) 42.dp else 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CountryFlagBadge(cfg.countryCode, 30.dp)
-
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        cfg.displayName,
-                        fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                        color = if (isActive) AnanasTextHi else AnanasText,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    if (isActive && connected) {
-                        Text("Connected", fontSize = 11.sp, color = AnanasAccent)
-                    }
-                }
-
-                if (cfg.pingMs >= 0) {
-                    val pingColor = when {
-                        cfg.pingMs < 150 -> Color(0xFF4ADE9C)
-                        cfg.pingMs < 350 -> Color(0xFFFFD60A)
-                        else             -> Color(0xFFEF4444)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(pingColor))
-                        Text("${cfg.pingMs} ms", fontSize = 11.5.sp, color = AnanasMuted)
-                    }
-                }
-
-                if (isActive) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(AnanasAccent))
-                }
-            }
+                    .width(3.dp)
+                    .height(h)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (i < filled) color else AnanasBorder2)
+            )
         }
     }
 }
@@ -1893,6 +1933,7 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
 private fun LocationsScreen(
     configs: List<SavedConfig>, activeId: String, connected: Boolean,
     onBack: () -> Unit, onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit,
+    onDeleteSubscription: (String) -> Unit,
     showAddMenu: Boolean, onToggleAddMenu: () -> Unit,
     onScanQr: () -> Unit, onClipboard: () -> Unit,
 ) {
@@ -1979,12 +2020,13 @@ private fun LocationsScreen(
                                 name = subName,
                                 count = cfgs.size,
                                 expanded = isExpanded,
-                                onClick = { expandedSubId = if (isExpanded) null else subId }
+                                onClick = { expandedSubId = if (isExpanded) null else subId },
+                                onDelete = { onDeleteSubscription(subId) },
                             )
                             AnimatedVisibility(visible = isExpanded, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                                 Column {
                                     cfgs.forEach { cfg ->
-                                        ServerListItem(cfg, activeId, connected, onConnect, onDelete, indented = true)
+                                        ServerListItem(cfg, activeId, connected, onConnect, onDelete, indented = true, showDeleteSwipe = false)
                                     }
                                 }
                             }
@@ -1999,7 +2041,7 @@ private fun LocationsScreen(
 // Collapsed subscription group — tap to expand in place. Flat row, no card, just
 // a chevron rotation and a muted count, Windscribe-style.
 @Composable
-private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {
+private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     val chevronRotation by animateFloatAsState(if (expanded) 90f else 0f, label = "chevron")
     Row(
         Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 14.dp),
@@ -2015,6 +2057,22 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
             Text("$count server${if (count == 1) "" else "s"}", fontSize = 11.sp, color = AnanasMuted)
+        }
+        // The only delete affordance for an entire subscription — individual
+        // imported rows don't have their own. Icon sits toward the start of
+        // its box rather than dead-center, so it doesn't read as floating
+        // detached from the row's edge.
+        Box(
+            Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onDelete() },
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Icon(
+                Icons.Rounded.Delete, null, tint = AnanasMuted,
+                modifier = Modifier.padding(start = 2.dp).size(16.dp)
+            )
         }
         Icon(
             Icons.Rounded.ChevronRight, null, tint = AnanasFaint,
