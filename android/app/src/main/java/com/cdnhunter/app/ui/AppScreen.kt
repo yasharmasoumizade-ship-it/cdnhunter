@@ -1022,7 +1022,7 @@ private fun VpnTab() {
                 scaffoldState = homeSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                sheetContainerColor = Color(0xFF101012),
+                sheetContainerColor = Color(0xFF17181C),
                 sheetContentColor = AnanasText,
                 sheetTonalElevation = 0.dp,
                 sheetShadowElevation = 12.dp,
@@ -1039,7 +1039,24 @@ private fun VpnTab() {
                 modifier = Modifier.fillMaxSize(),
                 sheetContent = {
                     if (otherConfigs.isNotEmpty()) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 28.dp)) {
+                        // Glassy look: near-opaque right under the drag handle, fading to
+                        // more see-through toward the bottom edge -- less transparent at
+                        // the top of the sheet, more at the bottom, like frosted glass
+                        // easing into the screen behind it rather than a flat panel.
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xFF17181C).copy(alpha = 0.98f),
+                                            Color(0xFF131316).copy(alpha = 0.90f),
+                                            Color(0xFF0D0D10).copy(alpha = 0.72f),
+                                        )
+                                    )
+                                )
+                                .padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 28.dp)
+                        ) {
                             Row(
                                 Modifier.fillMaxWidth().padding(bottom = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1122,7 +1139,25 @@ private fun VpnTab() {
                                         Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(16.dp))
-                                            .background(AnanasCard)
+                                            .background(
+                                                Brush.linearGradient(
+                                                    colors = listOf(
+                                                        Color(0xFF1A1B20),
+                                                        AnanasCard,
+                                                        Color(0xFF101013),
+                                                    ),
+                                                )
+                                            )
+                                            // Faint accent sheen from the top-left corner only --
+                                            // reads as "quality"/depth without tinting the whole
+                                            // card green.
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent),
+                                                    center = Offset(0f, 0f),
+                                                    radius = 420f,
+                                                )
+                                            )
                                     ) {
                                         // Fixed height so the card doesn't visually grow/shrink
                                         // when swiping between pages, or when connecting/
