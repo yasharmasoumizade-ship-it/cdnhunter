@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -115,50 +116,82 @@ fun TrafficChartCard(
                 }
             }
 
-            // Historical graph
+            // Historical graph — smooth curve (not jagged straight segments), a couple
+            // of faint reference gridlines, the peak value labeled, and the latest
+            // point highlighted with a small dot so the chart reads as precise data
+            // rather than a rough sketch.
             if (dataPoints.isNotEmpty()) {
-                Canvas(Modifier.fillMaxWidth().height(40.dp)) {
-                    val width = size.width
-                    val height = size.height
-                    // Snapshot to a local, fixed-size list before doing any math —
-                    // dataPoints is backed by a mutableStateListOf that the polling
-                    // coroutine can still be appending/removing from concurrently;
-                    // reading .size once and indexing separately (the old approach)
-                    // could race a mutation mid-frame. A plain list snapshot can't.
+                Box(Modifier.fillMaxWidth().height(64.dp)) {
                     val points = dataPoints.toList()
-                    val count = points.size
-                    if (count > 0 && width > 0f && height > 0f) {
-                        val maxValue = points.maxOrNull() ?: 1f
-                        val range = maxValue.coerceAtLeast(1f)
+                    val maxValue = (points.maxOrNull() ?: 1f).coerceAtLeast(1f)
+                    Text(
+                        text = if (maxValue > 1024) "%.1f MB/s".format(maxValue / 1024f) else "%.0f KB/s".format(maxValue),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = accentColor.copy(alpha = 0.55f),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
+                    Canvas(Modifier.fillMaxSize()) {
+                        val width = size.width
+                        val height = size.height
+                        val count = points.size
+                        if (count > 0 && width > 0f && height > 0f) {
+                            // Faint horizontal reference lines (25% / 50% / 75% of peak) —
+                            // gives the eye a scale to read the curve against.
+                            val gridColor = Color.White.copy(alpha = 0.05f)
+                            for (frac in listOf(0.25f, 0.5f, 0.75f)) {
+                                val y = height * (1f - frac)
+                                drawLine(gridColor, Offset(0f, y), Offset(width, y), strokeWidth = 1f)
+                            }
 
-                        // Draw area under curve
-                        val path = Path()
-                        points.forEachIndexed { index, value ->
-                            val x = (index.toFloat() / count) * width
-                            val y = (height - (value / range) * (height * 0.9f))
-                                .coerceIn(0f, height)
-                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                        }
-                        path.lineTo(width, height)
-                        path.lineTo(0f, height)
-                        path.close()
+                            fun yFor(v: Float) = (height - (v / maxValue) * (height * 0.88f)).coerceIn(0f, height)
 
-                        drawPath(
-                            path,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(accentColor.copy(0.3f), accentColor.copy(0.05f))
+                            val plotted = points.mapIndexed { index, value ->
+                                val x = if (count == 1) width else (index.toFloat() / (count - 1)) * width
+                                Offset(x, yFor(value))
+                            }
+
+                            // Smooth path through the points via quadratic mid-point
+                            // interpolation instead of straight lineTo segments — the
+                            // straight-segment version looked jagged/rough at typical
+                            // sample rates.
+                            val linePath = Path().apply {
+                                moveTo(plotted.first().x, plotted.first().y)
+                                for (i in 1 until plotted.size) {
+                                    val p0 = plotted[i - 1]
+                                    val p1 = plotted[i]
+                                    val midX = (p0.x + p1.x) / 2f
+                                    val midY = (p0.y + p1.y) / 2f
+                                    quadraticBezierTo(p0.x, p0.y, midX, midY)
+                                }
+                                lineTo(plotted.last().x, plotted.last().y)
+                            }
+
+                            val fillPath = Path().apply {
+                                addPath(linePath)
+                                lineTo(plotted.last().x, height)
+                                lineTo(plotted.first().x, height)
+                                close()
+                            }
+
+                            drawPath(
+                                fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(accentColor.copy(alpha = 0.30f), accentColor.copy(alpha = 0.0f)),
+                                    startY = 0f, endY = height
+                                )
                             )
-                        )
+                            drawPath(
+                                linePath,
+                                color = accentColor.copy(alpha = 0.95f),
+                                style = Stroke(width = 2.4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
 
-                        // Draw line
-                        val linePath = Path()
-                        points.forEachIndexed { index, value ->
-                            val x = (index.toFloat() / count) * width
-                            val y = (height - (value / range) * (height * 0.9f))
-                                .coerceIn(0f, height)
-                            if (index == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
+                            // Highlight the most recent sample.
+                            val last = plotted.last()
+                            drawCircle(accentColor.copy(alpha = 0.25f), radius = 6f, center = last)
+                            drawCircle(accentColor, radius = 2.6f, center = last)
                         }
-                        drawPath(linePath, color = accentColor, style = Stroke(width = 2f))
                     }
                 }
             }
