@@ -214,8 +214,8 @@ fun PremiumConnectButton(
                     )
                 )
                 .border(
-                    width = 2.dp,
-                    color = borderColor,
+                    width = 1.dp,
+                    color = borderColor.copy(alpha = borderColor.alpha * 0.5f),
                     shape = CircleShape
                 )
                 .clickable(enabled = !connecting) {
@@ -224,6 +224,27 @@ fun PremiumConnectButton(
                 },
             contentAlignment = Alignment.Center
         ) {
+            // Soft edge bleed (connected only) — a thin glow straddling the button's
+            // own rim so the boundary between "button" and the ambient rings around
+            // it reads as one continuous light instead of a hard-edged disc sitting
+            // in front of a separate glow.
+            if (connected) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val r = size.minDimension / 2f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.78f to Color.Transparent,
+                                0.94f to colors.accentGreen.copy(alpha = 0.28f),
+                                1f to Color.Transparent,
+                            ),
+                            center = Offset(size.width / 2f, size.height / 2f),
+                            radius = r,
+                        ),
+                        radius = r,
+                    )
+                }
+            }
             if (connecting) {
                 // Modern loader with smooth spinner
                 Box(contentAlignment = Alignment.Center) {
