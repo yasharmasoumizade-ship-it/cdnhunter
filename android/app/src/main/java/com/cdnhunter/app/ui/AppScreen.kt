@@ -1092,7 +1092,6 @@ private fun VpnTab() {
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(AnanasCard)
-                                            .border(1.5.dp, AnanasBorder, RoundedCornerShape(16.dp))
                                     ) {
                                         // Fixed height so the card doesn't visually grow/shrink
                                         // when swiping between pages, or when connecting/
