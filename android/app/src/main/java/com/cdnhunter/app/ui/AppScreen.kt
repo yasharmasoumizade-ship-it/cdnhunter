@@ -575,8 +575,15 @@ private fun formatSpeed(kbps: Double): Pair<String, String> =
     else "%.0f".format(kbps) to "KB/s"
 
 private fun formatBytes(bytes: Long): String {
-    val mb = bytes / 1024.0 / 1024.0
-    return if (mb >= 1024.0) "%.2f GB".format(mb / 1024.0) else "%.1f MB".format(mb)
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    return when {
+        gb >= 1.0 -> "%.2f GB".format(gb)
+        mb >= 1.0 -> "%.1f MB".format(mb)
+        kb >= 1.0 -> "%.0f KB".format(kb)
+        else      -> "$bytes B"
+    }
 }
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
@@ -1152,15 +1159,22 @@ private fun VpnTab() {
                                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Column(
+                                                    Modifier.weight(1f),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         Icon(Icons.Rounded.ArrowDownward, null, tint = AnanasMuted, modifier = Modifier.size(12.dp))
                                                         Text("DOWNLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
                                                     }
                                                     Text(downloadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
                                                 }
-                                                Box(Modifier.width(1.dp).height(36.dp).background(AnanasDivider))
-                                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Column(
+                                                    Modifier.weight(1f),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         Icon(Icons.Rounded.ArrowUpward, null, tint = AnanasMuted, modifier = Modifier.size(12.dp))
                                                         Text("UPLOAD", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
