@@ -63,7 +63,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
-import com.cdnhunter.app.engine.GeoService
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
@@ -181,34 +180,18 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
     }
 }
 
-// Resolves country/city + ping for a single config. Runs on IO dispatcher.
-// Geo is looked up against cfg.sni (the TLS SNI / real destination host) when
-// present, falling back to cfg.address only if there's no sni. address is
-// often just the tunnel/CDN entry point the client connects to -- for
-// reality/ECH/domain-fronted configs the actual backend server is identified
-// by SNI, and geo-IP on the front address would report the tunnel hop's
-// country instead of the real server's.
-private suspend fun enrichConfigGeo(geo: GeoService, cfg: SavedConfig): SavedConfig =
+// Measures ping for a single config. Runs on IO dispatcher.
+// Country/flag no longer comes from an on-device IP/DNS lookup here at all —
+// that used to resolve the config's SNI/address hostname directly (before any
+// tunnel exists), which for CDN-fronted/reality domains reports the CDN
+// edge's location, not the real backend server's. There are now only two
+// sources of truth for the flag: the config's own title (see
+// countryCodeFromTitle, applied at parse time) as the free instant guess,
+// and the real exit IP seen through the live tunnel once actually connected
+// (see CdnVpnService's post-connect check) as the authoritative correction.
+private suspend fun enrichConfigGeo(cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val ping = measurePingMs(cfg.address, cfg.port)
-        // If the config's own title already named a country (e.g. "CF GERMANY" ->
-        // DE), that beats the on-device IP lookup below: for CDN-fronted domains,
-        // an IP-based lookup on the SNI/address frequently reports the CDN edge's
-        // location (e.g. a US Cloudflare PoP) instead of the real backend server
-        // the title is naming. The lookup is only used to FILL IN a guess when the
-        // title didn't name a country, never to override one that's already there.
-        // The one check that's actually reliable for CDN-fronted configs -- through
-        // the live tunnel, after a real connection -- runs separately (see
-        // CdnVpnService) and is free to overwrite either of these once it succeeds.
-        val info = if (cfg.countryCode.isBlank()) {
-            try { geo.lookupGeoInfo(cfg.sni.ifBlank { cfg.address }) } catch (e: Exception) { null }
-        } else null
-        cfg.copy(
-            pingMs = ping,
-            countryCode = cfg.countryCode.ifBlank { info?.cc.orEmpty() },
-            city = cfg.city.ifBlank { info?.city.orEmpty() },
-            geoResolved = true,
-        )
+        cfg.copy(pingMs = measurePingMs(cfg.address, cfg.port), geoResolved = true)
     }
 
 // Periodic ping monitor — continuously measures latency every 3 seconds
@@ -329,7 +312,22 @@ private fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit
     val cc = countryCode.lowercase().trim()
     val context = LocalContext.current
     if (cc.isBlank()) {
-        CountryCodeBadge(countryCode, size)
+        // No country could be determined (neither from the config's title nor,
+        // once connected, the live tunnel) — a globe icon reads as "unknown"
+        // much more clearly than an empty lettered box.
+        Box(
+            modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(Color(0xFF1c1c1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.Public, null,
+                tint = AnanasFaint,
+                modifier = Modifier.size(size * 0.55f)
+            )
+        }
         return
     }
     Box(
@@ -530,8 +528,14 @@ private fun loadConfigs(context: Context): List<SavedConfig> {
         val base = parseConfig(uri) ?: return@mapNotNull null
         if (parts.size < 5) return@mapNotNull base // old format, no cached geo yet
         base.copy(
-            countryCode = parts[1],
-            city = parts[2],
+            // A blank persisted value (every config saved before title-based
+            // detection existed) must NOT clobber the fresh guess parseConfig just
+            // computed from the title above — that was silently keeping old saved
+            // configs flag-less forever even after the config's title clearly named
+            // a country. A non-blank persisted value (set by the accurate live-tunnel
+            // check) always wins over the guess, as it should.
+            countryCode = parts[1].ifBlank { base.countryCode },
+            city = parts[2].ifBlank { base.city },
             pingMs = parts[3].toIntOrNull() ?: -1,
             geoResolved = parts[4] == "1",
             // Older saves (5 fields) never ran the accurate probe — default false
@@ -668,10 +672,10 @@ private fun VpnTab() {
         )
     )
     
-    // Auto-collapse Quick Switch after 4 seconds of inactivity
+    // Auto-collapse Quick Switch after 10 seconds of inactivity
     LaunchedEffect(homeSheetState.bottomSheetState.currentValue) {
         if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
-            kotlinx.coroutines.delay(4000)  // 4 seconds
+            kotlinx.coroutines.delay(10000)  // 10 seconds
             if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
                 homeSheetState.bottomSheetState.partialExpand()
             }
@@ -699,7 +703,7 @@ private fun VpnTab() {
     val uploadHistory = remember { mutableStateListOf<Float>() }
     val maxHistoryPoints = 40
 
-    val geoService = remember { GeoService() }
+    // Country/flag no longer needs a GeoService instance here — see enrichConfigGeo.
 
     // Enrich configs with country/city/ping whenever the SET of config ids changes
     // (add/remove), not on every write to `configs` itself. The old key
@@ -717,7 +721,7 @@ private fun VpnTab() {
         for (cfg in toEnrich) {
             enrichingIds += cfg.id
             try {
-                val enriched = enrichConfigGeo(geoService, cfg)
+                val enriched = enrichConfigGeo(cfg)
                 configs = configs.map { if (it.id == cfg.id) enriched else it }
                 saveConfigs(context, configs)
             } finally {
@@ -1022,7 +1026,7 @@ private fun VpnTab() {
                 scaffoldState = homeSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.55f),
+                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.28f),
                 sheetContentColor = AnanasText,
                 sheetTonalElevation = 0.dp,
                 sheetShadowElevation = 12.dp,
@@ -1049,9 +1053,9 @@ private fun VpnTab() {
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color(0xFF17181C).copy(alpha = 0.45f),
-                                            Color(0xFF131316).copy(alpha = 0.80f),
-                                            Color(0xFF0D0D10).copy(alpha = 0.98f),
+                                            Color(0xFF17181C).copy(alpha = 0.18f),
+                                            Color(0xFF131316).copy(alpha = 0.50f),
+                                            Color(0xFF0D0D10).copy(alpha = 0.78f),
                                         )
                                     )
                                 )
