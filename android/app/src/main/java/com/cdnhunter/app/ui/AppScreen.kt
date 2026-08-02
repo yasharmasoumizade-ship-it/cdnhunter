@@ -1022,7 +1022,7 @@ private fun VpnTab() {
                 scaffoldState = homeSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                sheetContainerColor = Color(0xFF17181C),
+                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.55f),
                 sheetContentColor = AnanasText,
                 sheetTonalElevation = 0.dp,
                 sheetShadowElevation = 12.dp,
@@ -1039,19 +1039,19 @@ private fun VpnTab() {
                 modifier = Modifier.fillMaxSize(),
                 sheetContent = {
                     if (otherConfigs.isNotEmpty()) {
-                        // Glassy look: near-opaque right under the drag handle, fading to
-                        // more see-through toward the bottom edge -- less transparent at
-                        // the top of the sheet, more at the bottom, like frosted glass
-                        // easing into the screen behind it rather than a flat panel.
+                        // Glassy look, reversed from the first pass: most see-through right
+                        // under the drag handle, becoming progressively more opaque toward
+                        // the bottom edge -- more transparent at the top of the sheet, less
+                        // at the bottom.
                         Column(
                             Modifier
                                 .fillMaxWidth()
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color(0xFF17181C).copy(alpha = 0.98f),
-                                            Color(0xFF131316).copy(alpha = 0.90f),
-                                            Color(0xFF0D0D10).copy(alpha = 0.72f),
+                                            Color(0xFF17181C).copy(alpha = 0.45f),
+                                            Color(0xFF131316).copy(alpha = 0.80f),
+                                            Color(0xFF0D0D10).copy(alpha = 0.98f),
                                         )
                                     )
                                 )
@@ -1713,7 +1713,7 @@ private fun ServerListItem(
                         Icon(Icons.Rounded.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 },
-                content = rowContent,
+                content = { rowContent() },
             )
         } else {
             // Imported (subscription) rows: no per-row delete at all — the
