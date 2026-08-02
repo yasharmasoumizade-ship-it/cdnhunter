@@ -970,7 +970,18 @@ private fun VpnTab() {
     }
 
     val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
-    val otherConfigs  = configs.filter { it.id != activeConfig?.id }
+    val otherConfigs  = remember(configs, activeConfig?.id) {
+        val active = activeConfig
+        when {
+            active == null -> emptyList()
+            active.isImported && active.subscriptionId != null ->
+                // Connected via a subscription -- only show that subscription's other servers.
+                configs.filter { it.id != active.id && it.isImported && it.subscriptionId == active.subscriptionId }
+            else ->
+                // Connected via a manually-added (Main) config -- only show other Main configs.
+                configs.filter { it.id != active.id && !it.isImported }
+        }
+    }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -1573,194 +1584,88 @@ private fun CountryCodeBadge(countryCode: String, size: Dp = 32.dp) {
     }
 }
 
-// ── Server List Item (improved styling, clean location display) ──────────────
+// ── Server List Item — minimal flat row (Windscribe-style) ───────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ServerListItem(
     cfg: SavedConfig, activeId: String, connected: Boolean,
-    onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit
+    onConnect: (SavedConfig) -> Unit, onDelete: (SavedConfig) -> Unit,
+    indented: Boolean = false,
 ) {
     val isActive = cfg.id == activeId
-    val badgeColor = when (cfg.proto.lowercase()) {
-        "trojan" -> Color(0xFF4ADE9C)
-        "vless"  -> Color(0xFF64D2FF)
-        "vmess"  -> Color(0xFFFFD60A)
-        else     -> Color(0xFF8B8B8B)
-    }
-    
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Remove Server", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
-            text = { Text("Remove ${cfg.displayName}?", fontSize = 12.sp) },
-            confirmButton = {
-                Button(
-                    onClick = { onDelete(cfg); showDeleteDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
-                ) { Text("Remove", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
-            },
-            dismissButton = {
-                Button(
-                    onClick = { showDeleteDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
-                ) { Text("Cancel", fontSize = 11.sp) }
-            }
-        )
-    }
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable { onConnect(cfg) },
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1E)),
-        border = BorderStroke(
-            1.5.dp,
-            if (isActive) Color(0xFF4ADE9C).copy(alpha = 0.5f) else Color(0xFF2A2A2E)
-        ),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        if (isActive) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .width(3.dp)
-                    .align(Alignment.Start)
-                    .background(Color(0xFF4ADE9C), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
-            )
+    var removed by remember(cfg.id) { mutableStateOf(false) }
+
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                removed = true
+                true
+            } else false
         }
-        
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = if (isActive) 15.dp else 16.dp,
-                    top = 14.dp,
-                    end = 14.dp,
-                    bottom = 14.dp
-                )
-        ) {
-            // Header row with country + name + actions
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
+    )
+
+    LaunchedEffect(removed) {
+        if (removed) {
+            delay(180) // let the collapse animation play before the row actually leaves the list
+            onDelete(cfg)
+        }
+    }
+
+    AnimatedVisibility(
+        visible = !removed,
+        exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140))
+    ) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            backgroundContent = {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEF4444).copy(alpha = 0.85f))
+                        .padding(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Country code badge (no flag)
-                    CountryCodeBadge(cfg.countryCode, 36.dp)
-                    
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = cfg.displayName,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFAFAFA),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        
-                        if (isActive && connected) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    Modifier
-                                        .size(4.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF4ADE9C))
-                                )
-                                Text(
-                                    "ACTIVE",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4ADE9C),
-                                    letterSpacing = 0.2.sp
-                                )
-                            }
-                        } else {
-                            val statusText = if (cfg.pingMs >= 0) {
-                                "${cfg.pingMs} ms"
-                            } else {
-                                "Ready to connect"
-                            }
-                            Text(
-                                text = statusText,
-                                fontSize = 10.sp,
-                                color = Color(0xFF8B8B8B),
-                                letterSpacing = 0.2.sp
-                            )
-                        }
-                    }
-                }
-                
-                // Action buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    IconButton(
-                        onClick = { /* Show QR */ },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(Color(0xFF252529))
-                            .border(1.5.dp, Color(0xFF2F2F33), RoundedCornerShape(9.dp))
-                    ) {
-                        Icon(Icons.Rounded.QrCode2, null, tint = Color(0xFFC0C0C0), modifier = Modifier.size(16.dp))
-                    }
-                    
-                    IconButton(
-                        onClick = { showDeleteDialog = true },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(Color(0xFF252529))
-                            .border(1.5.dp, Color(0xFF2F2F33), RoundedCornerShape(9.dp))
-                    ) {
-                        Icon(Icons.Rounded.Delete, null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                    }
+                    Icon(Icons.Rounded.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
                 }
             }
-            
-            // Protocol tags
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeColor.copy(alpha = 0.15f))
-                        .border(1.dp, badgeColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (isActive) AnanasAccent.copy(alpha = 0.06f) else Color.Transparent)
+                    .clickable { onConnect(cfg) }
+                    .padding(start = if (indented) 42.dp else 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CountryFlagBadge(cfg.countryCode, 30.dp)
+
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = cfg.proto.uppercase(),
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeColor,
-                        letterSpacing = 0.3.sp
+                        cfg.displayName,
+                        fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+                        color = if (isActive) AnanasTextHi else AnanasText,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
+                    if (isActive && connected) {
+                        Text("Connected", fontSize = 11.sp, color = AnanasAccent)
+                    }
                 }
-                
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF3A3A3F).copy(alpha = 0.6f))
-                        .border(1.dp, Color(0xFF4A4A4F), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = cfg.network.uppercase(),
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFA0A0A0),
-                        letterSpacing = 0.2.sp
-                    )
+
+                if (cfg.pingMs >= 0) {
+                    val pingColor = when {
+                        cfg.pingMs < 150 -> Color(0xFF4ADE9C)
+                        cfg.pingMs < 350 -> Color(0xFFFFD60A)
+                        else             -> Color(0xFFEF4444)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(pingColor))
+                        Text("${cfg.pingMs} ms", fontSize = 11.5.sp, color = AnanasMuted)
+                    }
+                }
+
+                if (isActive) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(AnanasAccent))
                 }
             }
         }
@@ -1998,22 +1903,23 @@ private fun LocationsScreen(
         if (query.isBlank()) configs
         else configs.filter { it.displayName.contains(query, ignoreCase = true) }
     }
-    
-    // Separate Main (manual) vs Imported (subscription)
-    val mainConfigs = remember(filtered) {
-        filtered.filter { !it.isImported }
-    }
-    val importedConfigs = remember(filtered) {
-        filtered.filter { it.isImported }
-    }
-    val importedBySubscription = remember(importedConfigs) {
+
+    val mainConfigs = remember(filtered) { filtered.filter { !it.isImported } }
+    val importedConfigs = remember(filtered) { filtered.filter { it.isImported } }
+    // Each subscription collapses into a single group row; tapping it expands
+    // in place to show that subscription's servers, one at a time (Windscribe-
+    // style), instead of every subscription's servers always being on-screen.
+    val subscriptionGroups = remember(importedConfigs) {
         importedConfigs.groupBy { it.subscriptionId }
+            .filterKeys { it != null }
+            .map { (subId, cfgs) -> subId!! to cfgs }
     }
+    var expandedSubId by remember { mutableStateOf<String?>(null) }
 
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
-                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 26.dp),
+                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -2028,12 +1934,12 @@ private fun LocationsScreen(
                 AnanasIconButton(Icons.Rounded.Add, onToggleAddMenu)
             }
 
+            // Minimal search field — no card/border, just an underline, Windscribe-style.
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AnanasCard2)
-                    .border(1.dp, AnanasBorder2, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Rounded.Search, null, tint = AnanasMuted, modifier = Modifier.size(16.dp))
+                Icon(Icons.Rounded.Search, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
                 androidx.compose.foundation.text.BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -2047,9 +1953,6 @@ private fun LocationsScreen(
                     }
                 )
             }
-            Spacer(Modifier.height(18.dp))
-            Divider(color = Color(0xFF1C1C20), thickness = 1.dp)
-            Spacer(Modifier.height(6.dp))
 
             if (configs.isEmpty()) {
                 Column(
@@ -2064,51 +1967,25 @@ private fun LocationsScreen(
                 }
             } else {
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 40.dp)) {
-                    // ========== MAIN SECTION ==========
-                    if (mainConfigs.isNotEmpty()) {
-                        item(key = "main_header") {
-                            LocationSectionHeader("MAIN", "Manually added")
-                        }
-                        items(mainConfigs, key = { it.id }) { cfg ->
-                            ServerListItem(cfg, activeId, connected, onConnect, onDelete)
-                        }
+                    items(mainConfigs, key = { it.id }) { cfg ->
+                        ServerListItem(cfg, activeId, connected, onConnect, onDelete)
                     }
-                    
-                    // ========== IMPORTED SECTION ==========
-                    if (importedConfigs.isNotEmpty()) {
-                        item(key = "imported_header") {
-                            LocationSectionHeader("IMPORTED SUBSCRIPTIONS")
-                        }
-                        
-                        // For each subscription group
-                        for ((subId, cfgs) in importedBySubscription) {
-                            if (subId != null && cfgs.isNotEmpty()) {
-                                val subName = cfgs.first().subscriptionName ?: "Subscription"
-                                
-                                item(key = "sub_header_$subId") {
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            subName,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = AnanasTextHi
-                                        )
-                                        Text(
-                                            "${cfgs.size} servers",
-                                            fontSize = 10.sp,
-                                            color = AnanasMuted
-                                        )
+
+                    items(subscriptionGroups, key = { "sub_${it.first}" }) { (subId, cfgs) ->
+                        val subName = cfgs.first().subscriptionName ?: "Subscription"
+                        val isExpanded = expandedSubId == subId
+                        Column {
+                            SubscriptionGroupRow(
+                                name = subName,
+                                count = cfgs.size,
+                                expanded = isExpanded,
+                                onClick = { expandedSubId = if (isExpanded) null else subId }
+                            )
+                            AnimatedVisibility(visible = isExpanded, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                                Column {
+                                    cfgs.forEach { cfg ->
+                                        ServerListItem(cfg, activeId, connected, onConnect, onDelete, indented = true)
                                     }
-                                }
-                                
-                                items(cfgs, key = { it.id }) { cfg ->
-                                    ServerListItem(cfg, activeId, connected, onConnect, onDelete)
                                 }
                             }
                         }
@@ -2116,6 +1993,33 @@ private fun LocationsScreen(
                 }
             }
         }
+    }
+}
+
+// Collapsed subscription group — tap to expand in place. Flat row, no card, just
+// a chevron rotation and a muted count, Windscribe-style.
+@Composable
+private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {
+    val chevronRotation by animateFloatAsState(if (expanded) 90f else 0f, label = "chevron")
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(AnanasCard2),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Rounded.Cloud, null, tint = AnanasMuted, modifier = Modifier.size(15.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(name, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+            Text("$count server${if (count == 1) "" else "s"}", fontSize = 11.sp, color = AnanasMuted)
+        }
+        Icon(
+            Icons.Rounded.ChevronRight, null, tint = AnanasFaint,
+            modifier = Modifier.size(18.dp).rotate(chevronRotation)
+        )
     }
 }
 
