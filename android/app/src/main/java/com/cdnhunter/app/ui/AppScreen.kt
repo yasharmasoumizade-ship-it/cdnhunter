@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1118,6 +1119,25 @@ private fun VpnTab() {
                             activeConfig?.let { cfg ->
                                     val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
                                     val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
+                                    // Soft status-color glow for the card, matching PowerButton's
+                                    // exact color formula (colorA/colorB) and breathing gently in
+                                    // sync with it -- layered ON TOP of the existing gold gradient
+                                    // below (kept as-is, per request), not replacing it. Low alpha
+                                    // so it reads as a subtle tint, not a competing color scheme.
+                                    val cardGlowInfinite = rememberInfiniteTransition(label = "cardGlow")
+                                    val cardGlowBreathe by cardGlowInfinite.animateFloat(
+                                        0.6f, 1f,
+                                        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                                        label = "cardGlowBreathe"
+                                    )
+                                    val cardGlowColor by animateColorAsState(
+                                        targetValue = when {
+                                            connected -> Color(0xFF34D9A8)
+                                            connecting -> Color(0xFFFFC93C)
+                                            else -> Color(0xFF3B6FFF)
+                                        },
+                                        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "cardGlowColor"
+                                    )
                                     // One unified card, same size/style whether showing server
                                     // info, or one of 3 traffic sub-pages (download/upload/scale)
                                     // -- 4 pages total, all on ONE flat pager. This used to be a
@@ -1139,9 +1159,11 @@ private fun VpnTab() {
                                     val pagerHeightModifier = if (page0HeightPx > 0)
                                         Modifier.height(with(density) { page0HeightPx.toDp() })
                                     else Modifier.height(210.dp) // bounded fallback until measured
+                                    var cardSizePx by remember { mutableStateOf(IntSize.Zero) }
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
+                                            .onSizeChanged { cardSizePx = it }
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(
                                                 Brush.linearGradient(
@@ -1159,6 +1181,23 @@ private fun VpnTab() {
                                                     colors = listOf(Color(0xFFD4AF6A).copy(alpha = 0.07f), Color.Transparent),
                                                     center = Offset(0f, 0f),
                                                     radius = 420f,
+                                                )
+                                            )
+                                            // Status-color glow from the bottom-right corner,
+                                            // gently breathing in sync with the connect button's
+                                            // own glow -- kept faint (low alpha) so the gold
+                                            // gradient above stays the dominant visual. Uses the
+                                            // card's actual measured size (not an infinite-
+                                            // coordinate trick) so the corner position is a real,
+                                            // correct pixel offset.
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(
+                                                        cardGlowColor.copy(alpha = 0.10f * cardGlowBreathe),
+                                                        Color.Transparent
+                                                    ),
+                                                    center = Offset(cardSizePx.width.toFloat(), cardSizePx.height.toFloat()),
+                                                    radius = 480f,
                                                 )
                                             )
                                     ) {
