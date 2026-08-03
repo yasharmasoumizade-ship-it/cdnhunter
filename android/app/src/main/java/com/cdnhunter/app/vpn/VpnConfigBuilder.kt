@@ -177,8 +177,14 @@ object VpnConfigBuilder {
                 // 1. SNI sniffer to detect DNS-over-HTTPS domains
                 // 2. Clash rules to route HTTPS through proxy (which decrypts via cert pinning)
                 // 3. Users enabling DoH within Clash config (not system-level)
-                // For maximum compatibility: hijack port 53 only (plain DNS)
-                "dns-hijack" to listOf("any:53"),
+                // For maximum compatibility: hijack plain DNS (53) and DNS-over-TLS
+                // (853) -- Android's "Automatic" Private DNS mode opportunistically
+                // upgrades to DoT against whatever IPs are configured (see
+                // CdnVpnService.establishTun's addDnsServer calls), which used to
+                // slip past a :53-only hijack entirely and leak query content to
+                // whichever provider Android picked, regardless of the app's own
+                // custom DNS / DoH setting.
+                "dns-hijack" to listOf("any:53", "any:853"),
                 // Must match VpnService.Builder().setMtu() in CdnVpnService
                 // — a mismatch here means mihomo builds packets sized for a
                 // different MTU than the actual OS-level tun device, and they
