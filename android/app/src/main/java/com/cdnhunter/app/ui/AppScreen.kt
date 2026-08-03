@@ -5,6 +5,12 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
@@ -1686,21 +1692,24 @@ private fun ServerListItem(
     val isActive = cfg.id == activeId
     var removed by remember(cfg.id) { mutableStateOf(false) }
 
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (showDeleteSwipe && value == SwipeToDismissBoxValue.EndToStart) {
-                removed = true
-                true
-            } else false
-        }
-    )
-
     LaunchedEffect(removed) {
         if (removed) {
             delay(180) // let the collapse animation play before the row actually leaves the list
             onDelete(cfg)
         }
     }
+
+    // Custom swipe instead of Material3's SwipeToDismissBox: that component kept
+    // showing its red backgroundContent at REST (not just while actively being
+    // dragged) — a real, reported Material3 layout quirk where the foreground
+    // content's resting offset doesn't reliably settle at exactly zero. Driving
+    // the background's own alpha directly off a real drag offset we own removes
+    // any possibility of that: at offsetX == 0 the background is provably
+    // invisible, not just "supposed to be covered by the row on top".
+    val offsetX = remember(cfg.id) { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val maxSwipePx = with(density) { -84.dp.toPx() }
 
     val rowContent = @Composable {
         Row(
@@ -1742,21 +1751,51 @@ private fun ServerListItem(
         exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140))
     ) {
         if (showDeleteSwipe) {
-            SwipeToDismissBox(
-                state = dismissState,
-                enableDismissFromStartToEnd = false,
-                backgroundContent = {
+            Box(Modifier.fillMaxWidth()) {
+                // Only ever drawn (and only ever above alpha 0) while offsetX is
+                // actually non-zero — never a static/always-on layer.
+                val revealFraction = (offsetX.value / maxSwipePx).coerceIn(0f, 1f)
+                if (revealFraction > 0f) {
                     Row(
-                        Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEF4444).copy(alpha = 0.85f))
+                        Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFEF4444).copy(alpha = 0.85f * revealFraction))
                             .padding(horizontal = 18.dp),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Rounded.Delete, null,
+                            tint = Color.White.copy(alpha = revealFraction),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                },
-                content = { rowContent() },
-            )
+                }
+                Box(
+                    Modifier
+                        .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                        .draggable(
+                            orientation = Orientation.Horizontal,
+                            state = rememberDraggableState { delta ->
+                                coroutineScope.launch {
+                                    offsetX.snapTo((offsetX.value + delta).coerceIn(maxSwipePx * 1.15f, 0f))
+                                }
+                            },
+                            onDragStopped = {
+                                coroutineScope.launch {
+                                    if (offsetX.value < maxSwipePx * 0.55f) {
+                                        removed = true
+                                    } else {
+                                        offsetX.animateTo(0f, animationSpec = tween(200))
+                                    }
+                                }
+                            }
+                        )
+                ) {
+                    rowContent()
+                }
+            }
         } else {
             // Imported (subscription) rows: no per-row delete at all — the
             // whole subscription is deleted from its one group-header icon.
@@ -2531,28 +2570,6 @@ private fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(26.dp))
-            Text("AD BLOCKING", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
-
-            Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
-                color = AnanasCard,
-            ) {
-                Column {
-                    var adBlockerEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
-                    
-                    SettingsToggleRow(
-                        Icons.Rounded.Block, "Block Ads", "Blocks ad and tracker domains",
-                        adBlockerEnabled, {
-                            adBlockerEnabled = it
-                            AppSettings.setAdBlockerEnabled(context, it)
-                        }
-                    )
-                }
-            }
-
             val clip = LocalClipboardManager.current
 
             Spacer(Modifier.height(26.dp))
@@ -2564,9 +2581,14 @@ private fun SettingsScreen(
                     .padding(horizontal = 14.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasCard2), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Terminal, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(15.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Surface(
+                        modifier = Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
+                        color = AnanasAccent.copy(alpha = 0.15f)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Terminal, null, tint = AnanasAccent, modifier = Modifier.size(20.dp))
+                        }
                     }
                     Column {
                         Text("Connection log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
