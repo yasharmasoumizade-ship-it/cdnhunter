@@ -594,11 +594,27 @@ class CdnVpnService : VpnService() {
     private fun establishTun(): ParcelFileDescriptor? {
         return try {
             val ipv6Enabled = AppSettings.ipv6Enabled(this)
+            // These must be the SAME servers mihomo itself is configured to use
+            // (see VpnConfigBuilder) — Android's Private DNS, in "Automatic" mode,
+            // can opportunistically upgrade to DoT (port 853) straight against
+            // whatever IPs are declared here. dns-hijack now also catches :853 (see
+            // VpnConfigBuilder), so that traffic still gets captured either way —
+            // but if this stayed hardcoded to Cloudflare/Google regardless of the
+            // user's custom DNS setting, the query CONTENT would still go to a
+            // provider the user never chose, which reads as "leaking" even though
+            // it's tunneled. addDnsServer() only accepts a literal IP (not a
+            // https://.../dns-query URL) — extractDnsIp pulls one out of whatever
+            // format the user's custom entry is in, or falls back to Cloudflare.
+            val dnsServers = if (AppSettings.customDnsEnabled(this)) {
+                AppSettings.customDnsServers(this).mapNotNull { extractDnsIp(it) }.take(2)
+                    .ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
+            } else {
+                listOf("1.1.1.1", "8.8.8.8")
+            }
             val builder = Builder()
                 .setSession("CDN Hunter VPN")
                 .addAddress("10.10.10.10", 32)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("8.8.8.8")
+            dnsServers.forEach { builder.addDnsServer(it) }
             // IPv6 address + route only added when the user has IPv6 enabled
             // in Settings — matches the mihomo "ipv6" config flag set in
             // VpnConfigBuilder so both sides agree on whether v6 traffic is
@@ -677,6 +693,36 @@ class CdnVpnService : VpnService() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    // Pulls a literal IPv4/IPv6 address out of a custom DNS entry for
+    // VpnService.Builder.addDnsServer(), which only accepts a literal IP —
+    // "https://1.1.1.1/dns-query" -> "1.1.1.1", "9.9.9.9:53" -> "9.9.9.9",
+    // "quic://8.8.8.8" -> "8.8.8.8", "[2606:4700:4700::1111]:53" ->
+    // "2606:4700:4700::1111". A hostname-only DoH URL (e.g.
+    // "https://dns.google/dns-query", no embedded IP) has nothing to extract —
+    // returns null so the caller's fallback applies instead of passing a
+    // hostname Android's Builder would reject.
+    private fun extractDnsIp(entry: String): String? {
+        var s = entry.trim()
+            .removePrefix("https://").removePrefix("quic://").removePrefix("tls://")
+            .substringBefore("/")
+
+        val ipv4Regex = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+
+        // Bracketed IPv6 with an optional port, e.g. "[::1]:53" -> "::1".
+        if (s.startsWith("[")) {
+            return s.substringAfter("[").substringBefore("]").takeIf { it.contains(":") }
+        }
+        // Bare IPv6 (multiple colons, no brackets) has no port suffix to strip —
+        // a trailing ":53" on an unbracketed IPv6 literal would be ambiguous, so
+        // this is only ever a plain address here, not "address:port".
+        if (s.count { it == ':' } > 1) {
+            return s.takeIf { !ipv4Regex.matches(s) } // already excluded by colon count, kept for clarity
+        }
+        // IPv4, optionally with ":port" — exactly one colon at most.
+        s = s.substringBefore(":")
+        return s.takeIf { ipv4Regex.matches(it) }
     }
 
     private fun createNotificationChannel() {
