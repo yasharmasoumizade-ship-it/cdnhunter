@@ -1033,7 +1033,7 @@ private fun VpnTab() {
                 scaffoldState = homeSheetState,
                 sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
                 sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.28f),
+                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.55f),
                 sheetContentColor = AnanasText,
                 sheetTonalElevation = 0.dp,
                 sheetShadowElevation = 12.dp,
@@ -1060,9 +1060,9 @@ private fun VpnTab() {
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color(0xFF17181C).copy(alpha = 0.18f),
-                                            Color(0xFF131316).copy(alpha = 0.50f),
-                                            Color(0xFF0D0D10).copy(alpha = 0.78f),
+                                            Color(0xFF17181C).copy(alpha = 0.42f),
+                                            Color(0xFF131316).copy(alpha = 0.72f),
+                                            Color(0xFF0D0D10).copy(alpha = 0.92f),
                                         )
                                     )
                                 )
