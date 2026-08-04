@@ -2432,21 +2432,13 @@ private fun SettingsScreen(
                             Text("Custom DNS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                             Text("Use your own DNS servers", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
                         }
-                        Switch(
+                        MinimalToggle(
                             checked = customDnsEnabled,
                             onCheckedChange = {
                                 customDnsEnabled = it
                                 showDnsInputs = it
                                 AppSettings.setCustomDnsEnabled(context, it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = AnanasSettingsAccent,
-                                checkedBorderColor = Color.Transparent,
-                                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
-                                uncheckedTrackColor = AnanasCard2,
-                                uncheckedBorderColor = Color.Transparent
-                            )
+                            }
                         )
                     }
 
@@ -2627,6 +2619,43 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
     }
 }
 
+// Minimal iOS-style toggle: flat capsule track, no border, a plain circular thumb
+// that slides with a smooth animation. Replaces Material3's default Switch (which
+// has a visible outline ring around the thumb and a busier look) for a lighter,
+// more minimal aesthetic used throughout the redesigned Settings screen.
+@Composable
+private fun MinimalToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    checkedTrackColor: Color = AnanasSettingsAccent,
+    modifier: Modifier = Modifier,
+) {
+    val trackColor by animateColorAsState(
+        if (checked) checkedTrackColor else AnanasCard2,
+        animationSpec = tween(180), label = "trackColor"
+    )
+    val thumbOffset by animateDpAsState(
+        if (checked) 18.dp else 2.dp,
+        animationSpec = tween(180), label = "thumbOffset"
+    )
+    Box(
+        modifier
+            .size(width = 40.dp, height = 24.dp)
+            .clip(RoundedCornerShape(50))
+            .background(trackColor)
+            .clickable { onCheckedChange(!checked) },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Box(
+            Modifier
+                .padding(start = thumbOffset)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
+    }
+}
+
 @Composable
 private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
@@ -2656,18 +2685,7 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
         }
 
         // Minimal switch: no scale bump, no outline ring — just a clean flat track.
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = AnanasSettingsAccent,
-                checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
-                uncheckedTrackColor = AnanasCard2,
-                uncheckedBorderColor = Color.Transparent
-            )
-        )
+        MinimalToggle(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
