@@ -99,6 +99,9 @@ object VpnConfigBuilder {
             "dns" to linkedMapOf(
                 "enable" to true,
                 "listen" to "0.0.0.0:1053",
+                // دیگه AAAA fake-ip صادر نکن وقتی کاربر IPv6 رو خاموش کرده —
+                // باید با تنظیم ipv6 در سطح tun sync باشه.
+                "ipv6" to ipv6,
                 // fake-ip is required here, not just an option: with the default
                 // "mapping" mode, mihomo only learns a domain<->IP pairing when a
                 // client actually queries mihomo's own DNS server first. Nothing on
@@ -269,6 +272,10 @@ object VpnConfigBuilder {
                 )
             ),
             "rules" to buildList {
+                // دفاع دوم: حتی با روت سطح Android هم اگه بسته IPv6ای به
+                // rule engine برسه و کاربر IPv6 رو خاموش کرده، صریح reject
+                // بشه — نه اینکه به‌طور ضمنی جایی route بشه.
+                if (!ipv6) add("IP-CIDR6,::/0,REJECT")
                 // Keep private/LAN ranges off the tunnel to avoid a traffic loop.
                 add("IP-CIDR,10.0.0.0/8,DIRECT")
                 add("IP-CIDR,172.16.0.0/12,DIRECT")

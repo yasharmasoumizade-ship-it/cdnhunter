@@ -619,9 +619,10 @@ class CdnVpnService : VpnService() {
             // in Settings — matches the mihomo "ipv6" config flag set in
             // VpnConfigBuilder so both sides agree on whether v6 traffic is
             // routed through the tunnel at all.
-            if (ipv6Enabled) {
-                builder.addAddress("fd00:1:1:1::1", 128)
-            }
+            // همیشه IPv6 رو claim کن، صرف‌نظر از ipv6Enabled — وگرنه روی هر
+            // شبکه‌ای که IPv6 واقعی داره، ترافیک IPv6 (و DNS روی IPv6) از
+            // مسیر عادیِ خارج از VPN میره و لو میره.
+            builder.addAddress("fd00:1:1:1::1", 128)
             builder
                 // MTU is now user-adjustable via Settings UI (AppSettings.mtu()).
                 // Default is 1500 (standard Ethernet) — works on all mobile/ISP
@@ -633,9 +634,10 @@ class CdnVpnService : VpnService() {
                 .setBlocking(false)
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)
-            if (ipv6Enabled) {
-                builder.addRoute("::", 0)
-            }
+            // همیشه همه‌ی ترافیک IPv6 رو بگیر توی تانل. اگه ipv6Enabled
+            // خاموشه، mihomo (ipv6:false + rule صریح در VpnConfigBuilder)
+            // این بسته‌ها رو داخل تانل drop می‌کنه — fail-closed، نه leak.
+            builder.addRoute("::", 0)
 
             // Split tunneling. Android only allows EITHER
             // addAllowedApplication calls OR addDisallowedApplication calls

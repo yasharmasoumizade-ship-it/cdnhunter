@@ -1,0 +1,285 @@
+--- a/android/app/src/main/java/com/cdnhunter/app/ui/AppScreen.kt
++++ b/android/app/src/main/java/com/cdnhunter/app/ui/AppScreen.kt
+@@ -2251,8 +2251,7 @@
+             Spacer(Modifier.height(10.dp))
+ 
+             Surface(
+-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+-                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
++                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                 color = AnanasCard,
+             ) {
+                 Column {
+@@ -2267,7 +2266,7 @@
+                 )
+                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+                 SettingsToggleRow(
+-                    Icons.Rounded.Lock, "Kill switch", "Block traffic if VPN disconnects unexpectedly",
++                    Icons.Rounded.Lock, "Kill switch", "Block traffic on disconnect",
+                     killSwitch, {
+                         killSwitch = it
+                         AppSettings.setKillSwitchEnabled(context, it)
+@@ -2303,8 +2302,7 @@
+             Spacer(Modifier.height(10.dp))
+ 
+             Surface(
+-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+-                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
++                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                 color = AnanasCard,
+             ) {
+                 Column {
+@@ -2405,11 +2403,12 @@
+                 }
+             }
+ 
++            Spacer(Modifier.height(26.dp))
++            Text("DNS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+             Spacer(Modifier.height(10.dp))
+-            Spacer(Modifier.height(10.dp))
++
+             Surface(
+-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+-                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
++                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                 color = AnanasCard,
+             ) {
+                 Column {
+@@ -2435,12 +2434,13 @@
+                                 showDnsInputs = it
+                                 AppSettings.setCustomDnsEnabled(context, it)
+                             },
+-                            modifier = Modifier.scale(1.15f),
+                             colors = SwitchDefaults.colors(
+                                 checkedThumbColor = Color.White,
+                                 checkedTrackColor = AnanasAccent,
+-                                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.6f),
+-                                uncheckedTrackColor = AnanasCard2
++                                checkedBorderColor = Color.Transparent,
++                                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
++                                uncheckedTrackColor = AnanasCard2,
++                                uncheckedBorderColor = Color.Transparent
+                             )
+                         )
+                     }
+@@ -2520,51 +2520,6 @@
+                 }
+             }
+ 
+-            Spacer(Modifier.height(26.dp))
+-            Text("APPEARANCE", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
+-            Spacer(Modifier.height(10.dp))
+-
+-            Surface(
+-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+-                    .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)),
+-                color = AnanasCard,
+-            ) {
+-                Column(Modifier.padding(16.dp)) {
+-                    var theme by remember { mutableStateOf(AppSettings.theme(context)) }
+-
+-                    Text("Theme", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, modifier = Modifier.padding(bottom = 12.dp))
+-                    
+-                    Row(
+-                        modifier = Modifier.fillMaxWidth(),
+-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+-                    ) {
+-                        for (themeOption in listOf("Light", "Dark", "Auto")) {
+-                            val selected = theme == themeOption.lowercase()
+-                            Column(
+-                                horizontalAlignment = Alignment.CenterHorizontally,
+-                                modifier = Modifier.clickable {
+-                                    theme = themeOption.lowercase()
+-                                    AppSettings.setTheme(context, theme)
+-                                    (context as? android.app.Activity)?.recreate()
+-                                }.padding(vertical = 4.dp)
+-                            ) {
+-                                Text(
+-                                    themeOption, fontSize = 13.sp,
+-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+-                                    color = if (selected) AnanasAccent else AnanasMuted
+-                                )
+-                                Spacer(Modifier.height(6.dp))
+-                                Box(
+-                                    Modifier.width(20.dp).height(2.dp)
+-                                        .clip(RoundedCornerShape(1.dp))
+-                                        .background(if (selected) AnanasAccent else Color.Transparent)
+-                                )
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+             val clip = LocalClipboardManager.current
+ 
+             Spacer(Modifier.height(26.dp))
+@@ -2639,119 +2594,74 @@
+ 
+ @Composable
+ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
+-    Surface(
+-        modifier = Modifier
++    Row(
++        Modifier
+             .fillMaxWidth()
+-            .clip(RoundedCornerShape(12.dp))
+-            .border(1.dp, AnanasBorder, RoundedCornerShape(12.dp))
+-            .let { if (onClick != null) it.clickable { onClick() } else it },
+-        color = AnanasCard,
++            .let { if (onClick != null) it.clickable { onClick() } else it }
++            .padding(horizontal = 16.dp, vertical = 14.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
+     ) {
+         Row(
+-            Modifier.fillMaxWidth()
+-                .padding(horizontal = 16.dp, vertical = 14.dp),
+-            horizontalArrangement = Arrangement.SpaceBetween,
+-            verticalAlignment = Alignment.CenterVertically
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.spacedBy(14.dp),
++            modifier = Modifier.weight(1f)
+         ) {
+-            Row(
+-                verticalAlignment = Alignment.CenterVertically,
+-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+-                modifier = Modifier.weight(1f)
+-            ) {
+-                // Bare icon, no container — cleaner and more prominent
+-                Icon(
+-                    icon, null,
+-                    tint = iconTint,
+-                    modifier = Modifier.size(24.dp)
+-                )
+-                // Label column
+-                Column(modifier = Modifier.weight(1f)) {
+-                    Text(
+-                        label,
+-                        fontSize = 14.sp,
+-                        fontWeight = FontWeight.SemiBold,
+-                        color = AnanasTextHi
+-                    )
+-                    if (value != null) {
+-                        Text(
+-                            value,
+-                            fontSize = 12.sp,
+-                            color = AnanasMuted,
+-                            modifier = Modifier.padding(top = 3.dp)
+-                        )
+-                    }
++            Icon(icon, null, tint = iconTint, modifier = Modifier.size(24.dp))
++            Column(modifier = Modifier.weight(1f)) {
++                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
++                if (value != null) {
++                    Text(value, fontSize = 12.sp, color = AnanasMuted, modifier = Modifier.padding(top = 3.dp))
+                 }
+             }
+-            
+-            if (showChevron) {
+-                Icon(
+-                    Icons.Rounded.ChevronRight, null,
+-                    tint = AnanasMuted,
+-                    modifier = Modifier.size(22.dp)
+-                )
+-            }
++        }
++        if (showChevron) {
++            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasMuted, modifier = Modifier.size(22.dp))
+         }
+     }
+ }
+ 
+ @Composable
+ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+-    Surface(
+-        modifier = Modifier
++    Row(
++        Modifier
+             .fillMaxWidth()
+-            .clip(RoundedCornerShape(12.dp))
+-            .border(1.dp, AnanasBorder, RoundedCornerShape(12.dp)),
+-        color = AnanasCard,
++            .padding(horizontal = 16.dp, vertical = 14.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
+     ) {
+         Row(
+-            Modifier.fillMaxWidth()
+-                .padding(horizontal = 16.dp, vertical = 14.dp),
+-            horizontalArrangement = Arrangement.SpaceBetween,
+-            verticalAlignment = Alignment.CenterVertically
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.spacedBy(14.dp),
++            modifier = Modifier.weight(1f)
+         ) {
+-            Row(
+-                verticalAlignment = Alignment.CenterVertically,
+-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+-                modifier = Modifier.weight(1f)
+-            ) {
+-                // Bare icon, no container — cleaner and more prominent
+-                Icon(
+-                    icon, null,
+-                    tint = AnanasAccent,
+-                    modifier = Modifier.size(24.dp)
++            Icon(icon, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
++            Column(modifier = Modifier.weight(1f)) {
++                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
++                Text(
++                    desc,
++                    fontSize = 11.5.sp,
++                    color = AnanasMuted,
++                    modifier = Modifier.padding(top = 3.dp),
++                    maxLines = 2,
++                    overflow = TextOverflow.Ellipsis
+                 )
+-                // Label column
+-                Column(modifier = Modifier.weight(1f)) {
+-                    Text(
+-                        label,
+-                        fontSize = 14.sp,
+-                        fontWeight = FontWeight.SemiBold,
+-                        color = AnanasTextHi
+-                    )
+-                    Text(
+-                        desc,
+-                        fontSize = 12.sp,
+-                        color = AnanasMuted,
+-                        modifier = Modifier.padding(top = 3.dp),
+-                        maxLines = 1,
+-                        overflow = TextOverflow.Ellipsis
+-                    )
+-                }
+             }
+-            
+-            // Modern switch with better styling
+-            Switch(
+-                checked = checked,
+-                onCheckedChange = onCheckedChange,
+-                modifier = Modifier.scale(1.15f),
+-                colors = SwitchDefaults.colors(
+-                    checkedThumbColor = Color.White,
+-                    checkedTrackColor = AnanasAccent,
+-                    uncheckedThumbColor = AnanasMuted.copy(alpha = 0.6f),
+-                    uncheckedTrackColor = AnanasCard2
+-                )
+-            )
+         }
++
++        // Minimal switch: no scale bump, no outline ring — just a clean flat track.
++        Switch(
++            checked = checked,
++            onCheckedChange = onCheckedChange,
++            colors = SwitchDefaults.colors(
++                checkedThumbColor = Color.White,
++                checkedTrackColor = AnanasAccent,
++                checkedBorderColor = Color.Transparent,
++                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
++                uncheckedTrackColor = AnanasCard2,
++                uncheckedBorderColor = Color.Transparent
++            )
++        )
+     }
+ }
+ 

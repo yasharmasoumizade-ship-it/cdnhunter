@@ -1,0 +1,197 @@
+--- a/android/app/src/main/java/com/cdnhunter/app/ui/AppScreen.kt
++++ b/android/app/src/main/java/com/cdnhunter/app/ui/AppScreen.kt
+@@ -2325,34 +2325,26 @@
+                             Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                             Text("Default: 1500 bytes", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
+                         }
+-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                            Button(
+-                                onClick = {
++                        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
++                            Text(
++                                "Auto", fontSize = 12.sp,
++                                fontWeight = if (mtuMode == "auto") FontWeight.Bold else FontWeight.Medium,
++                                color = if (mtuMode == "auto") AnanasAccent else AnanasMuted,
++                                modifier = Modifier.clickable {
+                                     mtuMode = "auto"
+                                     showCustomInput = false
+                                     AppSettings.setMtu(context, 1500)
+                                     AppSettings.setMtuPreset(context, "auto")
+-                                },
+-                                modifier = Modifier.height(34.dp).width(60.dp).clip(RoundedCornerShape(8.dp)),
+-                                colors = ButtonDefaults.buttonColors(
+-                                    containerColor = if (mtuMode == "auto") AnanasAccent else AnanasCard2,
+-                                    contentColor = if (mtuMode == "auto") Color.White else AnanasText
+-                                ),
+-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+-                            ) {
+-                                Text("Auto", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+-                            }
+-                            Button(
+-                                onClick = { showCustomInput = !showCustomInput; mtuMode = "custom" },
+-                                modifier = Modifier.height(34.dp).width(70.dp).clip(RoundedCornerShape(8.dp)),
+-                                colors = ButtonDefaults.buttonColors(
+-                                    containerColor = if (mtuMode == "custom") AnanasAccent else AnanasCard2,
+-                                    contentColor = if (mtuMode == "custom") Color.White else AnanasText
+-                                ),
+-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+-                            ) {
+-                                Text("Custom", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+-                            }
++                                }.padding(vertical = 4.dp)
++                            )
++                            Text(
++                                "Custom", fontSize = 12.sp,
++                                fontWeight = if (mtuMode == "custom") FontWeight.Bold else FontWeight.Medium,
++                                color = if (mtuMode == "custom") AnanasAccent else AnanasMuted,
++                                modifier = Modifier.clickable {
++                                    showCustomInput = !showCustomInput; mtuMode = "custom"
++                                }.padding(vertical = 4.dp)
++                            )
+                         }
+                     }
+ 
+@@ -2544,26 +2536,29 @@
+                     
+                     Row(
+                         modifier = Modifier.fillMaxWidth(),
+-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
++                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                     ) {
+                         for (themeOption in listOf("Light", "Dark", "Auto")) {
+-                            Button(
+-                                onClick = {
++                            val selected = theme == themeOption.lowercase()
++                            Column(
++                                horizontalAlignment = Alignment.CenterHorizontally,
++                                modifier = Modifier.clickable {
+                                     theme = themeOption.lowercase()
+                                     AppSettings.setTheme(context, theme)
+                                     (context as? android.app.Activity)?.recreate()
+-                                },
+-                                modifier = Modifier
+-                                    .weight(1f)
+-                                    .height(40.dp)
+-                                    .clip(RoundedCornerShape(10.dp)),
+-                                colors = ButtonDefaults.buttonColors(
+-                                    containerColor = if (theme == themeOption.lowercase()) AnanasAccent else AnanasCard2,
+-                                    contentColor = if (theme == themeOption.lowercase()) Color.White else AnanasText
+-                                ),
+-                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
++                                }.padding(vertical = 4.dp)
+                             ) {
+-                                Text(themeOption, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
++                                Text(
++                                    themeOption, fontSize = 13.sp,
++                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
++                                    color = if (selected) AnanasAccent else AnanasMuted
++                                )
++                                Spacer(Modifier.height(6.dp))
++                                Box(
++                                    Modifier.width(20.dp).height(2.dp)
++                                        .clip(RoundedCornerShape(1.dp))
++                                        .background(if (selected) AnanasAccent else Color.Transparent)
++                                )
+                             }
+                         }
+                     }
+@@ -2582,14 +2577,7 @@
+                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+             ) {
+                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+-                    Surface(
+-                        modifier = Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)),
+-                        color = AnanasAccent.copy(alpha = 0.15f)
+-                    ) {
+-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                            Icon(Icons.Rounded.Terminal, null, tint = AnanasAccent, modifier = Modifier.size(20.dp))
+-                        }
+-                    }
++                    Icon(Icons.Rounded.Terminal, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
+                     Column {
+                         Text("Connection log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                         Text(
+@@ -2618,10 +2606,8 @@
+                         .padding(horizontal = 14.dp, vertical = 14.dp),
+                     horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                 ) {
+-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+-                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(AnanasRed.copy(0.14f)), contentAlignment = Alignment.Center) {
+-                            Icon(Icons.Rounded.BugReport, null, tint = AnanasRed, modifier = Modifier.size(15.dp))
+-                        }
++                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
++                        Icon(Icons.Rounded.BugReport, null, tint = AnanasRed, modifier = Modifier.size(22.dp))
+                         Column {
+                             Text("Last crash log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
+                             Text("Found a saved crash report", fontSize = 10.5.sp, color = AnanasMuted)
+@@ -2672,21 +2658,12 @@
+                 horizontalArrangement = Arrangement.spacedBy(14.dp),
+                 modifier = Modifier.weight(1f)
+             ) {
+-                // Icon container with colored background
+-                Surface(
+-                    modifier = Modifier
+-                        .size(42.dp)
+-                        .clip(RoundedCornerShape(10.dp)),
+-                    color = iconTint.copy(alpha = 0.15f)
+-                ) {
+-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                        Icon(
+-                            icon, null,
+-                            tint = iconTint,
+-                            modifier = Modifier.size(20.dp)
+-                        )
+-                    }
+-                }
++                // Bare icon, no container — cleaner and more prominent
++                Icon(
++                    icon, null,
++                    tint = iconTint,
++                    modifier = Modifier.size(24.dp)
++                )
+                 // Label column
+                 Column(modifier = Modifier.weight(1f)) {
+                     Text(
+@@ -2737,21 +2714,12 @@
+                 horizontalArrangement = Arrangement.spacedBy(14.dp),
+                 modifier = Modifier.weight(1f)
+             ) {
+-                // Icon container with accent color
+-                Surface(
+-                    modifier = Modifier
+-                        .size(42.dp)
+-                        .clip(RoundedCornerShape(10.dp)),
+-                    color = AnanasAccent.copy(alpha = 0.15f)
+-                ) {
+-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                        Icon(
+-                            icon, null,
+-                            tint = AnanasAccent,
+-                            modifier = Modifier.size(20.dp)
+-                        )
+-                    }
+-                }
++                // Bare icon, no container — cleaner and more prominent
++                Icon(
++                    icon, null,
++                    tint = AnanasAccent,
++                    modifier = Modifier.size(24.dp)
++                )
+                 // Label column
+                 Column(modifier = Modifier.weight(1f)) {
+                     Text(
+@@ -3139,11 +3107,11 @@
+ @Composable
+ private fun AnanasIconButton(icon: ImageVector, onClick: () -> Unit) {
+     Box(
+-        Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+-            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(11.dp))
++        Modifier.size(38.dp)
++            .clip(CircleShape)
+             .clickable { onClick() },
+         contentAlignment = Alignment.Center
+-    ) { Icon(icon, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(18.dp)) }
++    ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
+ }
+ 
+ // ── Empty state (ANANAS styled) ─────────────────────────────────────────────────
