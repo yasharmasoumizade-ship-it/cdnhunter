@@ -119,6 +119,11 @@ val AnanasDivider  = Color(0xFF17171B)   // Divider
 val AnanasAccent   = Color(0xFF10B981)   // Modern green (improved from 0xFF4ADE9C)
 val AnanasAccentLight = Color(0xFF34D399)
 val AnanasAccentDark  = Color(0xFF059669)
+// Settings-only accent — dark blue-gray instead of the brand green, used for icon
+// tints, switches, and buttons inside SettingsScreen specifically. The brand green
+// stays everywhere else (power button, Connected state, flags, etc.).
+val AnanasSettingsAccent = Color(0xFF3B4A5A)
+val AnanasSettingsAccentLight = Color(0xFF56697D)
 val AnanasAmber    = Color(0xFFD97706)   // Warm amber
 val AnanasRed      = Color(0xFFEF4444)   // Modern red
 val AnanasBlue     = Color(0xFF3B82F6)   // Modern blue
@@ -2232,7 +2237,7 @@ private fun SettingsScreen(
                 Box(
                     Modifier.size(42.dp).clip(CircleShape).background(AnanasCard2).border(1.5.dp, Color(0xFF2A2C31), CircleShape),
                     contentAlignment = Alignment.Center
-                ) { Text("YM", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent) }
+                ) { Text("YM", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasSettingsAccentLight) }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Yashar M.", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
@@ -2255,7 +2260,7 @@ private fun SettingsScreen(
                 color = AnanasCard,
             ) {
                 Column {
-                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
+                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasSettingsAccentLight, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
                     Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
@@ -2281,7 +2286,7 @@ private fun SettingsScreen(
                         splitMode == "include" -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} only"
                         else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                     }
-                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasAccent, showChevron = true, onClick = onSplitTunnelClick)
+                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasSettingsAccentLight, showChevron = true, onClick = onSplitTunnelClick)
                 }
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 run {
@@ -2327,7 +2332,7 @@ private fun SettingsScreen(
                             Text(
                                 "Auto", fontSize = 12.sp,
                                 fontWeight = if (mtuMode == "auto") FontWeight.Bold else FontWeight.Medium,
-                                color = if (mtuMode == "auto") AnanasAccent else AnanasMuted,
+                                color = if (mtuMode == "auto") AnanasSettingsAccentLight else AnanasMuted,
                                 modifier = Modifier.clickable {
                                     mtuMode = "auto"
                                     showCustomInput = false
@@ -2338,7 +2343,7 @@ private fun SettingsScreen(
                             Text(
                                 "Custom", fontSize = 12.sp,
                                 fontWeight = if (mtuMode == "custom") FontWeight.Bold else FontWeight.Medium,
-                                color = if (mtuMode == "custom") AnanasAccent else AnanasMuted,
+                                color = if (mtuMode == "custom") AnanasSettingsAccentLight else AnanasMuted,
                                 modifier = Modifier.clickable {
                                     showCustomInput = !showCustomInput; mtuMode = "custom"
                                 }.padding(vertical = 4.dp)
@@ -2436,7 +2441,7 @@ private fun SettingsScreen(
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
-                                checkedTrackColor = AnanasAccent,
+                                checkedTrackColor = AnanasSettingsAccent,
                                 checkedBorderColor = Color.Transparent,
                                 uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
                                 uncheckedTrackColor = AnanasCard2,
@@ -2465,7 +2470,7 @@ private fun SettingsScreen(
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = AnanasCard2,
                                     unfocusedContainerColor = AnanasCard2,
-                                    focusedIndicatorColor = if (isPrimaryValid) AnanasAccent else AnanasRed,
+                                    focusedIndicatorColor = if (isPrimaryValid) AnanasSettingsAccentLight else AnanasRed,
                                     unfocusedIndicatorColor = if (isPrimaryValid) AnanasBorder else AnanasRed.copy(0.5f)
                                 ),
                                 singleLine = true,
@@ -2492,7 +2497,7 @@ private fun SettingsScreen(
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = AnanasCard2,
                                     unfocusedContainerColor = AnanasCard2,
-                                    focusedIndicatorColor = if (isSecondaryValid) AnanasAccent else AnanasRed,
+                                    focusedIndicatorColor = if (isSecondaryValid) AnanasSettingsAccentLight else AnanasRed,
                                     unfocusedIndicatorColor = if (isSecondaryValid) AnanasBorder else AnanasRed.copy(0.5f)
                                 ),
                                 singleLine = true,
@@ -2509,7 +2514,7 @@ private fun SettingsScreen(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(AnanasCard2.copy(0.5f)).padding(10.dp)
                             ) {
                                 Column {
-                                    Text("DNS Leak Protection", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent)
+                                    Text("DNS Leak Protection", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasSettingsAccentLight)
                                     Text("• All DNS queries are hijacked and routed through the tunnel", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 3.dp))
                                     Text("• DoH (HTTPS) is recommended for security", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
                                     Text("• Formats: IP, IP:port, https://... or quic://...", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
@@ -2532,7 +2537,7 @@ private fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Icon(Icons.Rounded.Terminal, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
+                    Icon(Icons.Rounded.Terminal, null, tint = AnanasSettingsAccentLight, modifier = Modifier.size(20.dp))
                     Column {
                         Text("Connection log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                         Text(
@@ -2570,14 +2575,15 @@ private fun SettingsScreen(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(
-                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasAccent)
+                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2)
+                                .border(1.dp, AnanasSettingsAccent.copy(alpha = 0.5f), RoundedCornerShape(9.dp))
                                 .clickable {
                                     val text = runCatching { crashFile.readText() }.getOrDefault("")
                                     clip.setText(AnnotatedString(text))
                                     android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasBg) }
+                        ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasText) }
                         Box(
                             Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
                                 .clickable { runCatching { crashFile.delete() } }
@@ -2607,7 +2613,7 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.weight(1f)
         ) {
-            Icon(icon, null, tint = iconTint, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = iconTint, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                 if (value != null) {
@@ -2635,7 +2641,7 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.weight(1f)
         ) {
-            Icon(icon, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = AnanasSettingsAccentLight, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                 Text(
@@ -2655,7 +2661,7 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = AnanasAccent,
+                checkedTrackColor = AnanasSettingsAccent,
                 checkedBorderColor = Color.Transparent,
                 uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
                 uncheckedTrackColor = AnanasCard2,
