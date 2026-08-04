@@ -119,6 +119,7 @@ val AnanasDivider  = Color(0xFF17171B)   // Divider
 val AnanasAccent   = Color(0xFF10B981)   // Modern green (improved from 0xFF4ADE9C)
 val AnanasAccentLight = Color(0xFF34D399)
 val AnanasAccentDark  = Color(0xFF059669)
+val AnanasSettingsIcon = Color(0xFFE4E6EA)   // Light, near-white tint for settings row icons
 val AnanasAmber    = Color(0xFFD97706)   // Warm amber
 val AnanasRed      = Color(0xFFEF4444)   // Modern red
 val AnanasBlue     = Color(0xFF3B82F6)   // Modern blue
@@ -2255,7 +2256,7 @@ private fun SettingsScreen(
                 color = AnanasCard,
             ) {
                 Column {
-                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasAccent, showChevron = true)
+                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasSettingsIcon, showChevron = true)
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 SettingsToggleRow(
                     Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
@@ -2281,7 +2282,7 @@ private fun SettingsScreen(
                         splitMode == "include" -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} only"
                         else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                     }
-                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasAccent, showChevron = true, onClick = onSplitTunnelClick)
+                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasSettingsIcon, showChevron = true, onClick = onSplitTunnelClick)
                 }
                 Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
                 run {
@@ -2635,7 +2636,7 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.weight(1f)
         ) {
-            Icon(icon, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = AnanasSettingsIcon, modifier = Modifier.size(24.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                 Text(
