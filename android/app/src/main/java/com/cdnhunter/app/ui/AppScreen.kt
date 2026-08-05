@@ -2537,21 +2537,13 @@ private fun SettingsScreen(
                             Text("Custom DNS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
                             Text("Use your own DNS servers", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
                         }
-                        Switch(
+                        MinimalToggle(
                             checked = customDnsEnabled,
                             onCheckedChange = {
                                 customDnsEnabled = it
                                 showDnsInputs = it
                                 AppSettings.setCustomDnsEnabled(context, it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = AnanasAccent,
-                                checkedBorderColor = Color.Transparent,
-                                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
-                                uncheckedTrackColor = AnanasCard2,
-                                uncheckedBorderColor = Color.Transparent
-                            )
+                            }
                         )
                     }
 
@@ -2759,18 +2751,48 @@ private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, ch
             }
         }
 
-        // Minimal switch: no scale bump, no outline ring — just a clean flat track.
-        Switch(
+        // Bespoke toggle — narrower capsule, soft drop shadow under the thumb,
+        // no Material ripple halo on tap. See MinimalToggle() below.
+        MinimalToggle(
             checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = AnanasAccent,
-                checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = AnanasMuted.copy(alpha = 0.5f),
-                uncheckedTrackColor = AnanasCard2,
-                uncheckedBorderColor = Color.Transparent
-            )
+            onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+// Hand-built toggle instead of Material3's Switch: a narrower capsule track
+// (44x24 vs Material's wider default), a plain white circular thumb carrying
+// its own soft drop shadow for a touch of depth, smooth 180ms slide + color
+// crossfade, and — critically — no ripple halo on tap (Switch always draws
+// one, which read as a stray flash on this dark background).
+@Composable
+private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) AnanasAccent else AnanasCard2,
+        animationSpec = tween(180), label = "toggleTrack"
+    )
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 22.dp else 2.dp,
+        animationSpec = tween(180, easing = FastOutSlowInEasing), label = "toggleThumb"
+    )
+    Box(
+        modifier
+            .width(44.dp)
+            .height(24.dp)
+            .clip(RoundedCornerShape(50))
+            .background(trackColor)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            Modifier
+                .padding(start = thumbOffset, top = 2.dp)
+                .size(20.dp)
+                .shadow(3.dp, CircleShape, clip = false)
+                .clip(CircleShape)
+                .background(Color.White)
         )
     }
 }
