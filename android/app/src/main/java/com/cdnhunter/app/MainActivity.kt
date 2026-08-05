@@ -52,25 +52,19 @@ fun MainContent(activity: MainActivity) {
 @Composable
 fun CDNHunterTheme(content: @Composable () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Read theme mode from AppSettings; default to System
-    val themeSetting = remember { AppSettings.theme(context) }
+    // The whole UI (every Ananas* color in AppScreen.kt) is hardcoded dark
+    // regardless of this theme -- the old Light/Auto option was removed from
+    // Settings, because the app was never actually designed to look right in
+    // a light scheme. Previously this still switched to lightColorScheme()
+    // whenever the PHONE's system theme was light (ThemeMode.SYSTEM ->
+    // isSystemInDarkTheme()), silently mismatching the always-dark UI.
+    // Material3's default ripple/indication color derives from the active
+    // color scheme's content color, so on a light-system phone every tap
+    // rendered a dark/near-black ripple box on top of visually dark rows --
+    // looked exactly like a rendering glitch ("black box on tap"). Always
+    // using the dark scheme here keeps it in sync with the UI that's
+    // actually drawn, regardless of the phone's own system theme.
     val amoledMode = remember { AppSettings.amoledMode(context) }
-    
-    // Convert string setting to ThemeMode enum
-    val themeMode = when (themeSetting) {
-        AppSettings.THEME_LIGHT  -> ThemeMode.LIGHT
-        AppSettings.THEME_DARK   -> ThemeMode.DARK
-        else                     -> ThemeMode.SYSTEM  // default & "system"
-    }
-    
-    // Determine if we should use dark colors
-    val isDarkTheme = when (themeMode) {
-        ThemeMode.DARK   -> true
-        ThemeMode.LIGHT  -> false
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-    }
-    
-    // Pick colors based on dark/light and AMOLED setting
     val darkColorScheme = darkColorScheme(
         primary = Color(0xFF3B82F6),
         onPrimary = Color.White,
@@ -84,26 +78,12 @@ fun CDNHunterTheme(content: @Composable () -> Unit) {
         onError = Color.White,
         outline = Color(0xFF222222),
     )
-    
-    val lightColorScheme = lightColorScheme(
-        primary = Color(0xFF3B82F6),
-        onPrimary = Color.White,
-        secondary = Color(0xFF8B5CF6),
-        onSecondary = Color.White,
-        background = Color(0xFFFAFAFA),
-        onBackground = Color(0xFF0A0A0A),
-        surface = Color(0xFFFFFFFF),
-        onSurface = Color(0xFF0A0A0A),
-        error = Color(0xFFDC2626),
-        onError = Color.White,
-        outline = Color(0xFFD4D4D8),
-    )
-    
+
     CompositionLocalProvider(
-        LocalThemeMode provides themeMode
+        LocalThemeMode provides ThemeMode.DARK
     ) {
         MaterialTheme(
-            colorScheme = if (isDarkTheme) darkColorScheme else lightColorScheme,
+            colorScheme = darkColorScheme,
             content = content
         )
     }

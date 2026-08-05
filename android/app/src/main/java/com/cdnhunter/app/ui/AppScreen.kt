@@ -457,7 +457,28 @@ private val countryNameToCode = mapOf(
     "IRELAND" to "IE", "INDONESIA" to "ID", "THAILAND" to "TH", "LUXEMBOURG" to "LU",
     "QATAR" to "QA", "EGYPT" to "EG", "MOROCCO" to "MA", "NEW ZEALAND" to "NZ",
 )
+// A flag emoji is a pair of Unicode Regional Indicator Symbols (U+1F1E6..
+// U+1F1FF, one per A-Z). Many subscription providers name servers with
+// ONLY a flag emoji ("\ud83c\udde9\ud83c\uddea 01") and no readable country name at all --
+// the text-based matching below can never catch those, which is why
+// imported subscription servers often showed no flag.
+private fun countryCodeFromFlagEmoji(title: String): String? {
+    val codePoints = title.codePoints().toArray()
+    for (i in 0 until codePoints.size - 1) {
+        val a = codePoints[i]
+        val b = codePoints[i + 1]
+        if (a in 0x1F1E6..0x1F1FF && b in 0x1F1E6..0x1F1FF) {
+            val c1 = 'A' + (a - 0x1F1E6)
+            val c2 = 'A' + (b - 0x1F1E6)
+            val code = "$c1$c2".lowercase()
+            if (flagSpecs.containsKey(code)) return code
+        }
+    }
+    return null
+}
+
 private fun countryCodeFromTitle(title: String): String? {
+    countryCodeFromFlagEmoji(title)?.let { return it }
     val normalized = title.uppercase()
         .replace(Regex("[^A-Z ]"), " ") // strip flag emoji, punctuation, digits
         .replace(Regex("\\s+"), " ")
@@ -803,9 +824,23 @@ private fun VpnTab() {
                 pingMonitorJobs[cfg.id] = launch {
                     try {
                         while (this.isActive && configs.find { it.id == cfg.id } != null) {
-                            val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
-                            if (newPing != cfg.pingMs) {
-                                configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
+                            // Skip re-measuring the currently active, connected server.
+                            // measurePingMs dials the raw backend address directly from
+                            // this app's own process (excluded from the VPN itself --
+                            // see addDisallowedApplication in CdnVpnService). For a
+                            // CDN-fronted/reality server that's often exactly the
+                            // address that's blocked or throttled when reached
+                            // directly, which is the whole reason it needs fronting
+                            // in the first place. Repeatedly failing that direct
+                            // probe once connected kept overwriting a perfectly good
+                            // last-known ping with -1, which is why the ping badge
+                            // visibly disappeared right after connecting.
+                            val isActiveConnected = cfg.id == activeId && connected
+                            if (!isActiveConnected) {
+                                val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
+                                if (newPing != cfg.pingMs) {
+                                    configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
+                                }
                             }
                             delay(3000)
                         }
@@ -1713,36 +1748,57 @@ private fun ServerListItem(
     val maxSwipePx = with(density) { -84.dp.toPx() }
 
     val rowContent = @Composable {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(if (isActive) AnanasAccent.copy(alpha = 0.06f) else Color.Transparent)
-                .clickable { onConnect(cfg) }
-                .padding(start = if (indented) 42.dp else 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            CountryFlagBadge(cfg.countryCode, 30.dp)
-
-            Column(Modifier.weight(1f)) {
-                Text(
-                    cfg.displayName,
-                    fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
-                    color = if (isActive) AnanasTextHi else AnanasText,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-                if (isActive && connected) {
-                    Text("Connected", fontSize = 11.sp, color = AnanasAccent)
-                }
-            }
-
-            // Static quality indicator (3-bar signal icon), not a live ping readout —
-            // Windscribe-style: reflects the last-known tier, doesn't imply an
-            // active measurement is happening on every recomposition.
-            if (cfg.pingMs >= 0) SignalBars(cfg.pingMs)
-
+        Box(Modifier.fillMaxWidth()) {
+            // Thin left accent bar instead of a full-row color wash. A flat
+            // green tint across the whole row (flag, text, everything) read
+            // as a muddy halo sitting on top of the flag's own glass sheen.
+            // A slim bar signals "this one" clearly without discoloring the
+            // row's content.
             if (isActive) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(AnanasAccent))
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(3.dp)
+                        .align(Alignment.CenterStart)
+                        .background(AnanasAccent, RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp))
+                )
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onConnect(cfg) }
+                    .padding(start = if (indented) 42.dp else 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CountryFlagBadge(cfg.countryCode, 30.dp)
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        cfg.displayName,
+                        fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+                        color = if (isActive) AnanasTextHi else AnanasText,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    if (isActive && connected) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Box(Modifier.size(5.dp).clip(CircleShape).background(AnanasAccent))
+                            Text(
+                                "CONNECTED", fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
+                                color = AnanasAccent, letterSpacing = 0.4.sp
+                            )
+                        }
+                    }
+                }
+
+                // Static quality indicator (3-bar signal icon), not a live ping readout —
+                // Windscribe-style: reflects the last-known tier, doesn't imply an
+                // active measurement is happening on every recomposition.
+                if (cfg.pingMs >= 0) SignalBars(cfg.pingMs)
             }
         }
     }
@@ -2160,8 +2216,15 @@ private fun LocationsScreen(
 @Composable
 private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     val chevronRotation by animateFloatAsState(if (expanded) 90f else 0f, label = "chevron")
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val rowInteraction = remember { MutableInteractionSource() }
+    val deleteInteraction = remember { MutableInteractionSource() }
+
     Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 14.dp),
+        Modifier
+            .fillMaxWidth()
+            .clickable(interactionSource = rowInteraction, indication = null) { onClick() }
+            .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -2176,14 +2239,16 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
             Text("$count server${if (count == 1) "" else "s"}", fontSize = 11.sp, color = AnanasMuted)
         }
         // The only delete affordance for an entire subscription — individual
-        // imported rows don't have their own. Icon sits toward the start of
-        // its box rather than dead-center, so it doesn't read as floating
-        // detached from the row's edge.
+        // imported rows don't have their own. indication = null on purpose:
+        // a plain clickable's default Material ripple can render as a flat
+        // black box depending on the active color scheme, which read as a
+        // rendering glitch rather than a button. Opens a confirmation dialog
+        // instead of deleting immediately.
         Box(
             Modifier
                 .size(30.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .clickable { onDelete() },
+                .clickable(interactionSource = deleteInteraction, indication = null) { showDeleteConfirm = true },
             contentAlignment = Alignment.CenterStart
         ) {
             Icon(
@@ -2194,6 +2259,50 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
         Icon(
             Icons.Rounded.ChevronRight, null, tint = AnanasFaint,
             modifier = Modifier.size(18.dp).rotate(chevronRotation)
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = AnanasCard,
+            shape = RoundedCornerShape(18.dp),
+            icon = {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(AnanasRed.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Rounded.Delete, null, tint = AnanasRed, modifier = Modifier.size(20.dp)) }
+            },
+            title = { Text("Remove subscription?", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi) },
+            text = {
+                Text(
+                    "\"$name\" and all $count of its server${if (count == 1) "" else "s"} will be removed. This can't be undone.",
+                    fontSize = 13.sp, color = AnanasMuted
+                )
+            },
+            confirmButton = {
+                Text(
+                    "Remove", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasRed,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            showDeleteConfirm = false
+                            onDelete()
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+            },
+            dismissButton = {
+                Text(
+                    "Cancel", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            showDeleteConfirm = false
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+            },
         )
     }
 }
