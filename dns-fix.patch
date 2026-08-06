@@ -1,0 +1,89 @@
+--- a/android/app/src/main/java/com/cdnhunter/app/vpn/AppSettings.kt
++++ b/android/app/src/main/java/com/cdnhunter/app/vpn/AppSettings.kt
+@@ -149,12 +149,17 @@
+         if (validated.size > 1) setSecondaryDns(ctx, validated[1])
+     }
+     
+-    // Primary DNS (e.g., 8.8.8.8 or https://8.8.8.8/dns-query)
+-    fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "8.8.8.8") ?: "8.8.8.8"
++    // Primary DNS (e.g., 8.8.8.8 or https://8.8.8.8/dns-query). Defaults to
++    // BLANK, not a real server — a non-blank default here used to mean
++    // customDnsServers() always returned a "custom" server the moment the
++    // toggle was flipped on, even if the user never typed anything. The
++    // input field's placeholder (see AppScreen.kt) shows an example value
++    // for guidance; it is not a silently-active default.
++    fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "") ?: ""
+     fun setPrimaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_PRIMARY_DNS, value.trim()).apply()
+     
+-    // Secondary DNS (e.g., 8.8.4.4 or https://8.8.4.4/dns-query) - optional
+-    fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "8.8.4.4") ?: "8.8.4.4"
++    // Secondary DNS (e.g., 8.8.4.4 or https://8.8.4.4/dns-query) - optional, same reasoning as primaryDns above.
++    fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "") ?: ""
+     fun setSecondaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_SECONDARY_DNS, value.trim()).apply()
+     
+     /**
+--- a/android/app/src/main/java/com/cdnhunter/app/vpn/VpnConfigBuilder.kt
++++ b/android/app/src/main/java/com/cdnhunter/app/vpn/VpnConfigBuilder.kt
+@@ -58,9 +58,10 @@
+         blockTrackers: Boolean = true, blockMalware: Boolean = true,
+         customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
+     ): String {
+-        // DNS nameservers: either user-provided custom servers, or default Cloudflare+Google
+-        // When using custom DNS, respect the DoH setting: if useDoh && custom server is IP,
+-        // user should provide https://... URLs; if DoH is off, provide plain IP:port or just IP.
++        // DNS nameservers: either user-provided custom servers, or default Google
++        // (8.8.8.8 / 8.8.4.4). When using custom DNS, respect the DoH setting:
++        // if useDoh && custom server is IP, user should provide https://... URLs;
++        // if DoH is off, provide plain IP:port or just IP.
+         // Validate custom DNS to prevent leaks: remove empty strings, warn invalid entries.
+         val validCustomDns = customDnsServers
+             .filter { it.isNotBlank() }
+@@ -82,11 +83,16 @@
+                 }
+             }
+         } else if (useDoh) {
+-            // DoH by default — TLS-wrapped, safe from ISP poisoning
+-            listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query")
++            // DoH by default — TLS-wrapped, safe from ISP poisoning.
++            // Google only (not Cloudflare+Google): a single provider means a
++            // deterministic, always-the-same-provider answer path instead of
++            // mihomo racing two different providers and returning whichever
++            // answers first — which is what made every dnsleaktest.com run
++            // show a different frontend IP/provider for no functional reason.
++            listOf("https://8.8.8.8/dns-query", "https://8.8.4.4/dns-query")
+         } else {
+             // Plain DNS fallback — only if user explicitly disables DoH
+-            listOf("1.1.1.1:53", "8.8.8.8:53")
++            listOf("8.8.8.8:53", "8.8.4.4:53")
+         }
+         
+         val root = linkedMapOf<String, Any>(
+@@ -117,7 +123,7 @@
+                 "fake-ip-filter" to listOf("*.lan", "localhost.ptlogin2.qq.com"),
+                 // default-nameserver stays plain IP (bootstrap only, used if a
+                 // nameserver entry below were ever a hostname instead of an IP).
+-                "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
++                "default-nameserver" to listOf("8.8.8.8", "8.8.4.4"),
+                 // ===== DNS CONFIGURATION =====
+                 // IMPORTANT: System DoH (Android Settings > Private DNS) can BYPASS the VPN!
+                 // 
+--- a/android/app/src/main/java/com/cdnhunter/app/vpn/CdnVpnService.kt
++++ b/android/app/src/main/java/com/cdnhunter/app/vpn/CdnVpnService.kt
+@@ -604,12 +604,14 @@
+             // provider the user never chose, which reads as "leaking" even though
+             // it's tunneled. addDnsServer() only accepts a literal IP (not a
+             // https://.../dns-query URL) — extractDnsIp pulls one out of whatever
+-            // format the user's custom entry is in, or falls back to Cloudflare.
++            // format the user's custom entry is in, or falls back to Google
++            // (matches VpnConfigBuilder's own Google-only default — see there for
++            // why this stopped being Cloudflare+Google).
+             val dnsServers = if (AppSettings.customDnsEnabled(this)) {
+                 AppSettings.customDnsServers(this).mapNotNull { extractDnsIp(it) }.take(2)
+-                    .ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
++                    .ifEmpty { listOf("8.8.8.8", "8.8.4.4") }
+             } else {
+-                listOf("1.1.1.1", "8.8.8.8")
++                listOf("8.8.8.8", "8.8.4.4")
+             }
+             val builder = Builder()
+                 .setSession("CDN Hunter VPN")

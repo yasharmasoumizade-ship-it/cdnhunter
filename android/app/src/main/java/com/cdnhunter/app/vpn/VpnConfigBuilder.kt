@@ -58,9 +58,10 @@ object VpnConfigBuilder {
         blockTrackers: Boolean = true, blockMalware: Boolean = true,
         customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
     ): String {
-        // DNS nameservers: either user-provided custom servers, or default Cloudflare+Google
-        // When using custom DNS, respect the DoH setting: if useDoh && custom server is IP,
-        // user should provide https://... URLs; if DoH is off, provide plain IP:port or just IP.
+        // DNS nameservers: either user-provided custom servers, or default Google
+        // (8.8.8.8 / 8.8.4.4). When using custom DNS, respect the DoH setting:
+        // if useDoh && custom server is IP, user should provide https://... URLs;
+        // if DoH is off, provide plain IP:port or just IP.
         // Validate custom DNS to prevent leaks: remove empty strings, warn invalid entries.
         val validCustomDns = customDnsServers
             .filter { it.isNotBlank() }
@@ -82,11 +83,16 @@ object VpnConfigBuilder {
                 }
             }
         } else if (useDoh) {
-            // DoH by default — TLS-wrapped, safe from ISP poisoning
-            listOf("https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query")
+            // DoH by default — TLS-wrapped, safe from ISP poisoning.
+            // Google only (not Cloudflare+Google): a single provider means a
+            // deterministic, always-the-same-provider answer path instead of
+            // mihomo racing two different providers and returning whichever
+            // answers first — which is what made every dnsleaktest.com run
+            // show a different frontend IP/provider for no functional reason.
+            listOf("https://8.8.8.8/dns-query", "https://8.8.4.4/dns-query")
         } else {
             // Plain DNS fallback — only if user explicitly disables DoH
-            listOf("1.1.1.1:53", "8.8.8.8:53")
+            listOf("8.8.8.8:53", "8.8.4.4:53")
         }
         
         val root = linkedMapOf<String, Any>(
@@ -117,7 +123,7 @@ object VpnConfigBuilder {
                 "fake-ip-filter" to listOf("*.lan", "localhost.ptlogin2.qq.com"),
                 // default-nameserver stays plain IP (bootstrap only, used if a
                 // nameserver entry below were ever a hostname instead of an IP).
-                "default-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
+                "default-nameserver" to listOf("8.8.8.8", "8.8.4.4"),
                 // ===== DNS CONFIGURATION =====
                 // IMPORTANT: System DoH (Android Settings > Private DNS) can BYPASS the VPN!
                 // 

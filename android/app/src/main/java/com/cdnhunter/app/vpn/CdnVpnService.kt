@@ -604,12 +604,14 @@ class CdnVpnService : VpnService() {
             // provider the user never chose, which reads as "leaking" even though
             // it's tunneled. addDnsServer() only accepts a literal IP (not a
             // https://.../dns-query URL) — extractDnsIp pulls one out of whatever
-            // format the user's custom entry is in, or falls back to Cloudflare.
+            // format the user's custom entry is in, or falls back to Google
+            // (matches VpnConfigBuilder's own Google-only default — see there for
+            // why this stopped being Cloudflare+Google).
             val dnsServers = if (AppSettings.customDnsEnabled(this)) {
                 AppSettings.customDnsServers(this).mapNotNull { extractDnsIp(it) }.take(2)
-                    .ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
+                    .ifEmpty { listOf("8.8.8.8", "8.8.4.4") }
             } else {
-                listOf("1.1.1.1", "8.8.8.8")
+                listOf("8.8.8.8", "8.8.4.4")
             }
             val builder = Builder()
                 .setSession("CDN Hunter VPN")

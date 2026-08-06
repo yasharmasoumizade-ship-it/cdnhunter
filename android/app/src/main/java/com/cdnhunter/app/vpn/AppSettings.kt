@@ -149,12 +149,17 @@ object AppSettings {
         if (validated.size > 1) setSecondaryDns(ctx, validated[1])
     }
     
-    // Primary DNS (e.g., 8.8.8.8 or https://8.8.8.8/dns-query)
-    fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "8.8.8.8") ?: "8.8.8.8"
+    // Primary DNS (e.g., 8.8.8.8 or https://8.8.8.8/dns-query). Defaults to
+    // BLANK, not a real server — a non-blank default here used to mean
+    // customDnsServers() always returned a "custom" server the moment the
+    // toggle was flipped on, even if the user never typed anything. The
+    // input field's placeholder (see AppScreen.kt) shows an example value
+    // for guidance; it is not a silently-active default.
+    fun primaryDns(ctx: Context): String = prefs(ctx).getString(KEY_PRIMARY_DNS, "") ?: ""
     fun setPrimaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_PRIMARY_DNS, value.trim()).apply()
     
-    // Secondary DNS (e.g., 8.8.4.4 or https://8.8.4.4/dns-query) - optional
-    fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "8.8.4.4") ?: "8.8.4.4"
+    // Secondary DNS (e.g., 8.8.4.4 or https://8.8.4.4/dns-query) - optional, same reasoning as primaryDns above.
+    fun secondaryDns(ctx: Context): String = prefs(ctx).getString(KEY_SECONDARY_DNS, "") ?: ""
     fun setSecondaryDns(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_SECONDARY_DNS, value.trim()).apply()
     
     /**
