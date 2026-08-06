@@ -124,6 +124,20 @@ object VpnConfigBuilder {
                 // default-nameserver stays plain IP (bootstrap only, used if a
                 // nameserver entry below were ever a hostname instead of an IP).
                 "default-nameserver" to listOf("8.8.8.8", "8.8.4.4"),
+                // ===== respect-rules / proxy-server-nameserver =====
+                // Without this, mihomo's own DNS client NEVER goes through the
+                // rule engine / proxy chain — it always dials the configured
+                // `nameserver` entries DIRECT (only protect()-ed against the tun
+                // loop, nothing else). That was the actual DNS leak: the query
+                // itself — encrypted DoH or not — went straight from the device
+                // to Google, bypassing the user's chosen proxy server entirely,
+                // fully visible/interceptable to the local network/ISP as a
+                // direct connection. respect-rules makes DNS queries go through
+                // the same `rules:` matching as everything else (MATCH,PROXY),
+                // which is why proxy-server-nameserver must be set too — mihomo
+                // refuses to start with respect-rules on and this empty.
+                "respect-rules" to true,
+                "proxy-server-nameserver" to nameservers,
                 // ===== DNS CONFIGURATION =====
                 // IMPORTANT: System DoH (Android Settings > Private DNS) can BYPASS the VPN!
                 // 
