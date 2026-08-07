@@ -302,6 +302,41 @@ object VpnConfigBuilder {
                 add("IP-CIDR,192.168.0.0/16,DIRECT")
                 add("IP-CIDR,169.254.0.0/16,DIRECT")
                 add("IP-CIDR,127.0.0.0/8,DIRECT")
+                // Known DoH/DoT provider IPs -- catches direct-to-IP DNS bypass
+                // attempts with no hostname/SNI at all for the sniffer to see
+                // (e.g. an app hardcoded to dial 8.8.8.8:443 or 1.1.1.1:853
+                // instead of resolving a DoH hostname first).
+                add("IP-CIDR,8.8.8.8/32,REJECT")
+                add("IP-CIDR,8.8.4.4/32,REJECT")
+                add("IP-CIDR,1.1.1.1/32,REJECT")
+                add("IP-CIDR,1.0.0.1/32,REJECT")
+                add("IP-CIDR,9.9.9.9/32,REJECT")
+                add("IP-CIDR,149.112.112.112/32,REJECT")
+                add("IP-CIDR,208.67.222.222/32,REJECT")
+                add("IP-CIDR,208.67.220.220/32,REJECT")
+                // Known DoH/DoT provider hostnames -- REJECT before anything else.
+                // sniffer (enabled above) extracts these from the TLS SNI of the
+                // HTTPS/DoT connection itself, so this catches an app dialing a
+                // DoH endpoint directly even though mihomo's own DNS client never
+                // saw a query for it (the actual DNS-leak-around-TUN case: plain
+                // dns-hijack only catches :53/:853 traffic that LOOKS like DNS at
+                // the transport level, not an HTTPS connection to a DoH host on
+                // :443 that looks identical to any other website until you read
+                // its SNI). Rejecting forces the app's own fallback path to the
+                // system resolver, which dns-hijack already fully controls.
+                add("DOMAIN,dns.google,REJECT")
+                add("DOMAIN,dns.google.com,REJECT")
+                add("DOMAIN,cloudflare-dns.com,REJECT")
+                add("DOMAIN,mozilla.cloudflare-dns.com,REJECT")
+                add("DOMAIN,dns.quad9.net,REJECT")
+                add("DOMAIN,doh.opendns.com,REJECT")
+                add("DOMAIN,dns.adguard.com,REJECT")
+                add("DOMAIN,doh.dns.sb,REJECT")
+                add("DOMAIN,dns.alidns.com,REJECT")
+                add("DOMAIN,doh.pub,REJECT")
+                add("DOMAIN,dns.nextdns.io,REJECT")
+                add("DOMAIN,ordns.he.net,REJECT")
+
                 // Ad/tracker/malware blocking — REJECT before anything else so
                 // the request dies on the device and never reaches the proxy.
                 // Only the rules for the providers that were actually added
