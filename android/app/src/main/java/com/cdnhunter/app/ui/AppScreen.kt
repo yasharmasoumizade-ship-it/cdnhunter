@@ -1439,10 +1439,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         infiniteRepeatable(tween(11000, easing = LinearEasing)), label = "t2")
     val t3 by infinite.animateFloat(0f, 1f,
         infiniteRepeatable(tween(13000, easing = LinearEasing)), label = "t3")
-    // Slow, gentle breathe: 0.82->0.96 (was 0.75->1.0) with a long 4s period
-    // so the brightness pulse is barely noticeable rather than a visible throb.
+    // Raised the floor: 0.82->0.96 read as faint for most of its cycle since
+    // the whole glow is multiplied by this. 0.95->1.0 keeps the same gentle
+    // pulse but the glow now stays essentially full-bright throughout instead
+    // of visibly dimming.
     val breathe by infinite.animateFloat(
-        0.82f, 0.96f,
+        0.95f, 1f,
         infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "breathe"
     )
@@ -1547,18 +1549,29 @@ private const val AURORA_AGSL = """
         aurora *= shimmer;
 
         float ringRadius = 0.64 + noise * 0.045;
-        float ringWidth = 0.038;
+        // Thinner core (0.038 -> 0.024) reads as a defined line instead of a
+        // soft haze; pow exponent raised 0.85 -> 0.6 so the mask climbs to
+        // full strength faster across that thinner band instead of trailing
+        // off gradually, which is what "کمرنگ" (faint) actually looks like
+        // up close on a thin ring.
+        float ringWidth = 0.024;
         float ringDist = abs(dist - ringRadius);
         float ringMask = smoothstep(ringWidth*1.5, 0.0, ringDist);
-        ringMask = pow(ringMask, 0.85);
+        ringMask = pow(ringMask, 0.6);
 
         float glowFalloff = smoothstep(1.0, ringRadius - 0.05, dist);
         float glowMask = pow(glowFalloff, 2.8);
 
-        float finalAlpha = (ringMask + glowMask * 0.55) * breathe;
+        // glowMask*0.55 -> *1.0: the outward glow was the main source of
+        // faintness, barely lifting above the dark button background at 0.55.
+        // clamped with min() since ringMask+glowMask can now exceed 1.
+        float finalAlpha = min(1.0, (ringMask + glowMask) * breathe);
         float buttonCutout = smoothstep(ringRadius - 0.012, ringRadius + 0.008, dist);
 
-        return half4(aurora * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
+        // Push the aurora color 20% over white-point before the alpha cutout
+        // (half4 clamps on output) for a hotter, more saturated core on the
+        // ring than the flat colorA/B/C mix gives at alpha 1.0 alone.
+        return half4(aurora * 1.2 * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
     }
 """
 
@@ -1593,34 +1606,39 @@ private fun AuroraCanvasGlow(
     modifier: Modifier = Modifier
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(278.dp).blur(26.dp)) {
+        // Less blur (26dp -> 16dp) so this outer layer doesn't wash out into a
+        // faint haze, alpha raised to nearly full so it actually contributes
+        // visible light instead of a barely-there tint.
+        Canvas(Modifier.size(278.dp).blur(16.dp)) {
             val stroke = 40.dp.toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA)),
                 startAngle = t1 * 360f, sweepAngle = 360f, useCenter = false,
-                alpha = 0.45f * breathe,
+                alpha = 0.8f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
-        Canvas(Modifier.size(252.dp).blur(14.dp)) {
+        Canvas(Modifier.size(252.dp).blur(8.dp)) {
             val stroke = 24.dp.toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB)),
                 startAngle = -t2 * 360f + 40f, sweepAngle = 300f, useCenter = false,
-                alpha = 0.55f * breathe,
+                alpha = 0.9f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
+        // Sharp core ring: no blur, thinner stroke (3dp), full alpha -- the
+        // one layer meant to read as a crisp line rather than glow.
         Canvas(Modifier.size(224.dp)) {
             val stroke = 3.dp.toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorA, colorB, colorA)),
                 startAngle = t3 * 360f, sweepAngle = 360f, useCenter = false,
-                alpha = 0.75f * breathe,
+                alpha = breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
