@@ -1454,14 +1454,15 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         },
         animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
     )
-    // Third stop per state, tonally between/around A and B (same hue family,
-    // not an unrelated new color) so the sweep reads as a genuine gradient
-    // with real depth instead of two flat colors fading into each other.
+    // Third stop per state, computed as the true HSL midpoint between colorA
+    // and colorB (not an arbitrary in-family color) so the sweep transitions
+    // through a tone that's actually ON the hue path between the other two,
+    // rather than sitting off to the side and reading as a mismatched jump.
     val colorC by animateColorAsState(
         targetValue = when {
-            connected -> Color(0xFF5EEAD4)
-            connecting -> Color(0xFFFF8A3C)
-            else -> Color(0xFF4FC3F7)
+            connected -> Color(0xFF39D8DD)
+            connecting -> Color(0xFFFF8C4B)
+            else -> Color(0xFF4D4CFF)
         },
         animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorC"
     )
