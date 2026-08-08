@@ -1426,15 +1426,24 @@ private fun VpnTab() {
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
+    // Multiple independent time counters at incommensurate rates. Because their
+    // periods (7s, 11s, 13s, 17s) are all prime relative to each other the
+    // combined pattern doesn't repeat for 7*11*13*17 ≈ 17,000 seconds -- it
+    // never visibly restarts. No single "rotation" uniform means no visible
+    // full-circle sweep, so there's no point where you see the aurora "lapping"
+    // back to where it started and producing an obvious loop artifact.
     val infinite = rememberInfiniteTransition(label = "power")
-    val rotation by infinite.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(11000, easing = LinearEasing)),
-        label = "auroraRotation"
-    )
+    val t1 by infinite.animateFloat(0f, 1f,
+        infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "t1")
+    val t2 by infinite.animateFloat(0f, 1f,
+        infiniteRepeatable(tween(11000, easing = LinearEasing)), label = "t2")
+    val t3 by infinite.animateFloat(0f, 1f,
+        infiniteRepeatable(tween(13000, easing = LinearEasing)), label = "t3")
+    // Slow, gentle breathe: 0.82->0.96 (was 0.75->1.0) with a long 4s period
+    // so the brightness pulse is barely noticeable rather than a visible throb.
     val breathe by infinite.animateFloat(
-        0.75f, 1f,
-        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        0.82f, 0.96f,
+        infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "breathe"
     )
 
@@ -1454,10 +1463,6 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         },
         animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
     )
-    // Third stop per state, computed as the true HSL midpoint between colorA
-    // and colorB (not an arbitrary in-family color) so the sweep transitions
-    // through a tone that's actually ON the hue path between the other two,
-    // rather than sitting off to the side and reading as a mismatched jump.
     val colorC by animateColorAsState(
         targetValue = when {
             connected -> Color(0xFF39D8DD)
@@ -1470,35 +1475,20 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        // Aurora glow ring behind the button. Ported from a hand-authored GLSL
-        // fragment shader (rotating angular sweep + sine-blended two-color aurora,
-        // thin ring at radius 0.66, glow falloff = pow(smoothstep, 2.5), breathing
-        // 87.5%-100%, hard circular cutout so nothing ever escapes the disc).
-        // Real AGSL RuntimeShader on API 33+ for pixel-accurate rendering; a Canvas
-        // approximation of the same math below API 33 where RuntimeShader doesn't exist.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             AuroraShaderGlow(
                 colorA = colorA, colorB = colorB, colorC = colorC,
-                rotationDeg = rotation, breathe = breathe,
+                t1 = t1, t2 = t2, t3 = t3, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
         } else {
             AuroraCanvasGlow(
                 colorA = colorA, colorB = colorB, colorC = colorC,
-                rotationDeg = rotation, breathe = breathe,
+                t1 = t1, t2 = t2, t3 = t3, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
         }
-        // No spinner anymore -- the aurora glow's own color sweep (amber while
-        // connecting) plus the icon's matching color transition below already
-        // communicate "in progress" without a separate ring.
         Box(
-            // Scale now lives on the OUTER Box above, applied to the glow and
-            // this button together -- previously only this inner box scaled
-            // down on press while the 280dp glow stayed full-size, opening a
-            // gap that briefly exposed the glow's own bright inner edge (the
-            // "line" between the button and the light). Locked together, they
-            // shrink and grow in lockstep so there's never a gap to see.
             Modifier.size(200.dp).clip(CircleShape)
                 .background(
                     Brush.linearGradient(
@@ -1509,15 +1499,10 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
                 .clickable(
                     enabled = !connecting,
                     interactionSource = interactionSource,
-                    indication = null, // press-scale is already the touch feedback; the
-                    // default ripple's own radial sweep was compounding with it.
+                    indication = null,
                 ) { onClick() },
             contentAlignment = Alignment.Center
         ) {
-            // Same colorA driving the aurora glow above, so the icon and the ring
-            // always land on the same hue at the same moment instead of the icon
-            // hard-cutting to a different color the instant connecting flips --
-            // one animated color, two places using it.
             Icon(Icons.Rounded.PowerSettingsNew, null,
                 tint = colorA,
                 modifier = Modifier.size(64.dp))
@@ -1525,18 +1510,12 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     }
 }
 
-// AGSL port of the Stitch-generated fragment shader, since expanded for a more
-// organic/irregular look. Uniforms/logic:
-// angular sweep sine-blend across 3 colors, ring radius DISTORTED per-angle by
-// layered sine harmonics (a hand-rolled pseudo-noise -- AGSL has no builtin noise
-// function) at different frequencies/speeds so the ring reads as an irregular,
-// living aurora blob instead of a perfect circle. Wider/stronger outer glow
-// falloff for more color spread, breathing pulse 0.875-1.0, hard cutout at the
-// (now-wavy) ring radius so the glow never bleeds past the button's own edge.
 private const val AURORA_AGSL = """
     uniform float2 resolution;
-    uniform float rotation;   // radians
-    uniform float breathe;    // 0.75..1.0
+    uniform float t1;
+    uniform float t2;
+    uniform float t3;
+    uniform float breathe;
     uniform float4 colorA;
     uniform float4 colorB;
     uniform float4 colorC;
@@ -1546,78 +1525,60 @@ private const val AURORA_AGSL = """
         uv.x *= resolution.x / resolution.y;
 
         float dist = length(uv);
-        float angle = atan(uv.y, uv.x) + rotation;
+        float angle = atan(uv.y, uv.x);
 
-        // Layered sine harmonics at incommensurate frequencies/speeds -- a
-        // cheap stand-in for real simplex noise (AGSL has no builtin noise()).
-        // Summing several out-of-phase waves running at different rates means
-        // the combined pattern never repeats in an obviously periodic way and
-        // reads as organic turbulence rather than a clean wobble.
-        float noise = sin(angle * 3.0 + rotation * 2.3) * 0.5
-                    + sin(angle * 5.0 - rotation * 1.6) * 0.3
-                    + sin(angle * 7.3 + rotation * 3.1) * 0.2
-                    + sin(angle * 11.0 - rotation * 0.7) * 0.12;
+        float a1 = angle * 3.0 + t1 * 6.28;
+        float a2 = angle * 5.0 - t2 * 6.28 * 0.7;
+        float a3 = angle * 7.3 + t3 * 6.28 * 1.1;
+        float a4 = angle * 11.0 + (t1 - t2) * 6.28 * 0.4;
+        float a5 = angle * 2.0 - t3 * 6.28 * 0.3 + t1 * 2.1;
+        float noise = sin(a1)*0.024 + sin(a2)*0.018 + sin(a3)*0.012
+                    + sin(a4)*0.008 + sin(a5)*0.016;
 
-        // Sweep across 3 colors, driven by angle blended with the same noise
-        // so the color transition boundary is also irregular (not a clean
-        // sinusoidal split) -- color and shape distortion move together.
-        float sweepRaw = 0.5 + 0.5 * sin(angle + noise * 0.6);
+        float sweepRaw = 0.5 + 0.5 * sin(angle + t1*6.28*0.5 + noise*4.0);
         float sweep = smoothstep(0.0, 1.0, sweepRaw);
         float3 aurora;
         if (sweep < 0.5) {
-            aurora = mix(colorA.rgb, colorB.rgb, smoothstep(0.0, 1.0, sweep * 2.0));
+            aurora = mix(colorA.rgb, colorB.rgb, smoothstep(0.0, 1.0, sweep*2.0));
         } else {
-            aurora = mix(colorB.rgb, colorC.rgb, smoothstep(0.0, 1.0, (sweep - 0.5) * 2.0));
+            aurora = mix(colorB.rgb, colorC.rgb, smoothstep(0.0, 1.0, (sweep-0.5)*2.0));
         }
-        float shimmer = 0.88 + 0.16 * sin(angle * 4.0 + rotation * 2.1 + noise);
+        float shimmer = 0.92 + 0.08 * sin(angle*4.0 + t2*6.28*0.8 + noise*2.0);
         aurora *= shimmer;
 
-        // Ring radius distorted by the noise field instead of a fixed value --
-        // this is what actually breaks the perfect-circle look. Distortion
-        // amplitude (0.09) is large enough to read as clearly irregular
-        // without pinching the ring closed anywhere.
-        float ringRadius = 0.64 + noise * 0.09;
-        float ringWidth = 0.045; // wider than before -- more color mass, less thin wire
+        float ringRadius = 0.64 + noise * 0.045;
+        float ringWidth = 0.038;
         float ringDist = abs(dist - ringRadius);
-        float ringMask = smoothstep(ringWidth * 1.6, 0.0, ringDist);
-        ringMask = pow(ringMask, 0.8);
+        float ringMask = smoothstep(ringWidth*1.5, 0.0, ringDist);
+        ringMask = pow(ringMask, 0.85);
 
-        // Wider, stronger outer glow -- more color spread beyond the ring
-        // itself instead of a tight falloff right at its edge. Falloff must
-        // fully reach zero by dist=1.0 (the canvas box's own edge along its
-        // cardinal directions) or the glow gets visibly clipped by the box
-        // boundary instead of fading out cleanly before reaching it.
         float glowFalloff = smoothstep(1.0, ringRadius - 0.05, dist);
-        float glowMask = pow(glowFalloff, 1.8);
+        float glowMask = pow(glowFalloff, 2.8);
 
-        float finalAlpha = (ringMask + glowMask * 0.85) * breathe;
-        float buttonCutout = smoothstep(ringRadius - 0.015, ringRadius + 0.01, dist);
+        float finalAlpha = (ringMask + glowMask * 0.55) * breathe;
+        float buttonCutout = smoothstep(ringRadius - 0.012, ringRadius + 0.008, dist);
 
         return half4(aurora * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
     }
 """
 
 @Composable
-private fun AuroraShaderGlow(colorA: Color, colorB: Color, colorC: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraShaderGlow(
+    colorA: Color, colorB: Color, colorC: Color,
+    t1: Float, t2: Float, t3: Float, breathe: Float,
+    modifier: Modifier = Modifier
+) {
     val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
     Canvas(modifier) {
-        val w = size.width
-        val h = size.height
+        val w = size.width; val h = size.height
         shader.setFloatUniform("resolution", w, h)
-        shader.setFloatUniform("rotation", Math.toRadians(rotationDeg.toDouble()).toFloat())
+        shader.setFloatUniform("t1", t1)
+        shader.setFloatUniform("t2", t2)
+        shader.setFloatUniform("t3", t3)
         shader.setFloatUniform("breathe", breathe)
-        shader.setFloatUniform(
-            "colorA",
-            colorA.red, colorA.green, colorA.blue, 1f
-        )
-        shader.setFloatUniform(
-            "colorB",
-            colorB.red, colorB.green, colorB.blue, 1f
-        )
-        shader.setFloatUniform(
-            "colorC",
-            colorC.red, colorC.green, colorC.blue, 1f
-        )
+        shader.setFloatUniform("colorA", colorA.red, colorA.green, colorA.blue, 1f)
+        shader.setFloatUniform("colorB", colorB.red, colorB.green, colorB.blue, 1f)
+        shader.setFloatUniform("colorC", colorC.red, colorC.green, colorC.blue, 1f)
         drawContext.canvas.nativeCanvas.apply {
             val paint = android.graphics.Paint().apply { this.shader = shader }
             drawRect(0f, 0f, w, h, paint)
@@ -1625,50 +1586,43 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, colorC: Color, rotati
     }
 }
 
-// Canvas approximation of the same shader for API < 33 (no RuntimeShader support):
-// a static (non-rotating-Canvas, so no bounding-box drift) blurred ring whose
-// rotation is expressed via drawArc's startAngle, plus a crisp ring on top —
-// same visual language (rotating two-color sweep, contained circular glow,
-// breathing opacity) without per-pixel shader math.
 @Composable
-private fun AuroraCanvasGlow(colorA: Color, colorB: Color, colorC: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraCanvasGlow(
+    colorA: Color, colorB: Color, colorC: Color,
+    t1: Float, t2: Float, t3: Float, breathe: Float,
+    modifier: Modifier = Modifier
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        // Outer wide halo -- biggest blur, widest spread, slowest independent
-        // rotation offset so it visibly drifts out of sync with the layers below.
         Canvas(Modifier.size(278.dp).blur(26.dp)) {
-            val stroke = 46.dp.toPx()
+            val stroke = 40.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA, colorB, colorC, colorA)),
-                startAngle = rotationDeg * 0.7f, sweepAngle = 360f, useCenter = false,
-                alpha = 0.55f * breathe,
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA)),
+                startAngle = t1 * 360f, sweepAngle = 360f, useCenter = false,
+                alpha = 0.45f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
+                topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
-        // Mid layer -- runs at a different rotation speed/direction and a
-        // slightly different radius than the outer/inner layers, so the three
-        // never stay aligned and the combined shape reads as irregular rather
-        // than three perfectly concentric rings.
         Canvas(Modifier.size(252.dp).blur(14.dp)) {
-            val stroke = 30.dp.toPx()
+            val stroke = 24.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB, colorC, colorA)),
-                startAngle = -rotationDeg * 1.3f + 40f, sweepAngle = 300f, useCenter = false,
-                alpha = 0.7f * breathe,
+                brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB)),
+                startAngle = -t2 * 360f + 40f, sweepAngle = 300f, useCenter = false,
+                alpha = 0.55f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
+                topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
         Canvas(Modifier.size(224.dp)) {
-            val stroke = 4.dp.toPx()
+            val stroke = 3.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
-                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.9f * breathe,
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA)),
+                startAngle = t3 * 360f, sweepAngle = 360f, useCenter = false,
+                alpha = 0.75f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke / 2, stroke / 2),
+                topLeft = Offset(stroke/2, stroke/2),
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
