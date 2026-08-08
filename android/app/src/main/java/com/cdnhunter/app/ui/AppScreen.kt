@@ -1220,7 +1220,11 @@ private fun VpnTab() {
                                             // warm and subtle, not a bright/flashy highlight.
                                             .background(
                                                 Brush.radialGradient(
-                                                    colors = listOf(Color(0xFFD4AF6A).copy(alpha = 0.07f), Color.Transparent),
+                                                    colors = listOf(
+                                                        Color(0xFFD4AF6A).copy(alpha = 0.07f),
+                                                        Color(0xFFD4AF6A).copy(alpha = 0.03f),
+                                                        Color.Transparent
+                                                    ),
                                                     center = Offset(0f, 0f),
                                                     radius = 420f,
                                                 )
@@ -1236,6 +1240,7 @@ private fun VpnTab() {
                                                 Brush.radialGradient(
                                                     colors = listOf(
                                                         cardGlowColor.copy(alpha = 0.10f * cardGlowBreathe),
+                                                        cardGlowColor.copy(alpha = 0.045f * cardGlowBreathe),
                                                         Color.Transparent
                                                     ),
                                                     center = Offset(cardSizePx.width.toFloat(), cardSizePx.height.toFloat()),
@@ -1449,6 +1454,17 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         },
         animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
     )
+    // Third stop per state, tonally between/around A and B (same hue family,
+    // not an unrelated new color) so the sweep reads as a genuine gradient
+    // with real depth instead of two flat colors fading into each other.
+    val colorC by animateColorAsState(
+        targetValue = when {
+            connected -> Color(0xFF5EEAD4)
+            connecting -> Color(0xFFFF8A3C)
+            else -> Color(0xFF4FC3F7)
+        },
+        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorC"
+    )
 
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -1461,13 +1477,13 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
         // approximation of the same math below API 33 where RuntimeShader doesn't exist.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             AuroraShaderGlow(
-                colorA = colorA, colorB = colorB,
+                colorA = colorA, colorB = colorB, colorC = colorC,
                 rotationDeg = rotation, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
         } else {
             AuroraCanvasGlow(
-                colorA = colorA, colorB = colorB,
+                colorA = colorA, colorB = colorB, colorC = colorC,
                 rotationDeg = rotation, breathe = breathe,
                 modifier = Modifier.size(280.dp)
             )
@@ -1518,6 +1534,7 @@ private const val AURORA_AGSL = """
     uniform float breathe;    // 0.75..1.0
     uniform float4 colorA;
     uniform float4 colorB;
+    uniform float4 colorC;
 
     half4 main(float2 fragCoord) {
         float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
@@ -1525,12 +1542,35 @@ private const val AURORA_AGSL = """
 
         float dist = length(uv);
         float angle = atan(uv.y, uv.x) + rotation;
-        float sweep = 0.5 + 0.5 * sin(angle);
-        float3 aurora = mix(colorA.rgb, colorB.rgb, sweep);
+
+        // Three-stop blend instead of a flat two-color mix: smoothstep-eased
+        // sweep (not raw sin) avoids visible banding at the color transition,
+        // and the extra midpoint color gives the sweep real depth instead of
+        // reading as one hue fading into another in a single flat step.
+        float sweepRaw = 0.5 + 0.5 * sin(angle);
+        float sweep = smoothstep(0.0, 1.0, sweepRaw);
+        float3 aurora;
+        if (sweep < 0.5) {
+            aurora = mix(colorA.rgb, colorB.rgb, smoothstep(0.0, 1.0, sweep * 2.0));
+        } else {
+            aurora = mix(colorB.rgb, colorC.rgb, smoothstep(0.0, 1.0, (sweep - 0.5) * 2.0));
+        }
+        // Subtle per-pixel luminance lift synced to the same angle so the
+        // ring has a soft internal brightness wave rather than perfectly
+        // flat intensity all the way around -- reads as genuine light
+        // rather than a flat-colored stroke.
+        float shimmer = 0.92 + 0.08 * sin(angle * 3.0 + rotation * 1.7);
+        aurora *= shimmer;
 
         float ringRadius = 0.66;
         float ringWidth = 0.03;
-        float ringMask = smoothstep(ringWidth, 0.0, abs(dist - ringRadius));
+        // Softer falloff on both sides of the ring core (was a single
+        // smoothstep from ringWidth->0, giving a slightly hard inner edge)
+        // -- gives the ring a rounder, more luminous cross-section instead
+        // of a flat-topped stroke.
+        float ringDist = abs(dist - ringRadius);
+        float ringMask = smoothstep(ringWidth * 1.4, 0.0, ringDist);
+        ringMask = pow(ringMask, 0.85); // gentle gamma lift keeps the core bright without over-widening it
 
         float glowFalloff = smoothstep(1.0, ringRadius, dist);
         float glowMask = pow(glowFalloff, 2.5);
@@ -1543,7 +1583,7 @@ private const val AURORA_AGSL = """
 """
 
 @Composable
-private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraShaderGlow(colorA: Color, colorB: Color, colorC: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
     val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
     Canvas(modifier) {
         val w = size.width
@@ -1559,6 +1599,10 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
             "colorB",
             colorB.red, colorB.green, colorB.blue, 1f
         )
+        shader.setFloatUniform(
+            "colorC",
+            colorC.red, colorC.green, colorC.blue, 1f
+        )
         drawContext.canvas.nativeCanvas.apply {
             val paint = android.graphics.Paint().apply { this.shader = shader }
             drawRect(0f, 0f, w, h, paint)
@@ -1572,12 +1616,12 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, rotationDeg: Float, b
 // same visual language (rotating two-color sweep, contained circular glow,
 // breathing opacity) without per-pixel shader math.
 @Composable
-private fun AuroraCanvasGlow(colorA: Color, colorB: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
+private fun AuroraCanvasGlow(colorA: Color, colorB: Color, colorC: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(266.dp).blur(18.dp)) {
             val stroke = 34.dp.toPx()
             drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA, colorB, colorA)),
+                brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA, colorB, colorC, colorA)),
                 startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
                 alpha = 0.85f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
