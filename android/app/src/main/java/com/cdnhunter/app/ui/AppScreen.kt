@@ -1583,8 +1583,11 @@ private const val AURORA_AGSL = """
         ringMask = pow(ringMask, 0.8);
 
         // Wider, stronger outer glow -- more color spread beyond the ring
-        // itself instead of a tight falloff right at its edge.
-        float glowFalloff = smoothstep(1.15, ringRadius - 0.05, dist);
+        // itself instead of a tight falloff right at its edge. Falloff must
+        // fully reach zero by dist=1.0 (the canvas box's own edge along its
+        // cardinal directions) or the glow gets visibly clipped by the box
+        // boundary instead of fading out cleanly before reaching it.
+        float glowFalloff = smoothstep(1.0, ringRadius - 0.05, dist);
         float glowMask = pow(glowFalloff, 1.8);
 
         float finalAlpha = (ringMask + glowMask * 0.85) * breathe;
