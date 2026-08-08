@@ -1525,10 +1525,14 @@ private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> 
     }
 }
 
-// AGSL port of the Stitch-generated fragment shader. Uniforms/logic mirror it 1:1:
-// angular sweep sine-blend between two colors, thin ring at r=0.66 (w=0.03),
-// outer glow = pow(smoothstep(1.0, r, dist), 2.5), breathing pulse 0.875-1.0,
-// hard cutout at the ring radius so the glow never bleeds past a perfect circle.
+// AGSL port of the Stitch-generated fragment shader, since expanded for a more
+// organic/irregular look. Uniforms/logic:
+// angular sweep sine-blend across 3 colors, ring radius DISTORTED per-angle by
+// layered sine harmonics (a hand-rolled pseudo-noise -- AGSL has no builtin noise
+// function) at different frequencies/speeds so the ring reads as an irregular,
+// living aurora blob instead of a perfect circle. Wider/stronger outer glow
+// falloff for more color spread, breathing pulse 0.875-1.0, hard cutout at the
+// (now-wavy) ring radius so the glow never bleeds past the button's own edge.
 private const val AURORA_AGSL = """
     uniform float2 resolution;
     uniform float rotation;   // radians
@@ -1544,11 +1548,20 @@ private const val AURORA_AGSL = """
         float dist = length(uv);
         float angle = atan(uv.y, uv.x) + rotation;
 
-        // Three-stop blend instead of a flat two-color mix: smoothstep-eased
-        // sweep (not raw sin) avoids visible banding at the color transition,
-        // and the extra midpoint color gives the sweep real depth instead of
-        // reading as one hue fading into another in a single flat step.
-        float sweepRaw = 0.5 + 0.5 * sin(angle);
+        // Layered sine harmonics at incommensurate frequencies/speeds -- a
+        // cheap stand-in for real simplex noise (AGSL has no builtin noise()).
+        // Summing several out-of-phase waves running at different rates means
+        // the combined pattern never repeats in an obviously periodic way and
+        // reads as organic turbulence rather than a clean wobble.
+        float noise = sin(angle * 3.0 + rotation * 2.3) * 0.5
+                    + sin(angle * 5.0 - rotation * 1.6) * 0.3
+                    + sin(angle * 7.3 + rotation * 3.1) * 0.2
+                    + sin(angle * 11.0 - rotation * 0.7) * 0.12;
+
+        // Sweep across 3 colors, driven by angle blended with the same noise
+        // so the color transition boundary is also irregular (not a clean
+        // sinusoidal split) -- color and shape distortion move together.
+        float sweepRaw = 0.5 + 0.5 * sin(angle + noise * 0.6);
         float sweep = smoothstep(0.0, 1.0, sweepRaw);
         float3 aurora;
         if (sweep < 0.5) {
@@ -1556,28 +1569,26 @@ private const val AURORA_AGSL = """
         } else {
             aurora = mix(colorB.rgb, colorC.rgb, smoothstep(0.0, 1.0, (sweep - 0.5) * 2.0));
         }
-        // Subtle per-pixel luminance lift synced to the same angle so the
-        // ring has a soft internal brightness wave rather than perfectly
-        // flat intensity all the way around -- reads as genuine light
-        // rather than a flat-colored stroke.
-        float shimmer = 0.92 + 0.08 * sin(angle * 3.0 + rotation * 1.7);
+        float shimmer = 0.88 + 0.16 * sin(angle * 4.0 + rotation * 2.1 + noise);
         aurora *= shimmer;
 
-        float ringRadius = 0.66;
-        float ringWidth = 0.03;
-        // Softer falloff on both sides of the ring core (was a single
-        // smoothstep from ringWidth->0, giving a slightly hard inner edge)
-        // -- gives the ring a rounder, more luminous cross-section instead
-        // of a flat-topped stroke.
+        // Ring radius distorted by the noise field instead of a fixed value --
+        // this is what actually breaks the perfect-circle look. Distortion
+        // amplitude (0.09) is large enough to read as clearly irregular
+        // without pinching the ring closed anywhere.
+        float ringRadius = 0.64 + noise * 0.09;
+        float ringWidth = 0.045; // wider than before -- more color mass, less thin wire
         float ringDist = abs(dist - ringRadius);
-        float ringMask = smoothstep(ringWidth * 1.4, 0.0, ringDist);
-        ringMask = pow(ringMask, 0.85); // gentle gamma lift keeps the core bright without over-widening it
+        float ringMask = smoothstep(ringWidth * 1.6, 0.0, ringDist);
+        ringMask = pow(ringMask, 0.8);
 
-        float glowFalloff = smoothstep(1.0, ringRadius, dist);
-        float glowMask = pow(glowFalloff, 2.5);
+        // Wider, stronger outer glow -- more color spread beyond the ring
+        // itself instead of a tight falloff right at its edge.
+        float glowFalloff = smoothstep(1.15, ringRadius - 0.05, dist);
+        float glowMask = pow(glowFalloff, 1.8);
 
-        float finalAlpha = (ringMask + glowMask * 0.6) * breathe;
-        float buttonCutout = smoothstep(ringRadius - 0.01, ringRadius, dist);
+        float finalAlpha = (ringMask + glowMask * 0.85) * breathe;
+        float buttonCutout = smoothstep(ringRadius - 0.015, ringRadius + 0.01, dist);
 
         return half4(aurora * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
     }
@@ -1619,12 +1630,29 @@ private fun AuroraShaderGlow(colorA: Color, colorB: Color, colorC: Color, rotati
 @Composable
 private fun AuroraCanvasGlow(colorA: Color, colorB: Color, colorC: Color, rotationDeg: Float, breathe: Float, modifier: Modifier = Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(266.dp).blur(18.dp)) {
-            val stroke = 34.dp.toPx()
+        // Outer wide halo -- biggest blur, widest spread, slowest independent
+        // rotation offset so it visibly drifts out of sync with the layers below.
+        Canvas(Modifier.size(278.dp).blur(26.dp)) {
+            val stroke = 46.dp.toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA, colorB, colorC, colorA)),
-                startAngle = rotationDeg, sweepAngle = 360f, useCenter = false,
-                alpha = 0.85f * breathe,
+                startAngle = rotationDeg * 0.7f, sweepAngle = 360f, useCenter = false,
+                alpha = 0.55f * breathe,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                topLeft = Offset(stroke / 2, stroke / 2),
+                size = Size(size.width - stroke, size.height - stroke)
+            )
+        }
+        // Mid layer -- runs at a different rotation speed/direction and a
+        // slightly different radius than the outer/inner layers, so the three
+        // never stay aligned and the combined shape reads as irregular rather
+        // than three perfectly concentric rings.
+        Canvas(Modifier.size(252.dp).blur(14.dp)) {
+            val stroke = 30.dp.toPx()
+            drawArc(
+                brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB, colorC, colorA)),
+                startAngle = -rotationDeg * 1.3f + 40f, sweepAngle = 300f, useCenter = false,
+                alpha = 0.7f * breathe,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
                 topLeft = Offset(stroke / 2, stroke / 2),
                 size = Size(size.width - stroke, size.height - stroke)
