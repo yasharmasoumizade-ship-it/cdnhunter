@@ -54,6 +54,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -689,28 +692,12 @@ private fun VpnTab() {
     androidx.activity.compose.BackHandler(enabled = currentScreen != AnanasScreen.HOME || navigationStack.size > 1) {
         navigateBack()
     }
-    
-    // Hoisted OUTSIDE AnimatedContent so it survives navigation away and back.
-    // Re-creating this fresh every recomposition tore down and rebuilt the
-    // sheet's swipeable-state, sometimes mid-animation-frame — causing freezes
-    // when returning to Home. Now it's only created once and reused.
-    val homeSheetState = rememberBottomSheetScaffoldState(
-        bottomSheetState = rememberStandardBottomSheetState(
-            initialValue = SheetValue.PartiallyExpanded,
-            skipHiddenState = true
-        )
-    )
-    
-    // Auto-collapse Quick Switch after 10 seconds of inactivity
-    LaunchedEffect(homeSheetState.bottomSheetState.currentValue) {
-        if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
-            kotlinx.coroutines.delay(10000)  // 10 seconds
-            if (homeSheetState.bottomSheetState.currentValue == SheetValue.Expanded) {
-                homeSheetState.bottomSheetState.partialExpand()
-            }
-        }
-    }
-    
+
+    // The Home Quick Switch bottom sheet is gone — Quick Switch is now an inline
+    // list inside the Home column (Windscribe-style layout), so the hoisted
+    // BottomSheetScaffold state and its auto-collapse timer that used to live
+    // here no longer have anything to drive.
+
     val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
@@ -1061,209 +1048,279 @@ private fun VpnTab() {
         when (targetScreen) {
     AnanasScreen.HOME -> {
         if (configs.isEmpty()) {
+            // ── Empty state ────────────────────────────────────────────────────────────
             Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
                 EmptyHomeState { navigateTo(AnanasScreen.LOCATIONS) }
             }
         } else {
-            BottomSheetScaffold(
-                scaffoldState = homeSheetState,
-                sheetPeekHeight = if (otherConfigs.isNotEmpty()) 58.dp else 0.dp,
-                sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                sheetContainerColor = Color(0xFF17181C).copy(alpha = 0.55f),
-                sheetContentColor = AnanasText,
-                sheetTonalElevation = 0.dp,
-                sheetShadowElevation = 12.dp,
-                sheetSwipeEnabled = otherConfigs.isNotEmpty(),
-                sheetDragHandle = {
-                    if (otherConfigs.isNotEmpty()) {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Spacer(Modifier.height(10.dp))
-                            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(AnanasBorder2))
+            // ── Windscribe-style layout ────────────────────────────────────────────────
+            // Background: dark gradient — near-black top that deepens toward bottom,
+            // with a subtle burgundy/dark-red radial tint behind the header area to
+            // match the Windscribe look (server name area glows warmer than the rest).
+            // The radial's center has to be a real pixel offset, so the screen size is
+            // measured here instead of guessed — an off-canvas center (the old
+            // Float.MAX_VALUE / 2f) put the whole tint outside the drawn area.
+            var homeBgSizePx by remember { mutableStateOf(IntSize.Zero) }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { homeBgSizePx = it }
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF0A0A0C), Color(0xFF050507), Color(0xFF030304))
+                        )
+                    )
+                    // Burgundy warm radial behind the server header
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF3D0A14).copy(alpha = 0.55f),
+                                Color(0xFF1A060A).copy(alpha = 0.3f),
+                                Color.Transparent
+                            ),
+                            center = Offset(homeBgSizePx.width / 2f, 0f),
+                            radius = 900f,
+                        )
+                    )
+            ) {
+                Column(Modifier.fillMaxSize()) {
+
+                    // ── Top bar ────────────────────────────────────────────────────────
+                    // Hamburger (Settings) left, PowerButton top-right (small, 72dp).
+                    // statusBarsPadding() is a no-op with the current non-edge-to-edge
+                    // theme (the window already excludes the status bar), so the explicit
+                    // top padding is what actually keeps the row off the top edge — same
+                    // 22.dp the old centred top row used.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 18.dp)
+                            .padding(top = 18.dp, bottom = 6.dp)
+                    ) {
+                        // Left: hamburger → Settings
+                        AnanasIconButton(Icons.Rounded.Menu, Modifier.align(Alignment.CenterStart)) {
+                            navigateTo(AnanasScreen.SETTINGS)
+                        }
+                        // Right: mini PowerButton (72dp) + status dot below it
+                        Column(
+                            Modifier.align(Alignment.CenterEnd),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            SmallPowerButton(
+                                connected = connected,
+                                connecting = connecting,
+                                onClick = { activeConfig?.let { connectConfig(it) } }
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            // Status dot row: ● Connected / ● Connecting / ○ Off
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when {
+                                                connected -> AnanasAccent
+                                                connecting -> Color(0xFFFFD60A)
+                                                else -> AnanasMuted
+                                            }
+                                        )
+                                )
+                                Text(
+                                    when { connected -> "ON"; connecting -> "…"; else -> "OFF" },
+                                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                    color = when { connected -> AnanasAccent; connecting -> Color(0xFFFFD60A); else -> AnanasMuted },
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
-                },
-                containerColor = AnanasScreenBg,
-                modifier = Modifier.fillMaxSize(),
-                sheetContent = {
-                    if (otherConfigs.isNotEmpty()) {
-                        // Glassy look, reversed from the first pass: most see-through right
-                        // under the drag handle, becoming progressively more opaque toward
-                        // the bottom edge -- more transparent at the top of the sheet, less
-                        // at the bottom.
+
+                    // ── Server header (Windscribe style) ──────────────────────────────
+                    // City Bold + server/region name regular, large — matches Windscribe's
+                    // "Frankfurt  Sausage Party" treatment.
+                    activeConfig?.let { cfg ->
+                        val displayCc = if (connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank())
+                            exitCountryCode else cfg.countryCode
+                        val displayCity = if (connected && exitGeoConfigId == cfg.id && exitCity.isNotBlank())
+                            exitCity else cfg.city
+
                         Column(
                             Modifier
                                 .fillMaxWidth()
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color(0xFF17181C).copy(alpha = 0.42f),
-                                            Color(0xFF131316).copy(alpha = 0.72f),
-                                            Color(0xFF0D0D10).copy(alpha = 0.92f),
+                                            Color(0xFF3D0A14).copy(alpha = 0.35f),
+                                            Color.Transparent
                                         )
                                     )
                                 )
-                                .padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 28.dp)
+                                .padding(horizontal = 20.dp, vertical = 18.dp)
                         ) {
+                            // City bold + server name regular on same row, large text
+                            val cityPart = displayCity.ifBlank { countryCodeToName(displayCc).ifBlank { displayCc } }
+                            val serverPart = cfg.displayName
+                            Text(
+                                buildAnnotatedString {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.ExtraBold, color = AnanasTextHi)) {
+                                        append(cityPart)
+                                    }
+                                    append("  ")
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Light, color = AnanasText.copy(alpha = 0.85f))) {
+                                        append(serverPart)
+                                    }
+                                },
+                                fontSize = 26.sp,
+                                lineHeight = 30.sp,
+                                letterSpacing = (-0.4).sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            // ISP-style row: status color badge + IP or "Connecting..."
                             Row(
-                                Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                // Country flag small
+                                CountryFlagBadge(displayCc, 18.dp)
+                                // Protocol tag pill
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(AnanasBorder.copy(alpha = 0.8f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        cfg.network.uppercase().ifBlank { "VLESS" },
+                                        fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                        color = AnanasMuted, letterSpacing = 0.3.sp
+                                    )
+                                }
+                                // Elapsed / status text
                                 Text(
-                                    "See all", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
-                                    modifier = Modifier.clickable { navigateTo(AnanasScreen.LOCATIONS) }
+                                    when {
+                                        connected -> formatElapsed(elapsedSec)
+                                        connecting -> "Connecting…"
+                                        else -> "Tap ▷ to connect"
+                                    },
+                                    fontSize = 12.sp, color = AnanasMuted, fontWeight = FontWeight.Medium
                                 )
-                            }
-                            otherConfigs.forEachIndexed { idx, cfg ->
-                                QuickSwitchRow(cfg = cfg, onClick = { connectConfig(cfg) }, showDivider = idx < otherConfigs.lastIndex)
                             }
                         }
                     }
-                }
-            ) { innerPadding ->
-                Box(Modifier.fillMaxSize().padding(innerPadding).background(AnanasScreenBg)) {
-                    Column(Modifier.fillMaxSize()) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            AnanasIconButton(Icons.Rounded.Menu) { navigateTo(AnanasScreen.SETTINGS) }
-                            AnanasIconButton(Icons.Rounded.Person) { navigateTo(AnanasScreen.PROFILE) }
-                        }
 
-                        Column(
-                            Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            PowerButton(
-                                connected = connected,
-                                connecting = connecting,
-                                onClick = { activeConfig?.let { connectConfig(it) } }
+                    // ── Server info card (traffic) ─────────────────────────────────────
+                    Column(
+                        Modifier.weight(1f).padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        activeConfig?.let { cfg ->
+                            val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
+                            val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
+                            // Soft status-color glow for the card, matching PowerButton's
+                            // exact color formula (colorA/colorB) and breathing gently in
+                            // sync with it -- layered ON TOP of the existing gold gradient
+                            // below (kept as-is, per request), not replacing it. Low alpha
+                            // so it reads as a subtle tint, not a competing color scheme.
+                            val cardGlowInfinite = rememberInfiniteTransition(label = "cardGlow")
+                            val cardGlowBreathe by cardGlowInfinite.animateFloat(
+                                0.6f, 1f,
+                                infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                                label = "cardGlowBreathe"
                             )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                when { connected -> "Protected"; connecting -> "Connecting\u2026"; else -> "Not protected" },
-                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.2).sp
+                            val cardGlowColor by animateColorAsState(
+                                targetValue = when {
+                                    connected -> Color(0xFF34D9A8)
+                                    connecting -> Color(0xFFFFC93C)
+                                    else -> Color(0xFF3B6FFF)
+                                },
+                                animationSpec = tween(950, easing = FastOutSlowInEasing), label = "cardGlowColor"
                             )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                if (connected) formatElapsed(elapsedSec) else "Tap to connect",
-                                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, letterSpacing = 0.3.sp
-                            )
-                        }
-
-                        Column(
-                            Modifier.weight(1f).padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            activeConfig?.let { cfg ->
-                                    val downloadTotal = if (connected) formatBytes(totalDownloadBytes) else null
-                                    val uploadTotal   = if (connected) formatBytes(totalUploadBytes)   else null
-                                    // Soft status-color glow for the card, matching PowerButton's
-                                    // exact color formula (colorA/colorB) and breathing gently in
-                                    // sync with it -- layered ON TOP of the existing gold gradient
-                                    // below (kept as-is, per request), not replacing it. Low alpha
-                                    // so it reads as a subtle tint, not a competing color scheme.
-                                    val cardGlowInfinite = rememberInfiniteTransition(label = "cardGlow")
-                                    val cardGlowBreathe by cardGlowInfinite.animateFloat(
-                                        0.6f, 1f,
-                                        infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                                        label = "cardGlowBreathe"
+                            // One unified card, same size/style whether showing server
+                            // info, or one of 3 traffic sub-pages (download/upload/scale)
+                            // -- 4 pages total, all on ONE flat pager. This used to be a
+                            // pager-inside-a-pager (server info | nested 3-page traffic
+                            // pager), which is what crashed: a Pager nested inside another
+                            // Pager's page is unsupported/unstable in Compose Foundation,
+                            // regardless of how the outer height was constrained. Flat is
+                            // both simpler and the only version that doesn't crash.
+                            val cardPagerState = rememberPagerState(pageCount = { if (connected) 3 else 1 })
+                            // Page 0 (server info) has the same structure regardless of
+                            // connected state -- only the text inside changes -- so its
+                            // natural height is constant. Measure it once, then pin the
+                            // pager to that exact value in BOTH states instead of
+                            // switching between wrapContentHeight() (disconnected) and a
+                            // hand-picked 210dp (connected) that didn't actually match it,
+                            // which is what caused the card to visibly resize on connect.
+                            var page0HeightPx by remember { mutableStateOf(0) }
+                            val density = LocalDensity.current
+                            val pagerHeightModifier = if (page0HeightPx > 0)
+                                Modifier.height(with(density) { page0HeightPx.toDp() })
+                            else Modifier.height(210.dp) // bounded fallback until measured
+                            var cardSizePx by remember { mutableStateOf(IntSize.Zero) }
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .onSizeChanged { cardSizePx = it }
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                Color(0xFF211C12),
+                                                AnanasCard,
+                                                Color(0xFF12100C),
+                                            ),
+                                        )
                                     )
-                                    val cardGlowColor by animateColorAsState(
-                                        targetValue = when {
-                                            connected -> Color(0xFF34D9A8)
-                                            connecting -> Color(0xFFFFC93C)
-                                            else -> Color(0xFF3B6FFF)
-                                        },
-                                        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "cardGlowColor"
+                                    // Calm gold sheen from the top-left corner only —
+                                    // warm and subtle, not a bright/flashy highlight.
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                Color(0xFFD4AF6A).copy(alpha = 0.07f),
+                                                Color(0xFFD4AF6A).copy(alpha = 0.03f),
+                                                Color.Transparent
+                                            ),
+                                            center = Offset(0f, 0f),
+                                            radius = 420f,
+                                        )
                                     )
-                                    // One unified card, same size/style whether showing server
-                                    // info, or one of 3 traffic sub-pages (download/upload/scale)
-                                    // -- 4 pages total, all on ONE flat pager. This used to be a
-                                    // pager-inside-a-pager (server info | nested 3-page traffic
-                                    // pager), which is what crashed: a Pager nested inside another
-                                    // Pager's page is unsupported/unstable in Compose Foundation,
-                                    // regardless of how the outer height was constrained. Flat is
-                                    // both simpler and the only version that doesn't crash.
-                                    val cardPagerState = rememberPagerState(pageCount = { if (connected) 3 else 1 })
-                                    // Page 0 (server info) has the same structure regardless of
-                                    // connected state -- only the text inside changes -- so its
-                                    // natural height is constant. Measure it once, then pin the
-                                    // pager to that exact value in BOTH states instead of
-                                    // switching between wrapContentHeight() (disconnected) and a
-                                    // hand-picked 210dp (connected) that didn't actually match it,
-                                    // which is what caused the card to visibly resize on connect.
-                                    var page0HeightPx by remember { mutableStateOf(0) }
-                                    val density = LocalDensity.current
-                                    val pagerHeightModifier = if (page0HeightPx > 0)
-                                        Modifier.height(with(density) { page0HeightPx.toDp() })
-                                    else Modifier.height(210.dp) // bounded fallback until measured
-                                    var cardSizePx by remember { mutableStateOf(IntSize.Zero) }
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .onSizeChanged { cardSizePx = it }
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(
-                                                Brush.linearGradient(
-                                                    colors = listOf(
-                                                        Color(0xFF211C12),
-                                                        AnanasCard,
-                                                        Color(0xFF12100C),
-                                                    ),
-                                                )
-                                            )
-                                            // Calm gold sheen from the top-left corner only —
-                                            // warm and subtle, not a bright/flashy highlight.
-                                            .background(
-                                                Brush.radialGradient(
-                                                    colors = listOf(
-                                                        Color(0xFFD4AF6A).copy(alpha = 0.07f),
-                                                        Color(0xFFD4AF6A).copy(alpha = 0.03f),
-                                                        Color.Transparent
-                                                    ),
-                                                    center = Offset(0f, 0f),
-                                                    radius = 420f,
-                                                )
-                                            )
-                                            // Status-color glow from the bottom-right corner,
-                                            // gently breathing in sync with the connect button's
-                                            // own glow -- kept faint (low alpha) so the gold
-                                            // gradient above stays the dominant visual. Uses the
-                                            // card's actual measured size (not an infinite-
-                                            // coordinate trick) so the corner position is a real,
-                                            // correct pixel offset.
-                                            .background(
-                                                Brush.radialGradient(
-                                                    colors = listOf(
-                                                        cardGlowColor.copy(alpha = 0.10f * cardGlowBreathe),
-                                                        cardGlowColor.copy(alpha = 0.045f * cardGlowBreathe),
-                                                        Color.Transparent
-                                                    ),
-                                                    center = Offset(cardSizePx.width.toFloat(), cardSizePx.height.toFloat()),
-                                                    radius = 480f,
-                                                )
-                                            )
-                                    ) {
-                                        // Fixed height so the card doesn't visually grow/shrink
-                                        // when swiping between pages, or when connecting/
-                                        // disconnecting -- see page0HeightPx above.
-                                        HorizontalPager(
-                                            state = cardPagerState,
-                                            modifier = pagerHeightModifier
-                                        ) { page ->
-                                            when (page) {
-                                                0 -> Column(
-                                                    Modifier.fillMaxWidth()
-                                                        .onSizeChanged { if (it.height > 0) page0HeightPx = it.height }
-                                                        .clickable { navigateTo(AnanasScreen.LOCATIONS) }
-                                                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                                                ) {
+                                    // Status-color glow from the bottom-right corner,
+                                    // gently breathing in sync with the connect button's
+                                    // own glow -- kept faint (low alpha) so the gold
+                                    // gradient above stays the dominant visual. Uses the
+                                    // card's actual measured size (not an infinite-
+                                    // coordinate trick) so the corner position is a real,
+                                    // correct pixel offset.
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                cardGlowColor.copy(alpha = 0.10f * cardGlowBreathe),
+                                                cardGlowColor.copy(alpha = 0.045f * cardGlowBreathe),
+                                                Color.Transparent
+                                            ),
+                                            center = Offset(cardSizePx.width.toFloat(), cardSizePx.height.toFloat()),
+                                            radius = 480f,
+                                        )
+                                    )
+                            ) {
+                                // Fixed height so the card doesn't visually grow/shrink
+                                // when swiping between pages, or when connecting/
+                                // disconnecting -- see page0HeightPx above.
+                                HorizontalPager(
+                                    state = cardPagerState,
+                                    modifier = pagerHeightModifier
+                                ) { page ->
+                                    when (page) {
+                                        0 -> Column(
+                                            Modifier.fillMaxWidth()
+                                                .onSizeChanged { if (it.height > 0) page0HeightPx = it.height }
+                                                .clickable { navigateTo(AnanasScreen.LOCATIONS) }
+                                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                                        ) {
                                             // Server row
                                             Row(
                                                 Modifier.fillMaxWidth(),
@@ -1330,65 +1387,97 @@ private fun VpnTab() {
                                                     Text(uploadTotal ?: "0 B", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AnanasTextHi, letterSpacing = (-0.5).sp)
                                                 }
                                             }
-                                                }
-                                                // Pages 1-3: traffic sub-pages, now direct siblings of
-                                                // page 0 on the SAME flat pager instead of a nested
-                                                // pager-inside-a-pager (which crashed regardless of how
-                                                // the outer height was constrained).
-                                                1 -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                                                    TrafficChartCard(
-                                                        title = "DOWNLOAD",
-                                                        icon = Icons.Rounded.ArrowDownward,
-                                                        dataPoints = downloadHistory,
-                                                        currentValue = downloadKBps.toFloat(),
-                                                        totalBytes = totalDownloadBytes,
-                                                        accentColor = Color(0xFF64D2FF),
-                                                        isDownload = true,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                }
-                                                else -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                                                    TrafficChartCard(
-                                                        title = "UPLOAD",
-                                                        icon = Icons.Rounded.ArrowUpward,
-                                                        dataPoints = uploadHistory,
-                                                        currentValue = uploadKBps.toFloat(),
-                                                        totalBytes = totalUploadBytes,
-                                                        accentColor = Color(0xFFFFD60A),
-                                                        isDownload = false,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                }
-                                            }
+                                        }
+                                        // Pages 1-3: traffic sub-pages, now direct siblings of
+                                        // page 0 on the SAME flat pager instead of a nested
+                                        // pager-inside-a-pager (which crashed regardless of how
+                                        // the outer height was constrained).
+                                        1 -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                            TrafficChartCard(
+                                                title = "DOWNLOAD",
+                                                icon = Icons.Rounded.ArrowDownward,
+                                                dataPoints = downloadHistory,
+                                                currentValue = downloadKBps.toFloat(),
+                                                totalBytes = totalDownloadBytes,
+                                                accentColor = Color(0xFF64D2FF),
+                                                isDownload = true,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        else -> Box(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                                            TrafficChartCard(
+                                                title = "UPLOAD",
+                                                icon = Icons.Rounded.ArrowUpward,
+                                                dataPoints = uploadHistory,
+                                                currentValue = uploadKBps.toFloat(),
+                                                totalBytes = totalUploadBytes,
+                                                accentColor = Color(0xFFFFD60A),
+                                                isDownload = false,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
                                         }
                                     }
-                                    if (connected) {
-                                        Row(
-                                            Modifier.fillMaxWidth().padding(top = 8.dp),
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            repeat(3) { index ->
-                                                val isSelected = cardPagerState.currentPage == index
-                                                val dotColor = when (index) {
-                                                    0 -> AnanasAccent
-                                                    1 -> Color(0xFF64D2FF)
-                                                    else -> Color(0xFFFFD60A)
-                                                }
-                                                Box(
-                                                    Modifier
-                                                        .padding(horizontal = 3.dp)
-                                                        .size(if (isSelected) 7.dp else 6.dp)
-                                                        .clip(CircleShape)
-                                                        .background(if (isSelected) dotColor else AnanasBorder2)
-                                                )
-                                            }
+                                }
+                            }
+                            if (connected) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    repeat(3) { index ->
+                                        val isSelected = cardPagerState.currentPage == index
+                                        val dotColor = when (index) {
+                                            0 -> AnanasAccent
+                                            1 -> Color(0xFF64D2FF)
+                                            else -> Color(0xFFFFD60A)
                                         }
+                                        Box(
+                                            Modifier
+                                                .padding(horizontal = 3.dp)
+                                                .size(if (isSelected) 7.dp else 6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isSelected) dotColor else AnanasBorder2)
+                                        )
                                     }
+                                }
+                            }
+                        }
+
+                        // ── Quick Switch inline list ───────────────────────────────────
+                        if (otherConfigs.isNotEmpty()) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(AnanasCard)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("QUICK SWITCH", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.4.sp)
+                                    Text(
+                                        "See all",
+                                        fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent,
+                                        modifier = Modifier.clickable { navigateTo(AnanasScreen.LOCATIONS) }
+                                    )
+                                }
+                                otherConfigs.take(5).forEachIndexed { idx, cfg ->
+                                    QuickSwitchRow(
+                                        cfg = cfg,
+                                        onClick = { connectConfig(cfg) },
+                                        showDivider = idx < minOf(otherConfigs.size, 5) - 1
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            }
+
+                    Spacer(Modifier.height(16.dp))
+                } // Column
+            } // Box
         }
     }
     AnanasScreen.LOCATIONS -> {
@@ -1423,7 +1512,68 @@ private fun VpnTab() {
     }
 }
 
+// ── Small Power Button: same aurora ring, 72dp — sits top-right ──────────────
+@Composable
+private fun SmallPowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
+    val size = 72.dp
+    val iconSize = 22.dp
+
+    val infinite = rememberInfiniteTransition(label = "smallPwrInfinite")
+    val t1 by infinite.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "t1s")
+    val t2 by infinite.animateFloat(0f, 1f, infiniteRepeatable(tween(11000, easing = LinearEasing)), label = "t2s")
+    val t3 by infinite.animateFloat(0f, 1f, infiniteRepeatable(tween(13000, easing = LinearEasing)), label = "t3s")
+    val breathe by infinite.animateFloat(
+        0.95f, 1f,
+        infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breatheS"
+    )
+    val colorA by animateColorAsState(
+        targetValue = when { connected -> Color(0xFF10B981); connecting -> Color(0xFFFFC93C); else -> Color(0xFF3B82F6) },
+        animationSpec = tween(950), label = "colAs"
+    )
+    val colorB by animateColorAsState(
+        targetValue = when { connected -> Color(0xFF34D399); connecting -> Color(0xFFFFD60A); else -> Color(0xFF8B5CF6) },
+        animationSpec = tween(950), label = "colBs"
+    )
+    val colorC by animateColorAsState(
+        targetValue = when { connected -> Color(0xFF6EE7B7); connecting -> Color(0xFFFF9500); else -> Color(0xFF60A5FA) },
+        animationSpec = tween(950), label = "colCs"
+    )
+
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        AuroraCanvasGlow(
+            colorA = colorA, colorB = colorB, colorC = colorC,
+            t1 = t1, t2 = t2, t3 = t3, breathe = breathe,
+            modifier = Modifier.size(size),
+            ringSize = size,
+        )
+        Box(
+            Modifier
+                .size(size * 0.72f)
+                .clip(CircleShape)
+                .background(AnanasCard)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.PowerSettingsNew,
+                contentDescription = "Connect",
+                tint = when { connected -> AnanasAccent; connecting -> Color(0xFFFFC93C); else -> AnanasText },
+                modifier = Modifier.size(iconSize)
+            )
+        }
+    }
+}
+
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
+// Not on Home anymore — the Windscribe-style layout puts SmallPowerButton in the
+// top bar instead. Kept as the full-size version of the same aurora (and the
+// only one that uses AuroraShaderGlow on API 33+) in case Home goes back to a
+// hero button.
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     // Multiple independent time counters at incommensurate rates. Because their
@@ -1603,14 +1753,19 @@ private fun AuroraShaderGlow(
 private fun AuroraCanvasGlow(
     colorA: Color, colorB: Color, colorC: Color,
     t1: Float, t2: Float, t3: Float, breathe: Float,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Diameter of the outermost glow layer. Every layer below is expressed as a
+    // fraction of it so the same aurora renders correctly at any diameter -- the
+    // 280dp hero button and the 72dp top-bar one. The default reproduces the
+    // original hard-coded 278/252/224dp + 40/24/3dp stroke values exactly.
+    ringSize: Dp = 278.dp,
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
         // Less blur (26dp -> 16dp) so this outer layer doesn't wash out into a
         // faint haze, alpha raised to nearly full so it actually contributes
         // visible light instead of a barely-there tint.
-        Canvas(Modifier.size(278.dp).blur(16.dp)) {
-            val stroke = 40.dp.toPx()
+        Canvas(Modifier.size(ringSize).blur(ringSize * 0.0576f)) {
+            val stroke = (ringSize * 0.1439f).toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA)),
                 startAngle = t1 * 360f, sweepAngle = 360f, useCenter = false,
@@ -1620,8 +1775,8 @@ private fun AuroraCanvasGlow(
                 size = Size(size.width - stroke, size.height - stroke)
             )
         }
-        Canvas(Modifier.size(252.dp).blur(8.dp)) {
-            val stroke = 24.dp.toPx()
+        Canvas(Modifier.size(ringSize * 0.9065f).blur(ringSize * 0.0288f)) {
+            val stroke = (ringSize * 0.0863f).toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB)),
                 startAngle = -t2 * 360f + 40f, sweepAngle = 300f, useCenter = false,
@@ -1633,8 +1788,8 @@ private fun AuroraCanvasGlow(
         }
         // Sharp core ring: no blur, thinner stroke (3dp), full alpha -- the
         // one layer meant to read as a crisp line rather than glow.
-        Canvas(Modifier.size(224.dp)) {
-            val stroke = 3.dp.toPx()
+        Canvas(Modifier.size(ringSize * 0.8058f)) {
+            val stroke = (ringSize * 0.0108f).coerceAtLeast(1.5.dp).toPx()
             drawArc(
                 brush = Brush.sweepGradient(listOf(colorA, colorB, colorA)),
                 startAngle = t3 * 360f, sweepAngle = 360f, useCenter = false,
@@ -2185,7 +2340,7 @@ private fun LocationsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
                 Column(Modifier.weight(1f)) {
                     Text("Locations", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
                     Text(
@@ -2193,7 +2348,7 @@ private fun LocationsScreen(
                         fontSize = 11.5.sp, color = AnanasMuted
                     )
                 }
-                AnanasIconButton(Icons.Rounded.Add, onToggleAddMenu)
+                AnanasIconButton(Icons.Rounded.Add, onClick = onToggleAddMenu)
             }
 
             // Minimal search field — no card/border, just an underline, Windscribe-style.
@@ -2375,7 +2530,7 @@ private fun SettingsScreen(
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
                 Text("Settings", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
             }
 
@@ -2854,7 +3009,7 @@ private fun ProfileScreen(onBack: () -> Unit) {
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
                 Text("Profile", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
             }
 
@@ -2970,7 +3125,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onBack)
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
                 Text("Split tunneling", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
             }
 
@@ -3195,9 +3350,10 @@ private fun SpeedSparkline(history: List<Float>, color: Color, modifier: Modifie
 
 // ── Icon button (top bar) ───────────────────────────────────────────────────────
 @Composable
-private fun AnanasIconButton(icon: ImageVector, onClick: () -> Unit) {
+private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        Modifier.size(38.dp)
+        modifier
+            .size(38.dp)
             .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
