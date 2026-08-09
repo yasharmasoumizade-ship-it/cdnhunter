@@ -8,3 +8,13 @@ android/app/libs/*.aar
 android/gradle/wrapper/gradle-wrapper.jar
 android/.gradle/
 android/local.properties
+
+# Gradle build outputs from a local build — never committed.
+android/build/
+android/app/build/
+
+# Signing key. CI generates its own self-signed android/keystore.jks on every
+# run (see the "Generate signing keystore" step in build-unified.yml), so a
+# local one is only ever a local artifact — a private key must never be
+# committed to the repo.
+android/keystore.jks
