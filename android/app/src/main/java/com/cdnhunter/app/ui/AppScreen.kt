@@ -10,7 +10,6 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.*
@@ -332,30 +331,14 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
             modifier = Modifier.fillMaxSize().clip(CircleShape),
             error = null,
         )
-        // Glass highlight: soft diagonal sheen + inner ring, so the flag reads
-        // as a polished glossy sphere rather than a flat cropped image.
+        // .server-flag's only decoration: `border: 1px solid rgba(255,255,255,0.06)`.
+        // No glass sheen, no diagonal glare, no inner ring — the flag is the real
+        // artwork and it reads as itself, flat, exactly as the mockup draws it.
         Box(
             Modifier
                 .fillMaxSize()
                 .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.22f),
-                            Color.White.copy(alpha = 0.04f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.10f)
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(1f, 1f)
-                    )
-                )
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .border(0.75.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                .border(1.dp, Color.White.copy(alpha = 0.06f), CircleShape)
         )
     }
 }
@@ -1195,9 +1178,8 @@ private fun ServerListItem(
         Box(Modifier.fillMaxWidth()) {
             // Thin left accent bar instead of a full-row color wash. A flat
             // green tint across the whole row (flag, text, everything) read
-            // as a muddy halo sitting on top of the flag's own glass sheen.
-            // A slim bar signals "this one" clearly without discoloring the
-            // row's content.
+            // as a muddy film sitting on top of the flag. A slim bar signals
+            // "this one" clearly without discoloring the row's content.
             if (isActive) {
                 Box(
                     Modifier

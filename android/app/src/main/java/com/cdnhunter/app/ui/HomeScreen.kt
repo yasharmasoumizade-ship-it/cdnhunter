@@ -10,19 +10,15 @@ package com.cdnhunter.app.ui
 //
 // Layout, top to bottom:
 //   • page        — near-black vertical gradient, #0d0e12 → #060709 by 70%
-//   • hero glow   — one large ambient bloom centred on the power button, and the
-//                   active country's own flag behind it as a low-alpha watermark.
-//                   The bloom's tone is the only thing the connection state
-//                   repaints: burgundy off, violet connecting, blue/purple on
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — OFF/ON pill, "VLESS · 443", chevron → Settings
-//   • connect bar — 88dp pill carrying the active server's city and country, with
-//                   a 100dp white power circle whose centre sits exactly on the
-//                   bar's right edge; the bar is cut away behind it, leaving 8dp
-//                   of clearance, and the circle's ring carries the glow
+//   • connect bar — 88dp pill carrying the active server's city and country over
+//                   the country's own flag, with a 100dp white power circle whose
+//                   centre sits exactly on the bar's right edge; the bar is cut
+//                   away behind it, leaving 8dp of clearance
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
-//   • browse card — 28dp-topped panel: Main / Custom Config pills, a search
-//                   toggle that expands a field, then one row per server
+//   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
+//                   then one row per server
 //                   (flag, country · city, ping, three load bars)
 //   • usage card  — floats over the list bottom: session-traffic ring, live
 //                   speed, chevron → Locations
@@ -31,16 +27,21 @@ package com.cdnhunter.app.ui
 // plus event lambdas, so VpnTab() remains the single owner of connection state.
 // The only state kept here is view state nothing else needs — which tab is
 // selected, whether search is open, and the query.
+//
+// No ambient light anywhere: the mockup ships .power-glow as `display:none`, so
+// there is no bloom behind the power button and no flag watermark behind it
+// either — the flag belongs to the connect bar, next to the button, the way the
+// mockup's own `.connect-bar-flag` layer places it. The power circle is a flat
+// brushed-white disc in every state.
+//
+// Connected is teal (--teal, #35d6b8) and only teal, in four places: the status
+// pill (the mockup's own `.status-pill.on`), a dark-teal wash rising up the
+// connect bar, the usage ring's accent, and the active row's dot. There is no
+// second state colour and nothing tints while the tunnel is merely coming up.
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -72,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -82,10 +82,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
@@ -94,8 +92,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -118,6 +114,7 @@ private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
 private val RefTextMid = Color(0xFF9BA0AC)     // --text-mid
 private val RefTextLow = Color(0xFF656B78)     // --text-low
 private val RefAccent = Color(0xFF4D7FFF)      // --accent
+private val RefTeal = Color(0xFF35D6B8)        // --teal
 private val RefGreen = Color(0xFF34D17A)       // --green
 private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 // The mockup only illustrates low and medium load, but the app measures a third
@@ -126,54 +123,18 @@ private val RefLoadHigh = Color(0xFFE0563B)
 private val PillInk = Color(0xFF05070C)        // .tab-pill.active text colour
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 
-// ── Connection tone ───────────────────────────────────────────────────────────
-// Windscribe holds one colour language across the whole screen: a near-black page
-// carrying a single large ambient glow behind the power button. Connecting and
-// connected *do not* repaint the UI — the page, the pill, the white power face
-// and the list are byte-for-byte the same in every state. All that moves is the
-// tone of that one glow and the light in the button's ring:
+// ── Connected colour ──────────────────────────────────────────────────────────
+// One colour says "the tunnel is up", and it is the mockup's own --teal. There is
+// no tone system, no per-state palette and nothing that repaints while a
+// connection is merely pending: coming up shows a spinner on the power face and
+// the pill's "···" label, and that is all.
 //
-//   off        burgundy / red      — the resting tone
-//   connecting violet              — visibly between the two, so the change reads
-//   connected  blue / purple       — the same glow, cooled
-//
-// Each field is animated (see [rememberConnTone]) so the shift is a 700ms fade
-// from one tone to the next rather than a cut.
-private val ToneOffPrimary = Color(0xFF8E1E3C)      // burgundy core
-private val ToneOffSecondary = Color(0xFFC42B48)    // red lift, up and left
-private val ToneOffRing = Color(0xFFFF5C77)
-private val ToneBusyPrimary = Color(0xFF5A2C9C)
-private val ToneBusySecondary = Color(0xFF8B3FD0)
-private val ToneBusyRing = Color(0xFFBB8CFF)
-private val ToneOnPrimary = Color(0xFF3244E4)       // blue core
-private val ToneOnSecondary = Color(0xFF7B3FE4)     // purple lift
-private val ToneOnRing = Color(0xFF8DA2FF)
-
-/** The three colours the connection state is allowed to touch. */
-private data class ConnTone(val primary: Color, val secondary: Color, val ring: Color)
-
-@Composable
-private fun rememberConnTone(connected: Boolean, connecting: Boolean): ConnTone {
-    val primaryTarget = when {
-        connected -> ToneOnPrimary
-        connecting -> ToneBusyPrimary
-        else -> ToneOffPrimary
-    }
-    val secondaryTarget = when {
-        connected -> ToneOnSecondary
-        connecting -> ToneBusySecondary
-        else -> ToneOffSecondary
-    }
-    val ringTarget = when {
-        connected -> ToneOnRing
-        connecting -> ToneBusyRing
-        else -> ToneOffRing
-    }
-    val primary by animateColorAsState(primaryTarget, tween(700, easing = FastOutSlowInEasing), label = "tonePrimary")
-    val secondary by animateColorAsState(secondaryTarget, tween(700, easing = FastOutSlowInEasing), label = "toneSecondary")
-    val ring by animateColorAsState(ringTarget, tween(700, easing = FastOutSlowInEasing), label = "toneRing")
-    return ConnTone(primary = primary, secondary = secondary, ring = ring)
-}
+// [RefTeal] is used at full strength where the mockup uses it — the status pill's
+// `.status-pill.on`, the usage ring's `conic-gradient(var(--teal) …)` and the
+// active row's dot. The connect bar needs the same signal across a much larger
+// area, and a full-bleed wash of a colour that bright reads as a warning light, so
+// the bar gets the dark form of the same hue instead.
+private val ConnectedTealDeep = Color(0xFF0B3D38)
 
 // ── Dimensions — CSS px read as dp (the mockup's device is 390px wide) ─────────
 private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
@@ -195,22 +156,11 @@ private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
 
-// ── Hero backdrop geometry ────────────────────────────────────────────────────
-// The flag watermark and the ambient glow are both centred on the power button,
-// which is the visual anchor of the screen. The button's centre sits
-//   x: ScreenPad + PowerSize/2 in from the right edge  (= 70dp)
-//   y: 4 (header top pad) + 40 (top bar) + 4 + 34 (status row) + 12 = 94dp
-//      below the status bar, plus PowerSize/2 to reach its middle  (= 144dp)
-// so the backdrop is laid out from the header's top-right corner and shifted onto
-// that point. Both layers fade to nothing well before their own edges, which is
-// what lets the ±few dp of slack in the status row's measured height not matter.
-private val HeroSize = 380.dp                // the glow's full extent
-private val HeroFlagSize = 250.dp            // the flag disc inside it
-private val PowerRowCenterY = 144.dp
-private val HeroOffsetX = HeroSize / 2 - (ScreenPad + PowerSize / 2)
-private val HeroOffsetY = PowerRowCenterY - HeroSize / 2
-/** Low enough to read as a watermark, high enough that the flag's colours land. */
-private const val FLAG_WATERMARK_ALPHA = 0.24f
+// ── Hero backdrop ─────────────────────────────────────────────────────────────
+// There isn't one. The header is the page gradient plus `.header::before` (a black
+// wash, see [drawHeaderScrim]) and nothing else: no bloom behind the power button
+// and no flag watermark behind it either. The flag lives in the connect bar next
+// to the button — see [ConnectBar].
 
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
@@ -232,8 +182,9 @@ private val PageGradient = Brush.verticalGradient(
     1.00f to RefBg,
 )
 // .connect-bar background: top-lit, so the pill reads as a raised surface rather
-// than a flat cut-out. The flag no longer lives in here (it is the hero
-// watermark behind the button now), which is what lets the fill stay this plain.
+// than a flat cut-out. This is the floor the flag sits on — where the flag's own
+// artwork is opaque only the sheen above it shows, so the gradient matters most at
+// the left end, under the shade layer that keeps the location text legible.
 private val BarSurface = Brush.verticalGradient(
     0.00f to Color(0xFF1A1D25),
     0.55f to RefElev1,
@@ -377,13 +328,11 @@ internal fun HomeScreen(
         state.configsFor(tab).matching(query).byLatency()
     }
     val activeId = state.activeConfig?.id
-    val tone = rememberConnTone(connected = state.connected, connecting = state.connecting)
 
     Box(modifier.fillMaxSize().background(PageGradient)) {
         Column(Modifier.fillMaxSize()) {
             Header(
                 state = state,
-                tone = tone,
                 onOpenSettings = onOpenSettings,
                 onOpenProfile = onOpenProfile,
                 onOpenLocations = onOpenLocations,
@@ -391,7 +340,6 @@ internal fun HomeScreen(
             )
             BrowseCard(
                 state = state,
-                tone = tone,
                 servers = servers,
                 activeId = activeId,
                 tab = tab,
@@ -413,7 +361,6 @@ internal fun HomeScreen(
         // .bottom-card: sticky at the foot of the scroller, over the list
         UsageCard(
             state = state,
-            tone = tone,
             onClick = onOpenLocations,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -425,35 +372,19 @@ internal fun HomeScreen(
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
-// Three layers, back to front: the hero backdrop (glow + flag watermark), the
-// black wash that keeps the top bar legible over it, then the rows themselves.
-// The gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled
-// out one by one rather than smoothed into a single rhythm.
+// Two layers: the black wash of `.header::before` over the page gradient, then the
+// rows themselves. The gaps between rows are the mockup's own margins
+// (4 / 12 / 22dp), spelled out one by one rather than smoothed into a single
+// rhythm.
 @Composable
 private fun Header(
     state: HomeUiState,
-    tone: ConnTone,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
-    val heroCountry = state.activeConfig?.let { state.countryCodeFor(it) }.orEmpty()
     Box(Modifier.fillMaxWidth()) {
-        // matchParentSize: the backdrop is 380dp of deliberate overspill, and this
-        // keeps it from dragging the header's own height out with it. What spills
-        // below is covered by the browse card, which is opaque.
-        Box(Modifier.matchParentSize()) {
-            HeroBackdrop(
-                countryCode = heroCountry,
-                tone = tone,
-                connected = state.connected,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .offset(x = HeroOffsetX, y = HeroOffsetY),
-            )
-        }
         Box(Modifier.matchParentSize().drawBehind { drawHeaderScrim() })
         Column(
             Modifier
@@ -462,11 +393,10 @@ private fun Header(
         ) {
             TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
             Spacer(Modifier.height(4.dp))          // .status-row margin-top
-            StatusRow(state = state, tone = tone, onOpenSettings = onOpenSettings)
+            StatusRow(state = state, onOpenSettings = onOpenSettings)
             Spacer(Modifier.height(12.dp))         // .power-row margin-top
             ConnectRow(
                 state = state,
-                tone = tone,
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
             )
@@ -474,129 +404,6 @@ private fun Header(
             NetworkRow(state = state)
         }
     }
-}
-
-/**
- * The glow and the flag: everything behind the connect control.
- *
- * The glow is two offset radial blooms rather than one, which is what stops it
- * reading as a flat disc of colour — [ConnTone.primary] centred on the button and
- * [ConnTone.secondary] lifted up and to the left, so the light has a direction.
- * Both are drawn well outside this box's own bounds and fade to fully transparent
- * before they get there.
- */
-@Composable
-private fun HeroBackdrop(countryCode: String, tone: ConnTone, connected: Boolean, modifier: Modifier = Modifier) {
-    // requiredSize, not size: this sits inside a box the height of the header, and
-    // plain size() would let those constraints squash 380dp down to whatever the
-    // header happens to measure.
-    Box(modifier.requiredSize(HeroSize), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.matchParentSize()) { drawToneGlow(tone, connected) }
-        if (countryCode.isNotBlank()) {
-            FlagWatermark(countryCode, Modifier.size(HeroFlagSize))
-        }
-    }
-}
-
-private fun DrawScope.drawToneGlow(tone: ConnTone, connected: Boolean) {
-    if (connected) {
-        // A plain, elegant dark-green wash rising from the bottom — replaces the
-        // multi-tone radial bloom entirely once actually connected. No animation,
-        // just a static gradient.
-        drawRect(
-            brush = Brush.verticalGradient(
-                0.00f to Color.Transparent,
-                0.35f to ConnectedGreenDeep.copy(alpha = 0.10f),
-                0.70f to ConnectedGreenDeep.copy(alpha = 0.30f),
-                1.00f to ConnectedGreenDeep.copy(alpha = 0.46f),
-            ),
-        )
-        return
-    }
-    val mid = center
-    val radius = size.minDimension / 2f
-    drawCircle(
-        brush = Brush.radialGradient(
-            0.00f to tone.primary.copy(alpha = 0.36f),
-            0.22f to tone.primary.copy(alpha = 0.26f),
-            0.44f to tone.primary.copy(alpha = 0.14f),
-            0.68f to tone.primary.copy(alpha = 0.05f),
-            1.00f to Color.Transparent,
-            center = mid,
-            radius = radius,
-        ),
-        radius = radius,
-        center = mid,
-    )
-    val liftCenter = Offset(mid.x - radius * 0.40f, mid.y - radius * 0.32f)
-    val liftRadius = radius * 0.86f
-    drawCircle(
-        brush = Brush.radialGradient(
-            0.00f to tone.secondary.copy(alpha = 0.26f),
-            0.34f to tone.secondary.copy(alpha = 0.15f),
-            0.66f to tone.secondary.copy(alpha = 0.05f),
-            1.00f to Color.Transparent,
-            center = liftCenter,
-            radius = liftRadius,
-        ),
-        radius = liftRadius,
-        center = liftCenter,
-    )
-}
-
-// The one dark, elegant green used for the connected-state wash — deliberately
-// muted (not the bright accent green used for text/badges elsewhere), so a
-// full-bleed wash of it reads as calm rather than a flat color block.
-private val ConnectedGreenDeep = Color(0xFF0B3D2E)
-
-/**
- * The active country's real flag, sitting directly behind the power button.
- *
- * Same asset the list rows use — assets/flags/{cc}.svg from HatScripts/circle-flags,
- * i.e. the country's actual vector artwork in its actual colours (Germany renders
- * black/red/gold, not an approximation), circular because every flag in the app is.
- * Blown up to [HeroFlagSize] and dropped to [FLAG_WATERMARK_ALPHA], with a radial
- * DstIn mask so the disc dissolves into the page instead of ending on a hard rim —
- * that fade is also why it can run off the right edge of the screen without
- * looking sliced.
- */
-@Composable
-private fun FlagWatermark(countryCode: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    coil.compose.AsyncImage(
-        model = coil.request.ImageRequest.Builder(context)
-            .data("file:///android_asset/flags/${countryCode.lowercase().trim()}.svg")
-            .crossfade(true)
-            .build(),
-        imageLoader = getFlagImageLoader(context),
-        contentDescription = null,
-        contentScale = ContentScale.Fit,
-        modifier = modifier
-            .graphicsLayer {
-                alpha = FLAG_WATERMARK_ALPHA
-                // The mask below multiplies this layer's alpha, so the layer has to
-                // exist as its own surface first.
-                compositingStrategy = CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                drawContent()
-                val radius = size.minDimension / 2f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        0.00f to Color.White,
-                        0.46f to Color.White,
-                        0.74f to Color.White.copy(alpha = 0.55f),
-                        1.00f to Color.Transparent,
-                        center = center,
-                        radius = radius,
-                    ),
-                    radius = radius,
-                    center = center,
-                    blendMode = BlendMode.DstIn,
-                )
-            },
-        error = null,
-    )
 }
 
 /** .header::before — a black wash that fades out by 75% of the header. */
@@ -658,9 +465,9 @@ private fun GlyphButton(
 
 // ── Status row ────────────────────────────────────────────────────────────────
 @Composable
-private fun StatusRow(state: HomeUiState, tone: ConnTone, onOpenSettings: () -> Unit) {
+private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        StatusPill(connected = state.connected, connecting = state.connecting, tone = tone)
+        StatusPill(connected = state.connected, connecting = state.connecting)
         Spacer(Modifier.width(10.dp))              // .status-row gap
         Row(
             Modifier
@@ -684,28 +491,31 @@ private fun StatusRow(state: HomeUiState, tone: ConnTone, onOpenSettings: () -> 
 }
 
 /**
- * .status-pill — grey at rest, and once the tunnel is up or coming up it picks up
- * [ConnTone.ring], the same light the power button's ring is showing. It is not a
- * second accent colour: it is the same one, so the screen never has two stories
- * about what state it is in.
+ * .status-pill — the mockup's own two-state pill and nothing more.
+ *
+ * Off is the base rule: `background: rgba(255,255,255,0.06)`, `border: 1px solid
+ * var(--border)`, `color: var(--text-mid)`. On is `.status-pill.on` verbatim —
+ * teal fill, teal border, teal text — and it applies only once the tunnel is
+ * actually up. Coming up keeps the base style and only swaps the label to "···",
+ * so a pending connection never claims to be connected.
  */
 @Composable
-private fun StatusPill(connected: Boolean, connecting: Boolean, tone: ConnTone) {
+private fun StatusPill(connected: Boolean, connecting: Boolean) {
     val label = when {
         connected -> "ON"
         connecting -> "···"
         else -> "OFF"
     }
-    val lit = connected || connecting
+    // .status-pill.on: rgba(53,214,184,0.14) over rgba(53,214,184,0.3), text #35d6b8
     val fill by animateColorAsState(
-        if (lit) tone.ring.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f),
+        if (connected) RefTeal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.06f),
         label = "pillFill",
     )
     val edge by animateColorAsState(
-        if (lit) tone.ring.copy(alpha = 0.34f) else RefBorder,
+        if (connected) RefTeal.copy(alpha = 0.30f) else RefBorder,
         label = "pillEdge",
     )
-    val ink by animateColorAsState(if (lit) tone.ring else RefTextMid, label = "pillInk")
+    val ink by animateColorAsState(if (connected) RefTeal else RefTextMid, label = "pillInk")
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -732,14 +542,12 @@ private fun StatusPill(connected: Boolean, connecting: Boolean, tone: ConnTone) 
 @Composable
 private fun ConnectRow(
     state: HomeUiState,
-    tone: ConnTone,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().height(PowerSize)) {
         ConnectBar(
             state = state,
-            tone = tone,
             onClick = onOpenLocations,
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -751,7 +559,6 @@ private fun ConnectRow(
             connected = state.connected,
             connecting = state.connecting,
             enabled = state.activeConfig != null,
-            tone = tone,
             onClick = onTogglePower,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
@@ -761,7 +568,6 @@ private fun ConnectRow(
 @Composable
 private fun ConnectBar(
     state: HomeUiState,
-    tone: ConnTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -799,10 +605,12 @@ private fun ConnectBar(
             .clickable(onClickLabel = "Choose a server", onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // The country's own flag fills the whole pill — same asset the list rows
-        // and the hero watermark use — so the bar reads as belonging to that
-        // server, not just tinted by an abstract color. A dark shade gradient on
-        // top keeps the location text on the left legible against it.
+        // The country's own flag fills the whole pill — the same asset the list rows
+        // use — so the bar reads as belonging to that server, not just tinted by an
+        // abstract colour. This is the mockup's `.connect-bar-flag` layer, and the
+        // shade gradient below it is `.connect-bar-shade`: it keeps the location
+        // text on the left legible while the flag reads at full strength toward the
+        // button end.
         if (countryCode.isNotBlank()) {
             coil.compose.AsyncImage(
                 model = coil.request.ImageRequest.Builder(LocalContext.current)
@@ -827,27 +635,15 @@ private fun ConnectBar(
             )
         )
         if (state.connected) {
-            // Plain, elegant dark-green wash rising bottom-to-top — the only thing
-            // that marks "connected" on the bar now, in place of the old tone tint.
+            // The bar's whole connected signal: a dark-teal wash rising bottom to
+            // top, the large-area form of the status pill's teal. Static — nothing
+            // on this screen animates to say "connected".
             Box(
                 Modifier.matchParentSize().background(
                     Brush.verticalGradient(
                         0.00f to Color.Transparent,
-                        0.40f to ConnectedGreenDeep.copy(alpha = 0.16f),
-                        1.00f to ConnectedGreenDeep.copy(alpha = 0.52f),
-                    )
-                )
-            )
-        } else {
-            // A breath of the connection tone bleeding in from the button end, so the
-            // pill belongs to the same light as the circle instead of sitting beside it.
-            Box(
-                Modifier.matchParentSize().background(
-                    Brush.horizontalGradient(
-                        0.00f to Color.Transparent,
-                        0.52f to Color.Transparent,
-                        0.82f to tone.primary.copy(alpha = 0.10f),
-                        1.00f to tone.primary.copy(alpha = 0.24f),
+                        0.40f to ConnectedTealDeep.copy(alpha = 0.16f),
+                        1.00f to ConnectedTealDeep.copy(alpha = 0.52f),
                     )
                 )
             )
@@ -907,18 +703,23 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 }
 
 // ── Power circle ──────────────────────────────────────────────────────────────
-// .power-btn — a 100dp brushed-white disc, and it stays brushed white in every
-// state. What changes is the ring of light around it, drawn by [PowerHalo] in the
-// current [ConnTone]: dim burgundy at rest, a spinning violet arc while the tunnel
-// comes up, a steady breathing blue-purple once it is up. Compose has no inset
-// box-shadow, so the mockup's two inner shadows are drawn as an overlay — a bright
-// top rim and a soft dark foot.
+// .power-btn — a 100dp brushed-white disc that looks the same in every state.
+// Nothing rings it, nothing glows behind it: the mockup's `.power-glow` is
+// `display:none`, so the only light here is the button's own drop shadow and the
+// white gradient of its face. The one thing that ever moves is the press scale,
+// plus a plain colourless spinner while the tunnel comes up.
+//
+// The mockup's four-part box-shadow, split by what Compose can draw:
+//   0 16px 34px rgba(0,0,0,0.45)      ┐ the cast shadow — Modifier.shadow
+//   0 4px 10px rgba(0,0,0,0.25)       ┘
+//   inset 0 3px 4px rgba(255,255,255,0.95)  ┐ Compose has no inset box-shadow, so
+//   inset 0 -10px 14px rgba(0,0,0,0.14)     ┘ these two are [PowerFaceSheen], a
+//                                             bright top rim over a soft dark foot.
 @Composable
 private fun PowerCircle(
     connected: Boolean,
     connecting: Boolean,
     enabled: Boolean,
-    tone: ConnTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1038,7 +839,6 @@ private fun NetworkRow(state: HomeUiState) {
 @Composable
 private fun BrowseCard(
     state: HomeUiState,
-    tone: ConnTone,
     servers: List<SavedConfig>,
     activeId: String?,
     tab: HomeTab,
@@ -1091,9 +891,9 @@ private fun BrowseCard(
                     countryCode = state.countryCodeFor(cfg),
                     pingMs = cfg.pingMs,
                     isActive = isActive,
-                    // The active server's dot carries the same light as the power
-                    // ring, so "this is the one that's up" is one colour, not two.
-                    dotColor = if (state.connected && isActive) tone.ring else RefTextMid,
+                    // The active server's dot in the same teal as the status pill,
+                    // so "this is the one that's up" is one colour, not two.
+                    dotColor = if (state.connected && isActive) RefTeal else RefTextMid,
                     showDivider = index < servers.lastIndex,
                     onClick = { onSelectConfig(cfg) },
                 )
@@ -1419,7 +1219,6 @@ private fun EmptyHint(allEmpty: Boolean, searching: Boolean, tab: HomeTab, onAdd
 @Composable
 private fun UsageCard(
     state: HomeUiState,
-    tone: ConnTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1448,9 +1247,10 @@ private fun UsageCard(
     ) {
         UsageRing(
             bytes = state.sessionBytes,
-            // Lit in the connection's own tone while the tunnel is up; a plain grey
-            // the rest of the time, so the card never announces a state of its own.
-            accent = if (state.connected) tone.ring else RefTextMid,
+            // The mockup's ring is `conic-gradient(var(--teal) …)`, so teal while the
+            // tunnel is up; a plain grey the rest of the time, so the card never
+            // announces a state of its own.
+            accent = if (state.connected) RefTeal else RefTextMid,
         )
         Spacer(Modifier.width(14.dp))              // .bottom-card gap
         Column(Modifier.weight(1f)) {
