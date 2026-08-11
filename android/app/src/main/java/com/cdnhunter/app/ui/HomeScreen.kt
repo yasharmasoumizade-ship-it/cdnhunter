@@ -9,13 +9,17 @@ package com.cdnhunter.app.ui
 // re-guessed.
 //
 // Layout, top to bottom:
-//   • page        — near-black vertical gradient, #0d0e12 → #060709 by 65%
+//   • page        — near-black vertical gradient, #0d0e12 → #060709 by 70%
+//   • hero glow   — one large ambient bloom centred on the power button, and the
+//                   active country's own flag behind it as a low-alpha watermark.
+//                   The bloom's tone is the only thing the connection state
+//                   repaints: burgundy off, violet connecting, blue/purple on
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — OFF/ON pill, "VLESS · 443", chevron → Settings
-//   • connect bar — 88dp pill carrying the active server's flag behind a shade
-//                   that keeps the city legible, plus a 100dp white power circle
-//                   whose centre sits exactly on the bar's right edge; the bar
-//                   is cut away behind it, leaving a 2dp ring of space
+//   • connect bar — 88dp pill carrying the active server's city and country, with
+//                   a 100dp white power circle whose centre sits exactly on the
+//                   bar's right edge; the bar is cut away behind it, leaving 8dp
+//                   of clearance, and the circle's ring carries the glow
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
 //   • browse card — 28dp-topped panel: Main / Custom Config pills, a search
 //                   toggle that expands a field, then one row per server
@@ -30,7 +34,13 @@ package com.cdnhunter.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -51,6 +61,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -59,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -68,8 +80,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
@@ -78,6 +92,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -100,20 +116,73 @@ private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
 private val RefTextMid = Color(0xFF9BA0AC)     // --text-mid
 private val RefTextLow = Color(0xFF656B78)     // --text-low
 private val RefAccent = Color(0xFF4D7FFF)      // --accent
-private val RefTeal = Color(0xFF35D6B8)        // --teal
 private val RefGreen = Color(0xFF34D17A)       // --green
 private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 // The mockup only illustrates low and medium load, but the app measures a third
 // tier (>180ms, see PingBars); one step hotter in the same 0xE0 family.
 private val RefLoadHigh = Color(0xFFE0563B)
 private val PillInk = Color(0xFF05070C)        // .tab-pill.active text colour
-private val PowerInk = Color(0xFF14161D)       // .power-btn svg colour
+private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
+
+// ── Connection tone ───────────────────────────────────────────────────────────
+// Windscribe holds one colour language across the whole screen: a near-black page
+// carrying a single large ambient glow behind the power button. Connecting and
+// connected *do not* repaint the UI — the page, the pill, the white power face
+// and the list are byte-for-byte the same in every state. All that moves is the
+// tone of that one glow and the light in the button's ring:
+//
+//   off        burgundy / red      — the resting tone
+//   connecting violet              — visibly between the two, so the change reads
+//   connected  blue / purple       — the same glow, cooled
+//
+// Each field is animated (see [rememberConnTone]) so the shift is a 700ms fade
+// from one tone to the next rather than a cut.
+private val ToneOffPrimary = Color(0xFF8E1E3C)      // burgundy core
+private val ToneOffSecondary = Color(0xFFC42B48)    // red lift, up and left
+private val ToneOffRing = Color(0xFFFF5C77)
+private val ToneBusyPrimary = Color(0xFF5A2C9C)
+private val ToneBusySecondary = Color(0xFF8B3FD0)
+private val ToneBusyRing = Color(0xFFBB8CFF)
+private val ToneOnPrimary = Color(0xFF3244E4)       // blue core
+private val ToneOnSecondary = Color(0xFF7B3FE4)     // purple lift
+private val ToneOnRing = Color(0xFF8DA2FF)
+
+/** The three colours the connection state is allowed to touch. */
+private data class ConnTone(val primary: Color, val secondary: Color, val ring: Color)
+
+@Composable
+private fun rememberConnTone(connected: Boolean, connecting: Boolean): ConnTone {
+    val primaryTarget = when {
+        connected -> ToneOnPrimary
+        connecting -> ToneBusyPrimary
+        else -> ToneOffPrimary
+    }
+    val secondaryTarget = when {
+        connected -> ToneOnSecondary
+        connecting -> ToneBusySecondary
+        else -> ToneOffSecondary
+    }
+    val ringTarget = when {
+        connected -> ToneOnRing
+        connecting -> ToneBusyRing
+        else -> ToneOffRing
+    }
+    val primary by animateColorAsState(primaryTarget, tween(700, easing = FastOutSlowInEasing), label = "tonePrimary")
+    val secondary by animateColorAsState(secondaryTarget, tween(700, easing = FastOutSlowInEasing), label = "toneSecondary")
+    val ring by animateColorAsState(ringTarget, tween(700, easing = FastOutSlowInEasing), label = "toneRing")
+    return ConnTone(primary = primary, secondary = secondary, ring = ring)
+}
 
 // ── Dimensions — CSS px read as dp (the mockup's device is 390px wide) ─────────
 private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
 private val BarHeight = 88.dp        // .connect-bar height
 private val PowerSize = 100.dp       // .power-btn, .power-btn-wrap
-private val PowerCut = 52.dp         // the bar's mask: circle 52px at 100% 50%
+// The mockup masks the bar with `circle 52px at 100% 50%` around a 50dp-radius
+// button, i.e. a 2dp hairline of space. At arm's length that reads as a printing
+// error rather than as a gap, so the cut here clears the button by 8dp — the one
+// number deliberately off the mockup, and the better spacing between the location
+// card and the button.
+private val PowerCut = 58.dp
 private val PanelCorner = 28.dp      // .browse-card border-radius
 private val ListPad = 18.dp          // .server-row / .tab-row horizontal padding
 private val FlagSize = 36.dp         // .server-flag
@@ -124,30 +193,58 @@ private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
 
+// ── Hero backdrop geometry ────────────────────────────────────────────────────
+// The flag watermark and the ambient glow are both centred on the power button,
+// which is the visual anchor of the screen. The button's centre sits
+//   x: ScreenPad + PowerSize/2 in from the right edge  (= 70dp)
+//   y: 4 (header top pad) + 40 (top bar) + 4 + 34 (status row) + 12 = 94dp
+//      below the status bar, plus PowerSize/2 to reach its middle  (= 144dp)
+// so the backdrop is laid out from the header's top-right corner and shifted onto
+// that point. Both layers fade to nothing well before their own edges, which is
+// what lets the ±few dp of slack in the status row's measured height not matter.
+private val HeroSize = 380.dp                // the glow's full extent
+private val HeroFlagSize = 250.dp            // the flag disc inside it
+private val PowerRowCenterY = 144.dp
+private val HeroOffsetX = HeroSize / 2 - (ScreenPad + PowerSize / 2)
+private val HeroOffsetY = PowerRowCenterY - HeroSize / 2
+/** Low enough to read as a watermark, high enough that the flag's colours land. */
+private const val FLAG_WATERMARK_ALPHA = 0.24f
+
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
  * Here it measures the current session's traffic against that same scale.
  */
 private const val USAGE_RING_SCALE_BYTES = 10L * 1024 * 1024 * 1024
 
-// .device background
+// .device background — more stops than the mockup's four so the ramp has no
+// visible banding on an OLED panel at these near-black values.
 private val PageGradient = Brush.verticalGradient(
     0.00f to Color(0xFF0D0E12),
-    0.14f to Color(0xFF0B0C10),
-    0.28f to Color(0xFF0A0B0E),
-    0.42f to Color(0xFF08090C),
-    0.65f to RefBg,
+    0.08f to Color(0xFF0C0D11),
+    0.16f to Color(0xFF0B0C10),
+    0.24f to Color(0xFF0A0B0F),
+    0.34f to Color(0xFF090A0D),
+    0.46f to Color(0xFF08090C),
+    0.58f to Color(0xFF07080A),
+    0.70f to RefBg,
     1.00f to RefBg,
 )
-// .connect-bar-shade — darkens the left of the pill so the city stays readable
-// over the flag, which itself reads at full strength near the power button.
-private val BarShade = Brush.horizontalGradient(
-    0.00f to RefElev1,
-    0.20f to Color(0xEB14161D),   // rgba(20,22,29,0.92)
-    0.42f to Color(0x8C14161D),   // rgba(20,22,29,0.55)
-    0.62f to Color(0x1F14161D),   // rgba(20,22,29,0.12)
-    0.80f to Color.Transparent,
-    1.00f to Color.Transparent,
+// .connect-bar background: top-lit, so the pill reads as a raised surface rather
+// than a flat cut-out. The flag no longer lives in here (it is the hero
+// watermark behind the button now), which is what lets the fill stay this plain.
+private val BarSurface = Brush.verticalGradient(
+    0.00f to Color(0xFF1A1D25),
+    0.55f to RefElev1,
+    1.00f to Color(0xFF0B0D11),
+)
+// inset 0 1px 0 rgba(255,255,255,.06), plus a matching foot so the bottom edge
+// doesn't read as brighter than the top.
+private val BarSheen = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.07f),
+    0.05f to Color.White.copy(alpha = 0.02f),
+    0.12f to Color.Transparent,
+    0.88f to Color.Transparent,
+    1.00f to Color.Black.copy(alpha = 0.16f),
 )
 
 /**
@@ -277,11 +374,13 @@ internal fun HomeScreen(
         state.configsFor(tab).matching(query).byLatency()
     }
     val activeId = state.activeConfig?.id
+    val tone = rememberConnTone(connected = state.connected, connecting = state.connecting)
 
     Box(modifier.fillMaxSize().background(PageGradient)) {
         Column(Modifier.fillMaxSize()) {
             Header(
                 state = state,
+                tone = tone,
                 onOpenSettings = onOpenSettings,
                 onOpenProfile = onOpenProfile,
                 onOpenLocations = onOpenLocations,
@@ -289,6 +388,7 @@ internal fun HomeScreen(
             )
             BrowseCard(
                 state = state,
+                tone = tone,
                 servers = servers,
                 activeId = activeId,
                 tab = tab,
@@ -309,6 +409,7 @@ internal fun HomeScreen(
         // .bottom-card: sticky at the foot of the scroller, over the list
         UsageCard(
             state = state,
+            tone = tone,
             onClick = onOpenLocations,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -320,17 +421,35 @@ internal fun HomeScreen(
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
+// Three layers, back to front: the hero backdrop (glow + flag watermark), the
+// black wash that keeps the top bar legible over it, then the rows themselves.
 // The gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled
 // out one by one rather than smoothed into a single rhythm.
 @Composable
 private fun Header(
     state: HomeUiState,
+    tone: ConnTone,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().drawBehind { drawHeaderScrim() }) {
+    val heroCountry = state.activeConfig?.let { state.countryCodeFor(it) }.orEmpty()
+    Box(Modifier.fillMaxWidth()) {
+        // matchParentSize: the backdrop is 380dp of deliberate overspill, and this
+        // keeps it from dragging the header's own height out with it. What spills
+        // below is covered by the browse card, which is opaque.
+        Box(Modifier.matchParentSize()) {
+            HeroBackdrop(
+                countryCode = heroCountry,
+                tone = tone,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .offset(x = HeroOffsetX, y = HeroOffsetY),
+            )
+        }
+        Box(Modifier.matchParentSize().drawBehind { drawHeaderScrim() })
         Column(
             Modifier
                 .statusBarsPadding()
@@ -338,10 +457,11 @@ private fun Header(
         ) {
             TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
             Spacer(Modifier.height(4.dp))          // .status-row margin-top
-            StatusRow(state = state, onOpenSettings = onOpenSettings)
+            StatusRow(state = state, tone = tone, onOpenSettings = onOpenSettings)
             Spacer(Modifier.height(12.dp))         // .power-row margin-top
             ConnectRow(
                 state = state,
+                tone = tone,
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
             )
@@ -349,6 +469,110 @@ private fun Header(
             NetworkRow(state = state)
         }
     }
+}
+
+/**
+ * The glow and the flag: everything behind the connect control.
+ *
+ * The glow is two offset radial blooms rather than one, which is what stops it
+ * reading as a flat disc of colour — [ConnTone.primary] centred on the button and
+ * [ConnTone.secondary] lifted up and to the left, so the light has a direction.
+ * Both are drawn well outside this box's own bounds and fade to fully transparent
+ * before they get there.
+ */
+@Composable
+private fun HeroBackdrop(countryCode: String, tone: ConnTone, modifier: Modifier = Modifier) {
+    // requiredSize, not size: this sits inside a box the height of the header, and
+    // plain size() would let those constraints squash 380dp down to whatever the
+    // header happens to measure.
+    Box(modifier.requiredSize(HeroSize), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.matchParentSize()) { drawToneGlow(tone) }
+        if (countryCode.isNotBlank()) {
+            FlagWatermark(countryCode, Modifier.size(HeroFlagSize))
+        }
+    }
+}
+
+private fun DrawScope.drawToneGlow(tone: ConnTone) {
+    val mid = center
+    val radius = size.minDimension / 2f
+    drawCircle(
+        brush = Brush.radialGradient(
+            0.00f to tone.primary.copy(alpha = 0.36f),
+            0.22f to tone.primary.copy(alpha = 0.26f),
+            0.44f to tone.primary.copy(alpha = 0.14f),
+            0.68f to tone.primary.copy(alpha = 0.05f),
+            1.00f to Color.Transparent,
+            center = mid,
+            radius = radius,
+        ),
+        radius = radius,
+        center = mid,
+    )
+    val liftCenter = Offset(mid.x - radius * 0.40f, mid.y - radius * 0.32f)
+    val liftRadius = radius * 0.86f
+    drawCircle(
+        brush = Brush.radialGradient(
+            0.00f to tone.secondary.copy(alpha = 0.26f),
+            0.34f to tone.secondary.copy(alpha = 0.15f),
+            0.66f to tone.secondary.copy(alpha = 0.05f),
+            1.00f to Color.Transparent,
+            center = liftCenter,
+            radius = liftRadius,
+        ),
+        radius = liftRadius,
+        center = liftCenter,
+    )
+}
+
+/**
+ * The active country's real flag, sitting directly behind the power button.
+ *
+ * Same asset the list rows use — assets/flags/{cc}.svg from HatScripts/circle-flags,
+ * i.e. the country's actual vector artwork in its actual colours (Germany renders
+ * black/red/gold, not an approximation), circular because every flag in the app is.
+ * Blown up to [HeroFlagSize] and dropped to [FLAG_WATERMARK_ALPHA], with a radial
+ * DstIn mask so the disc dissolves into the page instead of ending on a hard rim —
+ * that fade is also why it can run off the right edge of the screen without
+ * looking sliced.
+ */
+@Composable
+private fun FlagWatermark(countryCode: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    coil.compose.AsyncImage(
+        model = coil.request.ImageRequest.Builder(context)
+            .data("file:///android_asset/flags/${countryCode.lowercase().trim()}.svg")
+            .crossfade(true)
+            .build(),
+        imageLoader = getFlagImageLoader(context),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+            .graphicsLayer {
+                alpha = FLAG_WATERMARK_ALPHA
+                // The mask below multiplies this layer's alpha, so the layer has to
+                // exist as its own surface first.
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                drawContent()
+                val radius = size.minDimension / 2f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0.00f to Color.White,
+                        0.46f to Color.White,
+                        0.74f to Color.White.copy(alpha = 0.55f),
+                        1.00f to Color.Transparent,
+                        center = center,
+                        radius = radius,
+                    ),
+                    radius = radius,
+                    center = center,
+                    blendMode = BlendMode.DstIn,
+                )
+            },
+        error = null,
+    )
 }
 
 /** .header::before — a black wash that fades out by 75% of the header. */
@@ -410,9 +634,9 @@ private fun GlyphButton(
 
 // ── Status row ────────────────────────────────────────────────────────────────
 @Composable
-private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
+private fun StatusRow(state: HomeUiState, tone: ConnTone, onOpenSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        StatusPill(connected = state.connected, connecting = state.connecting)
+        StatusPill(connected = state.connected, connecting = state.connecting, tone = tone)
         Spacer(Modifier.width(10.dp))              // .status-row gap
         Row(
             Modifier
@@ -435,23 +659,29 @@ private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
     }
 }
 
-/** .status-pill — grey when off, teal-tinted once the tunnel is up. */
+/**
+ * .status-pill — grey at rest, and once the tunnel is up or coming up it picks up
+ * [ConnTone.ring], the same light the power button's ring is showing. It is not a
+ * second accent colour: it is the same one, so the screen never has two stories
+ * about what state it is in.
+ */
 @Composable
-private fun StatusPill(connected: Boolean, connecting: Boolean) {
+private fun StatusPill(connected: Boolean, connecting: Boolean, tone: ConnTone) {
     val label = when {
         connected -> "ON"
         connecting -> "···"
         else -> "OFF"
     }
+    val lit = connected || connecting
     val fill by animateColorAsState(
-        if (connected) RefTeal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.06f),
+        if (lit) tone.ring.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f),
         label = "pillFill",
     )
     val edge by animateColorAsState(
-        if (connected) RefTeal.copy(alpha = 0.30f) else RefBorder,
+        if (lit) tone.ring.copy(alpha = 0.34f) else RefBorder,
         label = "pillEdge",
     )
-    val ink by animateColorAsState(if (connected) RefTeal else RefTextMid, label = "pillInk")
+    val ink by animateColorAsState(if (lit) tone.ring else RefTextMid, label = "pillInk")
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -478,12 +708,14 @@ private fun StatusPill(connected: Boolean, connecting: Boolean) {
 @Composable
 private fun ConnectRow(
     state: HomeUiState,
+    tone: ConnTone,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().height(PowerSize)) {
         ConnectBar(
             state = state,
+            tone = tone,
             onClick = onOpenLocations,
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -495,6 +727,7 @@ private fun ConnectRow(
             connected = state.connected,
             connecting = state.connecting,
             enabled = state.activeConfig != null,
+            tone = tone,
             onClick = onTogglePower,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
@@ -502,58 +735,82 @@ private fun ConnectRow(
 }
 
 @Composable
-private fun ConnectBar(state: HomeUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun ConnectBar(
+    state: HomeUiState,
+    tone: ConnTone,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
     val shape = remember(density) { connectBarShape(with(density) { PowerCut.toPx() }) }
     val cfg = state.activeConfig
     val countryCode = cfg?.let { state.countryCodeFor(it) }.orEmpty()
     val city = cfg?.let { state.cityFor(it) }.orEmpty()
+    val country = countryCodeToName(countryCode)
     val headline = city.ifBlank {
-        countryCodeToName(countryCode).ifBlank {
-            cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
-        }
+        country.ifBlank { cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server" }
     }
-    // Only worth a second half when it isn't a repeat of the first — a config
-    // named after its own city would otherwise read "Frankfurt Frankfurt".
-    val trailer = cfg?.displayName
-        ?.takeIf { it.isNotBlank() && !it.equals(headline, ignoreCase = true) }
-        .orEmpty()
+    // The second line names the country, then the server itself — but only the
+    // parts that aren't already the headline: a config named after its own city
+    // would otherwise read "Frankfurt · Frankfurt".
+    val sub = remember(headline, country, cfg?.displayName) {
+        buildList {
+            if (country.isNotBlank() && !country.equals(headline, ignoreCase = true)) add(country)
+            cfg?.displayName
+                ?.takeIf {
+                    it.isNotBlank() &&
+                        !it.equals(headline, ignoreCase = true) &&
+                        !it.equals(country, ignoreCase = true)
+                }
+                ?.let { add(it) }
+        }.joinToString(" · ")
+    }
 
     Box(
         modifier
-            .shadow(10.dp, shape)                  // --shadow-card
-            .border(1.dp, RefBorder, shape)
+            .shadow(14.dp, shape)                  // --shadow-card, one step deeper
             .clip(shape)
-            .background(RefElev1)
+            .background(BarSurface)
+            .border(1.dp, RefBorder, shape)
             .clickable(onClickLabel = "Choose a server", onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // .connect-bar-flag fills the whole pill so the flag reads as complete
-        // rather than as a cropped sliver.
-        if (countryCode.isNotBlank()) {
-            FlagFill(countryCode, Modifier.matchParentSize())
-        }
-        Box(Modifier.matchParentSize().background(BarShade))
+        // A breath of the connection tone bleeding in from the button end, so the
+        // pill belongs to the same light as the circle instead of sitting beside it.
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(
+                    0.00f to Color.Transparent,
+                    0.52f to Color.Transparent,
+                    0.82f to tone.primary.copy(alpha = 0.10f),
+                    1.00f to tone.primary.copy(alpha = 0.24f),
+                )
+            )
+        )
+        Box(Modifier.matchParentSize().background(BarSheen))
         Column(
-            // .connect-bar padding is 0 20px; the extra end room keeps long
-            // names from running into the circular cut.
-            Modifier.padding(start = ScreenPad, end = 56.dp)
+            // .connect-bar padding is 0 20px; the extra end room keeps long names
+            // clear of the circular cut, which is now 8dp wider than the button.
+            Modifier.padding(start = ScreenPad, end = 62.dp)
         ) {
             Text(
                 headline,
-                fontSize = 20.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.2).sp,
+                fontSize = 21.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
                 color = RefTextHi,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (trailer.isNotEmpty()) {
+            if (sub.isNotEmpty()) {
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    trailer,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
+                    sub,
+                    fontSize = 13.5.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.1.sp,
                     color = RefTextMid,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -566,8 +823,8 @@ private fun ConnectBar(state: HomeUiState, onClick: () -> Unit, modifier: Modifi
 /**
  * The pill, minus a circle cut out of its right edge — the Compose equivalent of
  * the mockup's `mask-image: radial-gradient(circle 52px at 100% 50%, …)`. The cut
- * is centred on the power circle's centre and 2dp wider than it, which is what
- * leaves the thin ring of space between the two.
+ * is centred on the power circle's centre and [PowerCut] wide, which is what
+ * leaves the ring of space between the two.
  */
 private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ ->
     val pill = Path().apply {
@@ -584,32 +841,19 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
     op(pill, cut, PathOperation.Difference)
 }
 
-/** The active server's flag, filling the pill (same assets as CountryFlagBadge). */
-@Composable
-private fun FlagFill(countryCode: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    coil.compose.AsyncImage(
-        model = coil.request.ImageRequest.Builder(context)
-            .data("file:///android_asset/flags/${countryCode.lowercase().trim()}.svg")
-            .crossfade(true)
-            .build(),
-        imageLoader = getFlagImageLoader(context),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = modifier,
-        error = null,
-    )
-}
-
-// .power-btn — a 100dp brushed-white disc. Compose has no inset box-shadow, so
-// the mockup's two inner shadows are drawn as overlays: a bright top rim and a
-// soft dark foot. Connected/connecting swap the face for the teal and amber the
-// rest of the screen already uses rather than adding a third accent.
+// ── Power circle ──────────────────────────────────────────────────────────────
+// .power-btn — a 100dp brushed-white disc, and it stays brushed white in every
+// state. What changes is the ring of light around it, drawn by [PowerHalo] in the
+// current [ConnTone]: dim burgundy at rest, a spinning violet arc while the tunnel
+// comes up, a steady breathing blue-purple once it is up. Compose has no inset
+// box-shadow, so the mockup's two inner shadows are drawn as an overlay — a bright
+// top rim and a soft dark foot.
 @Composable
 private fun PowerCircle(
     connected: Boolean,
     connecting: Boolean,
     enabled: Boolean,
+    tone: ConnTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -619,39 +863,62 @@ private fun PowerCircle(
         if (pressed) 0.96f else 1f,               // .power-btn:active
         label = "powerPress",
     )
-    val face = when {
-        connected -> listOf(Color(0xFF7FF3DC), RefTeal, Color(0xFF23AE93))
-        connecting -> listOf(Color(0xFFFFF1CE), Color(0xFFF0D18B), Color(0xFFDFB964))
-        else -> listOf(Color.White, Color(0xFFE7E9EE), Color(0xFFD9DCE3))
-    }
-    val ink = when {
-        connected -> Color(0xFF04231C)
-        connecting -> Color(0xFF3D2A00)
-        else -> PowerInk
-    }
-    Box(
-        modifier
-            .size(PowerSize)
-            .scale(scale)
-            .shadow(16.dp, CircleShape)           // 0 16px 34px rgba(0,0,0,.45)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(face))
-            .clickable(
-                enabled = enabled,
-                interactionSource = interaction,
-                indication = null,
-                onClickLabel = if (connected) "Disconnect" else "Connect",
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.matchParentSize().background(PowerFaceSheen))
-        PowerGlyph(
-            color = if (enabled) ink else ink.copy(alpha = 0.35f),
-            modifier = Modifier.size(54.dp),      // .power-btn svg
+    val ink = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
+    Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // The cast shadow, on its own layer underneath the halo. Elevation has to be
+        // drawn before the glow, not with the face: a 22dp shadow painted on top of
+        // the halo eats exactly the band of light the halo is there to show. The
+        // fill only exists to give the shadow something to be cast by — the white
+        // face covers it to the pixel.
+        Box(
+            Modifier
+                .matchParentSize()
+                .scale(scale)
+                .shadow(22.dp, CircleShape)        // 0 16px 34px rgba(0,0,0,.45)
+                .background(Color(0xFF090A0E), CircleShape)
         )
+        PowerHalo(
+            connected = connected,
+            connecting = connecting,
+            tone = tone,
+            modifier = Modifier.matchParentSize(),
+        )
+        Box(
+            Modifier
+                .matchParentSize()
+                .scale(scale)
+                .clip(CircleShape)
+                .background(PowerFace)
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interaction,
+                    indication = null,
+                    onClickLabel = if (connected) "Disconnect" else "Connect",
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.matchParentSize().background(PowerFaceSheen))
+            // The Material glyph itself rather than a hand-drawn arc: same 24-unit
+            // grid, correct proportions, and nothing to get the sweep direction of
+            // the ring's opening wrong.
+            Icon(
+                Icons.Rounded.PowerSettingsNew,
+                contentDescription = if (connected) "Disconnect" else "Connect",
+                tint = ink,
+                modifier = Modifier.size(48.dp),  // ≈ the mockup's 54dp stroke svg
+            )
+        }
     }
 }
+
+// linear-gradient(160deg, #ffffff 0%, #e7e9ee 55%, #d9dce3 100%)
+private val PowerFace = Brush.linearGradient(
+    0.00f to Color.White,
+    0.30f to Color(0xFFF4F5F8),
+    0.55f to Color(0xFFE7E9EE),
+    1.00f to Color(0xFFD9DCE3),
+)
 
 // inset 0 3px 4px rgba(255,255,255,.95) over inset 0 -10px 14px rgba(0,0,0,.14)
 private val PowerFaceSheen = Brush.verticalGradient(
@@ -661,6 +928,109 @@ private val PowerFaceSheen = Brush.verticalGradient(
     0.80f to Color.Transparent,
     1.00f to Color.Black.copy(alpha = 0.14f),
 )
+
+/**
+ * The ring of light around the power button — the only thing on this screen that
+ * animates on its own, and only while there is something to say.
+ *
+ * At rest it is a static dim rim, so an idle screen costs nothing to draw. Once
+ * the tunnel is up or coming up, an infinite transition drives a slow breath on
+ * the bloom, and while connecting a bright arc runs around the outside.
+ */
+@Composable
+private fun PowerHalo(
+    connected: Boolean,
+    connecting: Boolean,
+    tone: ConnTone,
+    modifier: Modifier = Modifier,
+) {
+    val lit by animateFloatAsState(
+        when {
+            connected -> 1f
+            connecting -> 0.78f
+            else -> 0.40f
+        },
+        tween(600, easing = FastOutSlowInEasing),
+        label = "haloLit",
+    )
+    if (connected || connecting) {
+        val infinite = rememberInfiniteTransition(label = "powerHalo")
+        val breathe by infinite.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.07f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "haloBreathe",
+        )
+        val spin by infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(animation = tween(1150, easing = LinearEasing)),
+            label = "haloSpin",
+        )
+        Canvas(modifier) {
+            drawPowerHalo(tone, lit, breathe, spinDeg = if (connecting) spin else null)
+        }
+    } else {
+        Canvas(modifier) { drawPowerHalo(tone, lit, breathe = 1f, spinDeg = null) }
+    }
+}
+
+/**
+ * Drawn on the button's own 100dp box but deliberately overspilling it — the bloom
+ * reaches ~1.8× the button's radius. The gradient's first two stops are fully
+ * transparent so nothing is painted under the opaque white face; the light only
+ * exists from the rim outward, which is what keeps the middle of the button clean.
+ */
+private fun DrawScope.drawPowerHalo(
+    tone: ConnTone,
+    lit: Float,
+    breathe: Float,
+    spinDeg: Float?,
+) {
+    val mid = center
+    val radius = size.minDimension / 2f
+    val bloom = radius * 1.8f * breathe
+    drawCircle(
+        brush = Brush.radialGradient(
+            0.00f to Color.Transparent,
+            0.52f to Color.Transparent,
+            0.57f to tone.ring.copy(alpha = 0.50f * lit),
+            0.66f to tone.ring.copy(alpha = 0.26f * lit),
+            0.80f to tone.ring.copy(alpha = 0.10f * lit),
+            1.00f to Color.Transparent,
+            center = mid,
+            radius = bloom,
+        ),
+        radius = bloom,
+        center = mid,
+    )
+    // The rim itself: a hairline hugging the face, so the button has a defined
+    // edge against the bloom instead of dissolving into it.
+    drawCircle(
+        color = tone.ring.copy(alpha = 0.80f * lit),
+        radius = radius + 2.5.dp.toPx(),
+        center = mid,
+        style = Stroke(width = 1.6.dp.toPx()),
+    )
+    if (spinDeg != null) {
+        val trackInset = 9.dp.toPx()
+        val trackRadius = radius + trackInset
+        rotate(spinDeg, mid) {
+            drawArc(
+                color = tone.ring,
+                startAngle = 0f,
+                sweepAngle = 96f,
+                useCenter = false,
+                topLeft = Offset(mid.x - trackRadius, mid.y - trackRadius),
+                size = Size(trackRadius * 2f, trackRadius * 2f),
+                style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
+    }
+}
 
 // ── Network row ───────────────────────────────────────────────────────────────
 // .network-row: transport on the left, the public IP hard right. The IP copies to
@@ -712,6 +1082,7 @@ private fun NetworkRow(state: HomeUiState) {
 @Composable
 private fun BrowseCard(
     state: HomeUiState,
+    tone: ConnTone,
     servers: List<SavedConfig>,
     activeId: String?,
     tab: HomeTab,
@@ -755,13 +1126,16 @@ private fun BrowseCard(
                 }
             }
             itemsIndexed(servers, key = { _, cfg -> cfg.id }) { index, cfg ->
+                val isActive = cfg.id == activeId
                 ServerRow(
                     title = state.rowTitle(cfg),
                     subtitle = state.rowSubtitle(cfg),
                     countryCode = state.countryCodeFor(cfg),
                     pingMs = cfg.pingMs,
-                    isActive = cfg.id == activeId,
-                    isConnected = state.connected && cfg.id == activeId,
+                    isActive = isActive,
+                    // The active server's dot carries the same light as the power
+                    // ring, so "this is the one that's up" is one colour, not two.
+                    dotColor = if (state.connected && isActive) tone.ring else RefTextMid,
                     showDivider = index < servers.lastIndex,
                     onClick = { onSelectConfig(cfg) },
                 )
@@ -933,7 +1307,7 @@ private fun ServerRow(
     countryCode: String,
     pingMs: Int,
     isActive: Boolean,
-    isConnected: Boolean,
+    dotColor: Color,
     showDivider: Boolean,
     onClick: () -> Unit,
 ) {
@@ -973,12 +1347,7 @@ private fun ServerRow(
                 )
                 if (isActive) {
                     Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(if (isConnected) RefTeal else RefTextMid)
-                    )
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(dotColor))
                 }
             }
             Spacer(Modifier.height(1.dp))
@@ -1063,7 +1432,12 @@ private fun EmptyHint(allEmpty: Boolean, searching: Boolean, tab: HomeTab, onAdd
 // The mockup's copy is a monthly quota; the app only knows the live session, so
 // that is what the ring and the lines report.
 @Composable
-private fun UsageCard(state: HomeUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun UsageCard(
+    state: HomeUiState,
+    tone: ConnTone,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val subtext = when {
         state.connected ->
             "↓ ${speedLabel(state.downloadKBps)}   ↑ ${speedLabel(state.uploadKBps)}"
@@ -1079,29 +1453,36 @@ private fun UsageCard(state: HomeUiState, onClick: () -> Unit, modifier: Modifie
     Row(
         modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(CardCorner))     // --shadow-card
+            .shadow(12.dp, RoundedCornerShape(CardCorner))     // --shadow-card
             .clip(RoundedCornerShape(CardCorner))
-            .background(Brush.linearGradient(listOf(RefElev2, RefElev1)))
+            .background(Brush.verticalGradient(listOf(RefElev2, RefElev1)))
             .border(1.dp, RefBorder, RoundedCornerShape(CardCorner))
             .clickable(onClickLabel = "Choose a server", onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        UsageRing(bytes = state.sessionBytes)
+        UsageRing(
+            bytes = state.sessionBytes,
+            // Lit in the connection's own tone while the tunnel is up; a plain grey
+            // the rest of the time, so the card never announces a state of its own.
+            accent = if (state.connected) tone.ring else RefTextMid,
+        )
         Spacer(Modifier.width(14.dp))              // .bottom-card gap
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.1.sp,
                 color = RefTextHi,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(1.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 subtext,
                 fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 color = RefTextMid,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1112,9 +1493,9 @@ private fun UsageCard(state: HomeUiState, onClick: () -> Unit, modifier: Modifie
     }
 }
 
-/** .usage-ring — a 5dp teal arc over a track, with the total in the middle. */
+/** .usage-ring — a 5dp arc over a track, with the session total in the middle. */
 @Composable
-private fun UsageRing(bytes: Long) {
+private fun UsageRing(bytes: Long, accent: Color) {
     val (value, unit) = ringLabel(bytes)
     val fraction = (bytes.toFloat() / USAGE_RING_SCALE_BYTES.toFloat()).coerceIn(0f, 1f)
     val sweep by animateFloatAsState(fraction, tween(600), label = "usageSweep")
@@ -1128,13 +1509,13 @@ private fun UsageRing(bytes: Long) {
             )
             if (sweep > 0f) {
                 drawArc(
-                    color = RefTeal,
+                    color = accent,
                     startAngle = -90f,
                     sweepAngle = 360f * sweep,
                     useCenter = false,
                     topLeft = Offset(stroke / 2f, stroke / 2f),
                     size = Size(size.width - stroke, size.height - stroke),
-                    style = Stroke(width = stroke, cap = StrokeCap.Butt),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
             }
         }
@@ -1144,7 +1525,7 @@ private fun UsageRing(bytes: Long) {
                 fontSize = 9.5.sp,
                 lineHeight = 10.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = RefTeal,
+                color = accent,
                 maxLines = 1,
             )
             Text(
@@ -1152,7 +1533,7 @@ private fun UsageRing(bytes: Long) {
                 fontSize = 9.5.sp,
                 lineHeight = 10.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = RefTeal,
+                color = accent,
                 maxLines = 1,
             )
         }
@@ -1160,10 +1541,13 @@ private fun UsageRing(bytes: Long) {
 }
 
 // ── Glyphs ────────────────────────────────────────────────────────────────────
-// The mockup draws its chevron, power mark, account mark and wifi mark as inline
-// SVG on a 24-unit grid at stroke-width 2–2.4. Material's equivalents are heavier
-// and, for the account mark, filled, so these four are drawn on the same grid:
-// `unit` below is one mockup unit, so the path numbers stay recognisable.
+// The mockup draws its chevron, account mark and wifi mark as inline SVG on a
+// 24-unit grid at stroke-width 2–2.4. Material's equivalents are heavier and, for
+// the account mark, filled, so these three are drawn on the same grid: `unit`
+// below is one mockup unit, so the path numbers stay recognisable. The power mark
+// is the exception — that one is Material's own Icons.Rounded.PowerSettingsNew,
+// because a hand-drawn ring is exactly where the opening ended up on the wrong
+// side of the circle once already.
 
 @Composable
 private fun Chevron(size: Dp, color: Color, modifier: Modifier = Modifier) {
@@ -1182,31 +1566,6 @@ private fun Chevron(size: Dp, color: Color, modifier: Modifier = Modifier) {
             color,
             Offset(15f * unit, 12f * unit),
             Offset(9f * unit, 6f * unit),
-            stroke,
-            StrokeCap.Round,
-        )
-    }
-}
-
-/** M12 3v9 over M6.3 6.3a8 8 0 1 0 11.4 0 — a ring open at the top, plus a stem. */
-@Composable
-private fun PowerGlyph(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val unit = size.minDimension / 24f
-        val stroke = 2.4f * unit
-        drawArc(
-            color = color,
-            startAngle = 135f,
-            sweepAngle = 270f,
-            useCenter = false,
-            topLeft = Offset(4f * unit, 4f * unit),
-            size = Size(16f * unit, 16f * unit),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color,
-            Offset(12f * unit, 3f * unit),
-            Offset(12f * unit, 12f * unit),
             stroke,
             StrokeCap.Round,
         )
@@ -1311,6 +1670,22 @@ private fun HomeScreenIdlePreview() {
             activeConfig = previewConfigs.first(),
             allConfigs = previewConfigs,
             networkName = "Mobile network",
+            publicIp = "139.162.191.1",
+        ),
+        onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
+        onTogglePower = {}, onSelectConfig = {},
+    )
+}
+
+@Preview(name = "Home · connecting", widthDp = 390, heightDp = 844)
+@Composable
+private fun HomeScreenConnectingPreview() {
+    HomeScreen(
+        state = HomeUiState(
+            activeConfig = previewConfigs.first(),
+            allConfigs = previewConfigs,
+            connecting = true,
+            networkName = "Wi-Fi",
             publicIp = "139.162.191.1",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
