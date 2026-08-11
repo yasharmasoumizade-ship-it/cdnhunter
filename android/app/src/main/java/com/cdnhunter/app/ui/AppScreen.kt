@@ -4,22 +4,15 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,15 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,10 +41,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -65,7 +50,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
-import android.net.VpnService
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalDensity
@@ -288,20 +272,10 @@ private val flagSpecs = mapOf(
     "IR" to FlagSpec(FlagShape.STRIPES_H, listOf(FGREEN, FWHITE, FRED)),
 )
 
-// Deterministic fallback for anything not curated above — consistent per country
-// code (not literally accurate), better than a blank gray box.
-private fun fallbackSpecFor(cc: String): FlagSpec {
-    val palette = listOf(FBLUE, FRED, FYELLOW, FGREEN, FWHITE, Color(0xFF8B5CF6))
-    val seed = cc.uppercase().sumOf { it.code }
-    val c1 = palette[seed % palette.size]
-    val c2 = palette[(seed / 7 + 1) % palette.size]
-    val c3 = palette[(seed / 13 + 2) % palette.size]
-    return FlagSpec(if (seed % 2 == 0) FlagShape.STRIPES_H else FlagShape.STRIPES_V, listOf(c1, c2, c3))
-}
-private fun flagSpecFor(cc: String): FlagSpec {
-    if (cc.isBlank()) return FlagSpec(FlagShape.STRIPES_H, listOf(AnanasFaint, AnanasMuted, AnanasFaint))
-    return flagSpecs[cc.uppercase()] ?: fallbackSpecFor(cc)
-}
+// The map above is now only consulted as a set of known country codes (see
+// countryCodeFromFlagEmoji / countryCodeFromTitle) — the shapes and colours in it
+// are leftovers from the hand-drawn Canvas flags that the real circle-flags SVGs
+// below replaced.
 
 // Real circle-flags SVGs (github.com/HatScripts/circle-flags, MIT — same source
 // Hiddify uses via its circle_flags package) bundled under assets/flags/{cc}.svg.
@@ -383,43 +357,6 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
                 .clip(CircleShape)
                 .border(0.75.dp, Color.White.copy(alpha = 0.18f), CircleShape)
         )
-    }
-}
-
-internal fun pingQualityLabel(ms: Int): String = when {
-    ms < 0    -> "—"
-    ms < 80   -> "Low load"
-    ms < 180  -> "Medium load"
-    else      -> "High load"
-}
-
-// 0 filled/gray = no ping response, 1 filled/red = high load, 2 filled/amber =
-// medium load, 3 filled/green = low load -- same tiers as pingQualityLabel.
-@Composable
-internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier, barWidth: Dp = 3.dp, gap: Dp = 2.dp) {
-    val filled = when {
-        pingMs < 0   -> 0
-        pingMs < 80  -> 3
-        pingMs < 180 -> 2
-        else         -> 1
-    }
-    val color = when {
-        pingMs < 0   -> AnanasFaint
-        filled == 3  -> AnanasAccent
-        filled == 2  -> AnanasAmber
-        else         -> AnanasRed
-    }
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Bottom) {
-        val heights = listOf(6.dp, 10.dp, 14.dp)
-        for (i in 0 until 3) {
-            Box(
-                Modifier
-                    .width(barWidth)
-                    .height(heights[i])
-                    .clip(RoundedCornerShape(1.dp))
-                    .background(if (i < filled) color else AnanasFaint.copy(alpha = 0.4f))
-            )
-        }
     }
 }
 
@@ -605,22 +542,6 @@ internal fun formatElapsed(totalSec: Long): String {
     return "%02d:%02d:%02d".format(h, m, s)
 }
 
-private fun formatSpeed(kbps: Double): Pair<String, String> =
-    if (kbps >= 1024.0) "%.1f".format(kbps / 1024.0) to "MB/s"
-    else "%.0f".format(kbps) to "KB/s"
-
-internal fun formatBytes(bytes: Long): String {
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    val gb = mb / 1024.0
-    return when {
-        gb >= 1.0 -> "%.2f GB".format(gb)
-        mb >= 1.0 -> "%.1f MB".format(mb)
-        kb >= 1.0 -> "%.0f KB".format(kb)
-        else      -> "$bytes B"
-    }
-}
-
 /**
  * Label for the transport this device is on right now, for Home's network row.
  *
@@ -747,11 +668,6 @@ private fun VpnTab() {
     // outside world sees for it (resolved through the tunnel while it's up).
     var networkName by remember { mutableStateOf(describeActiveNetwork(context)) }
     var publicIp by remember { mutableStateOf("") }
-    // Rolling history of recent speed samples (KB/s), used to draw the live
-    // sparkline chart inside each stat card. Capped so it never grows unbounded.
-    val downloadHistory = remember { mutableStateListOf<Float>() }
-    val uploadHistory = remember { mutableStateListOf<Float>() }
-    val maxHistoryPoints = 40
 
     // Country/flag no longer needs a GeoService instance here — see enrichConfigGeo.
 
@@ -812,18 +728,12 @@ private fun VpnTab() {
                 totalUploadBytes   = curUp
                 lastDown = curDown; lastUp = curUp
 
-                downloadHistory.add(downloadKBps.toFloat())
-                if (downloadHistory.size > maxHistoryPoints) downloadHistory.removeAt(0)
-                uploadHistory.add(uploadKBps.toFloat())
-                if (uploadHistory.size > maxHistoryPoints) uploadHistory.removeAt(0)
-
                 exitCountryCode = CdnVpnService.exitCountryCode
                 exitCity = CdnVpnService.exitCity
                 exitGeoConfigId = CdnVpnService.exitGeoConfigId
             } else {
                 connectedSinceMs = 0L; elapsedSec = 0L; downloadKBps = 0.0; uploadKBps = 0.0
                 totalDownloadBytes = 0L; totalUploadBytes = 0L
-                downloadHistory.clear(); uploadHistory.clear()
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
                 exitCountryCode = ""; exitCity = ""; exitGeoConfigId = ""
             }
@@ -1180,241 +1090,6 @@ private fun VpnTab() {
     }
 }
 
-// ── Power button: aurora ribbon hugging the button's own edge ──────────────────
-// Not on Home anymore — Home draws the mockup's own white power circle (see
-// PowerCircle in HomeScreen.kt). Kept as the full-size aurora, and the only
-// caller of AuroraShaderGlow on API 33+, in case Home goes back to a hero button.
-@Composable
-private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
-    // Multiple independent time counters at incommensurate rates. Because their
-    // periods (7s, 11s, 13s, 17s) are all prime relative to each other the
-    // combined pattern doesn't repeat for 7*11*13*17 ≈ 17,000 seconds -- it
-    // never visibly restarts. No single "rotation" uniform means no visible
-    // full-circle sweep, so there's no point where you see the aurora "lapping"
-    // back to where it started and producing an obvious loop artifact.
-    val infinite = rememberInfiniteTransition(label = "power")
-    val t1 by infinite.animateFloat(0f, 1f,
-        infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "t1")
-    val t2 by infinite.animateFloat(0f, 1f,
-        infiniteRepeatable(tween(11000, easing = LinearEasing)), label = "t2")
-    val t3 by infinite.animateFloat(0f, 1f,
-        infiniteRepeatable(tween(13000, easing = LinearEasing)), label = "t3")
-    // Raised the floor: 0.82->0.96 read as faint for most of its cycle since
-    // the whole glow is multiplied by this. 0.95->1.0 keeps the same gentle
-    // pulse but the glow now stays essentially full-bright throughout instead
-    // of visibly dimming.
-    val breathe by infinite.animateFloat(
-        0.95f, 1f,
-        infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe"
-    )
-
-    val colorA by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF34D9A8)
-            connecting -> Color(0xFFFFC93C)
-            else -> Color(0xFF3B6FFF)
-        },
-        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorA"
-    )
-    val colorB by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF3FA8E0)
-            connecting -> Color(0xFFFF5A5A)
-            else -> Color(0xFF8A5CFF)
-        },
-        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorB"
-    )
-    val colorC by animateColorAsState(
-        targetValue = when {
-            connected -> Color(0xFF39D8DD)
-            connecting -> Color(0xFFFF8C4B)
-            else -> Color(0xFF4D4CFF)
-        },
-        animationSpec = tween(950, easing = FastOutSlowInEasing), label = "colorC"
-    )
-
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            AuroraShaderGlow(
-                colorA = colorA, colorB = colorB, colorC = colorC,
-                t1 = t1, t2 = t2, t3 = t3, breathe = breathe,
-                modifier = Modifier.size(280.dp)
-            )
-        } else {
-            AuroraCanvasGlow(
-                colorA = colorA, colorB = colorB, colorC = colorC,
-                t1 = t1, t2 = t2, t3 = t3, breathe = breathe,
-                modifier = Modifier.size(280.dp)
-            )
-        }
-        Box(
-            Modifier.size(200.dp).clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFF1c1c1f), Color(0xFF0a0a0c)),
-                        start = Offset(0f, 0f), end = Offset(200f, 200f)
-                    )
-                )
-                .clickable(
-                    enabled = !connecting,
-                    interactionSource = interactionSource,
-                    indication = null,
-                ) { onClick() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Rounded.PowerSettingsNew, null,
-                tint = colorA,
-                modifier = Modifier.size(64.dp))
-        }
-    }
-}
-
-private const val AURORA_AGSL = """
-    uniform float2 resolution;
-    uniform float t1;
-    uniform float t2;
-    uniform float t3;
-    uniform float breathe;
-    uniform float4 colorA;
-    uniform float4 colorB;
-    uniform float4 colorC;
-
-    half4 main(float2 fragCoord) {
-        float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
-        uv.x *= resolution.x / resolution.y;
-
-        float dist = length(uv);
-        float angle = atan(uv.y, uv.x);
-
-        float a1 = angle * 3.0 + t1 * 6.28;
-        float a2 = angle * 5.0 - t2 * 6.28 * 0.7;
-        float a3 = angle * 7.3 + t3 * 6.28 * 1.1;
-        float a4 = angle * 11.0 + (t1 - t2) * 6.28 * 0.4;
-        float a5 = angle * 2.0 - t3 * 6.28 * 0.3 + t1 * 2.1;
-        float noise = sin(a1)*0.024 + sin(a2)*0.018 + sin(a3)*0.012
-                    + sin(a4)*0.008 + sin(a5)*0.016;
-
-        float sweepRaw = 0.5 + 0.5 * sin(angle + t1*6.28*0.5 + noise*4.0);
-        float sweep = smoothstep(0.0, 1.0, sweepRaw);
-        float3 aurora;
-        if (sweep < 0.5) {
-            aurora = mix(colorA.rgb, colorB.rgb, smoothstep(0.0, 1.0, sweep*2.0));
-        } else {
-            aurora = mix(colorB.rgb, colorC.rgb, smoothstep(0.0, 1.0, (sweep-0.5)*2.0));
-        }
-        float shimmer = 0.92 + 0.08 * sin(angle*4.0 + t2*6.28*0.8 + noise*2.0);
-        aurora *= shimmer;
-
-        float ringRadius = 0.64 + noise * 0.045;
-        // Thinner core (0.038 -> 0.024) reads as a defined line instead of a
-        // soft haze; pow exponent raised 0.85 -> 0.6 so the mask climbs to
-        // full strength faster across that thinner band instead of trailing
-        // off gradually, which is what "کمرنگ" (faint) actually looks like
-        // up close on a thin ring.
-        float ringWidth = 0.024;
-        float ringDist = abs(dist - ringRadius);
-        float ringMask = smoothstep(ringWidth*1.5, 0.0, ringDist);
-        ringMask = pow(ringMask, 0.6);
-
-        float glowFalloff = smoothstep(1.0, ringRadius - 0.05, dist);
-        float glowMask = pow(glowFalloff, 2.8);
-
-        // glowMask*0.55 -> *1.0: the outward glow was the main source of
-        // faintness, barely lifting above the dark button background at 0.55.
-        // clamped with min() since ringMask+glowMask can now exceed 1.
-        float finalAlpha = min(1.0, (ringMask + glowMask) * breathe);
-        float buttonCutout = smoothstep(ringRadius - 0.012, ringRadius + 0.008, dist);
-
-        // Push the aurora color 20% over white-point before the alpha cutout
-        // (half4 clamps on output) for a hotter, more saturated core on the
-        // ring than the flat colorA/B/C mix gives at alpha 1.0 alone.
-        return half4(aurora * 1.2 * finalAlpha * buttonCutout, finalAlpha * buttonCutout);
-    }
-"""
-
-@Composable
-private fun AuroraShaderGlow(
-    colorA: Color, colorB: Color, colorC: Color,
-    t1: Float, t2: Float, t3: Float, breathe: Float,
-    modifier: Modifier = Modifier
-) {
-    val shader = remember { android.graphics.RuntimeShader(AURORA_AGSL) }
-    Canvas(modifier) {
-        val w = size.width; val h = size.height
-        shader.setFloatUniform("resolution", w, h)
-        shader.setFloatUniform("t1", t1)
-        shader.setFloatUniform("t2", t2)
-        shader.setFloatUniform("t3", t3)
-        shader.setFloatUniform("breathe", breathe)
-        shader.setFloatUniform("colorA", colorA.red, colorA.green, colorA.blue, 1f)
-        shader.setFloatUniform("colorB", colorB.red, colorB.green, colorB.blue, 1f)
-        shader.setFloatUniform("colorC", colorC.red, colorC.green, colorC.blue, 1f)
-        drawContext.canvas.nativeCanvas.apply {
-            val paint = android.graphics.Paint().apply { this.shader = shader }
-            drawRect(0f, 0f, w, h, paint)
-        }
-    }
-}
-
-@Composable
-// internal (not private): reused at both diameters, on Home and off it.
-internal fun AuroraCanvasGlow(
-    colorA: Color, colorB: Color, colorC: Color,
-    t1: Float, t2: Float, t3: Float, breathe: Float,
-    modifier: Modifier = Modifier,
-    // Diameter of the outermost glow layer. Every layer below is expressed as a
-    // fraction of it so the same aurora renders correctly at any diameter -- the
-    // 280dp hero button and the 72dp top-bar one. The default reproduces the
-    // original hard-coded 278/252/224dp + 40/24/3dp stroke values exactly.
-    ringSize: Dp = 278.dp,
-) {
-    Box(modifier, contentAlignment = Alignment.Center) {
-        // Less blur (26dp -> 16dp) so this outer layer doesn't wash out into a
-        // faint haze, alpha raised to nearly full so it actually contributes
-        // visible light instead of a barely-there tint.
-        Canvas(Modifier.size(ringSize).blur(ringSize * 0.0576f)) {
-            val stroke = (ringSize * 0.1439f).toPx()
-            drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorC, colorA)),
-                startAngle = t1 * 360f, sweepAngle = 360f, useCenter = false,
-                alpha = 0.8f * breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke/2, stroke/2),
-                size = Size(size.width - stroke, size.height - stroke)
-            )
-        }
-        Canvas(Modifier.size(ringSize * 0.9065f).blur(ringSize * 0.0288f)) {
-            val stroke = (ringSize * 0.0863f).toPx()
-            drawArc(
-                brush = Brush.sweepGradient(listOf(colorB, colorC, colorA, colorB)),
-                startAngle = -t2 * 360f + 40f, sweepAngle = 300f, useCenter = false,
-                alpha = 0.9f * breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke/2, stroke/2),
-                size = Size(size.width - stroke, size.height - stroke)
-            )
-        }
-        // Sharp core ring: no blur, thinner stroke (3dp), full alpha -- the
-        // one layer meant to read as a crisp line rather than glow.
-        Canvas(Modifier.size(ringSize * 0.8058f)) {
-            val stroke = (ringSize * 0.0108f).coerceAtLeast(1.5.dp).toPx()
-            drawArc(
-                brush = Brush.sweepGradient(listOf(colorA, colorB, colorA)),
-                startAngle = t3 * 360f, sweepAngle = 360f, useCenter = false,
-                alpha = breathe,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-                topLeft = Offset(stroke/2, stroke/2),
-                size = Size(size.width - stroke, size.height - stroke)
-            )
-        }
-    }
-}
-
-
-
 // ── Add-config sheet: sliding bottom sheet with QR scan / clipboard ──
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1475,61 +1150,6 @@ private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, h
     }
 }
 
-
-// ── Location Section Header (improved styling, no emoji) ──────────────────────
-@Composable
-private fun LocationSectionHeader(title: String, subtitle: String = "") {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        Text(
-            text = title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp,
-            color = AnanasTextHi
-        )
-        if (subtitle.isNotEmpty()) {
-            Text(
-                text = subtitle,
-                fontSize = 11.sp,
-                color = AnanasMuted,
-                letterSpacing = 0.3.sp,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        }
-    }
-}
-
-// ── Country Badge Placeholder (no flag emoji) ────────────────────────────────
-@Composable
-private fun CountryCodeBadge(countryCode: String, size: Dp = 32.dp) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(RoundedCornerShape(size * 0.22f))
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF2A2A2A),
-                        Color(0xFF1F1F1F)
-                    )
-                )
-            )
-            .border(1.5.dp, Color(0xFF3A3A3A), RoundedCornerShape(size * 0.22f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = countryCode.uppercase().take(2),
-            fontSize = (size * 0.4f).value.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFAAAAAA),
-            letterSpacing = 0.5.sp
-        )
-    }
-}
 
 // ── Server List Item — minimal flat row (Windscribe-style) ───────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1699,131 +1319,6 @@ private fun SignalBars(pingMs: Int) {
     }
 }
 
-
-@Composable
-private fun ServerRow(
-    cfg: SavedConfig, isActive: Boolean, connected: Boolean,
-    onClick: () -> Unit, onCopy: () -> Unit, onShowQr: () -> Unit = {},
-) {
-    val badgeColor = when (cfg.proto.lowercase()) {
-        "trojan" -> AnanasAccent
-        "vless"  -> AnanasVless
-        "vmess"  -> AnanasAmber
-        else     -> AnanasMuted
-    }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(AnanasCard)
-            .border(1.dp, if (isActive) AnanasBorder2 else AnanasBorder, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
-    ) {
-        if (isActive) {
-            Box(
-                Modifier.fillMaxHeight().width(3.dp).align(Alignment.CenterStart)
-                    .background(AnanasAccent, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
-            )
-        }
-        Column(Modifier.padding(start = if (isActive) 19.dp else 16.dp, top = 14.dp, end = 14.dp, bottom = 14.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CountryFlagBadge(cfg.countryCode, 38.dp)
-                    Column {
-                        Text(cfg.displayName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                        Spacer(Modifier.height(3.dp))
-                        if (isActive && connected) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Box(Modifier.size(5.dp).clip(CircleShape).background(AnanasAccent))
-                                Text("CONNECTED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AnanasAccent, letterSpacing = 0.2.sp)
-                            }
-                        } else {
-                            val sub = if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}" else "Tap to connect"
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(sub, fontSize = 11.5.sp, fontWeight = FontWeight.Normal, color = AnanasMuted)
-                                if (cfg.geoResolved) PingBars(cfg.pingMs)
-                            }
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
-                            .clickable { onShowQr() },
-                        contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.QrCode2, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(18.dp)) }
-                    Box(
-                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                            .background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp))
-                            .clickable { onCopy() },
-                        contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText.copy(0.85f), modifier = Modifier.size(17.dp)) }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(cfg.proto.uppercase(), cfg.network.uppercase()).forEach { tag ->
-                    Box(
-                        Modifier.clip(RoundedCornerShape(6.dp)).background(AnanasCard2)
-                            .padding(horizontal = 9.dp, vertical = 4.dp)
-                    ) { Text(tag, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 0.2.sp) }
-                }
-            }
-        }
-    }
-}
-
-// ── Selected-server summary card (Home, top) — simple row + chevron to Locations ─
-@Composable
-private fun SelectedServerSummaryCard(
-    cfg: SavedConfig, connected: Boolean, onClick: () -> Unit,
-    exitCountryCode: String = "", exitCity: String = "", exitGeoConfigId: String = "",
-) {
-    // Once connected, prefer the tunnel-verified real exit location over the
-    // pre-connect estimate (cfg.countryCode/cfg.city, resolved by looking up
-    // the config's hostname directly — wrong for any domain behind a CDN,
-    // since that reports the CDN edge's location, not the real backend
-    // server's). CdnVpnService populates exitCountryCode/exitCity by asking a
-    // geo-IP service through the active tunnel itself once connected; only
-    // trust it when exitGeoConfigId matches this config, so a lookup from a
-    // previous connection can never be shown against the wrong server.
-    val useExitGeo = connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
-    val effectiveCc = if (useExitGeo) exitCountryCode else cfg.countryCode
-    val effectiveCity = if (useExitGeo) exitCity else cfg.city
-    val countryName = remember(effectiveCc) { countryCodeToName(effectiveCc) }
-    val locationLine = when {
-        countryName.isNotBlank() && effectiveCity.isNotBlank() -> "$countryName · $effectiveCity"
-        countryName.isNotBlank() -> countryName
-        !cfg.geoResolved -> "Resolving location…"
-        else -> cfg.displayName
-    }
-    val pingLine = if (cfg.pingMs >= 0) "${cfg.pingMs} ms · ${pingQualityLabel(cfg.pingMs)}" else "—"
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 17.dp, vertical = 15.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            CountryFlagBadge(effectiveCc, 32.dp)
-            Column {
-                Text(locationLine, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
-                Text(
-                    if (connected) "${cfg.network.uppercase()} · Active" else pingLine,
-                    fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 1.dp)
-                )
-            }
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
-    }
-}
 
 // ── QR code: generate + dialog (v2rayNG-style config sharing) ──────────────────
 private fun generateQrBitmap(text: String, sizePx: Int = 560): android.graphics.Bitmap? {
@@ -2803,139 +2298,6 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                 }
             }
         }
-    }
-}
-@Composable
-private fun StatBox(icon: ImageVector, label: String, accentColor: Color, sessionTotal: String?, history: List<Float>, modifier: Modifier) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        accentColor.copy(alpha = 0.08f),
-                        accentColor.copy(alpha = 0.04f)
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(100f, 100f)
-                )
-            )
-            .border(1.2.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-            .padding(18.dp)
-    ) {
-        Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
-            // ── Header: Icon + Label ──
-            Row(
-                verticalAlignment = Alignment.CenterVertically, 
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Icon with background glow
-                Box(
-                    Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(accentColor.copy(alpha = 0.15f))
-                        .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        icon, 
-                        null, 
-                        tint = accentColor, 
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Text(
-                    label, 
-                    fontSize = 10.sp, 
-                    fontWeight = FontWeight.Bold, 
-                    color = AnanasMuted.copy(alpha = 0.9f),
-                    letterSpacing = 0.5.sp
-                )
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            // ── Total value ──
-            Text(
-                sessionTotal ?: "0 B",
-                fontSize = 20.sp, 
-                fontWeight = FontWeight.Bold, 
-                color = accentColor,
-                letterSpacing = (-0.5).sp
-            )
-            
-            // ── Sparkline with gradient ──
-            SpeedSparkline(
-                history = history, 
-                color = accentColor,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(38.dp)
-                    .padding(top = 10.dp)
-            )
-        }
-    }
-}
-
-// Smooth sparkline: a gradient-filled area under a curved line through the recent
-// speed samples. Auto-scales to the current data's own max so small and large
-// transfers both look proportionate rather than flat or clipped.
-@Composable
-private fun SpeedSparkline(history: List<Float>, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        if (history.size < 2) {
-            // Flat baseline while there's not enough data yet — still looks intentional.
-            drawLine(
-                color.copy(alpha = 0.25f),
-                Offset(0f, h - 1f), Offset(w, h - 1f),
-                strokeWidth = 2f
-            )
-            return@Canvas
-        }
-        val maxVal = (history.maxOrNull() ?: 1f).coerceAtLeast(1f)
-        val stepX = w / (history.size - 1).toFloat()
-        val points = history.mapIndexed { i, v ->
-            val x = i * stepX
-            val y = h - (v / maxVal) * (h * 0.85f) - h * 0.05f
-            Offset(x, y)
-        }
-
-        // Smooth path through the points using quadratic mid-point interpolation.
-        val linePath = Path().apply {
-            moveTo(points.first().x, points.first().y)
-            for (i in 1 until points.size) {
-                val p0 = points[i - 1]
-                val p1 = points[i]
-                val midX = (p0.x + p1.x) / 2f
-                val midY = (p0.y + p1.y) / 2f
-                quadraticBezierTo(p0.x, p0.y, midX, midY)
-            }
-            lineTo(points.last().x, points.last().y)
-        }
-
-        val fillPath = Path().apply {
-            addPath(linePath)
-            lineTo(points.last().x, h)
-            lineTo(points.first().x, h)
-            close()
-        }
-
-        drawPath(
-            fillPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(color.copy(alpha = 0.32f), color.copy(alpha = 0.0f)),
-                startY = 0f, endY = h
-            )
-        )
-        drawPath(
-            linePath,
-            color = color.copy(alpha = 0.9f),
-            style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
     }
 }
 

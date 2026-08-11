@@ -119,7 +119,7 @@ private val RefAccent = Color(0xFF4D7FFF)      // --accent
 private val RefGreen = Color(0xFF34D17A)       // --green
 private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 // The mockup only illustrates low and medium load, but the app measures a third
-// tier (>180ms, see PingBars); one step hotter in the same 0xE0 family.
+// tier (>180ms, see [LoadBars]); one step hotter in the same 0xE0 family.
 private val RefLoadHigh = Color(0xFFE0563B)
 private val PillInk = Color(0xFF05070C)        // .tab-pill.active text colour
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
@@ -340,7 +340,7 @@ private fun protocolLabel(cfg: SavedConfig?): String {
     return "$proto · ${cfg.port}"
 }
 
-/** "2.4" to "GB" — the ring's own one-decimal label, not formatBytes' two. */
+/** "2.4" to "GB" — the ring's own one-decimal label, split so the unit can wrap. */
 private fun ringLabel(bytes: Long): Pair<String, String> {
     val kb = bytes / 1024.0
     val mb = kb / 1024.0
@@ -1366,8 +1366,8 @@ private fun ServerRow(
 
 /**
  * .load-bars — three 3dp bars, 6/9/12dp tall. The mockup only paints them green
- * or amber; how many light up follows the app's own ping tiers (see PingBars),
- * so the row still says how good the server is, not just what colour it is.
+ * or amber; how many light up follows the app's own ping tiers (<80ms, <180ms,
+ * worse), so the row still says how good the server is, not just what colour it is.
  */
 @Composable
 private fun LoadBars(pingMs: Int) {
