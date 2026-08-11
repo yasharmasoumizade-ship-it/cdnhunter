@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VPN Home — Reference v3</title>
+<style>
+  :root{
+    /* ---- palette ---- */
+    --bg: #060709;
+    --bg-elev-1: #0f1116;
+    --bg-elev-2: #15171e;
+    --bg-elev-3: #1b1e27;
+    --border: #23262f;
+    --border-soft: #181a22;
+
+    --text-hi: #f6f7f9;
+    --text-mid: #9ba0ac;
+    --text-low: #656b78;
+
+    --accent: #4d7fff;
+    --accent-soft: rgba(77,127,255,0.16);
+    --accent-glow: rgba(77,127,255,0.55);
+    --teal: #35d6b8;
+    --green: #34d17a;
+
+    --radius-xl: 26px;
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+    --radius-full: 999px;
+
+    --shadow-card: 0 8px 28px rgba(0,0,0,0.35);
+    --shadow-btn: 0 16px 40px rgba(77,127,255,0.30);
+
+    --ease: cubic-bezier(.4,0,.2,1);
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
+  html,body{ background:#000; height:100%; }
+
+  body{
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+    display:flex; justify-content:center;
+    min-height:100vh;
+  }
+
+  .device{
+    width: 390px;
+    max-width: 100vw;
+    min-height: 100vh;
+    background: linear-gradient(180deg,
+        #0d0e12 0%,
+        #0b0c10 14%,
+        #0a0b0e 28%,
+        #08090c 42%,
+        var(--bg) 65%,
+        var(--bg) 100%);
+    color: var(--text-hi);
+    position: relative;
+    overflow-x:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ================= HEADER ================= */
+  .header{
+    position:relative;
+    padding: 4px 20px 14px;
+    overflow:hidden;
+  }
+  .header::before{
+    content:"";
+    position:absolute; inset:0;
+    background: linear-gradient(180deg,
+        rgba(0,0,0,0.45) 0%,
+        rgba(0,0,0,0.28) 24%,
+        rgba(0,0,0,0.12) 48%,
+        transparent 75%);
+    z-index:0;
+  }
+  .header > *{ position:relative; z-index:1; }
+  .header-edge{ position:absolute; inset:0; z-index:0; pointer-events:none; overflow:visible; }
+
+  .status-space{ height:0px; }
+
+  .top-card{
+    position:relative;
+    z-index:1;
+  }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top: 0px;
+    position:relative; z-index:1;
+  }
+  .topbar-left{ display:flex; align-items:center; gap:14px; }
+
+  .menu-btn, .settings-btn{
+    width: 40px; height:40px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .settings-btn{ margin-right: 0; }
+  .menu-btn svg, .settings-btn svg{ width:25px; height:25px; color:var(--text-hi); }
+
+  .brand{ display:flex; align-items:center; gap:8px; }
+  .brand-mark{
+    width: 26px; height:26px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), #7aa2ff);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .brand-mark svg{ width:14px; height:14px; color:#fff; }
+  .brand-name{ font-size:18px; font-weight:700; letter-spacing:-0.01em; }
+
+  /* ---- status + protocol row (Windscribe-style) ---- */
+  .status-row{
+    display:flex; align-items:center; gap:10px;
+    margin-top: 4px;
+  }
+  .status-pill{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    color: var(--text-mid);
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    padding: 6px 13px;
+    border-radius: var(--radius-full);
+  }
+  .status-pill.on{
+    background: rgba(53,214,184,0.14);
+    border-color: rgba(53,214,184,0.3);
+    color: var(--teal);
+  }
+  .protocol-line{
+    display:flex; align-items:center; gap:6px;
+    font-size: 14.5px; font-weight: 700; color: var(--text-hi);
+  }
+  .protocol-line .chev{ color: var(--text-low); }
+  .protocol-line svg{ width:14px; height:14px; }
+
+  /* ---- Windscribe-style connect control: pill-shaped bar (rounded on the
+       left) fused to a circular power button on the right that overlaps/
+       "pokes out" of the bar. The bar shows the selected location; tapping
+       the circle connects. ---- */
+  .power-row{
+    margin-top: 12px;
+    display:flex;
+    align-items:center;
+    gap: 0;
+  }
+
+  .connect-bar{
+    position:relative;
+    display:flex; align-items:center;
+    flex:1;
+    height: 88px;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 0 20px;
+    box-shadow:
+      var(--shadow-card),
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      inset 0 0 0 1px rgba(255,255,255,0.02);
+    /* Cut a small circular gap out of the bar's right edge, centered
+       exactly on the connect button's center, so the bar's rounded
+       corners wrap around the top/bottom of the button up to its
+       midpoint, with a thin ring of breathing room around it. */
+    -webkit-mask-image: radial-gradient(circle 52px at 100% 50%, transparent 51px, #000 52px);
+    mask-image: radial-gradient(circle 52px at 100% 50%, transparent 51px, #000 52px);
+  }
+
+  /* Inner clipping layer: holds the flag tint + glass sheen and clips them
+     to the pill shape, WITHOUT clipping the connect button (which lives
+     outside this wrapper so it can render above the bar unclipped). */
+  .connect-bar-fill{
+    position:absolute;
+    inset:0;
+    border-radius: var(--radius-full);
+    overflow:hidden;
+    z-index:0;
+  }
+
+  /* Flag layer: fills the whole pill so the flag reads as complete,
+     not a cropped sliver. Legibility for the location text on the left
+     comes from a separate dark shade layer on top, not from cutting
+     the flag itself short. */
+  .connect-bar-flag{
+    position:absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(180deg, #0a0a0a 0%, #0a0a0a 33.3%, #e2001a 33.3%, #e2001a 66.6%, #ffce00 66.6%, #ffce00 100%);
+    opacity: 1;
+  }
+
+  /* Shade layer: darkens the left portion (behind the location text) so
+     it stays readable, while the flag reads at full strength toward the
+     right, near the connect button. */
+  .connect-bar-shade{
+    position:absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+      var(--bg-elev-1) 0%,
+      rgba(20,22,29,0.92) 20%,
+      rgba(20,22,29,0.55) 42%,
+      rgba(20,22,29,0.12) 62%,
+      transparent 80%);
+  }
+
+  /* Glass sheen removed per request — flag stays flat, no glare. */
+  .connect-bar-glass{
+    display:none;
+  }
+
+  .location-block{ flex:1; min-width:0; position:relative; z-index:2; }
+  .location-name{
+    font-size: 20px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .location-name b{ font-weight: 800; }
+  .location-name span{ font-weight: 400; color: var(--text-mid); margin-left: 6px; font-size: 15px; }
+
+  .power-btn-wrap{
+    width: 100px; height:100px;
+    position:relative;
+    flex-shrink:0;
+    z-index: 3;
+    margin-left: -50px;
+  }
+
+  .power-glow{
+    display:none;
+  }
+  .power-btn{
+    position:relative;
+    width: 100px; height:100px;
+    border-radius:50%;
+    background: linear-gradient(160deg, #ffffff 0%, #e7e9ee 55%, #d9dce3 100%);
+    border: none;
+    cursor:pointer;
+    box-shadow:
+      0 16px 34px rgba(0,0,0,0.45),
+      0 4px 10px rgba(0,0,0,0.25),
+      inset 0 3px 4px rgba(255,255,255,0.95),
+      inset 0 -10px 14px rgba(0,0,0,0.14);
+    display:flex; align-items:center; justify-content:center;
+    transition: transform .15s var(--ease);
+  }
+  .power-btn:active{ transform: scale(0.96); }
+  .power-btn svg{
+    width: 54px; height:54px;
+    color: #14161d;
+    filter: drop-shadow(0 2px 2px rgba(255,255,255,0.6)) drop-shadow(0 -1px 1px rgba(0,0,0,0.15));
+  }
+
+  /* ---- network row ---- */
+  .network-row{
+    margin-top: 22px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .network-left{
+    display:flex; align-items:center; gap:8px;
+    color: var(--text-hi); font-size: 14px; font-weight: 700;
+  }
+  .network-left svg{ width:16px; height:16px; flex-shrink:0; }
+
+  .network-ip{
+    color: var(--text-hi); font-size: 15px; font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ================= BROWSE CARD (tabs + search + servers) ================= */
+  .browse-card{
+    position: relative;
+    margin-top: 10px;
+    background: var(--bg);
+    border-top: 1px solid rgba(255,255,255,0.14);
+    border-radius: 28px 28px 0 0;
+    overflow: hidden;
+  }
+
+  .tab-row{
+    display:flex; align-items:center; gap:14px;
+    padding: 14px 18px;
+    position: relative;
+  }
+  .tab-pills{
+    flex:1;
+    display:flex;
+    gap: 10px;
+  }
+  .tab-pill{
+    padding: 9px 16px;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--text-mid);
+    position: relative;
+    border-radius: 13px;
+    transition: color .18s var(--ease), background .18s var(--ease);
+  }
+  .tab-pill.active{
+    color: #05070c;
+    background: #fff;
+  }
+  .tab-pill.active::after{
+    content: none;
+  }
+  .search-btn{
+    width: 34px; height:34px;
+    border-radius: var(--radius-full);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+    cursor:pointer;
+    transition: background .18s var(--ease), border-color .18s var(--ease);
+  }
+  .search-btn svg{ width:18px; height:18px; color: var(--text-mid); }
+  .search-toggle:checked + .browse-card .search-btn{
+    background: var(--accent-soft);
+  }
+  .search-toggle:checked + .browse-card .search-btn svg{ color: var(--accent); }
+
+  /* ================= SEARCH BAR (collapsible) ================= */
+  /* Hidden by default; opens only when the search circle button is
+     toggled, expanding downward with a smooth height/opacity transition. */
+  .search-bar-wrap{
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows .28s var(--ease), opacity .22s var(--ease);
+    margin: 0 18px;
+  }
+  .search-toggle:checked ~ .browse-card .search-bar-wrap{
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  .search-bar-inner{ overflow:hidden; }
+  .search-bar{
+    display:flex; align-items:center; gap:10px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: var(--radius-full);
+    padding: 12px 16px;
+    margin: 12px 0;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
+    transition: border-color .18s var(--ease), background .18s var(--ease);
+  }
+  .search-bar:focus-within{
+    border-color: rgba(122,162,255,0.45);
+    background: rgba(255,255,255,0.06);
+  }
+  .search-bar svg{ width:17px; height:17px; color: var(--text-mid); flex-shrink:0; }
+  .search-bar input{
+    all: unset;
+    flex:1;
+    font-size: 14.5px;
+    color: var(--text-hi);
+  }
+  .search-bar input::placeholder{ color: var(--text-low); }
+
+  /* ================= LIST ================= */
+  .section-label{
+    padding: 14px 18px 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-low);
+  }
+
+  .list{
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+
+  .server-row{
+    display:flex; align-items:center; gap:14px;
+    padding: 12px 18px;
+    position: relative;
+  }
+  .server-row::after{
+    content:"";
+    position:absolute;
+    left:52px; right:18px; bottom:0;
+    height:1px;
+    background: rgba(255,255,255,0.09);
+  }
+  .server-row:last-child::after{ display:none; }
+
+  .server-flag{
+    width: 36px; height:36px;
+    border-radius:50%;
+    flex-shrink:0;
+    border: 1px solid rgba(255,255,255,0.06);
+    background-size:cover;
+    background-position:center;
+  }
+  .server-body{ flex:1; min-width:0; }
+  .server-name{ font-size:15.5px; font-weight:600; color:var(--text-hi); }
+  .server-sub{ font-size:12.5px; color:var(--text-low); margin-top:1px; }
+
+  .server-load{
+    display:flex; align-items:center; gap:6px;
+    font-size:12px; color:var(--text-mid);
+    flex-shrink:0;
+  }
+  .load-bars{ display:flex; align-items:flex-end; gap:2px; }
+  .load-bars span{ width:3px; border-radius:2px; background: var(--border); }
+  .load-bars span:nth-child(1){ height:6px; }
+  .load-bars span:nth-child(2){ height:9px; }
+  .load-bars span:nth-child(3){ height:12px; }
+  .load-low .load-bars span:nth-child(1){ background: var(--green); }
+  .load-low .load-bars span:nth-child(2){ background: var(--green); }
+  .load-med .load-bars span:nth-child(1){ background: #e0b23b; }
+  .load-med .load-bars span:nth-child(2){ background: #e0b23b; }
+
+  .flag-de{ background: linear-gradient(180deg,#000 33%,#dd0000 33% 66%,#ffce00 66%); }
+  .flag-nl{ background: linear-gradient(180deg,#ae1c28 33%, #fff 33% 66%, #21468b 66%); }
+  .flag-fr{ background: linear-gradient(90deg,#0055a4 33%, #fff 33% 66%, #ef4135 66%); }
+  .flag-se{ background: linear-gradient(180deg,#005293 40%, #fecc02 40% 55%, #005293 55%); }
+  .flag-fi{ background: linear-gradient(180deg,#fff 40%, #002f6c 40% 55%, #fff 55%); }
+  .flag-uk{ background: linear-gradient(160deg,#00247d 45%, #cf142b 45% 55%, #00247d 55%); }
+
+  /* ================= BOTTOM CARD ================= */
+  .bottom-card{
+    position: sticky;
+    bottom: 14px;
+    margin: 0 14px;
+    background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev-1));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    display:flex; align-items:center; gap:14px;
+    box-shadow: var(--shadow-card);
+  }
+  .usage-ring{
+    width: 50px; height:50px;
+    border-radius:50%;
+    background: conic-gradient(var(--teal) 0% 24%, var(--border) 24% 100%);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .usage-ring-inner{
+    width: 40px; height:40px;
+    border-radius:50%;
+    background: var(--bg-elev-1);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    font-size: 9.5px; font-weight:700; color: var(--teal); line-height:1.1;
+  }
+  .bottom-text{ flex:1; }
+  .bottom-title{ font-size:13.5px; font-weight:700; color: var(--text-hi); }
+  .bottom-sub{ font-size:12px; color: var(--text-mid); margin-top:1px; }
+  .bottom-chev{ color: var(--text-low); flex-shrink:0; }
+  .bottom-chev svg{ width:16px; height:16px; }
+
+  ::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body>
+
+<div class="device">
+
+  <div class="header">
+    <svg class="header-edge" viewBox="0 0 390 130" preserveAspectRatio="none"></svg>
+    <div class="status-space"></div>
+
+    <div class="top-card">
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="menu-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </div>
+        </div>
+        <div class="settings-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <span class="status-pill">OFF</span>
+        <span class="protocol-line">
+          VLESS · 443
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </div>
+    </div>
+
+    <!-- Connect bar: pill-shaped, rounded on the left, showing the selected
+         location. A circular power button is fused to the right edge and
+         pokes outward, matching the Windscribe layout. -->
+    <div class="power-row">
+      <div class="connect-bar">
+        <div class="connect-bar-fill">
+          <div class="connect-bar-flag"></div>
+          <div class="connect-bar-shade"></div>
+          <div class="connect-bar-glass"></div>
+        </div>
+        <div class="location-block">
+          <div class="location-name">
+            <b>Frankfurt</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="power-btn-wrap">
+        <div class="power-glow"></div>
+        <div class="power-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M12 3v9"/>
+            <path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="network-row">
+      <div class="network-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12.5a11 11 0 0 1 14 0"/>
+          <path d="M8 15.5a7 7 0 0 1 8 0"/>
+          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>Mobile network</span>
+      </div>
+      <div class="network-ip">139.162.191.1</div>
+    </div>
+  </div>
+
+  <input type="checkbox" id="searchToggle" class="search-toggle" style="display:none;">
+
+  <div class="browse-card" id="browseCard">
+    <div class="tab-row">
+      <div class="tab-pills">
+        <div class="tab-pill active">Main</div>
+        <div class="tab-pill">Custom Config</div>
+      </div>
+      <label for="searchToggle" class="search-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      </label>
+    </div>
+
+    <div class="search-bar-wrap">
+      <div class="search-bar-inner">
+        <div class="search-bar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" placeholder="Search location or server">
+        </div>
+      </div>
+    </div>
+
+    <div class="list">
+    <div class="server-row">
+      <div class="server-flag flag-de"></div>
+      <div class="server-body">
+        <div class="server-name">Germany · Falkenstein</div>
+        <div class="server-sub">12 ms</div>
+      </div>
+      <div class="server-load load-low"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+    <div class="server-row">
+      <div class="server-flag flag-nl"></div>
+      <div class="server-body">
+        <div class="server-name">Netherlands · Amsterdam</div>
+        <div class="server-sub">34 ms</div>
+      </div>
+      <div class="server-load load-low"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+    <div class="server-row">
+      <div class="server-flag flag-fr"></div>
+      <div class="server-body">
+        <div class="server-name">France · Paris</div>
+        <div class="server-sub">41 ms</div>
+      </div>
+      <div class="server-load load-med"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+    <div class="server-row">
+      <div class="server-flag flag-se"></div>
+      <div class="server-body">
+        <div class="server-name">Sweden · Stockholm</div>
+        <div class="server-sub">52 ms</div>
+      </div>
+      <div class="server-load load-low"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+    <div class="server-row">
+      <div class="server-flag flag-fi"></div>
+      <div class="server-body">
+        <div class="server-name">Finland · Helsinki</div>
+        <div class="server-sub">58 ms</div>
+      </div>
+      <div class="server-load load-med"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+    <div class="server-row">
+      <div class="server-flag flag-uk"></div>
+      <div class="server-body">
+        <div class="server-name">United Kingdom · London</div>
+        <div class="server-sub">39 ms</div>
+      </div>
+      <div class="server-load load-low"><div class="load-bars"><span></span><span></span><span></span></div></div>
+    </div>
+  </div>
+  </div>
+
+  <div class="bottom-card">
+    <div class="usage-ring"><div class="usage-ring-inner">2.4<br>GB</div></div>
+    <div class="bottom-text">
+      <div class="bottom-title">Data used this month</div>
+      <div class="bottom-sub">Unlimited plan</div>
+    </div>
+    <div class="bottom-chev">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

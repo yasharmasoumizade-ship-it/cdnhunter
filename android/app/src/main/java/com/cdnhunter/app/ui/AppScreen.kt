@@ -307,7 +307,9 @@ private fun flagSpecFor(cc: String): FlagSpec {
 // Hiddify uses via its circle_flags package) bundled under assets/flags/{cc}.svg.
 // Rendered through Coil's SVG decoder instead of hand-drawn Canvas shapes.
 private var flagImageLoader: coil.ImageLoader? = null
-private fun getFlagImageLoader(context: Context): coil.ImageLoader =
+// internal (not private): HomeScreen.kt's connect bar fills its pill with the
+// same SVG flags, and top-level `private` in Kotlin is file-scoped.
+internal fun getFlagImageLoader(context: Context): coil.ImageLoader =
     flagImageLoader ?: coil.ImageLoader.Builder(context)
         .components { add(coil.decode.SvgDecoder.Factory()) }
         .build()
@@ -619,6 +621,37 @@ internal fun formatBytes(bytes: Long): String {
     }
 }
 
+/**
+ * Label for the transport this device is on right now, for Home's network row.
+ *
+ * Deliberately not the Wi-Fi SSID: reading that needs a location permission on
+ * Android 10+ and this app asks for none. The VPN transport itself is skipped so
+ * the row keeps naming the underlying network while the tunnel is up (the active
+ * network IS the VPN once it's running).
+ */
+private fun describeActiveNetwork(context: Context): String {
+    return try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val candidates = buildList {
+            cm.activeNetwork?.let { add(it) }
+            addAll(cm.allNetworks.toList())
+        }
+        for (network in candidates) {
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue
+            when {
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> return "Wi-Fi"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> return "Mobile data"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> return "Ethernet"
+            }
+        }
+        "No network"
+    } catch (e: Exception) {
+        ""
+    }
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -710,6 +743,10 @@ private fun VpnTab() {
     var exitCountryCode by remember { mutableStateOf("") }
     var exitCity by remember { mutableStateOf("") }
     var exitGeoConfigId by remember { mutableStateOf("") }
+    // Home's network row: which transport the device is on, and the public IP the
+    // outside world sees for it (resolved through the tunnel while it's up).
+    var networkName by remember { mutableStateOf(describeActiveNetwork(context)) }
+    var publicIp by remember { mutableStateOf("") }
     // Rolling history of recent speed samples (KB/s), used to draw the live
     // sparkline chart inside each stat card. Capped so it never grows unbounded.
     val downloadHistory = remember { mutableStateListOf<Float>() }
@@ -796,6 +833,59 @@ private fun VpnTab() {
     }
     LaunchedEffect(connecting) {
         if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
+    }
+
+    // Public IP for Home's network row. Re-resolved whenever the tunnel comes up or
+    // goes down; the delay lets a fresh tunnel settle before the first request is
+    // sent through it, and the lookup is proxied exactly when connected so what's
+    // shown is the exit IP rather than this device's own (this app's process is
+    // excluded from its own VPN).
+    LaunchedEffect(connected) {
+        networkName = describeActiveNetwork(context)
+        publicIp = ""
+        if (connected) delay(2500)
+        val resolved = withContext(Dispatchers.IO) {
+            try {
+                com.cdnhunter.app.engine.GeoService().lookupCurrentIp(proxied = connected)
+            } catch (e: Exception) {
+                ""
+            }
+        }
+        publicIp = resolved
+    }
+
+    // Keeps the network label honest when the phone moves between Wi-Fi and mobile
+    // data while Home is open, instead of only refreshing on connect/disconnect.
+    DisposableEffect(Unit) {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                networkName = describeActiveNetwork(context)
+            }
+
+            override fun onLost(network: android.net.Network) {
+                networkName = describeActiveNetwork(context)
+            }
+
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                caps: android.net.NetworkCapabilities,
+            ) {
+                networkName = describeActiveNetwork(context)
+            }
+        }
+        try {
+            cm?.registerDefaultNetworkCallback(callback)
+        } catch (e: Exception) {
+            // Some OEM builds throw here; the label just stays as first resolved.
+        }
+        onDispose {
+            try {
+                cm?.unregisterNetworkCallback(callback)
+            } catch (e: Exception) {
+            }
+        }
     }
 
     // Continuous ping monitoring — live update like v2rayng
@@ -1014,18 +1104,6 @@ private fun VpnTab() {
     }
 
     val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
-    val otherConfigs  = remember(configs, activeConfig?.id) {
-        val active = activeConfig
-        when {
-            active == null -> emptyList()
-            active.isImported && active.subscriptionId != null ->
-                // Connected via a subscription -- only show that subscription's other servers.
-                configs.filter { it.id != active.id && it.isImported && it.subscriptionId == active.subscriptionId }
-            else ->
-                // Connected via a manually-added (Main) config -- only show other Main configs.
-                configs.filter { it.id != active.id && !it.isImported }
-        }
-    }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -1049,7 +1127,7 @@ private fun VpnTab() {
             AnanasScreen.HOME -> HomeScreen(
                 state = HomeUiState(
                     activeConfig = activeConfig,
-                    quickSwitchConfigs = otherConfigs,
+                    allConfigs = configs,
                     connected = connected,
                     connecting = connecting,
                     elapsedSec = elapsedSec,
@@ -1057,16 +1135,17 @@ private fun VpnTab() {
                     uploadKBps = uploadKBps,
                     totalDownloadBytes = totalDownloadBytes,
                     totalUploadBytes = totalUploadBytes,
-                    downloadHistory = downloadHistory,
-                    uploadHistory = uploadHistory,
                     exitCountryCode = exitCountryCode,
                     exitCity = exitCity,
                     exitGeoConfigId = exitGeoConfigId,
+                    networkName = networkName,
+                    publicIp = publicIp,
                 ),
                 onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
+                onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },
                 onOpenLocations = { navigateTo(AnanasScreen.LOCATIONS) },
                 onTogglePower = { activeConfig?.let { cfg -> connectConfig(cfg) } },
-                onQuickSwitch = { cfg -> connectConfig(cfg) },
+                onSelectConfig = { cfg -> selectConfig(cfg) },
             )
 
             AnanasScreen.LOCATIONS -> {
@@ -1102,9 +1181,9 @@ private fun VpnTab() {
 }
 
 // ── Power button: aurora ribbon hugging the button's own edge ──────────────────
-// Not on Home anymore — Home's top bar uses the 72dp SmallPowerButton in
-// HomeScreen.kt. Kept as the full-size version of the same aurora (and the only
-// caller of AuroraShaderGlow on API 33+) in case Home goes back to a hero button.
+// Not on Home anymore — Home draws the mockup's own white power circle (see
+// PowerCircle in HomeScreen.kt). Kept as the full-size aurora, and the only
+// caller of AuroraShaderGlow on API 33+, in case Home goes back to a hero button.
 @Composable
 private fun PowerButton(connected: Boolean, connecting: Boolean, onClick: () -> Unit) {
     // Multiple independent time counters at incommensurate rates. Because their
@@ -1281,7 +1360,7 @@ private fun AuroraShaderGlow(
 }
 
 @Composable
-// internal (not private): SmallPowerButton lives in HomeScreen.kt now.
+// internal (not private): reused at both diameters, on Home and off it.
 internal fun AuroraCanvasGlow(
     colorA: Color, colorB: Color, colorC: Color,
     t1: Float, t2: Float, t3: Float, breathe: Float,
@@ -2872,4 +2951,5 @@ private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, o
     ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
 }
 
-// SmallPowerButton, QuickSwitchRow and EmptyHomeState moved to HomeScreen.kt.
+// Home's own composables — power circle, connect bar, server list, usage card —
+// all live in HomeScreen.kt.

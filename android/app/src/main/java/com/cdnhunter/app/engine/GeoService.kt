@@ -113,6 +113,33 @@ class GeoService {
         return GeoInfo("", 0.0, 0.0, "", "")
     }
 
+    /**
+     * The public IP the outside world currently sees for this device: through the
+     * live tunnel when [proxied] (mihomo's mixed port, the same path
+     * lookupCurrentExitGeoInfo takes), otherwise over the normal network path.
+     *
+     * The distinction matters for the IP shown on Home — this app's own process is
+     * excluded from its own VPN (see addDisallowedApplication in CdnVpnService), so
+     * an unproxied lookup while connected reports the ISP's IP, not the tunnel's
+     * exit. Returns "" when every provider fails.
+     */
+    fun lookupCurrentIp(proxied: Boolean, mixedPort: Int = 10808, timeout: Float = 5.0f): String {
+        val proxyClient = if (proxied) buildProxiedClient(mixedPort, timeout) else null
+        for (url in listOf("https://ipwho.is/", "https://ipapi.co/json/")) {
+            try {
+                val body =
+                    if (proxyClient != null) proxyGet(proxyClient, url, timeout)
+                    else httpGet(url, timeout)
+                if (body.isNullOrBlank()) continue
+                val ip = JSONObject(body).optString("ip", "")
+                if (ip.isNotBlank()) return ip
+            } catch (e: Exception) {
+                // try the next provider
+            }
+        }
+        return ""
+    }
+
     private fun proxyGet(client: OkHttpClient, url: String, timeout: Float): String? {
         val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
         client.newCall(request).execute().use { response ->
