@@ -815,10 +815,10 @@ private fun ConnectBar(
         Box(
             Modifier.matchParentSize().background(
                 Brush.horizontalGradient(
-                    0.00f to BarSurface,
-                    0.20f to BarSurface.copy(alpha = 0.92f),
-                    0.42f to BarSurface.copy(alpha = 0.55f),
-                    0.62f to BarSurface.copy(alpha = 0.12f),
+                    0.00f to RefElev1,
+                    0.20f to RefElev1.copy(alpha = 0.92f),
+                    0.42f to RefElev1.copy(alpha = 0.55f),
+                    0.62f to RefElev1.copy(alpha = 0.12f),
                     0.80f to Color.Transparent,
                 )
             )
