@@ -1034,29 +1034,39 @@ private fun VpnTab() {
             // Home is a stateless tree in HomeScreen.kt: everything it draws arrives as
             // one HomeUiState snapshot and every tap leaves through a lambda, so this
             // function stays the only owner of connection state.
-            AnanasScreen.HOME -> HomeScreen(
-                state = HomeUiState(
-                    activeConfig = activeConfig,
-                    allConfigs = configs,
-                    connected = connected,
-                    connecting = connecting,
-                    elapsedSec = elapsedSec,
-                    downloadKBps = downloadKBps,
-                    uploadKBps = uploadKBps,
-                    totalDownloadBytes = totalDownloadBytes,
-                    totalUploadBytes = totalUploadBytes,
-                    exitCountryCode = exitCountryCode,
-                    exitCity = exitCity,
-                    exitGeoConfigId = exitGeoConfigId,
-                    networkName = networkName,
-                    publicIp = publicIp,
-                ),
-                onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
-                onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },
-                onOpenLocations = { navigateTo(AnanasScreen.LOCATIONS) },
-                onTogglePower = { activeConfig?.let { cfg -> connectConfig(cfg) } },
-                onSelectConfig = { cfg -> selectConfig(cfg) },
-            )
+            AnanasScreen.HOME -> Box(Modifier.fillMaxSize()) {
+                HomeScreen(
+                    state = HomeUiState(
+                        activeConfig = activeConfig,
+                        allConfigs = configs,
+                        connected = connected,
+                        connecting = connecting,
+                        elapsedSec = elapsedSec,
+                        downloadKBps = downloadKBps,
+                        uploadKBps = uploadKBps,
+                        totalDownloadBytes = totalDownloadBytes,
+                        totalUploadBytes = totalUploadBytes,
+                        exitCountryCode = exitCountryCode,
+                        exitCity = exitCity,
+                        exitGeoConfigId = exitGeoConfigId,
+                        networkName = networkName,
+                        publicIp = publicIp,
+                    ),
+                    onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
+                    onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },
+                    onOpenLocations = { navigateTo(AnanasScreen.LOCATIONS) },
+                    onTogglePower = { activeConfig?.let { cfg -> connectConfig(cfg) } },
+                    onSelectConfig = { cfg -> selectConfig(cfg) },
+                    onAddServer = { showAddMenu = true },
+                )
+                // Same add-config sheet used on Locations, reused here so the new
+                // "+" next to search on Home opens it directly without navigating
+                // away to a separate screen.
+                AddConfigSheet(
+                    expanded = showAddMenu, onToggle = { showAddMenu = !showAddMenu },
+                    onScanQr = ::startQrScan, onClipboard = ::addFromClipboard,
+                )
+            }
 
             AnanasScreen.LOCATIONS -> {
                 // Re-sync from disk every time this screen is entered — a defensive

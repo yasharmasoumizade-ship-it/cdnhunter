@@ -60,6 +60,7 @@ import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Search
@@ -289,18 +290,18 @@ internal data class HomeUiState(
 }
 
 /**
- * The mockup's two tab pills. "Main" is everything the app knows about;
- * "Custom Config" is the servers added by hand rather than pulled from a
- * subscription (SavedConfig.isImported).
+ * The mockup's two tab pills. "Main" is intentionally always empty (just the
+ * add button lives there) -- "Custom" holds every server the app knows about,
+ * subscription-imported or manually added alike.
  */
 private enum class HomeTab(val label: String) {
     MAIN("Main"),
-    CUSTOM("Custom Config"),
+    CUSTOM("Custom"),
 }
 
 private fun HomeUiState.configsFor(tab: HomeTab): List<SavedConfig> = when (tab) {
-    HomeTab.MAIN -> allConfigs
-    HomeTab.CUSTOM -> allConfigs.filter { !it.isImported }
+    HomeTab.MAIN -> emptyList()
+    HomeTab.CUSTOM -> allConfigs
 }
 
 private fun List<SavedConfig>.matching(query: String): List<SavedConfig> {
@@ -365,6 +366,7 @@ internal fun HomeScreen(
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
     onSelectConfig: (SavedConfig) -> Unit,
+    onAddServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var tab by remember { mutableStateOf(HomeTab.MAIN) }
@@ -403,6 +405,7 @@ internal fun HomeScreen(
                 },
                 onSelectConfig = onSelectConfig,
                 onOpenLocations = onOpenLocations,
+                onAddServer = onAddServer,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -1046,6 +1049,7 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onSelectConfig: (SavedConfig) -> Unit,
     onOpenLocations: () -> Unit,
+    onAddServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1061,6 +1065,7 @@ private fun BrowseCard(
             searchOpen = searchOpen,
             onSelect = onSelectTab,
             onToggleSearch = onToggleSearch,
+            onAdd = onAddServer,
         )
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         LazyColumn(
@@ -1074,7 +1079,7 @@ private fun BrowseCard(
                         allEmpty = state.allConfigs.isEmpty(),
                         searching = query.isNotBlank(),
                         tab = tab,
-                        onAdd = onOpenLocations,
+                        onAdd = onAddServer,
                     )
                 }
             }
@@ -1119,6 +1124,7 @@ private fun TabPillRow(
     searchOpen: Boolean,
     onSelect: (HomeTab) -> Unit,
     onToggleSearch: () -> Unit,
+    onAdd: () -> Unit,
 ) {
     Row(
         Modifier
@@ -1132,6 +1138,8 @@ private fun TabPillRow(
             if (index < tabs.lastIndex) Spacer(Modifier.width(10.dp))  // .tab-pills gap
         }
         Spacer(Modifier.weight(1f))
+        AddServerButton(onClick = onAdd)
+        Spacer(Modifier.width(6.dp))
         SearchToggle(open = searchOpen, onClick = onToggleSearch)
     }
 }
@@ -1164,6 +1172,30 @@ private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
             color = ink,
             maxLines = 1,
         )
+    }
+}
+
+/** A plain "+" disc, matching SearchToggle's tap target/disc sizing, for adding a server. */
+@Composable
+private fun AddServerButton(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(TapTarget)
+            .clip(CircleShape)
+            .clickable(onClickLabel = "Add server", onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(34.dp).clip(CircleShape).background(RefAccent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Add,
+                contentDescription = null,
+                tint = RefAccent,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
@@ -1626,7 +1658,7 @@ private fun HomeScreenIdlePreview() {
             publicIp = "139.162.191.1",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
     )
 }
 
@@ -1642,7 +1674,7 @@ private fun HomeScreenConnectingPreview() {
             publicIp = "139.162.191.1",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
     )
 }
 
@@ -1667,7 +1699,7 @@ private fun HomeScreenConnectedPreview() {
             publicIp = "45.83.220.14",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
     )
 }
 
@@ -1677,6 +1709,6 @@ private fun HomeScreenEmptyPreview() {
     HomeScreen(
         state = HomeUiState(activeConfig = null, allConfigs = emptyList()),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
     )
 }
