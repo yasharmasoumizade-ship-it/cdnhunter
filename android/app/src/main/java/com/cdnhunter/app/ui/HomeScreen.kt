@@ -63,6 +63,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -443,6 +444,7 @@ private fun Header(
             HeroBackdrop(
                 countryCode = heroCountry,
                 tone = tone,
+                connected = state.connected,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
@@ -481,19 +483,33 @@ private fun Header(
  * before they get there.
  */
 @Composable
-private fun HeroBackdrop(countryCode: String, tone: ConnTone, modifier: Modifier = Modifier) {
+private fun HeroBackdrop(countryCode: String, tone: ConnTone, connected: Boolean, modifier: Modifier = Modifier) {
     // requiredSize, not size: this sits inside a box the height of the header, and
     // plain size() would let those constraints squash 380dp down to whatever the
     // header happens to measure.
     Box(modifier.requiredSize(HeroSize), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.matchParentSize()) { drawToneGlow(tone) }
+        Canvas(Modifier.matchParentSize()) { drawToneGlow(tone, connected) }
         if (countryCode.isNotBlank()) {
             FlagWatermark(countryCode, Modifier.size(HeroFlagSize))
         }
     }
 }
 
-private fun DrawScope.drawToneGlow(tone: ConnTone) {
+private fun DrawScope.drawToneGlow(tone: ConnTone, connected: Boolean) {
+    if (connected) {
+        // A plain, elegant dark-green wash rising from the bottom — replaces the
+        // multi-tone radial bloom entirely once actually connected. No animation,
+        // just a static gradient.
+        drawRect(
+            brush = Brush.verticalGradient(
+                0.00f to Color.Transparent,
+                0.35f to ConnectedGreenDeep.copy(alpha = 0.10f),
+                0.70f to ConnectedGreenDeep.copy(alpha = 0.30f),
+                1.00f to ConnectedGreenDeep.copy(alpha = 0.46f),
+            ),
+        )
+        return
+    }
     val mid = center
     val radius = size.minDimension / 2f
     drawCircle(
@@ -524,6 +540,11 @@ private fun DrawScope.drawToneGlow(tone: ConnTone) {
         center = liftCenter,
     )
 }
+
+// The one dark, elegant green used for the connected-state wash — deliberately
+// muted (not the bright accent green used for text/badges elsewhere), so a
+// full-bleed wash of it reads as calm rather than a flat color block.
+private val ConnectedGreenDeep = Color(0xFF0B3D2E)
 
 /**
  * The active country's real flag, sitting directly behind the power button.
@@ -775,18 +796,59 @@ private fun ConnectBar(
             .clickable(onClickLabel = "Choose a server", onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // A breath of the connection tone bleeding in from the button end, so the
-        // pill belongs to the same light as the circle instead of sitting beside it.
+        // The country's own flag fills the whole pill — same asset the list rows
+        // and the hero watermark use — so the bar reads as belonging to that
+        // server, not just tinted by an abstract color. A dark shade gradient on
+        // top keeps the location text on the left legible against it.
+        if (countryCode.isNotBlank()) {
+            coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                    .data("file:///android_asset/flags/${countryCode.lowercase().trim()}.svg")
+                    .crossfade(true)
+                    .build(),
+                imageLoader = getFlagImageLoader(LocalContext.current),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
         Box(
             Modifier.matchParentSize().background(
                 Brush.horizontalGradient(
-                    0.00f to Color.Transparent,
-                    0.52f to Color.Transparent,
-                    0.82f to tone.primary.copy(alpha = 0.10f),
-                    1.00f to tone.primary.copy(alpha = 0.24f),
+                    0.00f to BarSurface,
+                    0.20f to BarSurface.copy(alpha = 0.92f),
+                    0.42f to BarSurface.copy(alpha = 0.55f),
+                    0.62f to BarSurface.copy(alpha = 0.12f),
+                    0.80f to Color.Transparent,
                 )
             )
         )
+        if (state.connected) {
+            // Plain, elegant dark-green wash rising bottom-to-top — the only thing
+            // that marks "connected" on the bar now, in place of the old tone tint.
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.verticalGradient(
+                        0.00f to Color.Transparent,
+                        0.40f to ConnectedGreenDeep.copy(alpha = 0.16f),
+                        1.00f to ConnectedGreenDeep.copy(alpha = 0.52f),
+                    )
+                )
+            )
+        } else {
+            // A breath of the connection tone bleeding in from the button end, so the
+            // pill belongs to the same light as the circle instead of sitting beside it.
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.horizontalGradient(
+                        0.00f to Color.Transparent,
+                        0.52f to Color.Transparent,
+                        0.82f to tone.primary.copy(alpha = 0.10f),
+                        1.00f to tone.primary.copy(alpha = 0.24f),
+                    )
+                )
+            )
+        }
         Box(Modifier.matchParentSize().background(BarSheen))
         Column(
             // .connect-bar padding is 0 20px; the extra end room keeps long names
@@ -865,28 +927,15 @@ private fun PowerCircle(
     )
     val ink = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // The cast shadow, on its own layer underneath the halo. Elevation has to be
-        // drawn before the glow, not with the face: a 22dp shadow painted on top of
-        // the halo eats exactly the band of light the halo is there to show. The
-        // fill only exists to give the shadow something to be cast by — the white
-        // face covers it to the pixel.
+        // Flat white disc + cast shadow only — no halo, no ring, no breathing glow.
+        // The HTML reference button (.power-glow{display:none}) is a plain glossy
+        // white circle in every state; the only thing that ever moves is the press
+        // scale.
         Box(
             Modifier
                 .matchParentSize()
                 .scale(scale)
                 .shadow(22.dp, CircleShape)        // 0 16px 34px rgba(0,0,0,.45)
-                .background(Color(0xFF090A0E), CircleShape)
-        )
-        PowerHalo(
-            connected = connected,
-            connecting = connecting,
-            tone = tone,
-            modifier = Modifier.matchParentSize(),
-        )
-        Box(
-            Modifier
-                .matchParentSize()
-                .scale(scale)
                 .clip(CircleShape)
                 .background(PowerFace)
                 .clickable(
@@ -899,15 +948,22 @@ private fun PowerCircle(
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.matchParentSize().background(PowerFaceSheen))
-            // The Material glyph itself rather than a hand-drawn arc: same 24-unit
-            // grid, correct proportions, and nothing to get the sweep direction of
-            // the ring's opening wrong.
-            Icon(
-                Icons.Rounded.PowerSettingsNew,
-                contentDescription = if (connected) "Disconnect" else "Connect",
-                tint = ink,
-                modifier = Modifier.size(48.dp),  // ≈ the mockup's 54dp stroke svg
-            )
+            if (connecting) {
+                // A plain, quiet spinner — no colour, no glow — while the tunnel
+                // is coming up.
+                CircularProgressIndicator(
+                    color = ink,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(32.dp),
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.PowerSettingsNew,
+                    contentDescription = if (connected) "Disconnect" else "Connect",
+                    tint = ink,
+                    modifier = Modifier.size(48.dp),  // ≈ the mockup's 54dp stroke svg
+                )
+            }
         }
     }
 }
@@ -928,109 +984,6 @@ private val PowerFaceSheen = Brush.verticalGradient(
     0.80f to Color.Transparent,
     1.00f to Color.Black.copy(alpha = 0.14f),
 )
-
-/**
- * The ring of light around the power button — the only thing on this screen that
- * animates on its own, and only while there is something to say.
- *
- * At rest it is a static dim rim, so an idle screen costs nothing to draw. Once
- * the tunnel is up or coming up, an infinite transition drives a slow breath on
- * the bloom, and while connecting a bright arc runs around the outside.
- */
-@Composable
-private fun PowerHalo(
-    connected: Boolean,
-    connecting: Boolean,
-    tone: ConnTone,
-    modifier: Modifier = Modifier,
-) {
-    val lit by animateFloatAsState(
-        when {
-            connected -> 1f
-            connecting -> 0.78f
-            else -> 0.40f
-        },
-        tween(600, easing = FastOutSlowInEasing),
-        label = "haloLit",
-    )
-    if (connected || connecting) {
-        val infinite = rememberInfiniteTransition(label = "powerHalo")
-        val breathe by infinite.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.07f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2400, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "haloBreathe",
-        )
-        val spin by infinite.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(animation = tween(1150, easing = LinearEasing)),
-            label = "haloSpin",
-        )
-        Canvas(modifier) {
-            drawPowerHalo(tone, lit, breathe, spinDeg = if (connecting) spin else null)
-        }
-    } else {
-        Canvas(modifier) { drawPowerHalo(tone, lit, breathe = 1f, spinDeg = null) }
-    }
-}
-
-/**
- * Drawn on the button's own 100dp box but deliberately overspilling it — the bloom
- * reaches ~1.8× the button's radius. The gradient's first two stops are fully
- * transparent so nothing is painted under the opaque white face; the light only
- * exists from the rim outward, which is what keeps the middle of the button clean.
- */
-private fun DrawScope.drawPowerHalo(
-    tone: ConnTone,
-    lit: Float,
-    breathe: Float,
-    spinDeg: Float?,
-) {
-    val mid = center
-    val radius = size.minDimension / 2f
-    val bloom = radius * 1.8f * breathe
-    drawCircle(
-        brush = Brush.radialGradient(
-            0.00f to Color.Transparent,
-            0.52f to Color.Transparent,
-            0.57f to tone.ring.copy(alpha = 0.50f * lit),
-            0.66f to tone.ring.copy(alpha = 0.26f * lit),
-            0.80f to tone.ring.copy(alpha = 0.10f * lit),
-            1.00f to Color.Transparent,
-            center = mid,
-            radius = bloom,
-        ),
-        radius = bloom,
-        center = mid,
-    )
-    // The rim itself: a hairline hugging the face, so the button has a defined
-    // edge against the bloom instead of dissolving into it.
-    drawCircle(
-        color = tone.ring.copy(alpha = 0.80f * lit),
-        radius = radius + 2.5.dp.toPx(),
-        center = mid,
-        style = Stroke(width = 1.6.dp.toPx()),
-    )
-    if (spinDeg != null) {
-        val trackInset = 9.dp.toPx()
-        val trackRadius = radius + trackInset
-        rotate(spinDeg, mid) {
-            drawArc(
-                color = tone.ring,
-                startAngle = 0f,
-                sweepAngle = 96f,
-                useCenter = false,
-                topLeft = Offset(mid.x - trackRadius, mid.y - trackRadius),
-                size = Size(trackRadius * 2f, trackRadius * 2f),
-                style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round),
-            )
-        }
-    }
-}
 
 // ── Network row ───────────────────────────────────────────────────────────────
 // .network-row: transport on the left, the public IP hard right. The IP copies to
