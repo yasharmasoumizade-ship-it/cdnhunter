@@ -598,7 +598,6 @@ private fun VpnTab() {
 
     var configs    by remember { mutableStateOf(loadConfigs(context)) }
     var connected  by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
-    var connecting by remember { mutableStateOf(false) }
     var activeId   by remember {
         mutableStateOf(
             context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
@@ -699,7 +698,6 @@ private fun VpnTab() {
             connected = vpnRunning
 
             if (connected) {
-                connecting = false
                 if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
                 elapsedSec = (System.currentTimeMillis() - connectedSinceMs) / 1000
 
@@ -724,10 +722,6 @@ private fun VpnTab() {
             delay(1000)
         }
     }
-    LaunchedEffect(connecting) {
-        if (connecting) { delay(15000); if (!CdnVpnService.isRunning.get()) connecting = false }
-    }
-
     // Public IP for Home's network row. Re-resolved whenever the tunnel comes up or
     // goes down; the delay lets a fresh tunnel settle before the first request is
     // sent through it, and the lookup is proxied exactly when connected so what's
@@ -851,18 +845,15 @@ private fun VpnTab() {
                 .putString("user_config", cfg.uri)
                 .putString("active_config_id", cfg.id)
                 .apply()
-            connecting = true
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             try {
                 val act = findActivity(context)
                 if (act != null) {
                     act.requestVpnPermissionAndConnect()
                 } else {
-                    connecting = false
                     android.widget.Toast.makeText(context, "Couldn't start VPN — please reopen the app", android.widget.Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
-                connecting = false
                 android.widget.Toast.makeText(context, "Failed: ${e.message?.take(40)}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
@@ -1023,7 +1014,6 @@ private fun VpnTab() {
                         activeConfig = activeConfig,
                         allConfigs = configs,
                         connected = connected,
-                        connecting = connecting,
                         elapsedSec = elapsedSec,
                         downloadKBps = downloadKBps,
                         uploadKBps = uploadKBps,
