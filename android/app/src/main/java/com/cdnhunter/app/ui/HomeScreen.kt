@@ -10,8 +10,9 @@ package com.cdnhunter.app.ui
 //
 // Layout, top to bottom:
 //   • page        — near-black vertical gradient, #0d0e12 → #060709 by 70%
-//   • header flag — the active server's country, full-bleed across the whole top of
-//                   the screen, darkened and faded into the page at its foot
+//   • header flag — the active server's country as an ambient wash across the top of
+//                   the screen: held at the left, faded out by the right edge and at
+//                   the top and foot
 //   • edge light  — connected only: a green ring along the screen's top edge
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — "VLESS · 8443 · Smart" on a small glass chip, chevron → Settings
@@ -19,7 +20,7 @@ package com.cdnhunter.app.ui
 //                   100dp white power circle whose centre sits exactly on the bar's
 //                   right edge; the bar is cut away behind it, leaving a 3dp ring of
 //                   clearance. Swipe the circle up for Smart mode, down for Manual
-//   • network row — wifi glyph, transport label, public IP (tap to copy)
+//   • network row — transport label, public IP (tap to copy)
 //   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
 //                   then one row per server
 //                   (flag, country · city, ping, three load bars)
@@ -42,27 +43,37 @@ package com.cdnhunter.app.ui
 // The only state kept here is view state nothing else needs — which tab is
 // selected, whether search is open, and the query.
 //
-// The flag is the whole top of the screen. One country, one image: it fills the
-// header edge to edge and top to bottom — behind the top bar, behind the connect
-// bar, behind the network row — and then fades into the page at the header's foot,
-// so the browse card below meets plain black. It is drawn FillBounds rather than
+// The flag is the top of the screen, but as light rather than as a picture. One
+// country, one image, stretched across the whole header — behind the top bar, behind
+// the connect bar, behind the network row — and then faded out on three sides, so what
+// is left is a wash of the country's colours held at the left of the screen and dark,
+// plain page everywhere the UI needs to be read. It is drawn FillBounds rather than
 // Crop: the bundled asset is a square document and the header is about 1.3:1, so
 // stretching the whole flag into that box shows all of it at close to a real flag's
 // own proportions, where cropping to fill would magnify one band of it and throw
-// the rest away. It is flattened and de-bowed first, and rasterised above the
+// the rest away. It is flattened and de-bowed first, and rasterised well above the
 // header's own pixel width, so the bands read level and crisp — see FlagArtwork.kt.
 //
-// Three things sit between the artwork and the UI, in this order: a slight
-// desaturation ([HEADER_FLAG_SATURATION] — a printer's colours brought onto a
-// screen); a vertical scrim heaviest at the very top and at the foot
-// ([HeaderFlagScrim]: the status bar's glyphs at one end, the fade into the page at
-// the other); and a wide radial vignette centred near the power circle
-// ([drawHeaderVignette]), which darkens the corners and leaves the light where the
-// control is. Together they take the flag down to a background without taking its
-// colour away: [RefTextHi] and the white power disc clear the brightest band the app
-// can draw — a white flag on the lightest part of the scrim leaves ~#6c6d6d, which
-// white text reads 4.8:1 against. The screen's dimmer inks do not clear it, which is
-// what [StatusChipMaterial] is for.
+// The fade is an alpha mask, not a coat of paint. Two gradients multiply into the
+// artwork's own alpha ([HeaderFlagFadeX], [HeaderFlagFadeY]): the horizontal one holds
+// the flag at full strength from the left edge to just past the middle and takes it to
+// nothing by the right, the vertical one takes it to nothing at the status bar and
+// again at the header's foot. Masking rather than scrimming is what keeps this ambient:
+// where the flag is gone the page's own gradient is what shows, at exactly the value it
+// has everywhere else, so the header has no edges of its own — no darker rectangle at
+// the top, no seam where it meets the browse card.
+//
+// Two things sit between the artwork and that mask: a slight desaturation
+// ([HEADER_FLAG_SATURATION] — a printer's colours brought onto a screen), and a soft
+// vertical scrim ([HeaderFlagScrim]) drawn inside the masked layer, so it darkens the
+// flag and tapers away with it instead of tinting the page. There is no vignette any
+// more: darkening the corners was the horizontal mask's job the moment the flag stopped
+// reaching them. Together with [HEADER_FLAG_ALPHA] these take the flag down to a
+// background without taking its colour away: the brightest band the app can draw — a
+// white flag, at the left, level with the status row, where the mask is full and the
+// scrim at its lightest — lands on #515152, which [RefTextHi] reads 7.4:1 against and
+// the white power disc clears easily. The screen's dimmer inks still do not clear it —
+// [RefTextMid] is 3.0:1 there — which is what [StatusChipMaterial] is for.
 //
 // Choosing another server crossfades the flag instead of cutting to it: a 420ms fade
 // in over a 260ms fade out, the incoming flag settling from 1.04 and the outgoing one
@@ -75,7 +86,10 @@ package com.cdnhunter.app.ui
 // and it does two jobs here at once: the headline sits on real material, and the flag
 // reads through the end of the pill nearest the power circle. When there is no flag to
 // draw — country unresolved, no bundled asset, still decoding — the header carries
-// [HeaderFlagFallback], a neutral slate wash, so the top is never a void.
+// [HeaderFlagFallback], a neutral slate wash, so the top is never a void. At the bar's
+// head sits the country's flag as a circular badge — the same [CountryFlagBadge] the
+// server list draws, from the same bundled asset — so the one flag reads the same here
+// as in the list below.
 //
 // The status row is glass too, at chip size ([StatusChipMaterial]). It is the only row
 // with dim ink on it and it sits where the scrim is deliberately lightest, so over a
@@ -88,22 +102,34 @@ package com.cdnhunter.app.ui
 // it: three soft directional sources — top, left and right — falling onto the connect
 // control at a few percent. They are static gradient brushes, never [Modifier.blur],
 // so the light stays crisp instead of smudged. Idle they are white; connected they
-// turn green, tighter and a shade stronger. That colour change is the screen's whole
-// connected signal, and over a flag it has to be a lit room rather than a lamp
-// pointed at the phone — hence the single-digit percentages. The bar's own top and
-// edge highlights stay neutral white so the artwork under them keeps its colours.
+// turn green, tighter and a shade stronger. Over a flag that light has to be a lit room
+// rather than a lamp pointed at the phone — hence the single-digit percentages. The
+// bar's own top and edge highlights stay neutral white so the artwork under them keeps
+// its colours.
 //
 // The power circle is a flat brushed-white disc in every state — the mockup's
 // `.power-glow` is `display:none` — and nothing is attached to it: the two mode
 // chevrons that used to sit above and below it are gone. Smart / Manual is still
 // switched by swiping the circle up or down, or by its two accessibility actions, and
 // the mode is still named in the status row, which is where this screen states the
-// connection's facts in words.
+// connection's facts in words. The one thing on it that answers to the tunnel is its
+// mark, which goes green while the tunnel is up (see [headerInk]).
 //
 // Connected is teal (--teal, #35d6b8) where the mockup says teal — the usage ring's
-// accent and the active row's dot. The ambient light is the one green (--green,
-// #34d17a), because a light source reads as light, not as a UI colour. There is no
-// ON/OFF pill and no pending state: the screen is either connected or it isn't.
+// accent and the active row's dot. Everything else connected is the one green (--green,
+// #34d17a): the ambient light, the top edge light, the header's own headline ink and the
+// power mark. There is no ON/OFF pill and no pending state: the screen is either
+// connected or it isn't.
+//
+// Green is the header's headline ink and nothing below it. The country on the connect
+// bar, the protocol on the status chip, the transport and the public IP all cross to
+// [RefGreen] together, on the same 520ms fade as the light, so the top of the screen
+// changes state as one thing. What stays put is deliberate: the top bar's two glyphs —
+// hamburger and account — are navigation, not connection state, and they are the same
+// white whether the tunnel is up or down; so are the screen's secondary inks up here
+// (the mode word, the separators, the chevron), which are settings and punctuation
+// rather than state, and which at 14sp would be the one place a mid-chroma green could
+// fall under contrast.
 //
 // Connected also lights the screen's own top edge in that same green: a hairline
 // along the top, brightest at the centre, turning both corners and running a short
@@ -117,9 +143,9 @@ package com.cdnhunter.app.ui
 //
 // Motion here is minimal and all of it respects the system's "remove animations"
 // setting (see [rememberReduceMotion]): the flag crossfade, the ambient colour
-// crossfade, the edge light's fade in and out, and the two words that ever change on
-// their own — the mode and the public IP — all collapse to an instant cut when
-// animations are off.
+// crossfade, the connected ink crossfade, the edge light's fade in and out, and the two
+// words that ever change on their own — the mode and the public IP — all collapse to an
+// instant cut when animations are off.
 
 
 import android.os.Build
@@ -166,6 +192,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -176,9 +203,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
@@ -188,6 +217,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -370,6 +400,28 @@ private fun rememberReduceMotion(): Boolean {
 private fun <T> motionSpec(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
     if (reduce) snap() else tween(durationMs)
 
+/**
+ * The header's headline ink: [idle] while the tunnel is down, [RefGreen] while it is up,
+ * crossfaded on the same 520ms the ambient light uses so the top of the screen changes
+ * state as one thing. The country on the connect bar, the protocol on the status chip,
+ * the transport and the public IP all share this; the power mark shares it too, from its
+ * own dark idle. Secondary inks up here — the mode word, the separators, the chevron,
+ * the top bar's navigation glyphs — deliberately do not, because they are settings and
+ * punctuation rather than connection state (and at 14sp a mid-chroma green is the one
+ * place contrast could fall short). Like the light, it cuts instantly when the system
+ * asks for no animations.
+ */
+@Composable
+private fun headerInk(connected: Boolean, idle: Color = RefTextHi): Color {
+    val reduce = rememberReduceMotion()
+    val ink by animateColorAsState(
+        if (connected) RefGreen else idle,
+        motionSpec(reduce, 520),
+        label = "headerInk",
+    )
+    return ink
+}
+
 // ── Connected edge light ──────────────────────────────────────────────────────
 // The screen's top edge lights up green while the tunnel is up: a hairline along the
 // very top, brightest at the centre and fading toward both corners, turning each
@@ -497,20 +549,47 @@ private const val FLAG_FADE_OUT_MS = 260
 private const val FLAG_SETTLE_MS = 620
 
 /**
- * The scrim between the flag and the UI: heaviest at the very top, where the status
- * bar's own glyphs have to survive whatever band lands there; lifted through the
- * middle, where the connect control sits and the flag is allowed to be a flag; then
- * closing to opaque [RefBg] at the foot, so the browse card below always meets plain
- * black instead of a cut edge across the artwork.
+ * A soft vertical scrim, drawn *inside* the masked flag layer: heaviest at the very
+ * top, where the status bar's own glyphs have to survive whatever band lands there, and
+ * again toward the foot; lifted through the middle, where the connect control sits and
+ * the flag is allowed to be a flag. Because it lives inside the mask it tapers away
+ * exactly where the flag does — it darkens the artwork, never the page. There is no
+ * opaque [RefBg] bottom stop any more: the foot fade into the page is [HeaderFlagFadeY]'s
+ * job, so the scrim only ever has the flag to darken.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.68f),
-    0.10f to Color.Black.copy(alpha = 0.54f),
-    0.26f to Color.Black.copy(alpha = 0.44f),
-    0.46f to Color.Black.copy(alpha = 0.42f),
-    0.66f to Color.Black.copy(alpha = 0.52f),
-    0.86f to Color.Black.copy(alpha = 0.80f),
-    1.00f to RefBg,
+    0.00f to Color.Black.copy(alpha = 0.55f),
+    0.22f to Color.Black.copy(alpha = 0.40f),
+    0.50f to Color.Black.copy(alpha = 0.38f),
+    0.78f to Color.Black.copy(alpha = 0.46f),
+    1.00f to Color.Black.copy(alpha = 0.58f),
+)
+
+/**
+ * The horizontal half of the flag's alpha mask. The flag is held at full strength from
+ * the left edge to just past the middle, then taken to nothing by the right. This is
+ * what holds the wash at the left of the screen — and what darkens the right-hand
+ * corners without a vignette, because where the mask reaches zero the page's own
+ * gradient is simply what shows. The colour is irrelevant; only the alpha is read, by
+ * the [BlendMode.DstIn] pass in [HeaderFlag].
+ */
+private val HeaderFlagFadeX = Brush.horizontalGradient(
+    0.00f to Color.Black,
+    0.52f to Color.Black,
+    1.00f to Color.Transparent,
+)
+
+/**
+ * The vertical half of the mask: nothing at the status bar, nothing at the header's
+ * foot, full in between. The top fade keeps the artwork from crowding the status bar's
+ * glyphs; the foot fade is what lets the browse card meet plain page with no seam, in
+ * place of the scrim's old opaque-[RefBg] bottom stop.
+ */
+private val HeaderFlagFadeY = Brush.verticalGradient(
+    0.00f to Color.Transparent,
+    0.16f to Color.Black,
+    0.70f to Color.Black,
+    1.00f to Color.Transparent,
 )
 
 /**
@@ -528,27 +607,13 @@ private val HeaderFlagFallback = Brush.linearGradient(
 )
 
 /**
- * A wide radial fall-off centred just under the power circle: the corners of the
- * panel go down, the middle-right stays where the light and the control are. This is
- * the layer that makes the flag read as lit from one place rather than as wallpaper —
- * and it is what lets [HeaderFlagScrim] stay as light as it does through the middle,
- * because the darkening the edges need is done here instead of everywhere.
- */
-private fun DrawScope.drawHeaderVignette() {
-    drawRect(
-        Brush.radialGradient(
-            0.00f to Color.Transparent,
-            0.58f to Color.Black.copy(alpha = 0.14f),
-            0.82f to Color.Black.copy(alpha = 0.30f),
-            1.00f to Color.Black.copy(alpha = 0.46f),
-            center = Offset(size.width * 0.66f, size.height * 0.62f),
-            radius = size.width * 1.05f,
-        )
-    )
-}
-
-/**
- * The flag panel: the artwork, then its scrim, then its vignette.
+ * The flag panel: the artwork and its scrim, faded out on three sides by an alpha mask.
+ *
+ * The artwork and [HeaderFlagScrim] are drawn into an offscreen layer, then
+ * [HeaderFlagFadeX] and [HeaderFlagFadeY] are multiplied into that layer's alpha with
+ * [BlendMode.DstIn]. Masking rather than scrimming the edges is what keeps the header
+ * ambient: where the mask is zero the page's own gradient shows at exactly the value it
+ * has everywhere else, so the panel has no edges of its own.
  *
  * [countryCode] is the only key. It changes when the user picks another server and,
  * once connected, when the tunnel reports the exit node's real country — both are the
@@ -561,7 +626,18 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
     val desaturate = remember {
         ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(HEADER_FLAG_SATURATION) })
     }
-    Box(modifier) {
+    Box(
+        modifier
+            // The mask multiplies into the layer's alpha, so the layer has to be
+            // composited offscreen first — a straight DstIn against the screen would
+            // punch a hole through everything already drawn behind the header.
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                drawRect(HeaderFlagFadeX, blendMode = BlendMode.DstIn)
+                drawRect(HeaderFlagFadeY, blendMode = BlendMode.DstIn)
+            }
+    ) {
         AnimatedContent(
             targetState = countryCode,
             transitionSpec = {
@@ -613,8 +689,8 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                 )
             }
         }
+        // Inside the masked layer, so it darkens the flag and tapers away with it.
         Box(Modifier.matchParentSize().background(HeaderFlagScrim))
-        Box(Modifier.matchParentSize().drawBehind { drawHeaderVignette() })
     }
 }
 
@@ -901,17 +977,16 @@ internal fun HomeScreen(
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
-// Three layers: the flag panel (see [HeaderFlag] — artwork, scrim, vignette), the
-// ambient light above it (see [drawAmbientLight]), then the rows themselves. The
-// gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled out one
-// by one rather than smoothed into a single rhythm.
+// Three layers: the flag panel (see [HeaderFlag] — artwork and scrim, faded on three
+// sides by an alpha mask), the ambient light above it (see [drawAmbientLight]), then the
+// rows themselves. The gaps between rows are the mockup's own margins (4 / 12 / 22dp),
+// spelled out one by one rather than smoothed into a single rhythm.
 //
 // The rows measure the header; the two layers behind them match its size, so the
 // panel is exactly as tall as the header's content and needs no number of its own.
 // `.header::before`, the black wash this used to start with, is gone: the flag panel's
-// own scrim does that job now, at every point where the wash used to and in the one
-// place it never did — the foot, where the artwork has to close into [RefBg] before
-// the browse card meets it.
+// own scrim and mask do that job now, the scrim darkening the artwork and the mask
+// fading it into the page at the foot, where the browse card meets it.
 @Composable
 private fun Header(
     state: HomeUiState,
@@ -1022,13 +1097,12 @@ private fun GlyphButton(
 /**
  * The material under the status row, and why a line of text needs any.
  *
- * The row lands at about a third of the way down the header, which is where
- * [HeaderFlagScrim] is at its lightest on purpose. That is fine for the row's
+ * The row lands at about a third of the way down the header, where the flag's mask is
+ * full and [HeaderFlagScrim] is at its lightest on purpose. That is fine for the row's
  * headline and wrong for everything else on it: over a white flag band — Japan,
- * Poland, Finland, France's middle stripe — the scrim and vignette together leave
- * ~#6c6d6d there, on which [RefTextHi] still reads 4.8:1 but [RefTextMid] falls to
- * 2.0:1 and [RefTextLow] to 1.03:1. The mode word is information, and at 2:1 it is
- * not there.
+ * Poland, Finland, France's middle stripe — the artwork and its scrim leave a light
+ * grey there, on which [RefTextHi] still clears but [RefTextMid] and [RefTextLow] fall
+ * well under 3:1. The mode word is information, and at that contrast it is not there.
  *
  * A chip is the fix rather than a heavier scrim because the row is already a button —
  * it opens protocol settings — and it had no mark saying so. At [RefElev1] and this
@@ -1063,7 +1137,7 @@ private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
             protocolLabel(state.activeConfig),
             fontSize = 14.5.sp,
             fontWeight = FontWeight.Bold,
-            color = RefTextHi,
+            color = headerInk(state.connected),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1147,11 +1221,15 @@ private fun ConnectRow(
  * The connect bar: a glass pill naming the active server's country, with the power
  * circle cut out of its right edge.
  *
- * There is no flag inside it any more — the flag is the whole header behind it (see
- * [HeaderFlag]) — and there is no cast shadow either. A [Modifier.shadow] under a
- * translucent surface is drawn beneath the surface as well as around it, which would
- * put a grey haze over exactly the part of the artwork this pill is built to let
- * through. The hairline, the top light and the material ramp are what lift it instead.
+ * It carries the country's flag as a circular badge at its head — the same
+ * [CountryFlagBadge] the server list draws, from the same bundled `flags/<cc>.svg`, so
+ * the one flag the header washes across the top reads the same way here and in the list
+ * below. The header wash still shows through the rest of the pill behind the text.
+ *
+ * There is no cast shadow: a [Modifier.shadow] under a translucent surface is drawn
+ * beneath the surface as well as around it, which would put a grey haze over exactly the
+ * part of the artwork this pill is built to let through. The hairline, the top light and
+ * the material ramp are what lift it instead.
  */
 @Composable
 private fun ConnectBar(
@@ -1193,24 +1271,32 @@ private fun ConnectBar(
         // the bar, not a colour cast over the flag.
         Box(Modifier.matchParentSize().background(BarTopLight))
         Box(Modifier.matchParentSize().background(BarEdgeLight))
-        // `.location-block` (z-index:2) — the country, and nothing else: no badge, no
-        // second read of the flag, no city and no second line. The end inset clears
-        // the circular cut by 10dp so the last glyph never crosses the missing
-        // material.
-        Text(
-            headline,
-            fontSize = 21.sp,
-            lineHeight = 23.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.3).sp,
-            color = RefTextHi,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        // `.location-block` (z-index:2) — the flag, then the country. The flag is the
+        // same circular [CountryFlagBadge] the server list draws, from the same bundled
+        // `flags/<cc>.svg`, so one flag reads the same across the whole screen. The end
+        // inset clears the circular cut by 10dp so the last glyph never crosses the
+        // missing material.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             // .connect-bar padding is 0 20px
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = ScreenPad, end = PowerCut + 10.dp),
-        )
+        ) {
+            CountryFlagBadge(state.headerCountryCode, FlagSize)
+            Spacer(Modifier.width(14.dp))
+            Text(
+                headline,
+                fontSize = 21.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
+                color = headerInk(state.connected),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -1270,7 +1356,11 @@ private fun PowerCircle(
         if (pressed) 0.96f else 1f,               // .power-btn:active
         label = "powerPress",
     )
-    val ink = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
+    // The mark answers to the tunnel: dark idle, [RefGreen] while it is up, on the same
+    // crossfade as the rest of the header's headline ink (see [headerInk]). Disabled it
+    // keeps that colour at a third alpha, the one state the disc is allowed to look off.
+    val mark = headerInk(connected, idle = PowerInk)
+    val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
@@ -1376,13 +1466,11 @@ private fun NetworkRow(state: HomeUiState) {
     val reduce = rememberReduceMotion()
     val ip = state.displayIp
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        WifiGlyph(color = RefTextHi, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(8.dp))               // .network-left gap
         Text(
             state.networkName.ifBlank { "No network" },
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = RefTextHi,
+            color = headerInk(state.connected),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -1408,7 +1496,7 @@ private fun NetworkRow(state: HomeUiState) {
                     value,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = RefTextHi,
+                    color = headerInk(state.connected),
                     maxLines = 1,
                     style = TextStyle(fontFeatureSettings = "tnum"),  // tabular-nums
                     modifier = Modifier
@@ -1954,36 +2042,6 @@ private fun AccountGlyph(color: Color, modifier: Modifier = Modifier) {
             size = Size(16f * unit, 16f * unit),
             style = Stroke(width = stroke, cap = StrokeCap.Round),
         )
-    }
-}
-
-/** Two signal arcs and a dot — the mockup's .network-left mark. */
-@Composable
-private fun WifiGlyph(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val unit = size.minDimension / 24f
-        val stroke = 2f * unit
-        // M5 12.5a11 11 0 0 1 14 0 — an r=11 arc centred just below the glyph
-        drawArc(
-            color = color,
-            startAngle = 230.5f,
-            sweepAngle = 79f,
-            useCenter = false,
-            topLeft = Offset(1f * unit, 9.98f * unit),
-            size = Size(22f * unit, 22f * unit),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        // M8 15.5a7 7 0 0 1 8 0
-        drawArc(
-            color = color,
-            startAngle = 235.2f,
-            sweepAngle = 69.6f,
-            useCenter = false,
-            topLeft = Offset(5f * unit, 14.25f * unit),
-            size = Size(14f * unit, 14f * unit),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        drawCircle(color = color, radius = 1.3f * unit, center = Offset(12f * unit, 19f * unit))
     }
 }
 
