@@ -1,24 +1,25 @@
 package com.cdnhunter.app.ui
 
-// ── Connect-bar flag artwork ───────────────────────────────────────────────────
+// ── Header flag artwork ────────────────────────────────────────────────────────
 // The bundled assets are HatScripts/circle-flags: a full 512×512 flag drawn under
 // `<mask id="a"><circle r="256"/></mask>`, so the artwork is complete but
 // everything outside the inscribed circle is transparent, and every straight edge
 // of the real flag is bowed outward by roughly 5% at its midpoint so the flag
 // reads as wrapped around a sphere once the circle crops it.
 //
-// Both of those are wrong for the connect bar, which shows the flag flat and
-// full-bleed across an 88dp-tall, ~300dp-wide pill:
+// Both of those are wrong for the header, which shows the flag flat and full-bleed
+// across the whole top of the screen — the panel's full width, about 1.3:1:
 //
-//   • The mask has to go, or cropping the circle into that pill lands entirely
-//     inside one band — for Germany the red one, i.e. "the bar is solid red".
-//     Dropping the mask element and the `mask="url(#a)"` reference gives back the
-//     rectangular flag the paths already describe.
+//   • The mask has to go, or the flag arrives as an ellipse: the circle stretched
+//     into the panel, with the corners of the header transparent and the page
+//     showing through them. Dropping the mask element and the `mask="url(#a)"`
+//     reference gives back the rectangular flag the paths already describe.
 //
 //   • The bow has to go, or the bands visibly sag. Germany's gold band is drawn
 //     `m0 345 256.7-25.5L512 345 …`: one extra vertex, 25.5 units (5% of 512)
-//     above the line between its neighbours. Stretched to the pill that is a 4dp
-//     dip over 150dp — a band that reads as tilted rather than level.
+//     above the line between its neighbours. Stretched across the header that is a
+//     14dp dip over 195dp — a band that reads as sagging rather than level, and at
+//     this size it is the first thing the eye finds.
 //     [dropBulges] removes exactly those vertices, and only those: in a path built
 //     from straight lines, a vertex is dropped when the segment joining its two
 //     neighbours is axis-aligned, spans at least half the shape, and the vertex
@@ -40,22 +41,23 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
- * Side length, in px, the flag SVG is rasterised at for the connect bar.
+ * Side length, in px, the flag SVG is rasterised at for the header panel.
  *
- * The pill is ~900×264px on a 3x panel, and Coil sizes an SVG request to fit the
- * target — which, for a square document in a 3.4:1 box, means 264×264 stretched
- * out to 900 wide, i.e. a 3.4x horizontal upscale and the blur that comes with it.
- * Asking for a large square over-samples both axes instead: horizontal detail
- * (vertical stripes, emblems) is rendered above the pill's own width and the
- * vertical axis is downsampled, which is the direction that stays crisp.
+ * The panel is as wide as the screen and about 1.3:1 — ~1080×830px on a 3x 360dp
+ * phone, ~1344×1030px on a 1440-wide one — and Coil sizes an SVG request to fit the
+ * target, which for a square document means the shorter side: it would rasterise
+ * ~1030 square and stretch that out to 1344 wide, a 1.3x horizontal upscale and the
+ * blur that comes with it. Asking for a large square over-samples both axes instead,
+ * so every panel only ever downsamples, which is the direction that stays crisp.
  *
- * 1152 rather than 1024 so the horizontal axis is still a downsample on a 3.5x
- * panel, where the pill is ~1050px wide — at 1024 the widest phones were stretching
- * the raster back up by a few percent, which is exactly the soft edge this constant
- * exists to avoid. Coil holds one bitmap per country at ~5MB; the bar shows one
- * flag at a time.
+ * 1440 because that is the widest phone panel shipping (1440×3120) and the header is
+ * never wider than the screen it is in. It was 1152 while the flag was only the
+ * connect bar's background, ~1050px wide at its widest; the header reaches 1344px, so
+ * the old constant would be upscaled by a few percent on exactly the panels it was
+ * raised to 1152 to protect. Coil holds one bitmap per country at ~8MB — two while a
+ * crossfade is in flight — and the header shows one flag at a time.
  */
-internal const val FLAG_RENDER_PX = 1152
+internal const val FLAG_RENDER_PX = 1440
 
 private val CIRCLE_MASK = Regex("<mask\\s+id=\"a\">.*?</mask>", RegexOption.DOT_MATCHES_ALL)
 private val CIRCLE_MASK_REF = Regex("\\s*mask=\"url\\(#a\\)\"")
@@ -74,7 +76,7 @@ private const val MIN_EDGE_SPAN = 0.5f
 
 /**
  * The country's flag as rectangular, flat-edged artwork, ready to be stretched
- * across the connect bar: a Coil model, or null when no country is known.
+ * across the header: a Coil model, or null when no country is known.
  */
 internal fun rectangularFlag(context: android.content.Context, countryCode: String): Any? {
     val cc = countryCode.lowercase().trim()
