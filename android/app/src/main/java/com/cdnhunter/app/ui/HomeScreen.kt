@@ -13,10 +13,9 @@ package com.cdnhunter.app.ui
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — OFF/ON pill, "VLESS · 443", chevron → Settings
 //   • connect bar — 88dp pill carrying the active server's city and country over
-//                   the country's own flag, with a 36dp circular flag badge at the
-//                   button end and a 100dp white power circle whose centre sits
-//                   exactly on the bar's right edge; the bar is cut away behind it,
-//                   leaving 8dp of clearance
+//                   the country's own flag, full-bleed, with a 100dp white power
+//                   circle whose centre sits exactly on the bar's right edge; the
+//                   bar is cut away behind it, leaving a 3dp ring of clearance
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
 //   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
 //                   then one row per server
@@ -29,17 +28,22 @@ package com.cdnhunter.app.ui
 // The only state kept here is view state nothing else needs — which tab is
 // selected, whether search is open, and the query.
 //
-// No ambient light anywhere: the mockup ships .power-glow as `display:none`, so
-// there is no bloom behind the power button and no 250dp flag disc floating behind
-// it either — the flag belongs to the connect bar, which carries it twice the way
-// the mockup places it: `.connect-bar-flag` fills the whole pill under
-// `.connect-bar-shade`, and a `.server-flag`-sized circle sits beside the button.
-// The power circle itself is a flat brushed-white disc in every state.
+// The flag is the connect bar's background and nothing else's: `.connect-bar-flag`
+// fills the whole pill, full width and full height, under `.connect-bar-shade`.
+// There is no flag disc behind the power button and no flag badge inside the bar.
+// The power circle itself is a flat brushed-white disc in every state — the
+// mockup's `.power-glow` is `display:none`.
 //
-// Connected is teal (--teal, #35d6b8) and only teal, in four places: the status
-// pill (the mockup's own `.status-pill.on`), a dark-teal wash rising up the
-// connect bar, the usage ring's accent, and the active row's dot. There is no
-// second state colour and nothing tints while the tunnel is merely coming up.
+// The only light on this screen is ambient: three soft directional sources — top,
+// left and right — that fall onto the connect control. They are static gradient
+// brushes, never [Modifier.blur], so the light stays crisp instead of smudged.
+// Idle they are white; connected they turn green, tighter and a shade stronger.
+//
+// Connected is teal (--teal, #35d6b8) where the mockup says teal — the status
+// pill (`.status-pill.on`), the usage ring's accent, the active row's dot — plus a
+// dark-teal wash rising up the connect bar. The ambient light is the one green
+// (--green, #34d17a), because a light source reads as light, not as a UI colour.
+// Nothing tints while the tunnel is merely coming up.
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -143,11 +147,10 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
 private val BarHeight = 88.dp        // .connect-bar height
 private val PowerSize = 100.dp       // .power-btn, .power-btn-wrap
 // The mockup masks the bar with `circle 52px at 100% 50%` around a 50dp-radius
-// button, i.e. a 2dp hairline of space. At arm's length that reads as a printing
-// error rather than as a gap, so the cut here clears the button by 8dp — the one
-// number deliberately off the mockup, and the better spacing between the location
-// card and the button.
-private val PowerCut = 58.dp
+// button, i.e. a 2dp hairline of space. 3dp is that hairline, one dp wider so it
+// survives rounding on a low-density panel: the button still reads as fused to the
+// bar's edge rather than parked next to it.
+private val PowerCut = 53.dp
 private val PanelCorner = 28.dp      // .browse-card border-radius
 private val ListPad = 18.dp          // .server-row / .tab-row horizontal padding
 private val FlagSize = 36.dp         // .server-flag
@@ -157,13 +160,102 @@ private val CardMargin = 14.dp       // .bottom-card margin / bottom
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
+// .tab-row's two trailing controls. The mockup draws them as 34px discs holding
+// 18px glyphs, which is the smallest icon anywhere in the app; the rest of it
+// draws action glyphs at 22–24dp (AppScreen's top-bar actions are 22dp, its
+// settings rows 24dp, Home's own hamburger and account mark 25dp). These follow
+// that instead of the mockup: a 22dp glyph on a 40dp disc, inside the same 48dp
+// tap target.
+private val ActionDisc = 40.dp
+private val ActionGlyph = 22.dp
 
-// ── Hero backdrop ─────────────────────────────────────────────────────────────
-// There isn't one. The header is the page gradient plus `.header::before` (a black
-// wash, see [drawHeaderScrim]) and nothing else: no bloom behind the power button
-// and no oversized flag disc behind it either. Both of the flag's appearances live
-// inside the connect bar — the full-pill watermark and the 36dp badge beside the
-// button — see [ConnectBar].
+// ── Ambient light ─────────────────────────────────────────────────────────────
+// Three soft light sources — above the screen, off its left edge, off its right
+// edge — aimed at the connect control, so the flag reads as lit rather than as a
+// flat fill. All three are plain gradient brushes: no [Modifier.blur], no render
+// effect, nothing sampled per frame, which is also what keeps the connected state
+// crisp instead of smudged (a blur at this radius is exactly what reads as muddy).
+//
+// Idle the light is white. Connected it is [RefGreen], with tighter falloff and a
+// little more strength: the same three sources, sharpened.
+private const val AMBIENT_TOP_IDLE = 0.085f
+private const val AMBIENT_SIDE_IDLE = 0.055f
+private const val AMBIENT_TOP_ON = 0.115f
+private const val AMBIENT_SIDE_ON = 0.075f
+
+/** The screen-level half of the light: what falls around the connect control. */
+private fun DrawScope.drawAmbientLight(color: Color, connected: Boolean) {
+    val top = if (connected) AMBIENT_TOP_ON else AMBIENT_TOP_IDLE
+    val side = if (connected) AMBIENT_SIDE_ON else AMBIENT_SIDE_IDLE
+    // Connected pulls the mid stop in and the tail down, so the falloff is a
+    // shorter, cleaner ramp; idle spreads the same light over more of the header.
+    val mid = if (connected) 0.34f else 0.46f
+    val tail = if (connected) 0.74f else 0.88f
+
+    fun cone(centre: Offset, radius: Float, peak: Float) = Brush.radialGradient(
+        0.00f to color.copy(alpha = peak),
+        mid to color.copy(alpha = peak * 0.42f),
+        tail to color.copy(alpha = peak * 0.06f),
+        1.00f to Color.Transparent,
+        center = centre,
+        radius = radius,
+    )
+
+    // Above: centred over the bar/button seam, so the brightest part of the wash
+    // lands on the pill's top edge.
+    drawRect(cone(Offset(size.width * 0.55f, -size.height * 0.30f), size.height * 1.30f, top))
+    // Left and right: level with the connect bar, just outside the screen.
+    drawRect(cone(Offset(-size.width * 0.16f, size.height * 0.56f), size.width * 0.80f, side))
+    drawRect(cone(Offset(size.width * 1.16f, size.height * 0.52f), size.width * 0.80f, side))
+}
+
+/**
+ * The bar-level half: the same three directions, read as highlights on the pill
+ * itself rather than as a wash behind it. Top light first, then the two edges.
+ */
+private fun barTopLight(color: Color, connected: Boolean) = Brush.verticalGradient(
+    0.00f to color.copy(alpha = if (connected) 0.20f else 0.15f),
+    0.06f to color.copy(alpha = if (connected) 0.09f else 0.07f),
+    (if (connected) 0.30f else 0.42f) to color.copy(alpha = 0.015f),
+    1.00f to Color.Transparent,
+)
+
+private fun barEdgeLight(color: Color, connected: Boolean) = Brush.horizontalGradient(
+    0.00f to color.copy(alpha = if (connected) 0.13f else 0.10f),
+    (if (connected) 0.16f else 0.24f) to Color.Transparent,
+    (if (connected) 0.84f else 0.76f) to Color.Transparent,
+    1.00f to color.copy(alpha = if (connected) 0.15f else 0.11f),
+)
+
+/**
+ * The country's flag as a rectangle, for the connect bar's full-bleed background.
+ *
+ * The bundled assets are HatScripts/circle-flags: a full 512×512 flag drawn under
+ * `<mask id="a"><circle r="256"/></mask>`, which is why the artwork itself is
+ * complete but everything outside the inscribed circle is transparent. Cropping
+ * that circle into an 88dp-tall, ~300dp-wide pill lands entirely inside one band —
+ * for Germany, the red one, which is the whole "the bar is solid red" bug.
+ *
+ * Dropping the mask element and the `mask="url(#a)"` reference gives back the
+ * rectangular flag the paths already describe: black/red/gold bands corner to
+ * corner. 248 of the 265 assets carry that exact mask; the other 17 have none and
+ * pass through untouched. Anything unreadable falls back to the asset as shipped,
+ * so a missing or oddly-shaped flag degrades to the circular version rather than
+ * to nothing.
+ */
+private val CIRCLE_MASK = Regex("<mask\\s+id=\"a\">.*?</mask>", RegexOption.DOT_MATCHES_ALL)
+private val CIRCLE_MASK_REF = Regex("\\s*mask=\"url\\(#a\\)\"")
+
+private fun rectangularFlag(context: android.content.Context, countryCode: String): Any? {
+    val cc = countryCode.lowercase().trim()
+    if (cc.isBlank()) return null
+    val path = "flags/$cc.svg"
+    return runCatching {
+        val svg = context.assets.open(path).use { it.readBytes().decodeToString() }
+        val flat = svg.replace(CIRCLE_MASK, "").replace(CIRCLE_MASK_REF, "")
+        java.nio.ByteBuffer.wrap(flat.toByteArray())
+    }.getOrElse { "file:///android_asset/$path" }
+}
 
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
@@ -375,10 +467,10 @@ internal fun HomeScreen(
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
-// Two layers: the black wash of `.header::before` over the page gradient, then the
-// rows themselves. The gaps between rows are the mockup's own margins
-// (4 / 12 / 22dp), spelled out one by one rather than smoothed into a single
-// rhythm.
+// Three layers: the black wash of `.header::before` over the page gradient, the
+// ambient light above it (see [drawAmbientLight]), then the rows themselves. The
+// gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled out one
+// by one rather than smoothed into a single rhythm.
 @Composable
 private fun Header(
     state: HomeUiState,
@@ -387,8 +479,20 @@ private fun Header(
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
+    // White idle, green connected — the light's own colour, animated so toggling
+    // the tunnel reads as the room changing colour rather than as a repaint.
+    val ambient by animateColorAsState(
+        if (state.connected) RefGreen else Color.White,
+        tween(520),
+        label = "ambientLight",
+    )
     Box(Modifier.fillMaxWidth()) {
         Box(Modifier.matchParentSize().drawBehind { drawHeaderScrim() })
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawBehind { drawAmbientLight(ambient, state.connected) }
+        )
         Column(
             Modifier
                 .statusBarsPadding()
@@ -400,6 +504,7 @@ private fun Header(
             Spacer(Modifier.height(12.dp))         // .power-row margin-top
             ConnectRow(
                 state = state,
+                ambient = ambient,
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
             )
@@ -545,12 +650,14 @@ private fun StatusPill(connected: Boolean, connecting: Boolean) {
 @Composable
 private fun ConnectRow(
     state: HomeUiState,
+    ambient: Color,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().height(PowerSize)) {
         ConnectBar(
             state = state,
+            ambient = ambient,
             onClick = onOpenLocations,
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -571,6 +678,7 @@ private fun ConnectRow(
 @Composable
 private fun ConnectBar(
     state: HomeUiState,
+    ambient: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -608,21 +716,30 @@ private fun ConnectBar(
             .clickable(onClickLabel = "Choose a server", onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // The country's own flag fills the whole pill — the same asset the list rows
-        // use — so the bar reads as belonging to that server, not just tinted by an
-        // abstract colour. This is the mockup's `.connect-bar-flag` layer, and the
-        // shade gradient below it is `.connect-bar-shade`: it keeps the location
-        // text on the left legible while the flag reads at full strength toward the
-        // button end.
+        // `.connect-bar-flag`: the country's own flag as the pill's background,
+        // full width and full height. The asset is a circle-flag, so it is flattened
+        // to a rectangle first ([rectangularFlag]) and then stretched to the pill —
+        // FillBounds, not Crop, because cropping a circular flag into a 3.4:1 box
+        // shows one band of it and nothing else. Nothing sits on the flag but the
+        // shade gradient below, which is `.connect-bar-shade`: it keeps the location
+        // text legible while the flag reads at full strength toward the button end.
         if (countryCode.isNotBlank()) {
+            val context = LocalContext.current
+            val flag = remember(countryCode) { rectangularFlag(context, countryCode) }
             coil.compose.AsyncImage(
-                model = coil.request.ImageRequest.Builder(LocalContext.current)
-                    .data("file:///android_asset/flags/${countryCode.lowercase().trim()}.svg")
+                model = coil.request.ImageRequest.Builder(context)
+                    .data(flag)
+                    // Coil keys a request by `data.toString()`, and a ByteBuffer's is
+                    // "HeapByteBuffer[pos=0 lim=N cap=N]" — two countries whose SVGs
+                    // happen to be the same byte length would share a cache entry and
+                    // one would draw the other's flag. Key by the country instead.
+                    .memoryCacheKey("flag-rect-${countryCode.lowercase().trim()}")
+                    .diskCacheKey("flag-rect-${countryCode.lowercase().trim()}")
                     .crossfade(true)
                     .build(),
-                imageLoader = getFlagImageLoader(LocalContext.current),
+                imageLoader = getFlagImageLoader(context),
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
         }
@@ -652,49 +769,41 @@ private fun ConnectBar(
             )
         }
         Box(Modifier.matchParentSize().background(BarSheen))
-        // `.location-block` (z-index:2), and at the button end a second, crisp read
-        // of the same flag. The watermark above is a full-bleed slice under the
-        // shade, and the part of it the shade leaves at full strength — from 80% of
-        // the width on — falls almost entirely inside the button's cut, so on its
-        // own it colours the pill without ever naming the country. This circle
-        // does: [FlagSize], the same circle-flags SVG the list rows draw through
-        // [CountryFlagBadge], parked against the cut beside the power button.
-        Row(
-            // .connect-bar padding is 0 20px; the end inset clears the circular cut
-            // by 6dp so the badge never crosses the missing material.
+        // The bar's share of the ambient light: top first, then the two edges, in
+        // the same colour and with the same falloff as the wash behind it.
+        Box(Modifier.matchParentSize().background(barTopLight(ambient, state.connected)))
+        Box(Modifier.matchParentSize().background(barEdgeLight(ambient, state.connected)))
+        // `.location-block` (z-index:2) — the text, and nothing else: no badge, no
+        // second read of the flag. The end inset clears the circular cut by 10dp so
+        // the last glyph never crosses the missing material.
+        Column(
+            // .connect-bar padding is 0 20px
             Modifier
-                .matchParentSize()
-                .padding(start = ScreenPad, end = PowerCut + 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxWidth()
+                .padding(start = ScreenPad, end = PowerCut + 10.dp),
         ) {
-            Column(Modifier.weight(1f)) {
+            Text(
+                headline,
+                fontSize = 21.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
+                color = RefTextHi,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (sub.isNotEmpty()) {
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    headline,
-                    fontSize = 21.sp,
-                    lineHeight = 23.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp,
-                    color = RefTextHi,
+                    sub,
+                    fontSize = 13.5.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.1.sp,
+                    color = RefTextMid,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (sub.isNotEmpty()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        sub,
-                        fontSize = 13.5.sp,
-                        lineHeight = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 0.1.sp,
-                        color = RefTextMid,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (cfg != null) {
-                Spacer(Modifier.width(12.dp))
-                CountryFlagBadge(countryCode, FlagSize)
             }
         }
     }
@@ -1005,20 +1114,20 @@ private fun AddServerButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(34.dp).clip(CircleShape).background(RefAccent.copy(alpha = 0.16f)),
+            Modifier.size(ActionDisc).clip(CircleShape).background(RefAccent.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Rounded.Add,
                 contentDescription = null,
                 tint = RefAccent,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(ActionGlyph),
             )
         }
     }
 }
 
-/** .search-btn — a 34dp disc that tints accent-blue while the field is open. */
+/** .search-btn — a 40dp disc that tints accent-blue while the field is open. */
 @Composable
 private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
     val fill by animateColorAsState(
@@ -1038,14 +1147,14 @@ private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(34.dp).clip(CircleShape).background(fill),
+            Modifier.size(ActionDisc).clip(CircleShape).background(fill),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Rounded.Search,
                 contentDescription = null,
                 tint = ink,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(ActionGlyph),
             )
         }
     }
