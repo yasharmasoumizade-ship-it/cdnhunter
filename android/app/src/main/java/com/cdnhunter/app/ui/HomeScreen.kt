@@ -13,9 +13,10 @@ package com.cdnhunter.app.ui
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — OFF/ON pill, "VLESS · 443", chevron → Settings
 //   • connect bar — 88dp pill carrying the active server's city and country over
-//                   the country's own flag, with a 100dp white power circle whose
-//                   centre sits exactly on the bar's right edge; the bar is cut
-//                   away behind it, leaving 8dp of clearance
+//                   the country's own flag, with a 36dp circular flag badge at the
+//                   button end and a 100dp white power circle whose centre sits
+//                   exactly on the bar's right edge; the bar is cut away behind it,
+//                   leaving 8dp of clearance
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
 //   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
 //                   then one row per server
@@ -29,10 +30,11 @@ package com.cdnhunter.app.ui
 // selected, whether search is open, and the query.
 //
 // No ambient light anywhere: the mockup ships .power-glow as `display:none`, so
-// there is no bloom behind the power button and no flag watermark behind it
-// either — the flag belongs to the connect bar, next to the button, the way the
-// mockup's own `.connect-bar-flag` layer places it. The power circle is a flat
-// brushed-white disc in every state.
+// there is no bloom behind the power button and no 250dp flag disc floating behind
+// it either — the flag belongs to the connect bar, which carries it twice the way
+// the mockup places it: `.connect-bar-flag` fills the whole pill under
+// `.connect-bar-shade`, and a `.server-flag`-sized circle sits beside the button.
+// The power circle itself is a flat brushed-white disc in every state.
 //
 // Connected is teal (--teal, #35d6b8) and only teal, in four places: the status
 // pill (the mockup's own `.status-pill.on`), a dark-teal wash rising up the
@@ -159,8 +161,9 @@ private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
 // ── Hero backdrop ─────────────────────────────────────────────────────────────
 // There isn't one. The header is the page gradient plus `.header::before` (a black
 // wash, see [drawHeaderScrim]) and nothing else: no bloom behind the power button
-// and no flag watermark behind it either. The flag lives in the connect bar next
-// to the button — see [ConnectBar].
+// and no oversized flag disc behind it either. Both of the flag's appearances live
+// inside the connect bar — the full-pill watermark and the 36dp badge beside the
+// button — see [ConnectBar].
 
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
@@ -649,33 +652,49 @@ private fun ConnectBar(
             )
         }
         Box(Modifier.matchParentSize().background(BarSheen))
-        Column(
-            // .connect-bar padding is 0 20px; the extra end room keeps long names
-            // clear of the circular cut, which is now 8dp wider than the button.
-            Modifier.padding(start = ScreenPad, end = 62.dp)
+        // `.location-block` (z-index:2), and at the button end a second, crisp read
+        // of the same flag. The watermark above is a full-bleed slice under the
+        // shade, and the part of it the shade leaves at full strength — from 80% of
+        // the width on — falls almost entirely inside the button's cut, so on its
+        // own it colours the pill without ever naming the country. This circle
+        // does: [FlagSize], the same circle-flags SVG the list rows draw through
+        // [CountryFlagBadge], parked against the cut beside the power button.
+        Row(
+            // .connect-bar padding is 0 20px; the end inset clears the circular cut
+            // by 6dp so the badge never crosses the missing material.
+            Modifier
+                .matchParentSize()
+                .padding(start = ScreenPad, end = PowerCut + 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                headline,
-                fontSize = 21.sp,
-                lineHeight = 23.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.3).sp,
-                color = RefTextHi,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (sub.isNotEmpty()) {
-                Spacer(Modifier.height(3.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    sub,
-                    fontSize = 13.5.sp,
-                    lineHeight = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.1.sp,
-                    color = RefTextMid,
+                    headline,
+                    fontSize = 21.sp,
+                    lineHeight = 23.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp,
+                    color = RefTextHi,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (sub.isNotEmpty()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        sub,
+                        fontSize = 13.5.sp,
+                        lineHeight = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.1.sp,
+                        color = RefTextMid,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (cfg != null) {
+                Spacer(Modifier.width(12.dp))
+                CountryFlagBadge(countryCode, FlagSize)
             }
         }
     }
