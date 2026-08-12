@@ -49,6 +49,12 @@ object AppSettings {
     private const val KEY_AUTO_RECONNECT_ENABLED = "auto_reconnect_enabled"
     private const val KEY_MAX_RETRY_ATTEMPTS = "max_retry_attempts"
 
+    // Which server the Home power button acts on: the one the user picked
+    // ("manual") or the best-measuring one the app picks for them ("smart").
+    // Stored as a string rather than the UI's own ConnectMode enum so this file
+    // keeps knowing nothing about the ui package.
+    private const val KEY_CONNECT_MODE = "connect_mode"
+
     const val DEFAULT_MTU = 1500  // standard Ethernet MTU (matches v2rayNG)
     const val MIN_MTU = 576       // smallest MTU any IPv4 path is guaranteed to carry
     const val MAX_MTU = 9000      // jumbo-frame ceiling (allow custom up to 9000)
@@ -57,6 +63,10 @@ object AppSettings {
     const val THEME_LIGHT = "light"
     const val THEME_DARK = "dark"
     const val THEME_SYSTEM = "system"
+
+    // Connect modes — see KEY_CONNECT_MODE above.
+    const val MODE_SMART = "smart"
+    const val MODE_MANUAL = "manual"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -216,6 +226,18 @@ object AppSettings {
 
     fun maxRetryAttempts(ctx: Context): Int = prefs(ctx).getInt(KEY_MAX_RETRY_ATTEMPTS, 3)
     fun setMaxRetryAttempts(ctx: Context, value: Int) = prefs(ctx).edit().putInt(KEY_MAX_RETRY_ATTEMPTS, value.coerceIn(1, 5)).apply()
+
+    // ============ Connect mode (Smart / Manual) ============
+    // Defaults to MANUAL: anyone upgrading has already chosen a server, and Smart
+    // mode silently connecting them somewhere else would be a surprise, not a
+    // feature. Home's swipe gesture on the power button is what opts in.
+    fun connectMode(ctx: Context): String =
+        prefs(ctx).getString(KEY_CONNECT_MODE, MODE_MANUAL) ?: MODE_MANUAL
+
+    fun setConnectMode(ctx: Context, value: String) =
+        prefs(ctx).edit()
+            .putString(KEY_CONNECT_MODE, if (value == MODE_SMART) MODE_SMART else MODE_MANUAL)
+            .apply()
     
     // ============ SUBSCRIPTIONS ============
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"

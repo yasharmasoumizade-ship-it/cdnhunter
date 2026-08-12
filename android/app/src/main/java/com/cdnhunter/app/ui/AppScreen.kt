@@ -603,6 +603,16 @@ private fun VpnTab() {
             context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
         )
     }
+    // Smart / Manual (see ui/SmartMode.kt). Manual is what the app has always done
+    // and stays the default; Smart hands the choice of server to the scoring below.
+    var connectMode by remember {
+        mutableStateOf(connectModeOf(AppSettings.connectMode(context)))
+    }
+    // The rolling window Smart mode scores. Fed from the ping monitor further down —
+    // it takes no samples of its own, so Smart mode costs nothing while it is off.
+    val quality = remember { ServerQualityTracker() }
+    // Smart mode's current pick, published only when the chosen server changes.
+    var smartPickId by remember { mutableStateOf("") }
     var showAddMenu by remember { mutableStateOf(false) }
     
     // Navigation stack for proper back button handling
@@ -665,11 +675,15 @@ private fun VpnTab() {
     }
     val enrichingIds = remember { mutableSetOf<String>() }
     LaunchedEffect(configCountAndIds) {
+        // Windows for servers that no longer exist would otherwise keep a deleted
+        // server eligible for Smart mode's pick.
+        quality.retain(configs.map { it.id }.toSet())
         val toEnrich = configs.filter { !it.geoResolved && it.id !in enrichingIds }
         for (cfg in toEnrich) {
             enrichingIds += cfg.id
             try {
                 val enriched = enrichConfigGeo(cfg)
+                quality.record(cfg.id, enriched.pingMs)
                 configs = configs.map { if (it.id == cfg.id) enriched else it }
                 saveConfigs(context, configs)
             } finally {
@@ -799,6 +813,12 @@ private fun VpnTab() {
                             val isActiveConnected = cfg.id == activeId && connected
                             if (!isActiveConnected) {
                                 val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
+                                // Every sample goes into the window Smart mode reads,
+                                // including the failures: "answered 40ms, then timed
+                                // out three times" is exactly the shape of server the
+                                // score is meant to reject, and it is invisible if
+                                // only successful probes are kept.
+                                quality.record(cfg.id, newPing)
                                 if (newPing != cfg.pingMs) {
                                     configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
                                 }
@@ -818,6 +838,30 @@ private fun VpnTab() {
                 job.cancel()
                 pingMonitorJobs.remove(id)
             }
+        }
+    }
+
+    // Smart mode's pick, refreshed on its own slow cadence.
+    //
+    // Deliberately not derived state: the ping monitor writes a sample per server
+    // every 3 seconds, so with 50 saved servers a pick that recomputed on every
+    // sample would recompose Home about seventeen times a second for a value that
+    // barely moves. This reads the window every 4 seconds instead and only assigns
+    // when the chosen server actually changed, so a stable pick costs no
+    // recompositions at all.
+    //
+    // It runs only while the tunnel is DOWN. Once connected, the pick is the server
+    // the tunnel is on: re-scoring a live connection could only produce a "better"
+    // server the app has no business switching to behind the user's back, and it
+    // would make the connect bar rename itself mid-session. Smart mode chooses at
+    // connect time; it does not chase.
+    LaunchedEffect(connectMode, connected) {
+        if (connectMode != ConnectMode.SMART || connected) return@LaunchedEffect
+        while (true) {
+            val pick = pickBestConfig(configs, quality, preferId = smartPickId.ifBlank { activeId })
+            val pickId = pick?.id ?: ""
+            if (pickId != smartPickId) smartPickId = pickId
+            delay(4000)
         }
     }
 
@@ -871,6 +915,35 @@ private fun VpnTab() {
             .apply()
         if (connected) {
             connectConfig(cfg)
+        }
+    }
+
+    // Picking a server by hand IS the manual mode — leaving Smart on while showing
+    // the user's own choice in the connect bar would mean the next connect quietly
+    // went somewhere else. So the tap sets the server and the mode together.
+    fun selectConfigManually(cfg: SavedConfig) {
+        if (connectMode != ConnectMode.MANUAL) {
+            connectMode = ConnectMode.MANUAL
+            AppSettings.setConnectMode(context, AppSettings.MODE_MANUAL)
+        }
+        selectConfig(cfg)
+    }
+
+    // Home's swipe on the power circle. Persisted immediately, so the mode survives
+    // the app being killed, and confirmed with the same haptic a connect gets —
+    // the gesture has no press state of its own to acknowledge it.
+    fun setConnectMode(mode: ConnectMode) {
+        if (mode == connectMode) return
+        connectMode = mode
+        AppSettings.setConnectMode(
+            context,
+            if (mode == ConnectMode.SMART) AppSettings.MODE_SMART else AppSettings.MODE_MANUAL,
+        )
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        // Smart mode needs something in the bar right away rather than after the
+        // next 4-second tick; the loop above takes over from here.
+        if (mode == ConnectMode.SMART && !connected) {
+            smartPickId = pickBestConfig(configs, quality, preferId = activeId)?.id ?: ""
         }
     }
 
@@ -987,7 +1060,36 @@ private fun VpnTab() {
         )
     }
 
-    val activeConfig  = configs.find { it.id == activeId } ?: configs.firstOrNull()
+    // The server the user last chose, and the one Smart mode currently rates best.
+    val manualConfig = configs.find { it.id == activeId } ?: configs.firstOrNull()
+    val smartConfig = configs.find { it.id == smartPickId }
+    // What Home shows and the power button acts on. In Smart mode while the tunnel is
+    // down that is the pick (falling back to the manual choice until enough has been
+    // measured to have one); connected, it is always the server actually in use —
+    // activeId is set to the smart pick at connect time, so the two agree.
+    val activeConfig =
+        if (connectMode == ConnectMode.SMART && !connected) (smartConfig ?: manualConfig)
+        else manualConfig
+
+    // Home's power button. Connected, it hangs up. Disconnected in Smart mode it
+    // re-scores first, so the tunnel comes up on the best server as of the tap rather
+    // than the best server as of the last tick.
+    fun togglePower() {
+        if (connected) {
+            activeConfig?.let { connectConfig(it) }
+            return
+        }
+        val target = if (connectMode == ConnectMode.SMART) {
+            pickBestConfig(configs, quality, preferId = smartPickId.ifBlank { activeId })
+                ?: activeConfig
+        } else {
+            activeConfig
+        }
+        target?.let { cfg ->
+            if (connectMode == ConnectMode.SMART) smartPickId = cfg.id
+            connectConfig(cfg)
+        }
+    }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -1014,6 +1116,7 @@ private fun VpnTab() {
                         activeConfig = activeConfig,
                         allConfigs = configs,
                         connected = connected,
+                        mode = connectMode,
                         elapsedSec = elapsedSec,
                         downloadKBps = downloadKBps,
                         uploadKBps = uploadKBps,
@@ -1028,9 +1131,10 @@ private fun VpnTab() {
                     onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
                     onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },
                     onOpenLocations = { navigateTo(AnanasScreen.LOCATIONS) },
-                    onTogglePower = { activeConfig?.let { cfg -> connectConfig(cfg) } },
-                    onSelectConfig = { cfg -> selectConfig(cfg) },
+                    onTogglePower = { togglePower() },
+                    onSelectConfig = { cfg -> selectConfigManually(cfg) },
                     onAddServer = { showAddMenu = true },
+                    onSetMode = { mode -> setConnectMode(mode) },
                 )
                 // Same add-config sheet used on Locations, reused here so the new
                 // "+" next to search on Home opens it directly without navigating
@@ -1053,7 +1157,7 @@ private fun VpnTab() {
                 LocationsScreen(
                     configs = configs, activeId = activeId, connected = connected,
                     onBack = { navigateBack() },
-                    onConnect = { selectConfig(it); navigateBack() },
+                    onConnect = { selectConfigManually(it); navigateBack() },
                     onDelete = { deleteConfig(it) },
                     onDeleteSubscription = { deleteSubscription(it) },
                     showAddMenu = showAddMenu, onToggleAddMenu = { showAddMenu = !showAddMenu },

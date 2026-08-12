@@ -10,18 +10,33 @@ package com.cdnhunter.app.ui
 //
 // Layout, top to bottom:
 //   • page        — near-black vertical gradient, #0d0e12 → #060709 by 70%
+//   • edge light  — connected only: a green ring along the screen's top edge
 //   • top bar     — hamburger → Settings, account glyph → Profile
-//   • status row  — "VLESS · 443", chevron → Settings
-//   • connect bar — 88dp pill carrying the active server's city over the country's
-//                   own flag, full-bleed, with a 100dp white power
+//   • status row  — "VLESS · 8443 · Smart", chevron → Settings
+//   • connect bar — 88dp pill carrying the active server's country over that
+//                   country's own flag, full-bleed, with a 100dp white power
 //                   circle whose centre sits exactly on the bar's right edge; the
-//                   bar is cut away behind it, leaving a 3dp ring of clearance
+//                   bar is cut away behind it, leaving a 3dp ring of clearance.
+//                   A chevron sits above and below the circle: swipe the circle
+//                   up for Smart mode, down for Manual
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
 //   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
 //                   then one row per server
 //                   (flag, country · city, ping, three load bars)
 //   • usage card  — floats over the list bottom: session-traffic ring, live
 //                   speed, chevron → Locations
+//
+// The connect bar names the country and nothing else — not the city, not the
+// config's own name. The flag already says which country it is, so the line under
+// it was a third read of the same fact; the city and the server's name both belong
+// to the browse list below, where they distinguish one row from another.
+//
+// Smart / Manual is Home's other axis, orthogonal to which server is selected:
+// Manual acts on the row the user tapped, Smart acts on whichever saved server
+// currently measures best (SmartMode.kt scores latency, jitter and dropped probes
+// over a rolling window). The mode is switched by swiping the power circle up or
+// down, shown by the two chevrons attached above and below it, and named next to
+// the protocol so it is legible without touching anything.
 //
 // HomeScreen() stays stateless about the VPN: it takes one HomeUiState snapshot
 // plus event lambdas, so VpnTab() remains the single owner of connection state.
@@ -56,19 +71,41 @@ package com.cdnhunter.app.ui
 // accent and the active row's dot. The ambient light is the one green (--green,
 // #34d17a), because a light source reads as light, not as a UI colour. There is no
 // ON/OFF pill and no pending state: the screen is either connected or it isn't.
+//
+// Connected also lights the screen's own top edge in that same green: a hairline
+// along the top, brightest at the centre, turning both corners and running a short
+// way down each side, over a soft inward bleed. Same reasoning as the ambient
+// light — one signal, stated as light rather than as a label — and the same
+// technique, plain gradient brushes rather than a blur, so the edge stays a crisp
+// line instead of a smudge. It is drawn last, above every row, because an edge
+// light that the header's scrim can paint over is not an edge light.
+//
+// Motion here is minimal and all of it respects the system's "remove animations"
+// setting (see [rememberReduceMotion]): the ambient colour crossfade, the edge
+// light's fade in and out, and the chevrons' own state fade all collapse to an
+// instant cut when animations are off.
 
+
+import android.os.Build
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.using
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -111,10 +148,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +217,26 @@ private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
 // marks (AppScreen's top-bar actions are 22dp, its settings rows 24dp, Home's own
 // hamburger and account mark 25dp), inside the same 48dp tap target.
 private val ActionGlyph = 22.dp
+// ── Mode swipe affordance ─────────────────────────────────────────────────────
+// The two chevrons attached above and below the power circle. They are not part of
+// the button — the mockup's `.power-btn` is a bare white disc and stays one — so
+// they live outside it, in the row's own extra height, and are never drawn on the
+// flag or over the disc's face.
+//
+// 12dp across by 6dp tall: a shallow chevron, not an arrowhead. At that ratio and a
+// 1.8dp stroke it reads as a hint of direction on a second look and never as a
+// control to be pressed, which is what "the button also does something this way"
+// has to look like without a label to say so.
+private val ModeChevronWidth = 12.dp
+private val ModeChevronHeight = 6.dp
+private val ModeChevronGap = 4.dp
+// .power-row's height: the circle, plus one chevron and its gap at each end.
+private val ConnectRowHeight = PowerSize + (ModeChevronHeight + ModeChevronGap) * 2
+// How far the finger has to travel on the circle before the mode flips. Compose has
+// already eaten ~8dp of touch slop by the time the first drag arrives, so this is
+// deliberately short: far enough that a sloppy tap can't trigger it, close enough
+// that the gesture completes inside the button's own 100dp.
+private val ModeSwipeThreshold = 20.dp
 
 // ── Ambient light ─────────────────────────────────────────────────────────────
 // Three soft light sources — above the screen, off its left edge, off its right
@@ -237,6 +298,110 @@ private val BarEdgeLight = Brush.horizontalGradient(
     0.76f to Color.Transparent,
     1.00f to Color.White.copy(alpha = 0.11f),
 )
+
+/**
+ * Whether the device has animations turned off — developer options' "Animation off",
+ * Battery Saver, or Settings → Accessibility → "Remove animations" all set the same
+ * animator duration scale to zero.
+ *
+ * Every animation on this screen reads this and collapses to [snap] when it is true:
+ * an ambient light that fades, an edge light that blooms and a chevron that brightens
+ * are all decoration, and decoration is exactly what that setting turns off.
+ */
+@Composable
+private fun rememberReduceMotion(): Boolean {
+    val context = LocalContext.current
+    return remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            !android.animation.ValueAnimator.areAnimatorsEnabled()
+        } else {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }
+    }
+}
+
+/** [tween] normally, an instant cut when the device has animations off. */
+private fun <T> motionSpec(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
+    if (reduce) snap() else tween(durationMs)
+
+// ── Connected edge light ──────────────────────────────────────────────────────
+// The screen's top edge lights up green while the tunnel is up: a hairline along the
+// very top, brightest at the centre and fading toward both corners, turning each
+// corner and running a short way down the sides, over a soft bleed inward. Three
+// plain gradient brushes and nothing else — no blur, no shadow, no render effect —
+// so it reads as light on an edge rather than as a green fog over the header.
+//
+// It is [RefGreen], the same one the ambient light uses, because it is the same
+// signal seen from the screen's border instead of from behind the connect bar.
+private val EdgeGlowBleed = 108.dp        // how far inward the wash reaches
+private val EdgeGlowSideRun = 168.dp      // how far down each side the ring carries
+private val EdgeGlowLine = 1.5.dp         // the lit edge itself
+
+@Composable
+private fun ConnectedEdgeGlow(connected: Boolean, modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    // 520ms matches the ambient light's own crossfade, so connecting reads as one
+    // change of light rather than as two effects starting at the same time.
+    val strength by animateFloatAsState(
+        targetValue = if (connected) 1f else 0f,
+        animationSpec = motionSpec(reduce, 520),
+        label = "edgeGlow",
+    )
+    if (strength <= 0.01f) return
+    Box(modifier.drawBehind { drawTopEdgeRing(strength) })
+}
+
+private fun DrawScope.drawTopEdgeRing(strength: Float) {
+    fun green(alpha: Float) = RefGreen.copy(alpha = alpha * strength)
+
+    val bleed = EdgeGlowBleed.toPx()
+    val line = EdgeGlowLine.toPx()
+    val sideRun = EdgeGlowSideRun.toPx()
+
+    // The wash: strongest right under the edge, gone by the end of the bleed.
+    drawRect(
+        brush = Brush.verticalGradient(
+            0.00f to green(0.15f),
+            0.22f to green(0.07f),
+            0.55f to green(0.02f),
+            1.00f to Color.Transparent,
+            startY = 0f,
+            endY = bleed,
+        ),
+        size = Size(size.width, bleed),
+    )
+    // The lit edge. The centre is where the light is; the corners are where it has
+    // travelled furthest, so they keep only a trace of it.
+    drawRect(
+        brush = Brush.horizontalGradient(
+            0.00f to green(0.10f),
+            0.18f to green(0.42f),
+            0.50f to green(0.72f),
+            0.82f to green(0.42f),
+            1.00f to green(0.10f),
+        ),
+        size = Size(size.width, line),
+    )
+    // Both corners turned: the same hairline continuing down each side, fading out
+    // well before the connect bar, so the effect reads as an edge and not a frame.
+    val sideBrush = Brush.verticalGradient(
+        0.00f to green(0.30f),
+        0.35f to green(0.09f),
+        1.00f to Color.Transparent,
+        startY = 0f,
+        endY = sideRun,
+    )
+    drawRect(brush = sideBrush, topLeft = Offset(0f, 0f), size = Size(line, sideRun))
+    drawRect(
+        brush = sideBrush,
+        topLeft = Offset(size.width - line, 0f),
+        size = Size(line, sideRun),
+    )
+}
 
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
@@ -311,11 +476,17 @@ private val BarShade = SolidColor(RefElev1.copy(alpha = 0.12f))
  * [allConfigs] is every saved server — the browse list groups and filters it;
  * [activeConfig] is the one the power button acts on. Both arrive already
  * loaded: Home never touches disk.
+ *
+ * [mode] is which way [activeConfig] was arrived at, not a second selection:
+ * in [ConnectMode.MANUAL] it is the row the user tapped, in [ConnectMode.SMART]
+ * it is whatever VpnTab's own scoring currently rates best. Home only reports the
+ * mode and offers the gesture that changes it; the choosing happens in VpnTab.
  */
 internal data class HomeUiState(
     val activeConfig: SavedConfig?,
     val allConfigs: List<SavedConfig> = emptyList(),
     val connected: Boolean = false,
+    val mode: ConnectMode = ConnectMode.MANUAL,
     val elapsedSec: Long = 0L,
     val downloadKBps: Double = 0.0,
     val uploadKBps: Double = 0.0,
@@ -391,10 +562,19 @@ private fun HomeUiState.rowSubtitle(cfg: SavedConfig): String {
     return if (name != null) "$ping · $name" else ping
 }
 
+/**
+ * `.protocol-line` — the active config's protocol and the port it really dials.
+ *
+ * The port is [SavedConfig.port], which is what ConfigUriParser read out of the URI
+ * itself; the mockup's literal "443" was only ever placeholder copy, and a config on
+ * 8443, 2087 or 80 says so here. A config whose URI carried no port at all falls back
+ * to its protocol's default in the parser, so there is never a port shown that the
+ * connection isn't actually using.
+ */
 private fun protocolLabel(cfg: SavedConfig?): String {
     if (cfg == null) return "No server selected"
     val proto = cfg.proto.uppercase().ifBlank { cfg.network.uppercase() }.ifBlank { "VLESS" }
-    return "$proto · ${cfg.port}"
+    return if (cfg.port > 0) "$proto · ${cfg.port}" else proto
 }
 
 /** "2.4" to "GB" — the ring's own one-decimal label, split so the unit can wrap. */
@@ -422,6 +602,7 @@ internal fun HomeScreen(
     onTogglePower: () -> Unit,
     onSelectConfig: (SavedConfig) -> Unit,
     onAddServer: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var tab by remember { mutableStateOf(HomeTab.MAIN) }
@@ -441,6 +622,7 @@ internal fun HomeScreen(
                 onOpenProfile = onOpenProfile,
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
+                onSetMode = onSetMode,
             )
             BrowseCard(
                 state = state,
@@ -472,6 +654,14 @@ internal fun HomeScreen(
                 .padding(horizontal = CardMargin)
                 .padding(bottom = CardMargin),
         )
+
+        // Last, so nothing paints over it: the green ring on the screen's top edge
+        // while the tunnel is up. Purely drawn — no clickable, no pointer input —
+        // so every row underneath keeps its own touches.
+        ConnectedEdgeGlow(
+            connected = state.connected,
+            modifier = Modifier.matchParentSize(),
+        )
     }
 }
 
@@ -487,12 +677,14 @@ private fun Header(
     onOpenProfile: () -> Unit,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
 ) {
+    val reduce = rememberReduceMotion()
     // White idle, green connected — the light's own colour, animated so toggling
     // the tunnel reads as the room changing colour rather than as a repaint.
     val ambient by animateColorAsState(
         if (state.connected) RefGreen else Color.White,
-        tween(520),
+        motionSpec(reduce, 520),
         label = "ambientLight",
     )
     Box(Modifier.fillMaxWidth()) {
@@ -515,6 +707,7 @@ private fun Header(
                 state = state,
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
+                onSetMode = onSetMode,
             )
             Spacer(Modifier.height(22.dp))         // .network-row margin-top
             NetworkRow(state = state)
@@ -580,9 +773,16 @@ private fun GlyphButton(
 }
 
 // ── Status row ────────────────────────────────────────────────────────────────
-// Just the protocol line: the mockup's OFF/ON pill is gone, because the ambient
-// light already says whether the tunnel is up and a second, wordier read of the
-// same fact next to it only adds a thing that can lag behind it.
+// The protocol line, and after it the connect mode: "VLESS · 8443 · Smart". The
+// mockup's OFF/ON pill is gone, because the ambient light already says whether the
+// tunnel is up and a second, wordier read of the same fact next to it only adds a
+// thing that can lag behind it.
+//
+// The mode belongs here rather than on the connect bar for the same reason: this row
+// is where the facts about the connection are stated in words, and the bar carries
+// exactly one thing, the country. The mode's own word is [RefTextMid] — it is a
+// setting, not a state, so it sits a step behind the protocol without needing a
+// colour of its own to say so.
 @Composable
 private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
     Row(
@@ -600,6 +800,32 @@ private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Text(
+            " · ",
+            fontSize = 14.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = RefTextLow,
+            maxLines = 1,
+        )
+        // The word changes rarely, so it is worth animating: a 160ms fade in over a
+        // 110ms fade out (enter longer than exit, per the app's own motion rules),
+        // with the container sizing between "Smart" and "Manual" rather than jumping.
+        AnimatedContent(
+            targetState = state.mode,
+            transitionSpec = {
+                (fadeIn(tween(160)) togetherWith fadeOut(tween(110)))
+                    .using(SizeTransform(clip = false))
+            },
+            label = "connectMode",
+        ) { mode ->
+            Text(
+                mode.label,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = RefTextMid,
+                maxLines = 1,
+            )
+        }
         Spacer(Modifier.width(6.dp))               // .protocol-line gap
         Chevron(size = 14.dp, color = RefTextLow)
     }
@@ -609,13 +835,19 @@ private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
 // .power-row: the bar stops 50dp short of the right edge and the 100dp circle is
 // pulled back over it (CSS margin-left: -50px), so the circle's centre lands
 // exactly on the bar's right edge and its outer half overhangs the row.
+//
+// The row is [ConnectRowHeight], not [PowerSize]: the extra band at the top and
+// bottom is where the two mode chevrons sit, above and below the circle. Both the
+// bar and the circle stay centred in it, so the mockup's own geometry is unchanged —
+// the row simply has shoulders now.
 @Composable
 private fun ConnectRow(
     state: HomeUiState,
     onOpenLocations: () -> Unit,
     onTogglePower: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(PowerSize)) {
+    Box(Modifier.fillMaxWidth().height(ConnectRowHeight)) {
         ConnectBar(
             state = state,
             onClick = onOpenLocations,
@@ -625,12 +857,82 @@ private fun ConnectRow(
                 .fillMaxWidth()
                 .height(BarHeight),
         )
-        PowerCircle(
+        PowerControl(
+            mode = state.mode,
             connected = state.connected,
             enabled = state.activeConfig != null,
-            onClick = onTogglePower,
+            onTogglePower = onTogglePower,
+            onSetMode = onSetMode,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
+    }
+}
+
+/**
+ * The power circle with its two mode chevrons stacked above and below it.
+ *
+ * The circle is untouched — [PowerCircle] still draws the mockup's bare white disc —
+ * and the chevrons are its neighbours, not its contents: they are outside the disc,
+ * outside the bar, drawn on the page itself, and they are marks rather than controls.
+ * The gesture they describe lives on the circle: drag it up for [ConnectMode.SMART],
+ * down for [ConnectMode.MANUAL].
+ *
+ * Which chevron is lit says which way there is left to go — in Manual the up mark is
+ * the bright one, in Smart the down one — so the pair reads as "there is another mode
+ * that way" instead of as two decorations.
+ */
+@Composable
+private fun PowerControl(
+    mode: ConnectMode,
+    connected: Boolean,
+    enabled: Boolean,
+    onTogglePower: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.width(PowerSize),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ModeChevron(pointsUp = true, lit = mode == ConnectMode.MANUAL)
+        Spacer(Modifier.height(ModeChevronGap))
+        PowerCircle(
+            mode = mode,
+            connected = connected,
+            enabled = enabled,
+            onClick = onTogglePower,
+            onSwipeUp = { onSetMode(ConnectMode.SMART) },
+            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+        )
+        Spacer(Modifier.height(ModeChevronGap))
+        ModeChevron(pointsUp = false, lit = mode == ConnectMode.SMART)
+    }
+}
+
+/**
+ * One chevron of the swipe affordance: 12 x 6dp, 1.8dp stroke, white.
+ *
+ * Only the alpha ever changes — no motion, no scale, no glow. This mark is on screen
+ * every second the app is open, and by the frequency rule the more often something is
+ * seen the quieter it has to be.
+ */
+@Composable
+private fun ModeChevron(pointsUp: Boolean, lit: Boolean) {
+    val reduce = rememberReduceMotion()
+    val alpha by animateFloatAsState(
+        targetValue = if (lit) 0.55f else 0.16f,
+        animationSpec = motionSpec(reduce, 180),
+        label = "modeChevron",
+    )
+    Canvas(Modifier.size(width = ModeChevronWidth, height = ModeChevronHeight)) {
+        val stroke = 1.8.dp.toPx()
+        val inset = stroke / 2f
+        val left = Offset(inset, if (pointsUp) size.height - inset else inset)
+        val apex = Offset(size.width / 2f, if (pointsUp) inset else size.height - inset)
+        val right = Offset(size.width - inset, left.y)
+        val color = Color.White.copy(alpha = alpha)
+        drawLine(color, left, apex, stroke, StrokeCap.Round)
+        drawLine(color, apex, right, stroke, StrokeCap.Round)
     }
 }
 
@@ -644,10 +946,16 @@ private fun ConnectBar(
     val shape = remember(density) { connectBarShape(with(density) { PowerCut.toPx() }) }
     val cfg = state.activeConfig
     val countryCode = cfg?.let { state.countryCodeFor(it) }.orEmpty()
-    val city = cfg?.let { state.cityFor(it) }.orEmpty()
+    // The country, and only the country. The city used to lead this line and the
+    // country plus the config's own name sat under it; the flag behind the text
+    // already says which country this is, the city says nothing the user chose, and
+    // the server's name is what the browse list below is for. What is left when all
+    // three of those are gone is the one fact the bar is for: where the tunnel comes
+    // out. The config's name is the fallback only when the country is unknown —
+    // an empty bar would be worse than a technical one.
     val country = countryCodeToName(countryCode)
-    val headline = city.ifBlank {
-        country.ifBlank { cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server" }
+    val headline = country.ifBlank {
+        cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
 
     Box(
@@ -705,12 +1013,10 @@ private fun ConnectBar(
         // the bar, not a colour cast over the flag.
         Box(Modifier.matchParentSize().background(BarTopLight))
         Box(Modifier.matchParentSize().background(BarEdgeLight))
-        // `.location-block` (z-index:2) — the city, and nothing else: no badge, no
-        // second read of the flag, and no second line. The country and the config's
-        // own name used to sit under the headline as "Germany · CF GERMANY"; the flag
-        // already says which country this is, and the server's name belongs to the
-        // browse list below, so the bar carries one line. The end inset clears the
-        // circular cut by 10dp so the last glyph never crosses the missing material.
+        // `.location-block` (z-index:2) — the country, and nothing else: no badge, no
+        // second read of the flag, no city and no second line. The end inset clears
+        // the circular cut by 10dp so the last glyph never crosses the missing
+        // material.
         Text(
             headline,
             fontSize = 21.sp,
@@ -757,6 +1063,10 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 // there is no spinner, because there is no pending state to draw: the screen goes
 // straight from disconnected to connected.
 //
+// It carries one gesture besides the tap: a vertical drag switches Smart / Manual.
+// The disc itself never shows it — no arrow inside the face, no label on it, nothing
+// added to the mockup's button — the two chevrons in [PowerControl] do, from outside.
+//
 // The mockup's four-part box-shadow, split by what Compose can draw:
 //   0 16px 34px rgba(0,0,0,0.45)      ┐ the cast shadow — Modifier.shadow
 //   0 4px 10px rgba(0,0,0,0.25)       ┘
@@ -765,9 +1075,12 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 //                                             bright top rim over a soft dark foot.
 @Composable
 private fun PowerCircle(
+    mode: ConnectMode,
     connected: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
+    onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -777,6 +1090,8 @@ private fun PowerCircle(
         label = "powerPress",
     )
     val ink = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
+    val density = LocalDensity.current
+    val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
         // Flat white disc + cast shadow only — no halo, no ring, no breathing glow.
         // The HTML reference button (.power-glow{display:none}) is a plain glossy
@@ -789,13 +1104,48 @@ private fun PowerCircle(
                 .shadow(22.dp, CircleShape)        // 0 16px 34px rgba(0,0,0,.45)
                 .clip(CircleShape)
                 .background(PowerFace)
+                // Vertical drag switches the mode. It sits before .clickable so a
+                // drag that passes the touch slop is claimed here and the tap is
+                // cancelled instead of also firing the tunnel; anything that never
+                // moves that far is still a plain tap on the button. The mode is a
+                // key so the callbacks can't go stale mid-gesture.
+                .pointerInput(mode, threshold) {
+                    var travel = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { travel = 0f },
+                        onDragCancel = { travel = 0f },
+                        onDragEnd = {
+                            when {
+                                travel <= -threshold -> onSwipeUp()
+                                travel >= threshold -> onSwipeDown()
+                            }
+                            travel = 0f
+                        },
+                    ) { _, delta -> travel += delta }
+                }
                 .clickable(
                     enabled = enabled,
                     interactionSource = interaction,
                     indication = null,
                     onClickLabel = if (connected) "Disconnect" else "Connect",
                     onClick = onClick,
-                ),
+                )
+                // A swipe is invisible to a screen reader, so the same two outcomes
+                // are offered as named actions on the button. This is why the
+                // chevrons don't need to be tap targets of their own: 12 x 6dp marks
+                // squeezed against a 100dp disc could never reach the 48dp floor,
+                // and a control that can't be hit properly is worse than a mark that
+                // was never meant to be hit at all.
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction("Switch to Smart mode") {
+                            onSwipeUp(); true
+                        },
+                        CustomAccessibilityAction("Switch to Manual mode") {
+                            onSwipeDown(); true
+                        },
+                    )
+                },
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.matchParentSize().background(PowerFaceSheen))
@@ -1482,7 +1832,24 @@ private fun HomeScreenIdlePreview() {
             publicIp = "139.162.191.1",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {}, onSetMode = {},
+    )
+}
+
+@Preview(name = "Home · smart, off", widthDp = 390, heightDp = 844)
+@Composable
+private fun HomeScreenSmartPreview() {
+    HomeScreen(
+        state = HomeUiState(
+            // Smart mode's own pick: the fastest of the six, chosen for the user.
+            activeConfig = previewConfigs.first(),
+            allConfigs = previewConfigs,
+            mode = ConnectMode.SMART,
+            networkName = "Wi-Fi",
+            publicIp = "139.162.191.1",
+        ),
+        onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {}, onSetMode = {},
     )
 }
 
@@ -1495,6 +1862,7 @@ private fun HomeScreenConnectedPreview() {
             activeConfig = active,
             allConfigs = previewConfigs,
             connected = true,
+            mode = ConnectMode.SMART,
             elapsedSec = 3725L,
             downloadKBps = 812.0,
             uploadKBps = 96.0,
@@ -1507,7 +1875,7 @@ private fun HomeScreenConnectedPreview() {
             publicIp = "45.83.220.14",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {}, onSetMode = {},
     )
 }
 
@@ -1517,6 +1885,6 @@ private fun HomeScreenEmptyPreview() {
     HomeScreen(
         state = HomeUiState(activeConfig = null, allConfigs = emptyList()),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
-        onTogglePower = {}, onSelectConfig = {}, onAddServer = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {}, onSetMode = {},
     )
 }
