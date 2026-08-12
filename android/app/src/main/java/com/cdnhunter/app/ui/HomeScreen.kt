@@ -29,11 +29,15 @@ package com.cdnhunter.app.ui
 // selected, whether search is open, and the query.
 //
 // The flag is the connect bar's background and nothing else's: `.connect-bar-flag`
-// fills the whole pill, full width and full height, under `.connect-bar-shade`.
+// fills the whole pill, full width and full height, under `.connect-bar-shade` —
+// which is opaque only where the location text starts and clears by 58% of the
+// width, so the flag reads across the bar's right-hand half rather than in a sliver.
 // There is no flag disc behind the power button and no flag badge inside the bar.
 // It is flattened and de-bowed first, and rasterised above the pill's own size, so
 // the bands read level and crisp — see FlagArtwork.kt. Its colours are the real
-// flag's in every state: nothing on this screen ever tints the flag itself.
+// flag's in every state: nothing on this screen ever tints the flag itself. When
+// there is no flag to draw — country unresolved, no bundled asset, still decoding —
+// a neutral slate wash stands in, so the bar is never a bare void.
 // The power circle itself is a flat brushed-white disc in every state — the
 // mockup's `.power-glow` is `display:none`.
 //
@@ -266,6 +270,35 @@ private val BarSheen = Brush.verticalGradient(
     0.12f to Color.Transparent,
     0.88f to Color.Transparent,
     1.00f to Color.Black.copy(alpha = 0.16f),
+)
+// `.connect-bar-shade`: the scrim between the flag and the location text. It stays
+// opaque where the text begins and clears completely by 58% of the bar's width, so
+// the flag reads across the whole right-hand half of the pill.
+//
+// The previous curve held 92% opacity out to 20% and only reached transparent at
+// 80%. The bar is ~300dp wide on a 390dp panel and its last [PowerCut] (53dp) is
+// cut away for the power disc, so the flag showed at full strength across barely
+// 30dp of it — the artwork was there and effectively unreadable. The stops below are
+// the same shape, pulled in by ~0.72, which trades scrim for flag over the middle of
+// the bar; a headline long enough to run past 58% now sits on the flag itself.
+private val BarShade = Brush.horizontalGradient(
+    0.00f to RefElev1,
+    0.14f to RefElev1.copy(alpha = 0.92f),
+    0.30f to RefElev1.copy(alpha = 0.55f),
+    0.44f to RefElev1.copy(alpha = 0.12f),
+    0.58f to Color.Transparent,
+)
+// What `.connect-bar-flag` shows when there is no flag to show: a neutral slate
+// wash, diagonal so it reads as material rather than as one more of the bar's own
+// horizontal and vertical layers. It sits under the artwork and is never
+// country-specific, which covers all three ways the flag can be absent — the active
+// server's country is still unresolved, the country has no bundled asset, or the SVG
+// has not finished decoding — so the end of the bar the shade clears is never an
+// empty hole. The real flag paints over it completely the moment it lands.
+private val BarFlagPlaceholder = Brush.linearGradient(
+    0.00f to RefElev2,
+    0.55f to Color(0xFF1B1F28),
+    1.00f to RefBorder,
 )
 
 /**
@@ -648,6 +681,11 @@ private fun ConnectBar(
         // flag but the shade gradient below, which is `.connect-bar-shade`: it keeps
         // the location text legible while the flag reads at full strength toward the
         // button end.
+        //
+        // [BarFlagPlaceholder] goes down first and unconditionally, so an unresolved
+        // country, a country with no bundled asset and a flag still being decoded all
+        // land on neutral material instead of on nothing.
+        Box(Modifier.matchParentSize().background(BarFlagPlaceholder))
         if (countryCode.isNotBlank()) {
             val context = LocalContext.current
             val flag = remember(countryCode) { rectangularFlag(context, countryCode) }
@@ -670,17 +708,7 @@ private fun ConnectBar(
                 modifier = Modifier.matchParentSize(),
             )
         }
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.horizontalGradient(
-                    0.00f to RefElev1,
-                    0.20f to RefElev1.copy(alpha = 0.92f),
-                    0.42f to RefElev1.copy(alpha = 0.55f),
-                    0.62f to RefElev1.copy(alpha = 0.12f),
-                    0.80f to Color.Transparent,
-                )
-            )
-        )
+        Box(Modifier.matchParentSize().background(BarShade))
         Box(Modifier.matchParentSize().background(BarSheen))
         // The bar's share of the ambient light: top first, then the two edges. Both
         // stay white in every state — the connected signal is the green light behind
