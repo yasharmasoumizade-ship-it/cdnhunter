@@ -12,8 +12,8 @@ package com.cdnhunter.app.ui
 //   • page        — near-black vertical gradient, #0d0e12 → #060709 by 70%
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • status row  — "VLESS · 443", chevron → Settings
-//   • connect bar — 88dp pill carrying the active server's city and country over
-//                   the country's own flag, full-bleed, with a 100dp white power
+//   • connect bar — 88dp pill carrying the active server's city over the country's
+//                   own flag, full-bleed, with a 100dp white power
 //                   circle whose centre sits exactly on the bar's right edge; the
 //                   bar is cut away behind it, leaving a 3dp ring of clearance
 //   • network row — wifi glyph, transport label, public IP (tap to copy)
@@ -29,15 +29,18 @@ package com.cdnhunter.app.ui
 // selected, whether search is open, and the query.
 //
 // The flag is the connect bar's background and nothing else's: `.connect-bar-flag`
-// fills the whole pill, full width and full height, under `.connect-bar-shade` —
-// which is opaque only where the location text starts and clears by 58% of the
-// width, so the flag reads across the bar's right-hand half rather than in a sliver.
+// fills the whole pill, full width and full height, and is muted to
+// [BAR_FLAG_ALPHA] so it reads as a tinted surface the city name sits legibly on
+// rather than as a picture. Above it `.connect-bar-shade` is a single flat veil,
+// uniform end to end — it used to be a horizontal ramp, opaque under the text and
+// clear past 58%, which is why the flag never read as a background at all.
 // There is no flag disc behind the power button and no flag badge inside the bar.
 // It is flattened and de-bowed first, and rasterised above the pill's own size, so
 // the bands read level and crisp — see FlagArtwork.kt. Its colours are the real
 // flag's in every state: nothing on this screen ever tints the flag itself. When
 // there is no flag to draw — country unresolved, no bundled asset, still decoding —
-// a neutral slate wash stands in, so the bar is never a bare void.
+// the pill is its own [BarSurface] material, which is the same floor the flag
+// tints, so the bar never reads as a void or as half-shaded.
 // The power circle itself is a flat brushed-white disc in every state — the
 // mockup's `.power-glow` is `display:none`.
 //
@@ -85,6 +88,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
@@ -271,35 +275,35 @@ private val BarSheen = Brush.verticalGradient(
     0.88f to Color.Transparent,
     1.00f to Color.Black.copy(alpha = 0.16f),
 )
-// `.connect-bar-shade`: the scrim between the flag and the location text. It stays
-// opaque where the text begins and clears completely by 58% of the bar's width, so
-// the flag reads across the whole right-hand half of the pill.
+/**
+ * How much of the flag's own colour reaches the bar: it is a tinted background for
+ * the location text, not a picture the text is parked on top of.
+ *
+ * At this strength a flag's brightest possible band — white — lands near #545659
+ * over [BarSurface], which leaves [RefTextHi] above 6:1 against it; the darkest
+ * bands stay close to the bar's own material. The muting is done here, on the
+ * artwork's alpha, rather than with a scrim over it, because a scrim of the same
+ * strength would also flatten the bar's top light and edge highlights.
+ */
+private const val BAR_FLAG_ALPHA = 0.30f
+
+// `.connect-bar-shade`: a flat veil over the flag, uniform across the whole pill.
 //
-// The previous curve held 92% opacity out to 20% and only reached transparent at
-// 80%. The bar is ~300dp wide on a 390dp panel and its last [PowerCut] (53dp) is
-// cut away for the power disc, so the flag showed at full strength across barely
-// 30dp of it — the artwork was there and effectively unreadable. The stops below are
-// the same shape, pulled in by ~0.72, which trades scrim for flag over the middle of
-// the bar; a headline long enough to run past 58% now sits on the flag itself.
-private val BarShade = Brush.horizontalGradient(
-    0.00f to RefElev1,
-    0.14f to RefElev1.copy(alpha = 0.92f),
-    0.30f to RefElev1.copy(alpha = 0.55f),
-    0.44f to RefElev1.copy(alpha = 0.12f),
-    0.58f to Color.Transparent,
-)
-// What `.connect-bar-flag` shows when there is no flag to show: a neutral slate
-// wash, diagonal so it reads as material rather than as one more of the bar's own
-// horizontal and vertical layers. It sits under the artwork and is never
-// country-specific, which covers all three ways the flag can be absent — the active
-// server's country is still unresolved, the country has no bundled asset, or the SVG
-// has not finished decoding — so the end of the bar the shade clears is never an
-// empty hole. The real flag paints over it completely the moment it lands.
-private val BarFlagPlaceholder = Brush.linearGradient(
-    0.00f to RefElev2,
-    0.55f to Color(0xFF1B1F28),
-    1.00f to RefBorder,
-)
+// It used to be a horizontal ramp — fully opaque [RefElev1] at the left edge,
+// transparent by 58% — which is why the flag never read as a background at all. The
+// bar is ~300dp wide on a 390dp panel and its last [PowerCut] (53dp) is cut away for
+// the power disc, so the ramp buried the flag under solid material exactly where the
+// text sits and let it through only in the strip past the middle. With the artwork
+// itself muted to [BAR_FLAG_ALPHA] there is nothing left for a ramp to protect: this
+// is a single low-alpha wash that settles the flag's mid-tones without favouring one
+// end of the bar over the other.
+private val BarShade = SolidColor(RefElev1.copy(alpha = 0.12f))
+// The floor under the flag is [BarSurface] and nothing else. There used to be a
+// diagonal slate wash here as well — it existed because the old shade ramp cleared
+// completely past 58%, so a bar with no flag to draw read as shaded at one end and
+// hollow at the other. The veil is uniform now and [BarSurface] carries the whole
+// pill on its own, so an unresolved country, a country with no bundled asset and a
+// flag still decoding all land on the same material the flag is tinting.
 
 /**
  * Everything Home draws, snapshotted from VpnTab() on each recomposition.
@@ -645,21 +649,6 @@ private fun ConnectBar(
     val headline = city.ifBlank {
         country.ifBlank { cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server" }
     }
-    // The second line names the country, then the server itself — but only the
-    // parts that aren't already the headline: a config named after its own city
-    // would otherwise read "Frankfurt · Frankfurt".
-    val sub = remember(headline, country, cfg?.displayName) {
-        buildList {
-            if (country.isNotBlank() && !country.equals(headline, ignoreCase = true)) add(country)
-            cfg?.displayName
-                ?.takeIf {
-                    it.isNotBlank() &&
-                        !it.equals(headline, ignoreCase = true) &&
-                        !it.equals(country, ignoreCase = true)
-                }
-                ?.let { add(it) }
-        }.joinToString(" · ")
-    }
 
     Box(
         modifier
@@ -670,22 +659,23 @@ private fun ConnectBar(
             .clickable(onClickLabel = "Choose a server", onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // `.connect-bar-flag`: the country's own flag as the pill's background,
-        // full width and full height. The asset is a sphere-bowed circle-flag, so it
-        // is flattened and straightened first (FlagArtwork.kt) and then stretched to
-        // the pill — FillBounds, not Crop, because cropping a circular flag into a
-        // 3.4:1 box shows one band of it and nothing else. It is rasterised at
-        // [FLAG_RENDER_PX], above the pill's own width, so the stretch samples down
-        // rather than up; Coil would otherwise fit the square document to the pill's
-        // 88dp height and blow the result out 3.4x sideways. Nothing sits on the
-        // flag but the shade gradient below, which is `.connect-bar-shade`: it keeps
-        // the location text legible while the flag reads at full strength toward the
-        // button end.
+        // `.connect-bar-flag`: the country's own flag as the pill's background —
+        // every pixel of it, behind the location text included. The asset is a
+        // sphere-bowed circle-flag, so it is flattened and straightened first
+        // (FlagArtwork.kt) and then stretched to the pill: FillBounds, not Crop,
+        // because cropping a circular flag into a 3.4:1 box shows one band of it and
+        // nothing else, and because Crop would leave the bands off-centre rather than
+        // reading level across the bar.
         //
-        // [BarFlagPlaceholder] goes down first and unconditionally, so an unresolved
-        // country, a country with no bundled asset and a flag still being decoded all
-        // land on neutral material instead of on nothing.
-        Box(Modifier.matchParentSize().background(BarFlagPlaceholder))
+        // Crispness comes from over-sampling, not from filtering: the SVG is
+        // rasterised at [FLAG_RENDER_PX], above the pill's own pixel width on the
+        // densest panels, so the stretch only ever samples down. Coil would otherwise
+        // fit the square document to the pill's 88dp height and blow the result out
+        // 3.4x sideways, which is the soft, pixelated stretch this avoids.
+        //
+        // [BAR_FLAG_ALPHA] is what makes it a background rather than a picture: the
+        // artwork's own alpha, so the flag's colours mute into [BarSurface] beneath it
+        // while the bar's top light and edge highlights above it stay untouched.
         if (countryCode.isNotBlank()) {
             val context = LocalContext.current
             val flag = remember(countryCode) { rectangularFlag(context, countryCode) }
@@ -705,7 +695,7 @@ private fun ConnectBar(
                 contentDescription = null,
                 contentScale = ContentScale.FillBounds,
                 filterQuality = FilterQuality.High,
-                modifier = Modifier.matchParentSize(),
+                modifier = Modifier.matchParentSize().alpha(BAR_FLAG_ALPHA),
             )
         }
         Box(Modifier.matchParentSize().background(BarShade))
@@ -715,39 +705,26 @@ private fun ConnectBar(
         // the bar, not a colour cast over the flag.
         Box(Modifier.matchParentSize().background(BarTopLight))
         Box(Modifier.matchParentSize().background(BarEdgeLight))
-        // `.location-block` (z-index:2) — the text, and nothing else: no badge, no
-        // second read of the flag. The end inset clears the circular cut by 10dp so
-        // the last glyph never crosses the missing material.
-        Column(
+        // `.location-block` (z-index:2) — the city, and nothing else: no badge, no
+        // second read of the flag, and no second line. The country and the config's
+        // own name used to sit under the headline as "Germany · CF GERMANY"; the flag
+        // already says which country this is, and the server's name belongs to the
+        // browse list below, so the bar carries one line. The end inset clears the
+        // circular cut by 10dp so the last glyph never crosses the missing material.
+        Text(
+            headline,
+            fontSize = 21.sp,
+            lineHeight = 23.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.3).sp,
+            color = RefTextHi,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             // .connect-bar padding is 0 20px
-            Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = ScreenPad, end = PowerCut + 10.dp),
-        ) {
-            Text(
-                headline,
-                fontSize = 21.sp,
-                lineHeight = 23.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.3).sp,
-                color = RefTextHi,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (sub.isNotEmpty()) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    sub,
-                    fontSize = 13.5.sp,
-                    lineHeight = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.1.sp,
-                    color = RefTextMid,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        )
     }
 }
 
@@ -1039,14 +1016,20 @@ private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** A bare "+" glyph — no disc, no fill — for adding a server. */
+/**
+ * A bare "+" glyph — no disc, no fill — for adding a server.
+ *
+ * Ink is [RefTextMid], the same as the idle magnifier beside it and every other
+ * plain glyph on the screen: it was accent-blue, which read as the one coloured
+ * control in a row of white ones and pulled the eye off the connect bar.
+ */
 @Composable
 private fun AddServerButton(onClick: () -> Unit) {
     GlyphButton(onClick = onClick, label = "Add server") {
         Icon(
             Icons.Rounded.Add,
             contentDescription = null,
-            tint = RefAccent,
+            tint = RefTextMid,
             modifier = Modifier.size(ActionGlyph),
         )
     }

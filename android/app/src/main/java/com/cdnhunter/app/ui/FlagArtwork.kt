@@ -45,11 +45,17 @@ import kotlin.math.roundToInt
  * The pill is ~900×264px on a 3x panel, and Coil sizes an SVG request to fit the
  * target — which, for a square document in a 3.4:1 box, means 264×264 stretched
  * out to 900 wide, i.e. a 3.4x horizontal upscale and the blur that comes with it.
- * Asking for 1024 instead over-samples both axes: horizontal detail (vertical
- * stripes, emblems) is rendered above the pill's own width and the vertical axis
- * is downsampled, which is the direction that stays crisp.
+ * Asking for a large square over-samples both axes instead: horizontal detail
+ * (vertical stripes, emblems) is rendered above the pill's own width and the
+ * vertical axis is downsampled, which is the direction that stays crisp.
+ *
+ * 1152 rather than 1024 so the horizontal axis is still a downsample on a 3.5x
+ * panel, where the pill is ~1050px wide — at 1024 the widest phones were stretching
+ * the raster back up by a few percent, which is exactly the soft edge this constant
+ * exists to avoid. Coil holds one bitmap per country at ~5MB; the bar shows one
+ * flag at a time.
  */
-internal const val FLAG_RENDER_PX = 1024
+internal const val FLAG_RENDER_PX = 1152
 
 private val CIRCLE_MASK = Regex("<mask\\s+id=\"a\">.*?</mask>", RegexOption.DOT_MATCHES_ALL)
 private val CIRCLE_MASK_REF = Regex("\\s*mask=\"url\\(#a\\)\"")
