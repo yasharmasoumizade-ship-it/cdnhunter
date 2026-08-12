@@ -31,8 +31,7 @@ object ConfigUriParser {
         val rest = body.substringAfter("@").substringBefore("#")
         val hostPort = rest.substringBefore("?")
         val query = if (rest.contains("?")) rest.substringAfter("?") else ""
-        val address = hostPort.substringBeforeLast(":")
-        val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+        val (address, port) = splitHostPort(hostPort, 443)
         val params = parseQuery(query)
 
         val p = linkedMapOf<String, Any>(
@@ -56,8 +55,7 @@ object ConfigUriParser {
         val rest = body.substringAfter("@").substringBefore("#")
         val hostPort = rest.substringBefore("?")
         val query = if (rest.contains("?")) rest.substringAfter("?") else ""
-        val address = hostPort.substringBeforeLast(":")
-        val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+        val (address, port) = splitHostPort(hostPort, 443)
         val params = parseQuery(query)
 
         val p = linkedMapOf<String, Any>(
@@ -135,8 +133,7 @@ object ConfigUriParser {
         }
 
         val hostPortClean = hostPortRaw.substringBefore("?").substringBefore("#")
-        val address = hostPortClean.substringBeforeLast(":")
-        val port = hostPortClean.substringAfterLast(":").toIntOrNull() ?: 8388
+        val (address, port) = splitHostPort(hostPortClean, 8388)
         if (address.isBlank() || method.isBlank() || password.isBlank()) return null
 
         return linkedMapOf(
@@ -155,6 +152,38 @@ object ConfigUriParser {
         val mod = str.length % 4
         if (mod > 0) str += "=".repeat(4 - mod)
         return str
+    }
+
+    /**
+     * Splits an authority into address + port.
+     *
+     * `substringBeforeLast(":")` / `substringAfterLast(":")` was close enough for
+     * `host:port`, but it reads the port out of whatever follows the last colon
+     * regardless of whether that is a number — so a bracketed IPv6 authority with
+     * no port (`[2001:db8::1]`) came back as the address `[2001:db8:` with the
+     * protocol default stapled on. The port shown on Home is the one this returns,
+     * so it has to be the config's own port or an admitted default, never a
+     * fragment of the host misread as one.
+     *
+     * Brackets are kept on IPv6 literals, which is what the old code did and what
+     * mihomo accepts.
+     */
+    private fun splitHostPort(authority: String, defaultPort: Int): Pair<String, Int> {
+        val trimmed = authority.trim()
+        if (trimmed.startsWith("[")) {
+            val close = trimmed.indexOf(']')
+            if (close > 0) {
+                val host = trimmed.substring(0, close + 1)
+                val port = trimmed.substring(close + 1).removePrefix(":").toIntOrNull()
+                return host to (port ?: defaultPort)
+            }
+        }
+        val colon = trimmed.lastIndexOf(':')
+        if (colon > 0) {
+            val port = trimmed.substring(colon + 1).toIntOrNull()
+            if (port != null) return trimmed.substring(0, colon) to port
+        }
+        return trimmed to defaultPort
     }
 
     /** Applies TLS/REALITY + transport (ws/grpc/h2/tcp) settings directly onto the flat proxy map.
