@@ -26,6 +26,20 @@ class CdnVpnService : VpnService() {
         const val NOTIFICATION_ID = 1
 
         var isRunning = AtomicBoolean(false)
+
+        // True from the moment a connect attempt starts until the tunnel is either
+        // up (isRunning) or given up on. The notification has always said
+        // "Connecting..." for exactly this window; Home reads it too, so its hero
+        // card can show a connecting state rather than jumping straight from
+        // disconnected to connected. Also true while auto-reconnect is retrying,
+        // which is the same fact from the user's side: the app is trying to get a
+        // tunnel up and does not have one yet.
+        //
+        // Every path that ends an attempt clears it — success (isRunning.set(true)),
+        // each early return in startVpn(), and stopVpnInternal(), which every
+        // failure and every disconnect goes through. It is never true at the same
+        // time as isRunning.
+        var isConnecting = AtomicBoolean(false)
         var uploadBytes = 0L
         var downloadBytes = 0L
         var lastError = ""
@@ -178,6 +192,7 @@ class CdnVpnService : VpnService() {
     private fun startVpn() {
         if (isRunning.get()) return
         killSwitchBlocking.set(false)
+        isConnecting.set(true)
         startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
         lastError = ""
         // Reset per-attempt, not appended forever — otherwise repeated connect/
@@ -227,6 +242,7 @@ class CdnVpnService : VpnService() {
                 if (tun == null) {
                     lastError = "Failed to create VPN tunnel"
                     debugLog += "\nFAILED: could not establish TUN interface (lastError set above)"
+                    isConnecting.set(false)
                     withContext(Dispatchers.Main) { stopSelf() }
                     return@launch
                 }
@@ -330,6 +346,7 @@ class CdnVpnService : VpnService() {
                 }
 
                 isRunning.set(true)
+                isConnecting.set(false)
                 reconnectAttempt = 0
                 uploadBytes = 0L
                 downloadBytes = 0L
@@ -408,6 +425,10 @@ class CdnVpnService : VpnService() {
                     // below, potentially tearing down this service instance
                     // mid-reconnect.
                     stopVpnInternal(keepTunAlive = false, stopService = false)
+                    // stopVpnInternal clears it; a retry is still an attempt in
+                    // flight as far as the UI is concerned, so it goes back up for
+                    // the backoff and the startVpn() below.
+                    isConnecting.set(true)
                     delay(backoffMs)
                     if (isRunning.get()) return@launch // a newer connect attempt already took over
                     startVpn()
@@ -492,6 +513,10 @@ class CdnVpnService : VpnService() {
     // startVpn() call -- see stopService below).
     private suspend fun stopVpnInternal(keepTunAlive: Boolean, stopService: Boolean = true) {
         isRunning.set(false)
+        // Every failure path and every disconnect comes through here, so this is the
+        // one place that has to clear the attempt flag; the auto-reconnect path sets
+        // it again for its own next attempt.
+        isConnecting.set(false)
         MihomoBridge.stop()
         exitCountryCode = ""
         exitCity = ""

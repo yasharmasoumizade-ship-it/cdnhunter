@@ -19,6 +19,20 @@ import javax.net.ssl.*
  */
 class GeoService {
 
+    private companion object {
+        /**
+         * An IPv4 literal anywhere in a response body — the four-octet form is what
+         * both answer shapes ([lookupCurrentIp]'s JSON `{"ip":"…"}` and the bare
+         * one-address-per-line providers) put in the body, and each octet is bounded
+         * to 0–255 so a version string or a timestamp cannot be mistaken for an
+         * address.
+         */
+        val IPV4 = Regex(
+            "\\b(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}" +
+                "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\b"
+        )
+    }
+
     private val client: OkHttpClient by lazy { buildClient() }
 
     data class GeoInfo(val cc: String, val lat: Double, val lon: Double, val city: String, val isp: String)
@@ -114,24 +128,40 @@ class GeoService {
     }
 
     /**
-     * The public IP the outside world currently sees for this device: through the
-     * live tunnel when [proxied] (mihomo's mixed port, the same path
+     * The public **IPv4** address the outside world currently sees for this device:
+     * through the live tunnel when [proxied] (mihomo's mixed port, the same path
      * lookupCurrentExitGeoInfo takes), otherwise over the normal network path.
      *
      * The distinction matters for the IP shown on Home — this app's own process is
      * excluded from its own VPN (see addDisallowedApplication in CdnVpnService), so
      * an unproxied lookup while connected reports the ISP's IP, not the tunnel's
      * exit. Returns "" when every provider fails.
+     *
+     * IPv4 only, deliberately. `ipwho.is` answers over whichever family the request
+     * reached it on, so on a dual-stack network it returned things like
+     * "2a01:7e01::2000:8ff:fe1a:3215" — 39 characters where Home's address slot has
+     * room for 15, which is what was truncating the line. The three providers below
+     * are the v4-only hostnames of services this file already trusts, and every
+     * answer is checked against [IPV4] before it is returned, so a provider that
+     * hands back a v6 address anyway is skipped rather than shown.
      */
     fun lookupCurrentIp(proxied: Boolean, mixedPort: Int = 10808, timeout: Float = 5.0f): String {
         val proxyClient = if (proxied) buildProxiedClient(mixedPort, timeout) else null
-        for (url in listOf("https://ipwho.is/", "https://ipapi.co/json/")) {
+        // Two shapes of answer: JSON with an "ip" field, and one bare address per
+        // line. Both are read the same way — pull the first v4 literal out of the
+        // body — so no provider needs its own parser.
+        val urls = listOf(
+            "https://api4.ipify.org/?format=json",
+            "https://ipv4.icanhazip.com/",
+            "https://v4.ident.me/",
+        )
+        for (url in urls) {
             try {
                 val body =
                     if (proxyClient != null) proxyGet(proxyClient, url, timeout)
                     else httpGet(url, timeout)
                 if (body.isNullOrBlank()) continue
-                val ip = JSONObject(body).optString("ip", "")
+                val ip = IPV4.find(body)?.value.orEmpty()
                 if (ip.isNotBlank()) return ip
             } catch (e: Exception) {
                 // try the next provider

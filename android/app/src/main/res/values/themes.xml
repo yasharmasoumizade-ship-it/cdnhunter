@@ -1,7 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      The app's window chrome. Every colour here is #0B0B0D — the one value the app
+      calls chrome: the status bar at the top, the navigation bar at the foot, the
+      window behind Compose, and (as HomeScreen.kt's ChromeBg) the disconnected hero
+      panel. So a disconnected app is one uninterrupted surface from the notification
+      icons down to the gesture bar, with no seam where the app's own drawing starts.
+
+      windowBackground matters even though Compose paints over all of it: it is what
+      the system draws for the launch window before the first frame, and left at the
+      platform default that was a pale flash ahead of a near-black UI.
+
+      windowLightStatusBar is false, stated rather than inherited. On this background
+      the system's glyphs have to be the light set — white on #0B0B0D is 18.4:1, the
+      dark set would be about 1.2:1 and effectively invisible — and while the
+      platform's dark parent already defaults that way, several OEM skins derive it
+      from the phone's own theme instead, which flipped the icons to dark on a
+      light-themed device. MainActivity states the same thing at runtime through
+      WindowCompat, for both bars, which is also how the navigation bar's glyphs are
+      set: windowLightNavigationBar is API 27 and this app ships to 24.
+    -->
     <style name="Theme.CDNHunter" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#FF0B0B0D</item>
         <item name="android:navigationBarColor">#FF0B0B0D</item>
+        <item name="android:windowBackground">#FF0B0B0D</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

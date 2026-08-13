@@ -9,6 +9,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
 import com.cdnhunter.app.ui.AppScreen
 import com.cdnhunter.app.ui.LocalThemeMode
 import com.cdnhunter.app.ui.ThemeMode
@@ -36,6 +37,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Both system bars are painted the app's chrome colour in themes.xml
+        // (#0B0B0D), which means their glyphs have to be the light set: white on that
+        // background is 18.4:1, the dark set about 1.2:1. The theme attribute says so
+        // too, but some OEM skins derive the status bar's appearance from the phone's
+        // own light/dark setting rather than from the app's theme, and this app is
+        // always dark regardless of it (see CDNHunterTheme). Stating it here through
+        // WindowCompat is what holds on those devices, and it is the only way to set
+        // the navigation bar's glyphs at all below API 27, where
+        // windowLightNavigationBar does not exist.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         setContent {
             CDNHunterTheme {
                 MainContent(this)

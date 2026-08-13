@@ -154,8 +154,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -252,6 +257,65 @@ private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 private val RefLoadHigh = Color(0xFFE0563B)
 private val PillInk = Color(0xFF05070C)        // .tab-pill.active text colour
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
+
+// ── Hero surface ──────────────────────────────────────────────────────────────
+// The top of the screen is one panel with three faces, and which face is showing is
+// the screen's whole statement of connection state (see [ConnPhase]):
+//
+//   OFF        — the app's own chrome, [ChromeBg]: the same #0B0B0D the system status
+//                bar and navigation bar are painted (res/values/themes.xml), so with
+//                nothing connected the panel reads as part of the window rather than
+//                as a dimmed picture of a country. No flag, no colour, no light.
+//   CONNECTING — that same chrome with the app's accent blue moving over it: a soft
+//                band sweeping down the panel, the frame's hairline lit, the power
+//                ring turning. Motion is the only thing that says "working", which is
+//                why it is the one face that animates on its own.
+//   CONNECTED  — the country's flag as an ambient wash (see [HeaderFlag]) with the
+//                header's ink and light in [RefGreen].
+//
+// The panel is framed rather than full-bleed: rounded at the foot, a hairline around
+// it, a top sheen and a soft shadow under it. That is the "card" — a raised surface
+// the rows sit on, with no hard rectangle anywhere on it.
+
+/** The window's own colour: `android:statusBarColor` / `navigationBarColor`. */
+private val ChromeBg = Color(0xFF0B0B0D)
+
+/** The panel's foot corners. Wider than the browse card's [PanelCorner] on purpose:
+ *  it is the larger surface, and the two radii read as one family rather than a
+ *  repeat. */
+private val HeroCorner = 34.dp
+
+/**
+ * The OFF face: [ChromeBg] with a barely-there lift toward the top, so the panel is
+ * the window's colour and still reads as a surface with light falling on it. The last
+ * stop is a shade under the chrome, which is what separates the panel's foot from the
+ * page it floats over without drawing a line there.
+ */
+private val HeroOffSurface = Brush.verticalGradient(
+    0.00f to Color(0xFF12141A),
+    0.42f to Color(0xFF0E1014),
+    1.00f to Color(0xFF090A0D),
+)
+
+/** The hairline around the panel, idle. White, not [RefBorder]: over both the chrome
+ *  and a flag it has to be the same edge. */
+private val HeroBorder = Color.White.copy(alpha = 0.07f)
+
+/** A single highlight along the panel's top inside edge — the light in the room
+ *  catching the glass, and the reason the frame doesn't need a second border. */
+private val HeroSheen = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.08f),
+    0.02f to Color.White.copy(alpha = 0.03f),
+    0.07f to Color.Transparent,
+    1.00f to Color.Transparent,
+)
+
+/** How long one pass of the connecting sweep takes, top to foot. */
+private const val CONNECTING_SWEEP_MS = 1750
+
+/** How long the phase crossfade takes — the ink, the light, and every surface. */
+private const val PHASE_FADE_MS = 520
+
 
 // ── Connected colour ──────────────────────────────────────────────────────────
 // One thing says "the tunnel is up": the ambient light turns green. There is no
@@ -401,25 +465,40 @@ private fun <T> motionSpec(reduce: Boolean, durationMs: Int): FiniteAnimationSpe
     if (reduce) snap() else tween(durationMs)
 
 /**
- * The header's headline ink: [idle] while the tunnel is down, [RefGreen] while it is up,
- * crossfaded on the same 520ms the ambient light uses so the top of the screen changes
- * state as one thing. The country on the connect bar, the protocol on the status chip,
- * the transport and the public IP all share this; the power mark shares it too, from its
- * own dark idle. Secondary inks up here — the mode word, the separators, the chevron,
- * the top bar's navigation glyphs — deliberately do not, because they are settings and
- * punctuation rather than connection state (and at 14sp a mid-chroma green is the one
- * place contrast could fall short). Like the light, it cuts instantly when the system
- * asks for no animations.
+ * The header's headline ink: [idle] while the tunnel is down, [RefAccent] while an
+ * attempt is in flight, [RefGreen] while it is up — crossfaded on the same
+ * [PHASE_FADE_MS] the ambient light and the hero's surfaces use, so the top of the
+ * screen changes state as one thing. The country on the connect bar, the protocol on
+ * the status chip, the transport and the public IP all share this; the power mark
+ * shares it too, from its own dark idle. Secondary inks up here — the mode word, the
+ * separators, the chevron, the top bar's navigation glyphs — deliberately do not,
+ * because they are settings and punctuation rather than connection state (and at 14sp
+ * a mid-chroma green is the one place contrast could fall short). Like the light, it
+ * cuts instantly when the system asks for no animations.
  */
 @Composable
-private fun headerInk(connected: Boolean, idle: Color = RefTextHi): Color {
+private fun headerInk(phase: ConnPhase, idle: Color = RefTextHi): Color {
     val reduce = rememberReduceMotion()
-    val ink by animateColorAsState(
-        if (connected) RefGreen else idle,
-        motionSpec(reduce, 520),
-        label = "headerInk",
-    )
+    val target = when (phase) {
+        ConnPhase.OFF -> idle
+        ConnPhase.CONNECTING -> RefAccent
+        ConnPhase.CONNECTED -> RefGreen
+    }
+    val ink by animateColorAsState(target, motionSpec(reduce, PHASE_FADE_MS), label = "headerInk")
     return ink
+}
+
+/** The colour of the light in the room for [phase]: white idle, blue working, green up. */
+@Composable
+private fun phaseLight(phase: ConnPhase): Color {
+    val reduce = rememberReduceMotion()
+    val target = when (phase) {
+        ConnPhase.OFF -> Color.White
+        ConnPhase.CONNECTING -> RefAccent
+        ConnPhase.CONNECTED -> RefGreen
+    }
+    val color by animateColorAsState(target, motionSpec(reduce, PHASE_FADE_MS), label = "phaseLight")
+    return color
 }
 
 // ── Connected edge light ──────────────────────────────────────────────────────
@@ -660,17 +739,23 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             label = "headerFlag",
             modifier = Modifier.fillMaxSize(),
         ) { code ->
-            // rectangularFlag returns null for a code with no artwork, which is the
-            // same "nothing to draw" as no country at all — one branch for both, or
-            // the panel would be a transparent hole instead of the fallback wash.
-            val flag = remember(code) { rectangularFlag(context, code) }
+            // Two models for one country: flagcdn's true-aspect SVG for a well-known
+            // exit country, the bundled circle-flags asset for everything else and for
+            // every failure of the first. Only the bundled one needs unmasking and
+            // de-bowing — see [rectangularFlag] and FlagArtwork.kt's header.
+            val remote = remember(code) { remoteFlagUrl(code) }
+            var remoteFailed by remember(code) { mutableStateOf(false) }
+            val bundled = remember(code) { rectangularFlag(context, code) }
+            val flag = if (remote != null && !remoteFailed) remote else bundled
             if (flag == null) {
                 Box(Modifier.fillMaxSize().background(HeaderFlagFallback))
             } else {
                 // Keyed by the canonical code, not the raw one, so the two spellings
                 // of one country ("uk" from a geo provider, "GB" from a title) share
-                // the entry they share artwork with.
-                val key = "flag-rect-${canonicalCountryCode(code)?.lowercase() ?: code}"
+                // the entry they share artwork with. The source is part of the key:
+                // remote and bundled artwork for one country are different images.
+                val cc = canonicalCountryCode(code)?.lowercase() ?: code
+                val key = if (flag === remote) "flag-cdn-$cc" else "flag-rect-$cc"
                 coil.compose.AsyncImage(
                     model = coil.request.ImageRequest.Builder(context)
                         .data(flag)
@@ -692,6 +777,11 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                     alpha = HEADER_FLAG_ALPHA,
                     colorFilter = desaturate,
                     filterQuality = FilterQuality.High,
+                    // flagcdn unreachable, or no such flag there: fall back to the
+                    // bundled asset rather than to the neutral wash, which is what
+                    // every country outside VPN_FLAG_COUNTRIES already draws.
+                    onError = { remoteFailed = true },
+                    error = null,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -740,6 +830,19 @@ private val BarMaterial = Brush.horizontalGradient(
 /** The pill's hairline. Over artwork, [RefBorder] disappeared; white does not. */
 private val BarBorder = Color.White.copy(alpha = 0.11f)
 
+/**
+ * What closes [BarMaterial]'s ramp when there is no flag behind the pill — i.e. every
+ * state but connected. Drawn over it, at the phase's own crossfade alpha, so the pill
+ * becomes one even raised surface across its whole width instead of dissolving into the
+ * panel at 58%. Slightly lighter at the head than at the foot, matching the top-lit
+ * shape [BarSurface] already has.
+ */
+private val BarSolid = Brush.verticalGradient(
+    0.00f to Color(0xFF191C24).copy(alpha = 0.86f),
+    0.55f to Color(0xFF14171E).copy(alpha = 0.90f),
+    1.00f to Color(0xFF0E1015).copy(alpha = 0.94f),
+)
+
 // inset 0 1px 0 rgba(255,255,255,.06), plus a matching foot so the bottom edge
 // doesn't read as brighter than the top.
 private val BarSheen = Brush.verticalGradient(
@@ -766,6 +869,13 @@ internal data class HomeUiState(
     val activeConfig: SavedConfig?,
     val allConfigs: List<SavedConfig> = emptyList(),
     val connected: Boolean = false,
+    /**
+     * A connection attempt is in flight: dialled but not up yet, including the
+     * backoff between auto-reconnect retries. Mirrors
+     * [com.cdnhunter.app.vpn.CdnVpnService.isConnecting], which the service clears
+     * on every path out of an attempt, so it is never both this and [connected].
+     */
+    val connecting: Boolean = false,
     val mode: ConnectMode = ConnectMode.MANUAL,
     val elapsedSec: Long = 0L,
     val downloadKBps: Double = 0.0,
@@ -821,7 +931,22 @@ internal data class HomeUiState(
         }
 
     val sessionBytes: Long get() = totalDownloadBytes + totalUploadBytes
+
+    /** Which of the header's three surfaces to draw. */
+    val phase: ConnPhase
+        get() = when {
+            connected -> ConnPhase.CONNECTED
+            connecting -> ConnPhase.CONNECTING
+            else -> ConnPhase.OFF
+        }
 }
+
+/**
+ * The three states the hero draws, and the only thing that picks between its
+ * surfaces. Derived from [HomeUiState.connected] / [HomeUiState.connecting] rather
+ * than stored, so there is one source of truth and no fourth state to get stuck in.
+ */
+internal enum class ConnPhase { OFF, CONNECTING, CONNECTED }
 
 private val IPV4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
 
@@ -984,16 +1109,26 @@ internal fun HomeScreen(
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
-// Three layers: the flag panel (see [HeaderFlag] — artwork and scrim, faded on three
-// sides by an alpha mask), the ambient light above it (see [drawAmbientLight]), then the
-// rows themselves. The gaps between rows are the mockup's own margins (4 / 12 / 22dp),
-// spelled out one by one rather than smoothed into a single rhythm.
+// The hero panel. One framed surface — rounded at the foot, hairlined, top-lit, with a
+// soft shadow under it — carrying the four rows, and showing one of three faces
+// depending on [HomeUiState.phase]:
 //
-// The rows measure the header; the two layers behind them match its size, so the
-// panel is exactly as tall as the header's content and needs no number of its own.
-// `.header::before`, the black wash this used to start with, is gone: the flag panel's
-// own scrim and mask do that job now, the scrim darkening the artwork and the mask
-// fading it into the page at the foot, where the browse card meets it.
+//   OFF        — [HeroOffSurface] over [ChromeBg], the window's own colour, so a
+//                disconnected app is chrome rather than a dimmed country.
+//   CONNECTING — that surface with [ConnectingWash] moving down it and the frame lit
+//                [RefAccent].
+//   CONNECTED  — the country's flag as an ambient wash ([HeaderFlag]) with green ink
+//                and green light.
+//
+// The faces are stacked and crossfaded by alpha rather than swapped, so a state change
+// is one dissolve on the same [PHASE_FADE_MS] the ink and the light use — and the OFF
+// surface is always the floor under them, which is what keeps the panel opaque
+// mid-transition instead of showing the page through it.
+//
+// The gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled out one
+// by one rather than smoothed into a single rhythm. The rows measure the panel; every
+// layer behind them matches its size, so the panel is exactly as tall as its content
+// and needs no height of its own.
 @Composable
 private fun Header(
     state: HomeUiState,
@@ -1004,27 +1139,68 @@ private fun Header(
     onSetMode: (ConnectMode) -> Unit,
 ) {
     val reduce = rememberReduceMotion()
-    // White idle, green connected — the light's own colour, animated so toggling
-    // the tunnel reads as the room changing colour rather than as a repaint.
-    val ambient by animateColorAsState(
-        if (state.connected) RefGreen else Color.White,
-        motionSpec(reduce, 520),
-        label = "ambientLight",
+    val phase = state.phase
+    val shape = remember { RoundedCornerShape(bottomStart = HeroCorner, bottomEnd = HeroCorner) }
+    // One number per face. Both are animated, both are read as alphas, and the OFF
+    // surface under them never fades — so no combination of the two can leave a hole.
+    val flagAlpha by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "heroFlag",
+    )
+    val workingAlpha by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "heroWorking",
+    )
+    // White idle, blue working, green connected — the light's own colour, animated so
+    // changing state reads as the room changing colour rather than as a repaint.
+    val ambient = phaseLight(phase)
+    val frame by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> HeroBorder
+            ConnPhase.CONNECTING -> RefAccent.copy(alpha = 0.34f)
+            ConnPhase.CONNECTED -> Color.White.copy(alpha = 0.11f)
+        },
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "heroFrame",
     )
     Box(Modifier.fillMaxWidth()) {
-        HeaderFlag(
-            countryCode = state.headerCountryCode,
-            modifier = Modifier.matchParentSize(),
-        )
         Box(
             Modifier
                 .matchParentSize()
-                .drawBehind { drawAmbientLight(ambient, state.connected) }
-        )
+                // The panel's lift. Drawn on the opaque surface itself, not on a
+                // translucent layer, so the shadow stays under the panel instead of
+                // hazing what it is drawn over.
+                .shadow(20.dp, shape, clip = false)
+                .clip(shape)
+                .background(ChromeBg)
+        ) {
+            Box(Modifier.matchParentSize().background(HeroOffSurface))
+            if (flagAlpha > 0.01f) {
+                HeaderFlag(
+                    countryCode = state.headerCountryCode,
+                    modifier = Modifier.matchParentSize().alpha(flagAlpha),
+                )
+            }
+            if (workingAlpha > 0.01f) {
+                ConnectingWash(strength = workingAlpha, modifier = Modifier.matchParentSize())
+            }
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawBehind { drawAmbientLight(ambient, phase != ConnPhase.OFF) }
+            )
+            Box(Modifier.matchParentSize().background(HeroSheen))
+        }
+        // Above every face, so the frame is a crisp edge rather than something the
+        // flag can paint over. Purely drawn — no pointer input — so the rows keep
+        // their own touches.
+        Box(Modifier.matchParentSize().border(1.dp, frame, shape))
         Column(
             Modifier
                 .statusBarsPadding()
-                .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = 14.dp)
+                .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = 20.dp)
         ) {
             TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
             Spacer(Modifier.height(4.dp))          // .status-row margin-top
@@ -1042,11 +1218,95 @@ private fun Header(
     }
 }
 
+/**
+ * The CONNECTING face: the accent, laid over the panel as a faint even tint with one
+ * soft band travelling down it, once every [CONNECTING_SWEEP_MS].
+ *
+ * Movement is the whole point — it is the only thing on this screen that says work is
+ * happening rather than finished, and it is deliberately the one animation that runs on
+ * its own rather than in response to a tap. It is a plain gradient band, like every
+ * other light on this screen, so it stays a soft edge instead of a smudge. With the
+ * system's animations off the band parks at the middle of the panel: the accent still
+ * says which state this is, nothing moves.
+ *
+ * [strength] is the face's own crossfade alpha, multiplied into every stop, so the wash
+ * arrives and leaves with the rest of the phase change.
+ */
+@Composable
+private fun ConnectingWash(strength: Float, modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    val transition = rememberInfiniteTransition(label = "connectingSweep")
+    val travel by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(CONNECTING_SWEEP_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "sweep",
+    )
+    val progress = if (reduce) 0.5f else travel
+    Box(
+        modifier.drawBehind {
+            // The even tint: enough to colour the panel, not enough to compete with
+            // the text on it.
+            drawRect(RefAccent.copy(alpha = 0.055f * strength))
+            // The band. It is taller than half the panel, so what crosses the rows is
+            // a broad change in light rather than a stripe passing over them, and it
+            // starts and ends fully off the panel so there is no visible re-entry.
+            val band = size.height * 0.62f
+            val head = progress * (size.height + band) - band
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0.00f to Color.Transparent,
+                    0.45f to RefAccent.copy(alpha = 0.10f * strength),
+                    0.55f to RefAccent.copy(alpha = 0.10f * strength),
+                    1.00f to Color.Transparent,
+                    startY = head,
+                    endY = head + band,
+                ),
+            )
+        }
+    )
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+// Two navigation marks, one at each end: hamburger → Settings, account → Profile.
+//
+// Both sit on a disc now rather than bare on the panel. Bare 25dp glyphs on what used
+// to be a photograph were the two marks up here with no material under them and no
+// mark saying they were buttons — the same problem the status row's chip solved, at
+// icon size. The disc is [GlyphDisc], the panel's own material one step up, with a
+// hairline: it gives each glyph a hit area the eye can see, and it is what lets the
+// glyphs come down to [NavGlyph] (20dp) without getting lost. 36dp of disc inside the
+// 48dp tap target keeps the reach unchanged.
+//
+// They stay [RefTextHi] in every phase, connected or not: navigation is not connection
+// state, and a hamburger that turns green says something about the tunnel that isn't
+// true.
+
+/** The glyph inside its disc. Smaller than the 25dp bare mark it replaces — with
+ *  material under it, it no longer has to carry itself on size alone. */
+private val NavGlyph = 20.dp
+
+/** The disc under each top-bar glyph. */
+private val NavDisc = 36.dp
+
+/** Its material: [RefElev1] over whatever the panel is showing, so it reads the same
+ *  on the chrome, on the connecting wash and on a flag. */
+private val GlyphDisc = Brush.verticalGradient(
+    0.00f to RefElev1.copy(alpha = 0.62f),
+    1.00f to RefElev1.copy(alpha = 0.78f),
+)
+
+/** Its hairline — the same white edge every glass surface up here carries. */
+private val GlyphDiscBorder = Color.White.copy(alpha = 0.08f)
+
 @Composable
 private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
         // The mockup's tap boxes are 40px; these are 48dp for reach and nudged
-        // back out by 4dp so the glyphs still sit on the mockup's margins.
+        // back out by 4dp so the discs still sit on the mockup's margins.
         GlyphButton(
             onClick = onOpenSettings,
             label = "Settings",
@@ -1056,7 +1316,7 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
                 Icons.Rounded.Menu,
                 contentDescription = "Settings",
                 tint = RefTextHi,
-                modifier = Modifier.size(25.dp),
+                modifier = Modifier.size(NavGlyph),
             )
         }
         Spacer(Modifier.weight(1f))
@@ -1065,7 +1325,7 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
             label = "Account",
             modifier = Modifier.offset(x = 4.dp),
         ) {
-            AccountGlyph(color = RefTextHi, modifier = Modifier.size(25.dp))
+            AccountGlyph(color = RefTextHi, modifier = Modifier.size(NavGlyph))
         }
     }
 }
@@ -1083,7 +1343,18 @@ private fun GlyphButton(
             .clip(CircleShape)
             .clickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { content() }
+    ) {
+        // The disc is inside the tap target, not the target itself: the touch area
+        // stays 48dp while what the eye sees is 36dp.
+        Box(
+            Modifier
+                .size(NavDisc)
+                .clip(CircleShape)
+                .background(GlyphDisc)
+                .border(1.dp, GlyphDiscBorder, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { content() }
+    }
 }
 
 // ── Status row ────────────────────────────────────────────────────────────────
@@ -1144,7 +1415,7 @@ private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
             protocolLabel(state.activeConfig),
             fontSize = 14.5.sp,
             fontWeight = FontWeight.Bold,
-            color = headerInk(state.connected),
+            color = headerInk(state.phase),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1214,7 +1485,7 @@ private fun ConnectRow(
         )
         PowerCircle(
             mode = state.mode,
-            connected = state.connected,
+            phase = state.phase,
             enabled = state.activeConfig != null,
             onClick = onTogglePower,
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
@@ -1245,7 +1516,19 @@ private fun ConnectBar(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val reduce = rememberReduceMotion()
     val shape = remember(density) { connectBarShape(with(density) { PowerCut.toPx() }) }
+    // How much of the pill's own material is drawn. Connected there is a flag behind it
+    // and the ramp exists to let the artwork through the far end; off and connecting
+    // there is nothing back there but the panel, and a pill that fades to transparent
+    // over its own panel is not a pill — it is a smudge that stops halfway. So the
+    // material's alpha is raised toward solid in those two states, and the ramp only
+    // reappears with the flag it was written for.
+    val opaque by animateFloatAsState(
+        targetValue = if (state.phase == ConnPhase.CONNECTED) 0f else 1f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "barOpacity",
+    )
     val cfg = state.activeConfig
     // The country, and only the country. The city used to lead this line and the
     // country plus the config's own name sat under it; the flag behind the text
@@ -1270,8 +1553,12 @@ private fun ConnectBar(
         // The headline's own material: near-solid where the text starts, gone by 58%,
         // so the country reads on a surface and the flag reads through the rest of the
         // pill. See [BarMaterial] — this is the ramp the bar had before the flag was
-        // moved inside it.
+        // moved inside it. [BarSolid] over it is what closes the ramp up when there is
+        // no flag behind the pill to let through.
         Box(Modifier.matchParentSize().background(BarMaterial))
+        if (opaque > 0.01f) {
+            Box(Modifier.matchParentSize().alpha(opaque).background(BarSolid))
+        }
         Box(Modifier.matchParentSize().background(BarSheen))
         // The bar's share of the ambient light: top first, then the two edges. Both
         // stay white in every state — the connected signal is the green light behind
@@ -1292,17 +1579,53 @@ private fun ConnectBar(
         ) {
             CountryFlagBadge(state.headerCountryCode, FlagSize)
             Spacer(Modifier.width(14.dp))
-            Text(
-                headline,
-                fontSize = 21.sp,
-                lineHeight = 23.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.3).sp,
-                color = headerInk(state.connected),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    headline,
+                    fontSize = 21.sp,
+                    lineHeight = 23.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp,
+                    color = headerInk(state.phase),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // The phase, in words, under the country.
+                //
+                // Every other signal for it up here is light or colour — the panel's
+                // face, the ring, the ink — and a state that is only ever stated as
+                // colour is a state a colour-blind user has to infer from a spinner.
+                // It is [RefTextMid], a step behind the country, because the country is
+                // still what this bar is for; and it crossfades rather than cutting,
+                // because it changes at exactly the moments the rest of the header is
+                // already crossfading.
+                Spacer(Modifier.height(2.dp))
+                AnimatedContent(
+                    targetState = state.phase,
+                    transitionSpec = {
+                        (
+                            fadeIn(motionSpec(reduce, 200)) togetherWith
+                                fadeOut(motionSpec(reduce, 130))
+                            ).using(SizeTransform(clip = false))
+                    },
+                    label = "connectPhase",
+                ) { phase ->
+                    Text(
+                        when (phase) {
+                            ConnPhase.OFF -> "Not connected"
+                            ConnPhase.CONNECTING -> "Connecting…"
+                            ConnPhase.CONNECTED -> "Protected"
+                        },
+                        fontSize = 12.5.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.2.sp,
+                        color = RefTextMid,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
@@ -1329,17 +1652,32 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 }
 
 // ── Power circle ──────────────────────────────────────────────────────────────
-// .power-btn — a 100dp brushed-white disc that looks the same in every state.
-// Nothing rings it, nothing glows behind it: the mockup's `.power-glow` is
-// `display:none`, so the only light here is the button's own drop shadow and the
-// white gradient of its face. The one thing that ever moves is the press scale —
-// there is no spinner, because there is no pending state to draw: the screen goes
-// straight from disconnected to connected.
+// The connect control: a disc with a ring around it, and between them the one thing on
+// this screen that reports progress rather than a result.
+//
+// The disc is [PowerDiscSize] inside the row's [PowerSize] box, which leaves an 8dp
+// band around it for the ring. That band is where the mockup had nothing at all, and
+// the [PowerCut] clearance in the connect bar is unchanged, so the control still reads
+// as fused to the bar's edge — the ring sits inside the space that was already there
+// rather than pushing the geometry around.
+//
+// Three faces, one per [ConnPhase], crossfaded on [PHASE_FADE_MS]:
+//
+//   OFF        — the brushed-white disc, [PowerInk] mark, and a bare hairline track.
+//                A white disc on dark chrome is the highest-contrast thing the screen
+//                can draw, which is what an idle app's one button should be.
+//   CONNECTING — the same disc under a faint accent tint, an [RefAccent] mark, and a
+//                240° arc turning once a second around it. The arc is the only
+//                indeterminate progress in the app and it is deliberately outside the
+//                disc: the face keeps its shape, so the button still looks pressable
+//                while it works.
+//   CONNECTED  — a green disc with a white mark, ringed in [RefGreen] over a soft
+//                bloom. The one state where the disc itself carries the colour, since
+//                it is the state the whole header is already green for.
 //
 // It carries one gesture besides the tap: a vertical drag switches Smart / Manual.
-// Nothing draws it — no arrow inside the face, no label on it, and no chevrons beside
-// it any more; the mode is stated in words in the status row and offered to a screen
-// reader as two named actions on this button.
+// Nothing draws it — the mode is stated in words in the status row and offered to a
+// screen reader as two named actions on this button.
 //
 // The mockup's four-part box-shadow, split by what Compose can draw:
 //   0 16px 34px rgba(0,0,0,0.45)      ┐ the cast shadow — Modifier.shadow
@@ -1347,37 +1685,75 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 //   inset 0 3px 4px rgba(255,255,255,0.95)  ┐ Compose has no inset box-shadow, so
 //   inset 0 -10px 14px rgba(0,0,0,0.14)     ┘ these two are [PowerFaceSheen], a
 //                                             bright top rim over a soft dark foot.
+
+/** The disc itself, inside [PowerSize]'s box — the rest of the box is the ring band. */
+private val PowerDiscSize = 84.dp
+
+/** The ring's own weight, and how far outside the disc it is drawn. */
+private val PowerRingStroke = 2.5.dp
+private val PowerRingGap = 3.dp
+
+/** How long one turn of the connecting arc takes. */
+private const val POWER_ARC_SPIN_MS = 1000
+
+/** How much of the ring the connecting arc covers. */
+private const val POWER_ARC_SWEEP_DEG = 240f
+
 @Composable
 private fun PowerCircle(
     mode: ConnectMode,
-    connected: Boolean,
+    phase: ConnPhase,
     enabled: Boolean,
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val connected = phase == ConnPhase.CONNECTED
+    val reduce = rememberReduceMotion()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
         if (pressed) 0.96f else 1f,               // .power-btn:active
         label = "powerPress",
     )
-    // The mark answers to the tunnel: dark idle, [RefGreen] while it is up, on the same
-    // crossfade as the rest of the header's headline ink (see [headerInk]). Disabled it
-    // keeps that colour at a third alpha, the one state the disc is allowed to look off.
-    val mark = headerInk(connected, idle = PowerInk)
+    // One alpha per coloured face, both over the white disc that is always there, so no
+    // combination of them can leave the button transparent mid-crossfade.
+    val greenFace by animateFloatAsState(
+        targetValue = if (connected) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerGreenFace",
+    )
+    val workingFace by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerWorkingFace",
+    )
+    // The mark: dark on the white disc, accent while working, white on the green one —
+    // on the same crossfade as the rest of the header's ink.
+    val mark by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> PowerInk
+            ConnPhase.CONNECTING -> RefAccent
+            ConnPhase.CONNECTED -> Color.White
+        },
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerMark",
+    )
     val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
+    val label = when {
+        connected -> "Disconnect"
+        phase == ConnPhase.CONNECTING -> "Cancel connecting"
+        else -> "Connect"
+    }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // Flat white disc + cast shadow only — no halo, no ring, no breathing glow.
-        // The HTML reference button (.power-glow{display:none}) is a plain glossy
-        // white circle in every state; the only thing that ever moves is the press
-        // scale.
+        // The ring band, under the disc's own scale so a press doesn't drag it in.
+        PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
             Modifier
-                .matchParentSize()
+                .size(PowerDiscSize)
                 .scale(scale)
                 .shadow(22.dp, CircleShape)        // 0 16px 34px rgba(0,0,0,.45)
                 .clip(CircleShape)
@@ -1405,7 +1781,7 @@ private fun PowerCircle(
                     enabled = enabled,
                     interactionSource = interaction,
                     indication = null,
-                    onClickLabel = if (connected) "Disconnect" else "Connect",
+                    onClickLabel = label,
                     onClick = onClick,
                 )
                 // A swipe is invisible to a screen reader, so the same two outcomes
@@ -1423,16 +1799,99 @@ private fun PowerCircle(
                 },
             contentAlignment = Alignment.Center,
         ) {
+            if (workingFace > 0.01f) {
+                Box(Modifier.matchParentSize().alpha(workingFace).background(PowerWorkingFace))
+            }
+            if (greenFace > 0.01f) {
+                Box(Modifier.matchParentSize().alpha(greenFace).background(PowerLiveFace))
+            }
             Box(Modifier.matchParentSize().background(PowerFaceSheen))
             Icon(
                 Icons.Rounded.PowerSettingsNew,
-                contentDescription = if (connected) "Disconnect" else "Connect",
+                contentDescription = label,
                 tint = ink,
                 // The mockup's stroke svg is 54px on a 100px button; this is the
-                // filled Material mark at the same weight on the face, which needs
-                // the extra size to read as the button's own symbol rather than as a
-                // glyph parked in the middle of it.
-                modifier = Modifier.size(60.dp),
+                // filled Material mark at the same proportion of the smaller disc, so
+                // it still reads as the button's own symbol rather than as a glyph
+                // parked in the middle of it.
+                modifier = Modifier.size(50.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The ring in the band around the disc: a hairline track in every state, plus one arc
+ * that says what the connection is doing.
+ *
+ * Connecting, the arc turns — [POWER_ARC_SWEEP_DEG] of [RefAccent] once every
+ * [POWER_ARC_SPIN_MS], which is the app's only indeterminate progress and the only
+ * animation that runs without being asked. Connected, it is the full circle in
+ * [RefGreen] over a wider, fainter stroke of the same colour, so the ring reads as lit
+ * rather than as drawn. Both fade with [PHASE_FADE_MS], and with the system's
+ * animations off the arc parks at the top instead of spinning — the colour still says
+ * which state this is.
+ */
+@Composable
+private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    val transition = rememberInfiniteTransition(label = "powerArc")
+    val spin by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(POWER_ARC_SPIN_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "powerArcSpin",
+    )
+    val working by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerArcWorking",
+    )
+    val live by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerArcLive",
+    )
+    val rotation = if (reduce) 0f else spin
+    Canvas(modifier) {
+        val stroke = PowerRingStroke.toPx()
+        val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
+        val topLeft = Offset(center.x - radius, center.y - radius)
+        val arcSize = Size(radius * 2f, radius * 2f)
+
+        // The track. Always there, so the band never looks empty and the arc has
+        // something to travel along.
+        drawCircle(
+            color = Color.White.copy(alpha = 0.10f),
+            radius = radius,
+            style = Stroke(width = stroke),
+        )
+        if (live > 0.01f) {
+            // Lit: a soft wide bloom under the ring itself.
+            drawCircle(
+                color = RefGreen.copy(alpha = 0.16f * live),
+                radius = radius,
+                style = Stroke(width = stroke * 3.2f),
+            )
+            drawCircle(
+                color = RefGreen.copy(alpha = 0.92f * live),
+                radius = radius,
+                style = Stroke(width = stroke),
+            )
+        }
+        if (working > 0.01f) {
+            // -90° puts the arc's head at the top of the circle at rotation 0.
+            drawArc(
+                color = RefAccent.copy(alpha = 0.95f * working),
+                startAngle = rotation - 90f,
+                sweepAngle = POWER_ARC_SWEEP_DEG,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
         }
     }
@@ -1444,6 +1903,22 @@ private val PowerFace = Brush.linearGradient(
     0.30f to Color(0xFFF4F5F8),
     0.55f to Color(0xFFE7E9EE),
     1.00f to Color(0xFFD9DCE3),
+)
+
+/** The connecting tint: the accent laid over the white face, light enough that the
+ *  disc still reads as the same brushed surface holding a colour. */
+private val PowerWorkingFace = Brush.linearGradient(
+    0.00f to RefAccent.copy(alpha = 0.10f),
+    1.00f to RefAccent.copy(alpha = 0.26f),
+)
+
+/** The connected face: [RefGreen] deepened along the same 160° axis as [PowerFace], so
+ *  the white mark on it clears 4.6:1 and the disc keeps the same lit-from-the-top
+ *  shape the idle one has. */
+private val PowerLiveFace = Brush.linearGradient(
+    0.00f to Color(0xFF3FD888),
+    0.55f to Color(0xFF17A85E),
+    1.00f to Color(0xFF0C7E45),
 )
 
 // inset 0 3px 4px rgba(255,255,255,.95) over inset 0 -10px 14px rgba(0,0,0,.14)
@@ -1477,7 +1952,7 @@ private fun NetworkRow(state: HomeUiState) {
             state.networkName.ifBlank { "No network" },
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = headerInk(state.connected),
+            color = headerInk(state.phase),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -1487,6 +1962,13 @@ private fun NetworkRow(state: HomeUiState) {
         // the first address landing, and the swap from this device's to the exit node's
         // when the tunnel comes up. The width animates with it, so an address arriving
         // in an empty slot grows into it instead of appearing at full size.
+        //
+        // It is weighted, `fill = false`, rather than left to its intrinsic width: a
+        // non-weighted child is measured first and takes whatever it asks for, so the
+        // 39-character IPv6 the old lookup returned claimed the whole row and squeezed
+        // the transport label beside it down to "M…". Weighted, neither side can take
+        // more than half, and with `fill = false` the address still only occupies what
+        // it needs — so a 15-character IPv4 sits hard right exactly as before.
         AnimatedContent(
             targetState = ip,
             transitionSpec = {
@@ -1495,6 +1977,7 @@ private fun NetworkRow(state: HomeUiState) {
                     ).using(SizeTransform(clip = false))
             },
             label = "publicIp",
+            modifier = Modifier.weight(1f, fill = false),
         ) { value ->
             if (value.isBlank()) {
                 Spacer(Modifier.width(0.dp))
@@ -1503,8 +1986,17 @@ private fun NetworkRow(state: HomeUiState) {
                     value,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = headerInk(state.connected),
+                    color = headerInk(state.phase),
                     maxLines = 1,
+                    // maxLines alone truncates by clipping, which is what left a
+                    // half-drawn glyph at the end of a long address; with softWrap off
+                    // and ellipsis on, anything that still doesn't fit ends in "…"
+                    // instead of mid-stroke. An IPv4 address is 15 characters at most
+                    // and fits with room to spare — see [GeoService.lookupCurrentIp],
+                    // which is now v4-only — so in practice neither applies, but the
+                    // row can no longer render a cut-off value whatever it is handed.
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                     style = TextStyle(fontFeatureSettings = "tnum"),  // tabular-nums
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -2113,6 +2605,25 @@ private fun HomeScreenSmartPreview() {
             allConfigs = previewConfigs,
             mode = ConnectMode.SMART,
             networkName = "Wi-Fi",
+            publicIp = "139.162.191.1",
+        ),
+        onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},
+        onTogglePower = {}, onSelectConfig = {}, onAddServer = {}, onSetMode = {},
+    )
+}
+
+@Preview(name = "Home · connecting", widthDp = 390, heightDp = 844)
+@Composable
+private fun HomeScreenConnectingPreview() {
+    HomeScreen(
+        state = HomeUiState(
+            activeConfig = previewConfigs.first(),
+            allConfigs = previewConfigs,
+            connecting = true,
+            mode = ConnectMode.SMART,
+            networkName = "Wi-Fi",
+            // Still this device's own address: the exit IP is only resolved once the
+            // tunnel is actually up.
             publicIp = "139.162.191.1",
         ),
         onOpenSettings = {}, onOpenProfile = {}, onOpenLocations = {},

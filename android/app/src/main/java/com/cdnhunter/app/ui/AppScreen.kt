@@ -296,15 +296,27 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
             .background(Color(0xFF1c1c1f)),
         contentAlignment = Alignment.Center
     ) {
+        // Well-known exit countries are fetched from flagcdn.com, which draws the
+        // real flag's own details (the US canton's 50 stars, Turkey's crescent, the
+        // crest on Spain's) that the bundled circle-flags asset simplifies away at
+        // this size; everything else keeps drawing the bundled asset. A failed fetch
+        // — offline, DNS blocked, flagcdn down — falls back to that same asset, so
+        // the badge is never empty and never a spinner: see [remoteFlagUrl].
+        val remote = remember(cc) { remoteFlagUrl(cc) }
+        var remoteFailed by remember(cc) { mutableStateOf(false) }
+        val model = if (remote != null && !remoteFailed) remote else "file:///android_asset/flags/$cc.svg"
         coil.compose.AsyncImage(
             model = coil.request.ImageRequest.Builder(context)
-                .data("file:///android_asset/flags/$cc.svg")
+                .data(model)
                 .crossfade(true)
                 .build(),
             imageLoader = getFlagImageLoader(context),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().clip(CircleShape),
+            // Assigning true when it is already true is not a state change, so the
+            // asset's own failure can't loop this.
+            onError = { remoteFailed = true },
             error = null,
         )
         // .server-flag's only decoration: `border: 1px solid rgba(255,255,255,0.06)`.
@@ -657,6 +669,18 @@ fun AppScreen() {
 // ── ANANAS navigation (Home ⇄ Locations / My Configs / Settings / Profile) ─────
 private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNNEL }
 
+/**
+ * How long a connect request keeps the hero's connecting surface lit on its own,
+ * before [CdnVpnService.isConnecting] is expected to have taken over.
+ *
+ * The gap it covers is the system VPN-permission dialog: `requestVpnPermissionAndConnect()`
+ * returns immediately and the service is only started once the user answers, so
+ * between the tap and that answer nothing in the service says an attempt is pending.
+ * 12s is long enough for a user to read and accept the dialog and short enough that a
+ * declined one falls back to idle on its own, without any callback from the activity.
+ */
+private const val CONNECT_REQUEST_GRACE_MS = 12_000L
+
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -668,6 +692,16 @@ private fun VpnTab() {
 
     var configs    by remember { mutableStateOf(loadConfigs(context)) }
     var connected  by remember { mutableStateOf(CdnVpnService.isRunning.get()) }
+    // An attempt is in flight. Read from the service rather than inferred from a tap,
+    // so it survives Home being left and re-entered and covers the auto-reconnect
+    // retries the UI never initiated (see CdnVpnService.isConnecting).
+    var connecting by remember { mutableStateOf(CdnVpnService.isConnecting.get()) }
+    // When the user last asked for a connection. The service's own flag is only set
+    // once startVpn() runs, which is after the system VPN-permission dialog — so for
+    // the seconds that dialog is up there is a real request in flight that the
+    // service does not know about yet. This timestamp covers exactly that window
+    // (see CONNECT_REQUEST_GRACE_MS); everything after it is the service's word.
+    var connectRequestedAtMs by remember { mutableStateOf(0L) }
     var activeId   by remember {
         mutableStateOf(
             context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
@@ -780,6 +814,17 @@ private fun VpnTab() {
         while (true) {
             val vpnRunning = CdnVpnService.isRunning.get()
             connected = vpnRunning
+            // Attempt-in-flight is the service's own flag, not "tapped and not up
+            // yet": a retry the user never asked for has to light the same surface,
+            // and a tap that the service rejects must not leave it lit.
+            connecting = !vpnRunning && (
+                CdnVpnService.isConnecting.get() ||
+                    (
+                        connectRequestedAtMs > 0L &&
+                            System.currentTimeMillis() - connectRequestedAtMs < CONNECT_REQUEST_GRACE_MS
+                        )
+                )
+            if (vpnRunning) connectRequestedAtMs = 0L
 
             if (connected) {
                 if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
@@ -950,9 +995,18 @@ private fun VpnTab() {
 
     fun connectConfig(cfg: SavedConfig) {
         if (connected && cfg.id == activeId) {
-            CdnVpnService.stop(context); connected = false
+            CdnVpnService.stop(context); connected = false; connecting = false
+            connectRequestedAtMs = 0L
         } else {
             if (connected) { CdnVpnService.stop(context); connected = false }
+            // Light the connecting surface on the tap rather than waiting up to a
+            // second for the poller to see the service's flag: the permission dialog
+            // and mihomo's startup both land after this point, and a hero that stays
+            // idle through them reads as a dead button. If the attempt never starts —
+            // permission denied, no activity — the poller clears this on its next
+            // pass, because it only ever mirrors the service.
+            connecting = true
+            connectRequestedAtMs = System.currentTimeMillis()
             activeId = cfg.id
             context.getSharedPreferences("cdnhunter_vpn", 0)
                 .edit()
@@ -1186,6 +1240,7 @@ private fun VpnTab() {
                         activeConfig = activeConfig,
                         allConfigs = configs,
                         connected = connected,
+                        connecting = connecting,
                         mode = connectMode,
                         elapsedSec = elapsedSec,
                         downloadKBps = downloadKBps,

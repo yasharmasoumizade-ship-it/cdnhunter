@@ -40,6 +40,67 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
+// ── flagcdn artwork ───────────────────────────────────────────────────────────
+// For the countries a VPN actually sells exits in, the flag is fetched from
+// flagcdn.com instead of drawn from the bundled circle-flags asset:
+//
+//   • it is already the real flag's rectangle (de.svg is `viewBox="0 0 5 3"`, us.svg
+//     `0 0 7410 3900`), so nothing has to be unmasked and nothing has to be
+//     de-bowed — the header gets true 3:2 artwork rather than a square document
+//     stretched into the panel, and [flattenFlagSvg] never has to touch it;
+//   • the paths are the authoritative specification for the flag, including the
+//     details circle-flags simplifies away at badge size (the US canton's 50 stars,
+//     the crest on Spain's, the emblem on Turkey's).
+//
+// [VPN_FLAG_COUNTRIES] is the whole surface of this: only well-known exit countries
+// are fetched. Anything outside that set — an obscure territory, an unresolved code —
+// keeps drawing the bundled asset it always drew, which is also what every country
+// falls back to when the device is offline or flagcdn is unreachable (see
+// [CountryFlagBadge] and [HeaderFlag], which both fall back on Coil's error
+// callback). So the flags get better where it matters and nothing gets worse
+// anywhere else.
+
+/**
+ * The countries this app fetches high-quality flags for: the exits a commercial VPN
+ * actually lists — Europe, the big Asian and North American hubs, the Gulf, and the
+ * region this app is used in most (IR, TR and their neighbours). Deliberately not
+ * every ISO code: an obscure territory would be a network request that almost never
+ * pays off, and the bundled asset already draws it.
+ */
+private val VPN_FLAG_COUNTRIES = setOf(
+    // North America
+    "US", "CA", "MX",
+    // Western + Northern Europe
+    "GB", "IE", "FR", "DE", "NL", "BE", "LU", "CH", "AT", "IT", "ES", "PT",
+    "SE", "NO", "DK", "FI", "IS",
+    // Central + Eastern Europe
+    "PL", "CZ", "SK", "HU", "RO", "BG", "GR", "HR", "SI", "RS", "EE", "LV",
+    "LT", "UA", "MD", "RU", "TR", "CY",
+    // Middle East + Caucasus + Central Asia
+    "AE", "SA", "QA", "IL", "IR", "IQ", "OM", "KW", "BH", "GE", "AM", "AZ", "KZ",
+    // Asia-Pacific
+    "JP", "SG", "HK", "KR", "TW", "IN", "MY", "TH", "VN", "ID", "PH", "AU", "NZ",
+    // Africa + South America
+    "ZA", "EG", "NG", "KE", "BR", "AR", "CL", "CO", "PE",
+)
+
+/**
+ * `https://flagcdn.com/<cc>.svg` for a well-known exit country, or null when the code
+ * is unknown, is outside [VPN_FLAG_COUNTRIES], or has no name this app can draw
+ * beside it.
+ *
+ * SVG rather than `w320/<cc>.png`: the flag is drawn at two very different sizes here
+ * — a 36dp circular badge and a full-width header panel — and one vector serves both
+ * crisply, where a 320px raster would be upscaled roughly 4x across a 1080px-wide
+ * header. Coil already has [coil.decode.SvgDecoder] registered on the flag loader for
+ * the bundled assets, so this needs no new decoding path.
+ */
+internal fun remoteFlagUrl(countryCode: String): String? {
+    val cc = canonicalCountryCode(countryCode) ?: return null
+    if (cc !in VPN_FLAG_COUNTRIES) return null
+    return "https://flagcdn.com/${cc.lowercase()}.svg"
+}
+
 /**
  * Side length, in px, the flag SVG is rasterised at for the header panel.
  *
@@ -75,8 +136,15 @@ private const val AXIS_SLACK = 1.0f
 private const val MIN_EDGE_SPAN = 0.5f
 
 /**
- * The country's flag as rectangular, flat-edged artwork, ready to be stretched
- * across the header: a Coil model, or null when no country is known.
+ * The country's flag as rectangular, flat-edged artwork from the *bundled* asset,
+ * ready to be stretched across the header: a Coil model, or null when no country is
+ * known.
+ *
+ * This is the fallback path now — [remoteFlagUrl] is what the header asks for first
+ * for a well-known exit country, and that artwork is already rectangular, so none of
+ * the unmasking and de-bowing below applies to it. It is still what draws every
+ * country outside [VPN_FLAG_COUNTRIES], and what every country falls back to when the
+ * fetch fails.
  */
 internal fun rectangularFlag(context: android.content.Context, countryCode: String): Any? {
     // Same gate as the circular badge, so the header and the badge always show the
