@@ -660,10 +660,17 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             label = "headerFlag",
             modifier = Modifier.fillMaxSize(),
         ) { code ->
-            if (code.isBlank()) {
+            // rectangularFlag returns null for a code with no artwork, which is the
+            // same "nothing to draw" as no country at all — one branch for both, or
+            // the panel would be a transparent hole instead of the fallback wash.
+            val flag = remember(code) { rectangularFlag(context, code) }
+            if (flag == null) {
                 Box(Modifier.fillMaxSize().background(HeaderFlagFallback))
             } else {
-                val flag = remember(code) { rectangularFlag(context, code) }
+                // Keyed by the canonical code, not the raw one, so the two spellings
+                // of one country ("uk" from a geo provider, "GB" from a title) share
+                // the entry they share artwork with.
+                val key = "flag-rect-${canonicalCountryCode(code)?.lowercase() ?: code}"
                 coil.compose.AsyncImage(
                     model = coil.request.ImageRequest.Builder(context)
                         .data(flag)
@@ -672,8 +679,8 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                         // "HeapByteBuffer[pos=0 lim=N cap=N]" — two countries whose SVGs
                         // happen to be the same byte length would share a cache entry and
                         // one would draw the other's flag. Key by the country instead.
-                        .memoryCacheKey("flag-rect-${code.lowercase().trim()}")
-                        .diskCacheKey("flag-rect-${code.lowercase().trim()}")
+                        .memoryCacheKey(key)
+                        .diskCacheKey(key)
                         // AnimatedContent is already crossfading between two whole
                         // panels; a second fade inside the incoming one only makes the
                         // first half of that transition look like a load.

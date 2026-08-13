@@ -207,74 +207,46 @@ private suspend fun monitorPingContinuously(
 // the result via persistAccurateGeo(). No separate UI-side probe needed.
 
 
-// Covers all commonly-seen VPN server countries; falls back to a neutral pattern for
-// anything not listed instead of failing to render.
-private enum class FlagShape { STRIPES_H, STRIPES_V, NORDIC_CROSS, UNION_JACK, DISC_CENTER, SINGLE }
-private data class FlagSpec(
-    val shape: FlagShape,
-    val colors: List<Color> = emptyList(),
-    val bg: Color = Color(0xFFF2F2F2),
-    val fg: Color = Color(0xFFE0605C),
-)
+// What counts as a country here: every ISO 3166-1 alpha-2 code the platform knows
+// (249 of them on this project's JDK), plus the handful of CLDR codes below. No ISO
+// code is left without an SVG — diffing `Locale.getISOCountries()` against the 265
+// files in `assets/flags/` covers all 249 — so anything this set admits can be drawn.
+//
+// This replaced a hand-written 43-entry table of Canvas flag shapes that was left
+// behind, after the real circle-flags SVGs took over the drawing, purely as the
+// "is this a country?" gate. Being 43 codes wide, it was also silently *narrowing*
+// detection: a server named "🇻🇳 Vietnam 01" decoded to VN, failed the gate, and
+// showed the unknown-country globe even though vn.svg was sitting right there.
+//
+// Codes outside ISO 3166-1 that are not hypothetical: XK is what the geo providers
+// return for Kosovo (see GeoService) and what the post-connect lookup will hand
+// straight back to this gate, and 🇪🇺/🇺🇳 are flag emoji a provider can put in a
+// server name. Each one is CLDR-named and asset-backed (xk.svg, eu.svg, … are among
+// the 16 non-ISO files); the rest of those 16 (SU, YU, FX, XX, CQ) have no name on
+// any platform, so admitting them would only produce a flag with no country beside
+// it.
+private val extraFlagCodes = setOf("XK", "EU", "UN", "AC", "TA", "IC", "EA", "DG", "CP")
 
-private val FRED = Color(0xFFE0605C)
-private val FBLUE = Color(0xFF3A6CC8)
-private val FDARKBLUE = Color(0xFF1D2C5B)
-private val FWHITE = Color(0xFFF2F2F2)
-private val FYELLOW = Color(0xFFE6A23C)
-private val FGREEN = Color(0xFF3AAA5C)
-private val FBLACK = Color(0xFF1A1A1A)
+private val knownCountryCodes: Set<String> =
+    java.util.Locale.getISOCountries().toSet() + extraFlagCodes
 
-private val flagSpecs = mapOf(
-    "DE" to FlagSpec(FlagShape.STRIPES_H, listOf(FBLACK, FRED, FYELLOW)),
-    "FR" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLUE, FWHITE, FRED)),
-    "IT" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FWHITE, FRED)),
-    "IE" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FWHITE, FYELLOW)),
-    "NL" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
-    "RU" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FBLUE, FRED)),
-    "AT" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FRED)),
-    "PL" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FRED, FWHITE)),
-    "ID" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FWHITE)),
-    "BE" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLACK, FYELLOW, FRED)),
-    "RO" to FlagSpec(FlagShape.STRIPES_V, listOf(FBLUE, FYELLOW, FRED)),
-    "BG" to FlagSpec(FlagShape.STRIPES_H, listOf(FWHITE, FGREEN, FRED)),
-    "HU" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FGREEN)),
-    "IN" to FlagSpec(FlagShape.STRIPES_H, listOf(FYELLOW, FWHITE, FGREEN)),
-    "AE" to FlagSpec(FlagShape.STRIPES_H, listOf(FGREEN, FWHITE, FBLACK)),
-    "EG" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLACK)),
-    "YE" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLACK)),
-    "US" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FDARKBLUE)),
-    "TH" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
-    "LU" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FBLUE)),
-    "SE" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FBLUE, fg = FYELLOW),
-    "FI" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FWHITE, fg = FBLUE),
-    "NO" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FRED, fg = FWHITE),
-    "DK" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FRED, fg = FWHITE),
-    "IS" to FlagSpec(FlagShape.NORDIC_CROSS, bg = FBLUE, fg = FWHITE),
-    "GB" to FlagSpec(FlagShape.UNION_JACK),
-    "JP" to FlagSpec(FlagShape.DISC_CENTER, bg = FWHITE, fg = FRED),
-    "KR" to FlagSpec(FlagShape.DISC_CENTER, bg = FWHITE, fg = FRED),
-    "BD" to FlagSpec(FlagShape.DISC_CENTER, bg = FGREEN, fg = FRED),
-    "PW" to FlagSpec(FlagShape.DISC_CENTER, bg = FBLUE, fg = FYELLOW),
-    "TR" to FlagSpec(FlagShape.SINGLE, bg = FRED),
-    "CH" to FlagSpec(FlagShape.SINGLE, bg = FRED),
-    "MA" to FlagSpec(FlagShape.SINGLE, bg = FRED),
-    "QA" to FlagSpec(FlagShape.SINGLE, bg = Color(0xFF8B1538)),
-    "SG" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FWHITE, FWHITE)),
-    "HK" to FlagSpec(FlagShape.SINGLE, bg = FRED),
-    "CA" to FlagSpec(FlagShape.SINGLE, bg = FRED),
-    "ES" to FlagSpec(FlagShape.STRIPES_H, listOf(FRED, FYELLOW, FRED)),
-    "PT" to FlagSpec(FlagShape.STRIPES_V, listOf(FGREEN, FRED, FRED)),
-    "BR" to FlagSpec(FlagShape.SINGLE, bg = FGREEN),
-    "AU" to FlagSpec(FlagShape.SINGLE, bg = FDARKBLUE),
-    "NZ" to FlagSpec(FlagShape.SINGLE, bg = FDARKBLUE),
-    "IR" to FlagSpec(FlagShape.STRIPES_H, listOf(FGREEN, FWHITE, FRED)),
-)
+// Spellings that mean a country in this set without being its code. "UK" is the one
+// that matters: the platform has no name for it (getDisplayCountry hands "UK" back),
+// so an exit IP reported as UK used to reach the connect bar as a flag with the raw
+// config name beside it.
+private val countryCodeAliases = mapOf("UK" to "GB")
 
-// The map above is now only consulted as a set of known country codes (see
-// countryCodeFromFlagEmoji / countryCodeFromTitle) — the shapes and colours in it
-// are leftovers from the hand-drawn Canvas flags that the real circle-flags SVGs
-// below replaced.
+/**
+ * [raw] as a code this app can name and draw, or null when it is neither — the one
+ * gate for a country code, whichever of the three sources it came from (a config's
+ * title, a flag emoji, or a geo lookup through the live tunnel).
+ */
+internal fun canonicalCountryCode(raw: String): String? {
+    val code = raw.trim().uppercase()
+    if (code.length != 2) return null
+    countryCodeAliases[code]?.let { return it }
+    return code.takeIf { it in knownCountryCodes }
+}
 
 // Real circle-flags SVGs (github.com/HatScripts/circle-flags, MIT — same source
 // Hiddify uses via its circle_flags package) bundled under assets/flags/{cc}.svg.
@@ -292,9 +264,13 @@ internal fun getFlagImageLoader(context: Context): coil.ImageLoader =
 // internal (not private): HomeScreen.kt draws flags too, and top-level `private`
 // in Kotlin is file-scoped, not package-scoped.
 internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val cc = countryCode.lowercase().trim()
+    // Through the same gate the name goes through, so the badge and the text beside
+    // it can never disagree: a geo provider that reports "UK" draws gb.svg next to
+    // "United Kingdom", and a code with no asset draws the globe instead of a
+    // silently-empty box from a 404 on `flags/<junk>.svg`.
+    val cc = canonicalCountryCode(countryCode)?.lowercase()
     val context = LocalContext.current
-    if (cc.isBlank()) {
+    if (cc == null) {
         // No country could be determined (neither from the config's title nor,
         // once connected, the live tunnel) — a globe icon reads as "unknown"
         // much more clearly than an empty lettered box.
@@ -343,18 +319,62 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
     }
 }
 
-private val countryNames = mapOf(
-    "DE" to "Germany", "NL" to "Netherlands", "FR" to "France", "GB" to "United Kingdom",
-    "US" to "United States", "CA" to "Canada", "FI" to "Finland", "SE" to "Sweden",
-    "NO" to "Norway", "CH" to "Switzerland", "AT" to "Austria", "PL" to "Poland",
-    "IT" to "Italy", "ES" to "Spain", "PT" to "Portugal", "IE" to "Ireland",
-    "SG" to "Singapore", "JP" to "Japan", "HK" to "Hong Kong", "KR" to "South Korea",
-    "AU" to "Australia", "IN" to "India", "AE" to "UAE", "TR" to "Turkey",
-    "RU" to "Russia", "UA" to "Ukraine", "RO" to "Romania", "BG" to "Bulgaria",
-    "CZ" to "Czechia", "HU" to "Hungary", "GR" to "Greece", "BR" to "Brazil",
+// Short, list-friendly names for the codes whose platform display name is too long
+// or too bureaucratic for the two places a country name is drawn. The connect bar's
+// headline is the tighter of the two: on a 360dp phone the text has ~227dp
+// (360 − 20 start − 63 end − 36 flag − 14 gap) at 21sp bold, which is a little
+// under 20 characters before it ellipsizes. So every name over ~18 characters is
+// shortened here, and a few shorter ones whose official form reads as officialese
+// ("Myanmar (Burma)", "Congo - Kinshasa") are cut down too.
+//
+// Everything else falls through to the platform's own English name, so widening
+// detection to every code in [knownCountryCodes] can't produce a flag with no
+// country beside it: the old 32-entry table returned "" for VN, TW, MD and 200-odd
+// others, and the bar then fell back to the raw config name for a server it had
+// identified perfectly well.
+//
+// One consequence worth knowing: the browse search matches these names, so a
+// shortened name is also the only spelling that finds that country by typing. That
+// is the right trade for names no one would type in full, but it is why the cut
+// keeps the distinctive word — "Svalbard", not "Norway's Arctic islands".
+private val countryNameOverrides = mapOf(
+    "AE" to "UAE",
+    "BA" to "Bosnia",
+    "BQ" to "Caribbean NL",
+    "CC" to "Cocos Islands",
+    "CD" to "DR Congo",
+    "CF" to "Central Africa",
+    "CG" to "Congo",
+    "GS" to "South Georgia",
+    "HK" to "Hong Kong",
+    "HM" to "Heard & McDonald",
+    "IO" to "Br. Indian Ocean",
+    "MM" to "Myanmar",
+    "MO" to "Macao",
+    "MP" to "Northern Marianas",
+    "PM" to "St. Pierre",
+    "PS" to "Palestine",
+    "SJ" to "Svalbard",
+    "ST" to "São Tomé",
+    "TC" to "Turks & Caicos",
+    "TF" to "Fr. Southern Terr.",
+    "UM" to "U.S. Outlying Is.",
+    "VA" to "Vatican",
+    "VC" to "St. Vincent",
+    "VG" to "British Virgin Is.",
+    "VI" to "U.S. Virgin Is.",
 )
 
-internal fun countryCodeToName(cc: String): String = countryNames[cc.uppercase()] ?: ""
+internal fun countryCodeToName(cc: String): String {
+    val code = canonicalCountryCode(cc) ?: return ""
+    countryNameOverrides[code]?.let { return it }
+    // getDisplayCountry hands the code straight back when the platform has no name
+    // for it; treat that as unknown rather than drawing "ZZ" as a country. Every
+    // code in [extraFlagCodes] is named by CLDR, but an older Android's CLDR data
+    // is not this desktop JDK's, so this stays a check rather than an assumption.
+    val name = java.util.Locale("", code).getDisplayCountry(java.util.Locale.ENGLISH)
+    return if (name.isBlank() || name == code) "" else name
+}
 
 // Common country name/abbreviation -> ISO code, matched case-insensitively against
 // words in a config's title (e.g. "GERMANY", "Germany Pro 01", "DE-Frankfurt").
@@ -376,9 +396,35 @@ private val countryNameToCode = mapOf(
     "BRAZIL" to "BR", "BRASIL" to "BR", "INDIA" to "IN", "SOUTH KOREA" to "KR", "KOREA" to "KR",
     "HONG KONG" to "HK", "AUSTRIA" to "AT", "BELGIUM" to "BE", "ROMANIA" to "RO",
     "BULGARIA" to "BG", "HUNGARY" to "HU", "IRELAND" to "IE", "PORTUGAL" to "PT",
-    "IRELAND" to "IE", "INDONESIA" to "ID", "THAILAND" to "TH", "LUXEMBOURG" to "LU",
+    "INDONESIA" to "ID", "THAILAND" to "TH", "LUXEMBOURG" to "LU",
     "QATAR" to "QA", "EGYPT" to "EG", "MOROCCO" to "MA", "NEW ZEALAND" to "NZ",
 )
+
+// Two-letter codes never read as a country when they stand alone in a title. The
+// bare-code fallback below is a guess from two characters, and once the gate went
+// from 43 codes to all 249 it started reading ordinary words as countries: "Fast TV
+// 01" became Tuvalu, "SS Tokyo" became South Sudan, "CF Worker DE" became the
+// Central African Republic. Every code here is one the 43-entry table never
+// accepted, so nothing that used to be detected stops being detected — the flags
+// these give up are Ascension, Tuvalu, Cocos and the like, and none of them are
+// plausibly what a provider means by putting "tv" or "ws" in a server's name.
+//
+// The full country name is always matched first, so any of these is still reachable
+// by naming it in [countryNameToCode]; this only refuses the two-letter spelling.
+private val neverBareCodes = setOf(
+    "AC", "AD", "AI", "AS", "CC", "CF", "DO", "GG", "HM", "IO", "LA", "ME", "MS",
+    "PA", "PE", "PM", "RE", "SH", "SO", "SS", "ST", "TC", "TM", "TO", "TV", "UM",
+    "VI", "WS",
+)
+
+// Codes that are both a country worth detecting and an English word, so the bare
+// spelling is only read when the title wrote it as a code: uppercase. "IS - Reykjavik"
+// and "NO Oslo 01" resolve; "this is fast" and "Fast No 5" no longer turn into
+// Iceland and Norway, which they did while any case was accepted. Lowercase codes
+// stay readable for everything else ("nl 2 | vless" is still Netherlands) — it is
+// only these nine where lowercase is more likely to be prose than a place.
+private val capsOnlyBareCodes = setOf("AM", "AT", "BE", "BY", "IN", "IS", "IT", "MY", "NO")
+
 // A flag emoji is a pair of Unicode Regional Indicator Symbols (U+1F1E6..
 // U+1F1FF, one per A-Z). Many subscription providers name servers with
 // ONLY a flag emoji ("\ud83c\udde9\ud83c\uddea 01") and no readable country name at all --
@@ -392,8 +438,10 @@ private fun countryCodeFromFlagEmoji(title: String): String? {
         if (a in 0x1F1E6..0x1F1FF && b in 0x1F1E6..0x1F1FF) {
             val c1 = 'A' + (a - 0x1F1E6)
             val c2 = 'A' + (b - 0x1F1E6)
-            val code = "$c1$c2".lowercase()
-            if (flagSpecs.containsKey(code)) return code
+            // Codes are compared and stored uppercase ("DE") everywhere else, so
+            // hand the decoded pair to the same gate uppercase — lowercasing here
+            // made every lookup miss and this function always return null.
+            canonicalCountryCode("$c1$c2")?.let { return it }
         }
     }
     return null
@@ -401,19 +449,39 @@ private fun countryCodeFromFlagEmoji(title: String): String? {
 
 private fun countryCodeFromTitle(title: String): String? {
     countryCodeFromFlagEmoji(title)?.let { return it }
-    val normalized = title.uppercase()
-        .replace(Regex("[^A-Z ]"), " ") // strip flag emoji, punctuation, digits
+    // Fold styled/unicode letterforms down to plain ASCII first so the country
+    // name matches regardless of the font the title uses. NFKD applies Unicode
+    // compatibility decompositions — "𝗚𝗲𝗿𝗺𝗮𝗻𝘆" (mathematical bold),
+    // "Ｇｅｒｍａｎｙ" (fullwidth) and "Gérmany" (accented) all fold to a plain
+    // "GERMANY" — and stripping the combining marks NFKD leaves behind removes
+    // the accents. Without this the ASCII-only strip below turned any non-ASCII
+    // styling into blanks and detection returned null.
+    val folded = java.text.Normalizer.normalize(title, java.text.Normalizer.Form.NFKD)
+        .replace(Regex("\\p{Mn}+"), "")
+    // Letters and spaces only, but in the title's own case: the country names are
+    // matched case-insensitively below, while the bare-code fallback needs to know
+    // whether the title wrote "IS" or "is" (see [capsOnlyBareCodes]).
+    val words = folded
+        .replace(Regex("[^A-Za-z ]"), " ") // strip flag emoji, punctuation, digits
         .replace(Regex("\\s+"), " ")
         .trim()
-    if (normalized.isBlank()) return null
+        .split(" ")
+        .filter { it.isNotEmpty() }
+    if (words.isEmpty()) return null
+    val normalized = words.joinToString(" ").uppercase()
     // Try longest names first so "SOUTH KOREA" matches before a stray "KOREA" would.
     for ((name, code) in countryNameToCode.entries.sortedByDescending { it.key.length }) {
         if (normalized.contains(name)) return code
     }
-    // Also catch a standalone 2-letter ISO code as its own word, e.g. "DE - Frankfurt 01".
-    val words = normalized.split(" ")
-    for (w in words) {
-        if (w.length == 2 && flagSpecs.containsKey(w)) return w
+    // Also catch a standalone 2-letter code as its own word, e.g. "DE - Frankfurt 01",
+    // minus the ones that are a word before they are a country: [neverBareCodes] is
+    // refused outright, [capsOnlyBareCodes] only when the title wrote it in caps.
+    for (word in words) {
+        if (word.length != 2) continue
+        val code = word.uppercase()
+        if (code in neverBareCodes) continue
+        if (code in capsOnlyBareCodes && word != code) continue
+        canonicalCountryCode(code)?.let { return it }
     }
     return null
 }
@@ -427,10 +495,12 @@ private fun parseConfig(uri: String): SavedConfig? {
     val net = (proxy["network"] as? String) ?: "tcp"
 
     // Prefer the user-given remark (URI fragment, e.g. "...#Germany Pro 01") if present.
-    // The name is kept exactly as given — including any flag emoji the user put in
-    // it — we just never read that emoji for anything. Like Hiddify, the country
-    // shown on the flag badge always comes from a geo-lookup on the server's real
-    // IP (see enrichConfigGeo), never from parsing text in the config's title.
+    // The name is kept exactly as given, including any flag emoji the user put in it.
+    // The remark is also read for a country, and this is the only place that happens:
+    // it is the free instant guess a config shows the moment it is added, and it is
+    // overwritten by the geo lookup through the live tunnel once connected (see
+    // CdnVpnService's post-connect check). The lookup is the authority; the title is
+    // what fills the badge until there is one.
     val remark = try {
         java.net.URI(uri).rawFragment?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.takeIf { it.isNotBlank() }
     } catch (e: Exception) { null }

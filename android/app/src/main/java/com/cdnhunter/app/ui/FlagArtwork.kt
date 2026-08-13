@@ -79,8 +79,9 @@ private const val MIN_EDGE_SPAN = 0.5f
  * across the header: a Coil model, or null when no country is known.
  */
 internal fun rectangularFlag(context: android.content.Context, countryCode: String): Any? {
-    val cc = countryCode.lowercase().trim()
-    if (cc.isBlank()) return null
+    // Same gate as the circular badge, so the header and the badge always show the
+    // same country's artwork for the same code — see [canonicalCountryCode].
+    val cc = canonicalCountryCode(countryCode)?.lowercase() ?: return null
     val path = "flags/$cc.svg"
     return runCatching {
         val svg = context.assets.open(path).use { it.readBytes().decodeToString() }
