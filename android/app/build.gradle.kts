@@ -39,12 +39,20 @@ android {
         }
     }
 
+    // Signing credentials come from the environment when it provides them, and fall
+    // back to the values committed here otherwise. The fallback is deliberate: the
+    // keystore itself is in the repo, so removing the passwords alone would break
+    // local and CI builds without actually protecting anything. Setting
+    // CDNHUNTER_KEYSTORE_PASSWORD / CDNHUNTER_KEY_PASSWORD (e.g. from GitHub
+    // Actions secrets) is what makes the real credentials stop living in git — and
+    // that only becomes meaningful once the key is rotated, which breaks in-place
+    // updates for anyone who already installed a build signed with the old key.
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore.jks")
-            storePassword = "cdnhunter123"
-            keyAlias = "cdnhunter"
-            keyPassword = "cdnhunter123"
+            storeFile = file(System.getenv("CDNHUNTER_KEYSTORE_FILE") ?: "../keystore.jks")
+            storePassword = System.getenv("CDNHUNTER_KEYSTORE_PASSWORD") ?: "cdnhunter123"
+            keyAlias = System.getenv("CDNHUNTER_KEY_ALIAS") ?: "cdnhunter"
+            keyPassword = System.getenv("CDNHUNTER_KEY_PASSWORD") ?: "cdnhunter123"
         }
     }
 
