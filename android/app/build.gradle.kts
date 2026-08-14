@@ -50,8 +50,15 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 on: shrink + obfuscate. The keep rules that make this safe live in
+            // proguard-rules.pro — chiefly the gomobile/mihomo JNI surface (go.**,
+            // com.cdnhunter.mihomo.**, the Protector callback Go invokes) and the
+            // whole com.cdnhunter.app.vpn package, none of which R8 can trace into.
+            // Resource shrinking is low-risk here: res/ holds only the launcher icon,
+            // two values files and network_security_config, and the 265 flag SVGs are
+            // in assets/, which resource shrinking never touches.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
