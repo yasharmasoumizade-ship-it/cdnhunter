@@ -169,6 +169,19 @@ private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
     }
 }
 
+/**
+ * The ceiling on one pull-to-refresh ping sweep of Home's server list — the whole
+ * sweep, not one probe.
+ *
+ * Every probe already carries its own 3s connect timeout and they all run concurrently,
+ * so a sweep normally finishes in about that long however many servers are listed. This
+ * only bites when the list is very long on a network slow enough that the probes queue,
+ * and it exists so the pull-to-refresh indicator can never be left spinning: 12s is well
+ * clear of a healthy sweep and still short enough that a user who pulled and got nothing
+ * gets their list back rather than a stuck spinner.
+ */
+private const val PING_SWEEP_TIMEOUT_MS = 12_000L
+
 // Measures ping for a single config. Runs on IO dispatcher.
 // Country/flag no longer comes from an on-device IP/DNS lookup here at all —
 // that used to resolve the config's SNI/address hostname directly (before any
@@ -254,11 +267,36 @@ internal fun canonicalCountryCode(raw: String): String? {
 private var flagImageLoader: coil.ImageLoader? = null
 // internal (not private): HomeScreen.kt's connect bar fills its pill with the
 // same SVG flags, and top-level `private` in Kotlin is file-scoped.
+//
+// The loader owns a disk cache of its own, in its own directory, and that is what makes
+// a fetched flag a one-time cost. Coil only writes to disk when it has been given a
+// DiskCache; with none configured (which is what this was) every flagcdn SVG was
+// re-fetched on the next cold start, so a country resolved by name paid the network
+// again each launch and showed the bundled fallback until it landed. 32MB is far more
+// than the ~90 countries in VPN_FLAG_COUNTRIES can fill as SVG source, so nothing this
+// app fetches is ever evicted for space.
+//
+// respectCacheHeaders(false) because flagcdn serves its SVGs with a short max-age and
+// the artwork behind a country code does not change: honouring the header would expire
+// a perfectly good flag on a timer and re-fetch it. The cache key is the country (see
+// the callers below), so a flag can never be served for the wrong one.
 internal fun getFlagImageLoader(context: Context): coil.ImageLoader =
     flagImageLoader ?: coil.ImageLoader.Builder(context)
         .components { add(coil.decode.SvgDecoder.Factory()) }
+        .diskCache {
+            coil.disk.DiskCache.Builder()
+                .directory(java.io.File(context.cacheDir, "flag_cache"))
+                .maxSizeBytes(32L * 1024 * 1024)
+                .build()
+        }
+        .respectCacheHeaders(false)
         .build()
         .also { flagImageLoader = it }
+
+/** The badge's cache key for [cc] and this artwork source — see [getFlagImageLoader]. */
+private fun flagCacheKey(cc: String, remote: Boolean): String =
+    if (remote) "flag-badge-cdn-$cc" else "flag-badge-asset-$cc"
+
 
 @Composable
 // internal (not private): HomeScreen.kt draws flags too, and top-level `private`
@@ -305,15 +343,46 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
         val remote = remember(cc) { remoteFlagUrl(cc) }
         var remoteFailed by remember(cc) { mutableStateOf(false) }
         val model = if (remote != null && !remoteFailed) remote else "file:///android_asset/flags/$cc.svg"
+        val key = remember(cc, remoteFailed) { flagCacheKey(cc, remote != null && !remoteFailed) }
         coil.compose.AsyncImage(
             model = coil.request.ImageRequest.Builder(context)
                 .data(model)
+                // One size for every badge in the app, and one aspect ratio inside it.
+                // Left to itself Coil rasterises to whatever box asked first, so the
+                // 36dp connect-bar badge and the 30dp list badge could end up sharing
+                // whichever of the two decoded first — visibly softer in one of them.
+                // See [FLAG_BADGE_PX] and [FLAG_ASPECT].
+                .size(FLAG_BADGE_PX)
+                // Explicit keys, so one country's artwork is one cache entry across
+                // every badge that draws it and the disk cache survives a restart with
+                // a name that means something. The source is part of the key: remote and
+                // bundled artwork for a country are different images.
+                .memoryCacheKey(key)
+                .diskCacheKey(key)
                 .crossfade(true)
                 .build(),
             imageLoader = getFlagImageLoader(context),
             contentDescription = null,
+            // Crop into a fixed 4:3 box rather than into whatever the flag's own ratio
+            // is: every badge then crops the same way, so a 1.9:1 US flag and a square
+            // Swiss one fill the circle identically instead of each losing a different
+            // share of itself.
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().clip(CircleShape),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+            modifier = Modifier
+                // No clip of its own: a CircleShape clip on a 4:3 box is an ellipse.
+                // The parent Box is already clipped to the circle, which is what crops
+                // the overhanging sides of this box.
+                .fillMaxHeight()
+                // Unbounded, and this is load-bearing: `aspectRatio` only honours the
+                // ratio when the size it computes fits the incoming constraints, and a
+                // 4:3 box as tall as a square badge is a third wider than it. Bounded,
+                // the modifier would silently fall back to the square — which is the
+                // per-country shape drift this box exists to remove. Unbounded it keeps
+                // the ratio and overhangs, and the parent's circular clip takes the
+                // overhang off.
+                .wrapContentWidth(unbounded = true)
+                .aspectRatio(FLAG_ASPECT, matchHeightConstraintsFirst = true),
             // Assigning true when it is already true is not a state change, so the
             // asset's own failure can't loop this.
             onError = { remoteFailed = true },
@@ -765,6 +834,17 @@ private fun VpnTab() {
     var networkName by remember { mutableStateOf(describeActiveNetwork(context)) }
     var publicIp by remember { mutableStateOf("") }
 
+    // The country Home's hero panel washed last time the app ran, read once at launch.
+    // It only covers the gap between `configs` arriving from disk and geo resolution
+    // filling in the active config's country — see HomeUiState.heroFlagCountry, which is
+    // the only thing that reads it, and the LaunchedEffect further down that writes it.
+    var lastFlagCountry by remember { mutableStateOf(AppSettings.lastFlagCountry(context)) }
+
+    // A pull-to-refresh ping sweep of Home's browse list is in flight. Drives the
+    // PullToRefreshContainer's indicator; cleared by refreshPings() when the last
+    // measurement lands or the whole sweep times out.
+    var refreshingPings by remember { mutableStateOf(false) }
+
     // Country/flag no longer needs a GeoService instance here — see enrichConfigGeo.
 
     // Enrich configs with country/city/ping whenever the SET of config ids changes
@@ -1215,6 +1295,88 @@ private fun VpnTab() {
         }
     }
 
+    // The country Home's hero panel is washing right now: the exit node's once the
+    // tunnel has reported it for this very config, else the config's own resolved geo.
+    // Same precedence as HomeUiState.countryCodeFor, so what gets persisted is exactly
+    // what was on screen.
+    val heroCountry = activeConfig?.let { cfg ->
+        if (connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()) exitCountryCode
+        else cfg.countryCode
+    }.orEmpty()
+
+    // Persist that country so the next cold start opens on the flag it closed on
+    // instead of on a bare panel. Written only when it actually changes, and dropped
+    // the moment the last server is deleted — the cache would otherwise keep washing a
+    // flag for a server the user no longer has, which is the one thing the EMPTY state
+    // is supposed to rule out.
+    LaunchedEffect(heroCountry, configs.isEmpty()) {
+        if (configs.isEmpty()) {
+            if (lastFlagCountry.isNotBlank()) {
+                lastFlagCountry = ""
+                AppSettings.setLastFlagCountry(context, "")
+            }
+        } else if (heroCountry.isNotBlank() && !heroCountry.equals(lastFlagCountry, ignoreCase = true)) {
+            lastFlagCountry = heroCountry
+            AppSettings.setLastFlagCountry(context, heroCountry)
+        }
+    }
+
+    /**
+     * Re-measure every server the browse list is currently showing, for Home's
+     * pull-to-refresh.
+     *
+     * Each result is written into `configs` as it lands, so a row's ping badge updates
+     * the moment its own probe answers rather than when the slowest one does — the
+     * probes run concurrently for that reason. The active server is skipped while the
+     * tunnel is up, for the same reason the background monitor skips it: this process is
+     * excluded from its own VPN, so a direct dial of a fronted server's raw address
+     * measures a path that is often blocked and would replace a good ping with -1.
+     *
+     * [PING_SWEEP_TIMEOUT_MS] is the whole sweep's ceiling, not one probe's. Every probe
+     * already has its own 3s timeout, so the ceiling only matters for a very long list
+     * on a slow network; it exists so the indicator can never be left spinning.
+     * `refreshingPings` is cleared in a `finally`, which is also what covers this
+     * composable leaving the tree mid-sweep, and it doubles as the re-entry guard: a
+     * second pull while a sweep is still running is ignored rather than doubling up on
+     * probes per server.
+     */
+    fun refreshPings(shown: List<SavedConfig>) {
+        if (refreshingPings) return
+        refreshingPings = true
+        coroutineScope.launch {
+            try {
+                kotlinx.coroutines.withTimeoutOrNull(PING_SWEEP_TIMEOUT_MS) {
+                    // Fully qualified: `coroutineScope` is also the name of this
+                    // composable's own rememberCoroutineScope value, and a val is not
+                    // invokable — the suspending builder is what is wanted here, so that
+                    // every probe below is a child of this sweep and the timeout reaches
+                    // all of them.
+                    kotlinx.coroutines.coroutineScope {
+                        for (cfg in shown) {
+                            if (cfg.id == activeId && connected) continue
+                            launch {
+                                val ping = withContext(Dispatchers.IO) {
+                                    measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
+                                }
+                                quality.record(cfg.id, ping)
+                                // Read from the current list rather than from `cfg`, which
+                                // is a snapshot taken before the sweep started. Back on the
+                                // main dispatcher by now, which is where Compose state is
+                                // written from everywhere else in this function.
+                                configs = configs.map {
+                                    if (it.id == cfg.id) it.copy(pingMs = ping) else it
+                                }
+                            }
+                        }
+                    }
+                }
+                saveConfigs(context, configs)
+            } finally {
+                refreshingPings = false
+            }
+        }
+    }
+
     AnimatedContent(
         targetState = currentScreen,
         transitionSpec = {
@@ -1252,6 +1414,8 @@ private fun VpnTab() {
                         exitGeoConfigId = exitGeoConfigId,
                         networkName = networkName,
                         publicIp = publicIp,
+                        lastFlagCountry = lastFlagCountry,
+                        refreshingPings = refreshingPings,
                     ),
                     onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
                     onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },
@@ -1260,6 +1424,7 @@ private fun VpnTab() {
                     onSelectConfig = { cfg -> selectConfigManually(cfg) },
                     onAddServer = { showAddMenu = true },
                     onSetMode = { mode -> setConnectMode(mode) },
+                    onRefreshPings = { shown -> refreshPings(shown) },
                 )
                 // Same add-config sheet used on Locations, reused here so the new
                 // "+" next to search on Home opens it directly without navigating

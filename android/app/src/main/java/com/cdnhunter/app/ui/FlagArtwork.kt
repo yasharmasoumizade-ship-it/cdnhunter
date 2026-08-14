@@ -120,6 +120,44 @@ internal fun remoteFlagUrl(countryCode: String): String? {
  */
 internal const val FLAG_RENDER_PX = 1440
 
+/**
+ * Side length, in px, a flag is rasterised at for the small circular badge.
+ *
+ * The badge is 30dp in the server list and 36dp on the connect bar — 90–144px on a 3x
+ * panel. Asking for 320 over-samples both by more than double, so the badge only ever
+ * downsamples (the direction that stays crisp) and one cached bitmap serves both sizes
+ * at ~0.4MB rather than the ~8MB the header's own request holds.
+ *
+ * Without an explicit size Coil measures the target and rasterises to fit it, so the
+ * same country decoded once at badge size and once at header size produced two entries
+ * whose sharpness depended on which composable asked first. Both call sites now name
+ * their own size, so the two are independent and neither is ever upscaled.
+ */
+internal const val FLAG_BADGE_PX = 320
+
+/**
+ * The one aspect ratio every flag in this app is drawn at, everywhere: 4:3.
+ *
+ * Flag artwork does not arrive at one shape. The bundled circle-flags assets are square
+ * documents (`viewBox="0 0 512 512"`); flagcdn's are the real flag's own ratio, which is
+ * 5:3 for Germany, 19:10 for the US, 3:2 for most of the rest. Left to itself each
+ * source drew at its own shape, so the same badge was a slightly different rectangle per
+ * country and the header's proportions changed when the artwork source changed — which
+ * is the "inconsistent/misaligned flag sizing" this fixes.
+ *
+ * 4:3 rather than a true 3:2 because the two consumers pull in opposite directions: the
+ * circular badge crops to the inscribed circle, so a wide box throws away the flag's
+ * left and right thirds, while the header wants width. 4:3 is the compromise that keeps
+ * a recognisable centre in the badge without squashing the header.
+ *
+ * The scale rule is fixed per call site and follows from the crop: [ContentScale.Crop]
+ * for the badge (fill the circle, lose the overhang) and `FillBounds` for the header
+ * panel (it is a full-bleed wash whose own box is the panel, and a crop there would
+ * silently drop a band off whichever edge the panel's ratio disagreed with).
+ */
+internal const val FLAG_ASPECT = 4f / 3f
+
+
 private val CIRCLE_MASK = Regex("<mask\\s+id=\"a\">.*?</mask>", RegexOption.DOT_MATCHES_ALL)
 private val CIRCLE_MASK_REF = Regex("\\s*mask=\"url\\(#a\\)\"")
 // The leading \s is what keeps this off `id="a"`, which contains `d="a"`.

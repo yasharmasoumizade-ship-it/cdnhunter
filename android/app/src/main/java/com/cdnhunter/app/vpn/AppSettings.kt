@@ -238,7 +238,22 @@ object AppSettings {
         prefs(ctx).edit()
             .putString(KEY_CONNECT_MODE, if (value == MODE_SMART) MODE_SMART else MODE_MANUAL)
             .apply()
-    
+
+    // ============ Last flag country ============
+    // The country whose flag Home's hero panel last washed across its top, kept so a
+    // cold start opens on that flag instead of on a bare panel while the active
+    // config, its geo and the artwork are still being loaded. It is a display cache,
+    // not a selection: nothing routes by it, and Home drops it the moment there is no
+    // saved server left to show a flag for.
+    private const val KEY_LAST_FLAG_CC = "last_flag_country"
+
+    fun lastFlagCountry(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_FLAG_CC, "") ?: ""
+
+    fun setLastFlagCountry(ctx: Context, code: String) =
+        prefs(ctx).edit().putString(KEY_LAST_FLAG_CC, code.trim().uppercase()).apply()
+
+
     // ============ SUBSCRIPTIONS ============
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
     

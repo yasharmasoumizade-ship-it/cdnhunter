@@ -281,4 +281,64 @@ object ConfigUriParser {
             k to v
         }
     }
+
+    /**
+     * The transport the config actually dials, named for a human: "Reality",
+     * "WebSocket", "gRPC", "HTTP/2", "XHTTP", "TLS" or "TCP".
+     *
+     * Home's status row used to print [SavedConfig.proto] — the base protocol, always
+     * "VLESS" for the configs this app is handed — which said nothing that distinguished
+     * one server from another. The transport does: it is the thing that decides whether a
+     * server survives a given network, and it is the field a user comparing two configs
+     * actually reads.
+     *
+     * REALITY is reported ahead of the stream type on purpose. It is a TLS *replacement*
+     * rather than a transport, so a reality config's stream is usually plain TCP and
+     * "TCP" would be the least informative true thing this could say about it. Where both
+     * exist — reality over gRPC, reality over ws — the transport is named after it
+     * ("Reality · gRPC"), so nothing is lost by leading with the part that matters.
+     *
+     * Read from the URI rather than from the parsed proxy map: mihomo expresses REALITY
+     * as `reality-opts` beside `tls: true` and omits `network` entirely for TCP, so
+     * neither the security mode nor the plain-TCP case survives into
+     * [SavedConfig.network]. Anything this can't read — a vmess payload it can't decode,
+     * an unknown scheme, a URI with no query at all — comes back "TCP", which is what an
+     * unadorned proxy is.
+     */
+    fun transportOf(uri: String): String {
+        val trimmed = uri.trim()
+        val params: Map<String, String> = if (trimmed.startsWith("vmess://")) {
+            // vmess carries its settings as base64 JSON, not as a query string.
+            try {
+                val obj = JSONObject(String(Base64.decode(padBase64(trimmed.removePrefix("vmess://")), Base64.DEFAULT)))
+                mapOf(
+                    "type" to obj.optString("net", "tcp"),
+                    "security" to obj.optString("tls", ""),
+                )
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        } else {
+            val rest = trimmed.substringAfter("@", "").substringBefore("#")
+            if (rest.contains("?")) parseQuery(rest.substringAfter("?")) else emptyMap()
+        }
+
+        val security = (params["security"] ?: "").lowercase()
+        val stream = when ((params["type"] ?: "").lowercase()) {
+            "ws", "websocket" -> "WebSocket"
+            "grpc" -> "gRPC"
+            "h2", "http" -> "HTTP/2"
+            "xhttp", "splithttp" -> "XHTTP"
+            "quic" -> "QUIC"
+            else -> ""
+        }
+        return when {
+            security == "reality" -> if (stream.isNotBlank()) "Reality · $stream" else "Reality"
+            stream.isNotBlank() -> stream
+            security == "tls" -> "TLS"
+            // ss:// has no transport of its own, and a config whose URI carried no
+            // stream settings is a plain connection — both are TCP.
+            else -> "TCP"
+        }
+    }
 }
