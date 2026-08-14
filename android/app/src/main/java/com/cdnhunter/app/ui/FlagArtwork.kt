@@ -104,21 +104,25 @@ internal fun remoteFlagUrl(countryCode: String): String? {
 /**
  * Side length, in px, the flag SVG is rasterised at for the header panel.
  *
- * The panel is as wide as the screen and about 1.3:1 — ~1080×830px on a 3x 360dp
- * phone, ~1344×1030px on a 1440-wide one — and Coil sizes an SVG request to fit the
- * target, which for a square document means the shorter side: it would rasterise
- * ~1030 square and stretch that out to 1344 wide, a 1.3x horizontal upscale and the
- * blur that comes with it. Asking for a large square over-samples both axes instead,
- * so every panel only ever downsamples, which is the direction that stays crisp.
+ * Coil sizes an SVG request to *fit* the target, which for a landscape document means the
+ * width: asking for 1440 gets a 5:3 flag rasterised 1440×864, and its height is what the
+ * header actually needs, because the panel is now taller than it is wide. Asking for a
+ * large square over-samples both axes, so the only question is how large.
  *
- * 1440 because that is the widest phone panel shipping (1440×3120) and the header is
- * never wider than the screen it is in. It was 1152 while the flag was only the
- * connect bar's background, ~1050px wide at its widest; the header reaches 1344px, so
- * the old constant would be upscaled by a few percent on exactly the panels it was
- * raised to 1152 to protect. Coil holds one bitmap per country at ~8MB — two while a
- * crossfade is in flight — and the header shows one flag at a time.
+ * 2048, up from 1440. The header flag is one layer covering the hero band plus its bleed —
+ * roughly 1080×1720px on a 3x 360dp phone, and more on a 1440-wide one — and
+ * [androidx.compose.ui.layout.ContentScale.Crop] scales to *cover* that box, so it is the
+ * source's height that gets stretched. At 1440 a 5:3 flag arrived 864px tall and was
+ * upscaled about 2x vertically, which is exactly the softness a full-bleed background
+ * cannot hide; at 2048 it arrives ~1229px tall and the upscale is ~1.4x, which flat-field
+ * flag artwork survives cleanly at High filter quality.
+ *
+ * The cost is memory: a square bundled asset at this size is ~16MB of bitmap against ~8MB
+ * before, doubled for the few hundred ms a country crossfade is in flight. Acceptable
+ * because the header shows exactly one flag at a time and Coil's memory cache is a
+ * fraction of the app heap, so this evicts rather than accumulates.
  */
-internal const val FLAG_RENDER_PX = 1440
+internal const val FLAG_RENDER_PX = 2048
 
 /**
  * Side length, in px, a flag is rasterised at for the small circular badge.
