@@ -15,22 +15,33 @@ package com.cdnhunter.app.ui
 //                   the top and foot
 //   • edge light  — connected only: a green ring along the screen's top edge
 //   • top bar     — hamburger → Settings, account glyph → Profile
-//   • status row  — "VLESS · 8443 · Smart" on a small glass chip, chevron → Settings
-//   • connect bar — 88dp glass pill naming the active server's country, with a
-//                   100dp white power circle whose centre sits exactly on the bar's
-//                   right edge; the bar is cut away behind it, leaving a 3dp ring of
-//                   clearance. Swipe the circle up for Smart mode, down for Manual
-//   • network row — transport label, public IP (tap to copy)
+//   • hero        — one centred column, and the whole point of the screen:
+//                     eyebrow    — a coloured dot and the phase in tracked caps
+//                     headline   — the exit country at 34sp, the largest ink in the app
+//                     status     — "REALITY · 8443 · Smart" on a glass chip → Settings
+//                     power      — a 140dp white disc with a phase ring, centred and
+//                                  alone. Swipe up for Smart mode, down for Manual
+//                     meta       — the public IP (tap to copy) and, connected, the
+//                                  session clock; connecting, the progress pulse
+//                     server     — the active config on a glass row → Locations
 //   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
 //                   then one row per server
 //                   (flag, country · city, ping, three load bars)
 //   • usage card  — floats over the list bottom: session-traffic ring, live
 //                   speed, chevron → Locations
 //
-// The connect bar names the country and nothing else — not the city, not the
-// config's own name. The flag already says which country it is, so the line under
-// it was a third read of the same fact; the city and the server's name both belong
-// to the browse list below, where they distinguish one row from another.
+// The hero states one fact per line, in the order a user asks for them: am I protected,
+// where am I, over what, [the button], as what address, from which server. Nothing is
+// stated twice — the country is the headline and does not repeat in the server row, the
+// city is a caption under the country and nowhere else, and the config's own name appears
+// only in the row that opens the list it comes from.
+//
+// It is centred on the screen's own axis, which is what the redesign turned on: the hero
+// was a left-aligned stack of rows ending in a connect pill with the power button fused to
+// its right edge, and the button — the one thing the screen exists to offer — was neither
+// the largest element nor on any axis of its own. Centred, the column has a single spine,
+// the button is unmistakably the primary action, and the flag behind it reads as light
+// around a control rather than as the backdrop of a list.
 //
 // Smart / Manual is Home's other axis, orthogonal to which server is selected:
 // Manual acts on the row the user tapped, Smart acts on whichever saved server
@@ -47,15 +58,16 @@ package com.cdnhunter.app.ui
 // country, one image, stretched across the whole header — behind the top bar, behind
 // the connect bar, behind the network row — and then faded out on three sides, so what
 // is left is a wash of the country's colours held at the left of the screen and dark,
-// plain page everywhere the UI needs to be read. It is drawn FillBounds into a box that
-// is always [FLAG_ASPECT], not into the panel itself: every source — a square bundled
-// asset, a 5:3 German flagcdn SVG, a 19:10 American one — is stretched to the same 4:3
-// rectangle, which is then centred and clipped to the panel, so the flag's proportions
-// are the same country to country and phone to phone. FillBounds rather than Crop within
-// that box because it shows all of the flag at close to a real flag's own proportions,
-// where cropping to fill would magnify one band of it and throw the rest away. It is
-// flattened and de-bowed first, and rasterised well above the header's own pixel width,
-// so the bands read level and crisp — see FlagArtwork.kt.
+// plain page everywhere the UI needs to be read. It is drawn Crop into the panel itself:
+// scaled uniformly until the panel is covered and clipped, so every source — a square
+// bundled asset, a 5:3 German flagcdn SVG, a 19:10 American one — keeps its own
+// proportions and no flag is ever squeezed on one axis. Crop rather than FillBounds into
+// a fixed-ratio box, which is what this was: stretching each source to one shared 4:3
+// rectangle made the flag's shape consistent country to country at the cost of visibly
+// warping most of them, and at header size the warp is the first thing the eye finds.
+// What the crop takes off the top and the foot is already under the scrim and the mask.
+// It is flattened and de-bowed first, and rasterised well above the header's own pixel
+// width, so the bands read level and crisp — see FlagArtwork.kt.
 //
 // The fade is an alpha mask, not a coat of paint. Two gradients multiply into the
 // artwork's own alpha ([HeaderFlagFadeX], [HeaderFlagFadeY]): the horizontal one holds
@@ -78,47 +90,41 @@ package com.cdnhunter.app.ui
 // composited to #515152, which [RefTextHi] cleared at 7.4:1 and the white power disc
 // cleared easily. [HEADER_FLAG_ALPHA] is 0.70 now, which can only darken that band, so
 // those are floors rather than measurements. The screen's dimmer inks still do not clear
-// it — [RefTextMid] was 3.0:1 there — which is what [StatusChipMaterial] is for.
+// it — [RefTextMid] was 3.0:1 there — which is what the glass under them is for.
 //
 // Choosing another server crossfades the flag instead of cutting to it: a 420ms fade
 // in over a 260ms fade out, the incoming flag settling from 1.04 and the outgoing one
 // easing back to 0.99, so the change reads as one image replacing another.
 //
-// The connect bar is glass over that flag, not a picture of its own. Its material is
-// weighted to the left — [BarSurface] is a translucent top-lit floor across the whole
-// pill, [BarMaterial] a horizontal ramp near-solid where the country name starts and
-// gone by 58% — which is the treatment the bar had before the flag was moved into it,
-// and it does two jobs here at once: the headline sits on real material, and the flag
-// reads through the end of the pill nearest the power circle. When there is no flag to
-// draw — country unresolved, no bundled asset, still decoding — the header carries
-// [HeaderFlagFallback], a neutral slate wash, so the top is never a void. At the bar's
-// head sits the country's flag as a circular badge — the same [CountryFlagBadge] the
-// server list draws, from the same bundled asset — so the one flag reads the same here
-// as in the list below.
+// Everything on the hero that carries text carries it on glass — one material, three
+// sizes: the status chip, the two meta chips, the server row. See the [GlassChip]
+// section. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
+// on artwork whose brightest band the app can draw is a white flag, where they read at
+// 3:1 and below with nothing under them. Glass is the fix rather than a heavier scrim
+// because these are all controls — every one of them opens something or copies something
+// — and a control needs an edge and a hit target anyway. The two things that carry no
+// glass are the two that need none: the headline, which is [RefTextHi] at 34sp
+// ExtraBold, and the power disc, which is white.
 //
-// The status row is glass too, at chip size ([StatusChipMaterial]). It is the only row
-// with dim ink on it and it sits where the scrim is deliberately lightest, so over a
-// pale flag its mode word and its chevron were reading at 2:1 and 1:1 with nothing
-// under them. The chip also gives the row the one thing it never had: a mark saying it
-// is a button. Everything else up here is either white ink or, at the foot, already
-// under the heavy end of the scrim.
+// When there is no flag to draw — country unresolved, no bundled asset, still decoding —
+// the header carries [HeaderFlagFallback], a neutral slate wash, so the top is never a
+// void.
 //
 // The only light on this screen is ambient, and there is deliberately very little of
 // it: three soft directional sources — top, left and right — falling onto the connect
 // control at a few percent. They are static gradient brushes, never [Modifier.blur],
 // so the light stays crisp instead of smudged. Idle they are white; connected they
 // turn green, tighter and a shade stronger. Over a flag that light has to be a lit room
-// rather than a lamp pointed at the phone — hence the single-digit percentages. The
-// bar's own top and edge highlights stay neutral white so the artwork under them keeps
-// its colours.
+// rather than a lamp pointed at the phone — hence the single-digit percentages.
 //
 // The power circle is a flat brushed-white disc in every state — the mockup's
 // `.power-glow` is `display:none` — and nothing is attached to it: the two mode
-// chevrons that used to sit above and below it are gone. Smart / Manual is still
-// switched by swiping the circle up or down, or by its two accessibility actions, and
-// the mode is still named in the status row, which is where this screen states the
-// connection's facts in words. The one thing on it that answers to the tunnel is its
-// mark, which goes green while the tunnel is up (see [headerInk]).
+// chevrons that used to sit above and below it are gone, and so is the connect pill its
+// right half used to be cut into. Smart / Manual is still switched by swiping the circle
+// up or down, or by its two accessibility actions, and the mode is still named in the
+// status chip, which is where this screen states the connection's facts in words. The one
+// thing on it that answers to the tunnel is its mark, which goes green while the tunnel is
+// up (see [headerInk]), and the ring around it, which carries the phase.
 //
 // Connected is teal (--teal, #35d6b8) where the mockup says teal — the usage ring's
 // accent and the active row's dot. Everything else connected is the one green (--green,
@@ -126,15 +132,14 @@ package com.cdnhunter.app.ui
 // power mark. There is no ON/OFF pill and no pending state: the screen is either
 // connected or it isn't.
 //
-// Green is the header's headline ink and nothing below it. The country on the connect
-// bar, the protocol on the status chip, the transport and the public IP all cross to
-// [RefGreen] together, on the same 520ms fade as the light, so the top of the screen
-// changes state as one thing. What stays put is deliberate: the top bar's two glyphs —
-// hamburger and account — are navigation, not connection state, and they are the same
-// white whether the tunnel is up or down; so are the screen's secondary inks up here
-// (the mode word, the separators, the chevron), which are settings and punctuation
-// rather than state, and which at 14sp would be the one place a mid-chroma green could
-// fall under contrast.
+// Green is the header's headline ink and nothing below it. The country headline, the
+// eyebrow's dot and the session clock cross to [RefGreen] together, on the same 520ms
+// fade as the light, so the top of the screen changes state as one thing. What stays put
+// is deliberate: the top bar's two glyphs — hamburger and account — are navigation, not
+// connection state, and they are the same white whether the tunnel is up or down; so are
+// the screen's secondary inks up here (the mode word, the separators, the chevrons), which
+// are settings and punctuation rather than state, and which at 13.5sp would be the one
+// place a mid-chroma green could fall under contrast.
 //
 // Connected also lights the screen's own top edge in that same green: a hairline
 // along the top, brightest at the centre, turning both corners and running a short
@@ -186,7 +191,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -213,8 +217,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
@@ -223,8 +225,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
@@ -246,6 +246,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -343,16 +344,21 @@ private const val PHASE_FADE_MS = 520
 
 // ── Dimensions — CSS px read as dp (the mockup's device is 390px wide) ─────────
 private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
-private val BarHeight = 88.dp        // .connect-bar height
-private val PowerSize = 100.dp       // .power-btn, .power-btn-wrap
-// The mockup masks the bar with `circle 52px at 100% 50%` around a 50dp-radius
-// button, i.e. a 2dp hairline of space. 3dp is that hairline, one dp wider so it
-// survives rounding on a low-density panel: the button still reads as fused to the
-// bar's edge rather than parked next to it.
-private val PowerCut = 53.dp
+/**
+ * The connect control's whole box: the disc plus the ring band around it.
+ *
+ * 140dp, up from the mockup's 100dp. It was 100 while it shared a row with the connect
+ * pill and half of it overhung the pill's cut edge; centred and alone it is the hero's
+ * one action, and at 100dp on the screen's axis it read as a medium-sized icon button
+ * floating in a lot of space. 140 is a thumb-sized target — comfortably over the 48dp
+ * floor with room for the ring's progress arc to be legible at arm's length — and still
+ * leaves the headline above it as the largest *text*, which is the order the hero is
+ * built to be read in.
+ */
+private val PowerSize = 140.dp
 private val PanelCorner = 28.dp      // .browse-card border-radius
 private val ListPad = 18.dp          // .server-row / .tab-row horizontal padding
-private val FlagSize = 36.dp         // .server-flag — the connect bar's badge
+private val FlagSize = 36.dp         // .server-flag — [ServerSelect]'s badge
 /**
  * The server list's own flag, smaller than the connect bar's.
  *
@@ -388,7 +394,7 @@ private val ActionGlyph = 22.dp
 // How far the finger has to travel on the circle before the mode flips. Compose has
 // already eaten ~8dp of touch slop by the time the first drag arrives, so this is
 // deliberately short: far enough that a sloppy tap can't trigger it, close enough
-// that the gesture completes inside the button's own 100dp.
+// that the gesture completes well inside the button's own [PowerSize].
 //
 // Nothing on the circle draws this gesture any more. Two chevrons used to sit above
 // and below it; on a screen whose top is now one large image they were the only marks
@@ -506,29 +512,6 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
 
 
 /**
- * The bar-level half: the same three directions, read as highlights on the pill
- * itself rather than as a wash behind it. Top light first, then the two edges.
- *
- * These two are white and state-independent, unlike the wash behind the bar. They
- * fall on glass that has a flag behind it, and the flag's colours are not the
- * tunnel's to change. They were dimmed along with the ambient wash, for the same
- * reason: a highlight that competes with the artwork under it stops reading as glass.
- */
-private val BarTopLight = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.11f),
-    0.06f to Color.White.copy(alpha = 0.05f),
-    0.42f to Color.White.copy(alpha = 0.012f),
-    1.00f to Color.Transparent,
-)
-
-private val BarEdgeLight = Brush.horizontalGradient(
-    0.00f to Color.White.copy(alpha = 0.07f),
-    0.24f to Color.Transparent,
-    0.76f to Color.Transparent,
-    1.00f to Color.White.copy(alpha = 0.08f),
-)
-
-/**
  * Whether the device has animations turned off — developer options' "Animation off",
  * Battery Saver, or Settings → Accessibility → "Remove animations" all set the same
  * animator duration scale to zero.
@@ -623,8 +606,13 @@ private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
 //
 // [Modifier.drawBehind] is what makes it possible without a layout box: Compose does
 // not clip a node's drawing to its own bounds, so the bloom can be drawn from inside
-// the button's own modifier chain and still spill across the flag and the connect bar.
-private val PowerBloomSize = 216.dp       // ~2.6x the disc; the light's full reach
+// the button's own modifier chain and still spill across the flag and the hero's rows.
+//
+// It scales with the disc: 300dp is the same ~2.6x of [PowerDiscSize] the 216dp bloom was
+// of the 84dp disc it was written for. Left at 216 on the larger control the halo would
+// have ended barely 50dp outside the ring — a visible ring of light around the button
+// rather than light in the room, which is the one thing this is not supposed to look like.
+private val PowerBloomSize = 300.dp       // ~2.6x the disc; the light's full reach
 private const val POWER_BLOOM_ON = 0.30f  // peak alpha, connected
 private const val POWER_BLOOM_WORKING = 0.22f
 
@@ -668,7 +656,7 @@ private val PageGradient = Brush.verticalGradient(
 )
 // ── Header flag panel ─────────────────────────────────────────────────────────
 // The flag is the top of the screen: one image, edge to edge, behind everything the
-// header draws. See the file header for why it is FillBounds and what the three
+// header draws. See the file header for why it is Crop and what the three
 // layers over it are for.
 
 /**
@@ -849,16 +837,21 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             if (flag == null) {
                 Box(Modifier.fillMaxSize().background(HeaderFlagFallback))
             } else {
-                // Two flags, one shape. The artwork is drawn into a box that is always
-                // [FLAG_ASPECT] — tall enough to cover the panel, so its width overhangs
-                // by however much the panel's own ratio differs from 4:3 and the overhang
-                // is clipped — rather than straight into the panel. Both sources are
-                // stretched to the same 4:3 rectangle by FillBounds, so a 5:3 German
-                // flagcdn SVG, a 19:10 American one and a square bundled asset all arrive
-                // at identical proportions, and a panel that is 1.28:1 on one phone and
-                // 1.34:1 on another no longer changes the flag's shape with it. This is
-                // the header's half of the one rule the badge follows too — see
-                // [FLAG_ASPECT], which owns both.
+                // One rule for both sources: scale uniformly until the panel is covered,
+                // clip the overhang. [ContentScale.Crop] against the panel's own box, and
+                // nothing between the image and that box — no forced ratio, no unbounded
+                // width. The flag's own proportions are what get drawn, whatever the
+                // source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
+                // American one) and whatever the panel's are on this particular phone.
+                //
+                // This is deliberately not FillBounds into a fixed 4:3 box,
+                // which is what it was: that stretched every source to one 4:3 rectangle,
+                // so the German bands were squeezed ~7% vertically and the American canton
+                // came out visibly narrow — a distortion the eye finds immediately at this
+                // size, and one that changed per country. Consistency of *shape* is not
+                // worth non-uniform scaling; the panel is a full-bleed wash, so the bands
+                // the crop takes off the top and foot are already under the scrim and the
+                // mask. See FlagArtwork.kt's scaling note, which the badge shares.
                 val cc = canonicalCountryCode(code)?.lowercase() ?: code
                 val key = if (flag === remote) "flag-cdn-$cc" else "flag-rect-$cc"
                 Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
@@ -879,7 +872,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                             .build(),
                         imageLoader = getFlagImageLoader(context),
                         contentDescription = null,
-                        contentScale = ContentScale.FillBounds,
+                        contentScale = ContentScale.Crop,
                         alpha = HEADER_FLAG_ALPHA,
                         colorFilter = desaturate,
                         filterQuality = FilterQuality.High,
@@ -888,18 +881,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                         // every country outside VPN_FLAG_COUNTRIES already draws.
                         onError = { remoteFailed = true },
                         error = null,
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            // Unbounded, and this is load-bearing: `aspectRatio` only
-                            // honours the ratio if the size it computes fits the incoming
-                            // constraints, and a 4:3 box as tall as a ~1.3:1 panel is
-                            // slightly wider than the panel. Bounded, the modifier would
-                            // quietly fall back to filling the panel — which is the very
-                            // per-device ratio drift this box exists to remove. Given an
-                            // unbounded width it keeps the ratio and overhangs instead,
-                            // and the parent's `clipToBounds` takes the overhang off.
-                            .wrapContentWidth(unbounded = true)
-                            .aspectRatio(FLAG_ASPECT, matchHeightConstraintsFirst = true),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
@@ -909,77 +891,99 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
     }
 }
 
-// ── Connect bar material ──────────────────────────────────────────────────────
-// The pill is glass now: the flag is behind the whole header, so the bar's own job is
-// to be a surface the country name is legible on without hiding the artwork it sits
-// on. Two layers do that, in this order.
+// ── Glass ─────────────────────────────────────────────────────────────────────
+// Everything the hero lays over the flag is made of the same material, at one of two
+// weights, and nothing up here is a card: no cast shadows over the artwork, no borders
+// heavier than a hairline, no filled surfaces.
+//
+// The reason is the flag. It is the top of the screen, at 0.78 alpha under a scrim, and
+// every opaque rectangle drawn on it is a hole in the only piece of artwork the app has.
+// So each surface is a translucent floor plus a top-light plus a hairline — the three
+// things that make glass read as raised — and the flag carries on through all of them.
+//
+// Two weights, and the choice is by what has to be legible on it:
+//   [GlassLight]  — for chips carrying secondary ink (the status row, the meta pills).
+//   [GlassMedium] — for the server selector, which carries a name at body weight and
+//                   sits at the seam with the browse card, where the flag's mask has
+//                   already faded and a lighter surface would read as a smudge.
+
+/** The lighter floor: enough to seat 14sp secondary ink on the palest flag band, little
+ *  enough that the artwork's own colour still comes through it. */
+private val GlassLight = Brush.verticalGradient(
+    0.00f to RefElev1.copy(alpha = 0.62f),
+    1.00f to RefElev1.copy(alpha = 0.74f),
+)
+
+/** The heavier floor, top-lit: brighter at the head so the surface has a direction. */
+private val GlassMedium = Brush.verticalGradient(
+    0.00f to Color(0xFF1C1F28).copy(alpha = 0.74f),
+    0.55f to RefElev1.copy(alpha = 0.78f),
+    1.00f to Color(0xFF0B0D11).copy(alpha = 0.84f),
+)
+
+/** The white edge every glass surface up here carries. Over artwork [RefBorder]
+ *  disappears; white at a tenth does not, and it is the only drawn line in the hero. */
+private val GlassBorder = Color.White.copy(alpha = 0.13f)
+
+/** The top-light on a glass surface: a bright first row easing to nothing by 40%, and a
+ *  dark foot so the bottom edge never reads brighter than the top. Compose has no inset
+ *  box-shadow; this is both of the mockup's. */
+private val GlassSheen = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.09f),
+    0.05f to Color.White.copy(alpha = 0.03f),
+    0.14f to Color.Transparent,
+    0.86f to Color.Transparent,
+    1.00f to Color.Black.copy(alpha = 0.14f),
+)
+
+/** The phase dot beside the eyebrow: the phase stated as hue, at label scale. */
+private val PhaseDotSize = 7.dp
+
+/** Corner radius on the hero's own chips — the status row and the meta pills. Fully
+ *  rounded would read as a tag; this is the same corner-to-height relationship the top
+ *  bar's glyph chips use, so every small frame on the screen agrees. */
+private val ChipCorner = 11.dp
+
+/** The server selector's corner: a true pill, because it is the one row-width surface up
+ *  here and a pill is what says "this opens a list" rather than "this is a card". */
+private val SelectCorner = 20.dp
 
 /**
- * The glass floor, top-lit so the pill still reads as a raised surface rather than a
- * flat cut-out. Bright at the top, [RefElev1] through the middle, deeper at the foot.
+ * One glass chip: floor, top-light, hairline, clipped to [shape] — the hero's only
+ * surface primitive. Everything in the header that needs a background is this, at one of
+ * the two weights, so nothing up here can drift out of the material system by accident.
  *
- * Denser than it was, and deliberately so: the pill is docked at the foot of the hero
- * now, where the browse card's top edge begins, and it is the only surface at that seam.
- * A third of an alpha was enough when it floated mid-artwork with a framed panel behind
- * it; carrying the join between the hero and the card, it has to read as real glass. The
- * flag still comes through — 0.58 at the foot over a 0.78 flag is a tinted window, not a
- * wall — and the 22sp ExtraBold country name over it clears 8:1 on every bundled flag.
+ * [onClick] is taken here rather than left to the call site's own modifier because the
+ * order matters: applied inside, the click lands *after* the clip, so the ripple is bound
+ * to the chip's rounded shape instead of washing over the flag as a rectangle.
  */
-private val BarSurface = Brush.verticalGradient(
-    0.00f to Color(0xFF1C1F28).copy(alpha = 0.52f),
-    0.55f to RefElev1.copy(alpha = 0.46f),
-    1.00f to Color(0xFF0B0D11).copy(alpha = 0.58f),
-)
-
-/**
- * The material under the headline: near-solid where the country name starts, gone by
- * 62% of the pill's width.
- *
- * It reads as one surface with the flag showing through its far end rather than as two
- * halves, because the stops are a long ease rather than a step: 0.96 → 0.90 over the first
- * seventh, then down through 0.56 and 0.18 to nothing at 0.62, by which point the pill has
- * [PowerCut] left before the power circle's clearance takes over.
- */
-private val BarMaterial = Brush.horizontalGradient(
-    0.00f to RefElev1.copy(alpha = 0.96f),
-    0.14f to RefElev1.copy(alpha = 0.90f),
-    0.32f to RefElev1.copy(alpha = 0.56f),
-    0.48f to RefElev1.copy(alpha = 0.18f),
-    0.62f to Color.Transparent,
-)
-
-/**
- * The pill's hairline. Over artwork, [RefBorder] disappeared; white does not — and at the
- * foot of the hero, with no card outline anywhere else on the screen, this is the only
- * drawn edge left up here, so it is a little brighter than the 0.11 it used to be.
- */
-private val BarBorder = Color.White.copy(alpha = 0.15f)
-
-/** The phase dot beside the pill's caption: the phase stated as hue, at label scale. */
-private val PhaseDotSize = 6.dp
-
-/**
- * What closes [BarMaterial]'s ramp when there is no flag behind the pill — i.e. every
- * state but connected. Drawn over it, at the phase's own crossfade alpha, so the pill
- * becomes one even raised surface across its whole width instead of dissolving into the
- * panel at 58%. Slightly lighter at the head than at the foot, matching the top-lit
- * shape [BarSurface] already has.
- */
-private val BarSolid = Brush.verticalGradient(
-    0.00f to Color(0xFF191C24).copy(alpha = 0.86f),
-    0.55f to Color(0xFF14171E).copy(alpha = 0.90f),
-    1.00f to Color(0xFF0E1015).copy(alpha = 0.94f),
-)
-
-// inset 0 1px 0 rgba(255,255,255,.06), plus a matching foot so the bottom edge
-// doesn't read as brighter than the top.
-private val BarSheen = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.07f),
-    0.05f to Color.White.copy(alpha = 0.02f),
-    0.12f to Color.Transparent,
-    0.88f to Color.Transparent,
-    1.00f to Color.Black.copy(alpha = 0.16f),
-)
+@Composable
+private fun GlassChip(
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    surface: Brush = GlassLight,
+    onClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .clip(shape)
+            .background(surface)
+            .border(1.dp, GlassBorder, shape)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClickLabel = onClickLabel, onClick = onClick)
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.matchParentSize().background(GlassSheen))
+        content()
+    }
+}
 
 /**
  * Everything Home draws, snapshotted from VpnTab() on each recomposition.
@@ -1421,29 +1425,44 @@ private val HeroFloor = Brush.verticalGradient(
 // composable has no surface, no frame and no background of its own; what it reports, via
 // its own [Modifier.onSizeChanged] at the call site, is how tall the backdrop needs to be.
 //
-// The order of the rows is the redesign's other half. The connect control used to sit
-// third of four, mid-hero, floating in the middle of the artwork with a row of small text
-// under it; it is last now, at the foot, with only [ConnectPad] between it and the browse
-// card's top edge. Docked there, the pill and the card read as one panel — the pill is
-// what the card's top edge is, and the flag and its light are the room they are both in.
+// The composition is a single centred column, and that is the redesign. It used to be four
+// left-aligned rows with the connect control docked at the foot inside a pill that had a
+// circle notched out of its right edge — a clever piece of geometry that made the primary
+// action a fragment of a wider bar and put the phase, the country and the button on three
+// different axes. What replaces it reads top to bottom, on one axis, in the order the user
+// actually asks the questions:
 //
-// What changes between the three [HomeUiState.phase] values is the *light*, not any
-// surface. The flag wash is on in all three whenever there is a server to show one for, so
-// connecting no longer paints a moving band across the artwork; that animation lives in
-// the status panel (see [ConnectingPulse]). Up here a phase change is: the atmosphere
-// changes colour and tightens ([drawHeroAtmosphere]), the power bloom comes up, and the
-// ink follows. Nothing slides, nothing sweeps.
+//   am I protected?      → [PhaseEyebrow], a tracked caption with the phase's own dot
+//   where am I?          → [CountryHeadline], the country at 34sp, the largest ink in the app
+//   over what?           → [StatusRow], the transport · port · mode chip
+//   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here
+//   as what address?     → [MetaRow], the public IP and, once up, the session's clock
+//   from which server?   → [ServerSelect], docked at the hero's foot
+//
+// Centring the action is the point of it. A VPN has exactly one control and everything else
+// on the screen is a report about that control's state; put it on the screen's own axis and
+// the reports arrange themselves around it, above and below, with the flag behind all of
+// them. Off to one side, notched into a bar, it competed with the bar for what the eye
+// should read as the thing to press.
+//
+// What changes between the three [HomeUiState.phase] values is still the *light*, not any
+// surface: the atmosphere changes colour and tightens ([drawHeroAtmosphere]), the halo
+// around the button comes up, the ring reports, and the ink follows. Nothing slides,
+// nothing sweeps, and the flag wash is on in all three states.
 //
 // statusBarsPadding() on this column is what keeps the top bar clear of the clock while
 // the backdrop behind it runs on to the top of the screen.
 
-/** Between the connect control and the browse card's top edge. Small on purpose: this
- *  gap is the only thing separating the two, and the point is that they touch. */
+/** Between the docked server selector and the browse card's top edge. Small on purpose:
+ *  this gap is the only thing separating the two, and the point is that they touch. */
 private val ConnectPad = 10.dp
 
-/** Between the status/network rows and the docked connect control — the hero's breathing
- *  room, and what makes the artwork's middle a place rather than a gap. */
-private val HeroOpenSpace = 34.dp
+/** Between the top bar and the phase caption — the column's own head clearance. */
+private val HeroTopSpace = 20.dp
+
+/** Between the status chip and the power circle: the hero's breathing room, and what
+ *  makes the artwork around the button a place rather than a gap. */
+private val HeroOpenSpace = 26.dp
 
 @Composable
 private fun Header(
@@ -1459,23 +1478,29 @@ private fun Header(
         modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = ConnectPad)
+            .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = ConnectPad),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
-        Spacer(Modifier.height(4.dp))          // .status-row margin-top
+        Spacer(Modifier.height(HeroTopSpace))
+        PhaseEyebrow(state.phase)
+        Spacer(Modifier.height(9.dp))
+        CountryHeadline(state)
+        Spacer(Modifier.height(13.dp))
         StatusRow(state = state, onOpenSettings = onOpenSettings)
-        Spacer(Modifier.height(14.dp))
-        NetworkRow(state = state)
-        // The open middle: this is where the flag gets to be a flag, and where the key
-        // light peaks. Weighted rather than fixed would fight the browse card for the
-        // screen; fixed keeps the list's own height predictable.
         Spacer(Modifier.height(HeroOpenSpace))
-        ConnectRow(
-            state = state,
-            onOpenLocations = onOpenLocations,
-            onTogglePower = onTogglePower,
-            onSetMode = onSetMode,
+        PowerCircle(
+            mode = state.mode,
+            phase = state.phase,
+            enabled = state.activeConfig != null,
+            onClick = onTogglePower,
+            onSwipeUp = { onSetMode(ConnectMode.SMART) },
+            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
         )
+        Spacer(Modifier.height(HeroOpenSpace))
+        MetaRow(state = state)
+        Spacer(Modifier.height(14.dp))
+        ServerSelect(state = state, onClick = onOpenLocations)
     }
 }
 
@@ -1587,333 +1612,427 @@ private fun GlyphButton(
     }
 }
 
-// ── Status row ────────────────────────────────────────────────────────────────
-// The protocol line, and after it the connect mode: "VLESS · 8443 · Smart". The
-// mockup's OFF/ON pill is gone, because the ambient light already says whether the
-// tunnel is up and a second, wordier read of the same fact next to it only adds a
-// thing that can lag behind it.
+// ── Phase eyebrow ─────────────────────────────────────────────────────────────
+// The first line of the hero, and the answer to the only question a VPN app is opened to
+// ask: a dot in the phase's colour, and the phase in words, tracked wide at caption size.
 //
-// The mode belongs here rather than on the connect bar for the same reason: this row
-// is where the facts about the connection are stated in words, and the bar carries
-// exactly one thing, the country. The mode's own word is [RefTextMid] — it is a
-// setting, not a state, so it sits a step behind the protocol without needing a
-// colour of its own to say so.
+// It is a caption rather than a headline because the country under it is the headline, and
+// two large lines stacked would leave neither of them primary. What makes it read at a
+// glance anyway is the colour and the position — first thing, dead centre, on the screen's
+// own axis — not the size.
 //
-// This is the one row that sits on the flag with nothing under it, and it carries the
-// screen's dimmest ink, so it gets a chip of its own — see [StatusChipMaterial].
+// The phase is stated twice over, in hue and in text, inside 11sp of height. That is
+// deliberate: every other signal for it up here is light (the atmosphere, the halo, the
+// ring), and a state that is only ever colour is a state a colour-blind user has to infer
+// from a spinner.
 
-/**
- * The material under the status row, and why a line of text needs any.
- *
- * The row lands at about a third of the way down the header, where the flag's mask is
- * full and [HeaderFlagScrim] is at its lightest on purpose. That is fine for the row's
- * headline and wrong for everything else on it: over a white flag band — Japan,
- * Poland, Finland, France's middle stripe — the artwork and its scrim leave a light
- * grey there, on which [RefTextHi] still clears but [RefTextMid] and [RefTextLow] fall
- * well under 3:1. The mode word is information, and at that contrast it is not there.
- *
- * A chip is the fix rather than a heavier scrim because the row is already a button —
- * it opens protocol settings — and it had no mark saying so. At [RefElev1] and this
- * alpha the worst band the app can draw sits at ~#2c2d31 under the text, which puts
- * the mode word back at 5.2:1 and the headline at 12.7:1, against 7.4:1 and 18:1 when
- * this header was near-black. It is the same glass the connect bar is made of, in the
- * same pill language, so the row reads as the tappable thing it is instead of as text
- * laid on a photograph.
- */
-private val StatusChipMaterial = Brush.verticalGradient(
-    0.00f to RefElev1.copy(alpha = 0.62f),
-    1.00f to RefElev1.copy(alpha = 0.74f),
-)
+/** The eyebrow's own text, per phase. Present tense, and deliberately not a sentence: it
+ *  is a status label, and the shorter it is the more it reads as one. */
+private fun phaseLabel(phase: ConnPhase): String = when (phase) {
+    ConnPhase.OFF -> "NOT CONNECTED"
+    ConnPhase.CONNECTING -> "CONNECTING"
+    ConnPhase.CONNECTED -> "PROTECTED"
+}
+
+/** The dot's colour, and the eyebrow's: grey off, accent working, green up. */
+private fun phaseDotColor(phase: ConnPhase): Color = when (phase) {
+    ConnPhase.OFF -> RefTextLow
+    ConnPhase.CONNECTING -> RefAccent
+    ConnPhase.CONNECTED -> RefGreen
+}
 
 @Composable
-private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
+private fun PhaseEyebrow(phase: ConnPhase, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
-    Row(
-        Modifier
-            // 8dp of inset so the chip doesn't sit tight against the glyphs, pulled
-            // back out by 4dp so the protocol still starts exactly where it did before
-            // the chip existed. The chip's own edge is what lands in the margin, which
-            // is the trick the top bar's 48dp tap boxes already use.
-            .offset(x = (-4).dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(StatusChipMaterial)
-            .clickable(onClickLabel = "Protocol settings", onClick = onOpenSettings)
-            .padding(horizontal = 8.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            protocolLabel(state.activeConfig),
-            fontSize = 14.5.sp,
-            fontWeight = FontWeight.Bold,
-            color = headerInk(state.phase),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    val dot by animateColorAsState(
+        targetValue = phaseDotColor(phase),
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "eyebrowDot",
+    )
+    // The dot breathes while an attempt is in flight, and only then — the animation is
+    // created inside the branch, so an idle or connected screen has no frame callback of
+    // its own from here.
+    val pulse = if (phase == ConnPhase.CONNECTING && !reduce) {
+        val transition = rememberInfiniteTransition(label = "eyebrowPulse")
+        val breath by transition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = LinearOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "eyebrowBreath",
         )
-        Text(
-            " · ",
-            fontSize = 14.5.sp,
-            fontWeight = FontWeight.Bold,
-            color = RefTextLow,
-            maxLines = 1,
-        )
-        // The word changes rarely, so it is worth animating: a 160ms fade in over a
-        // 110ms fade out (enter longer than exit, per the app's own motion rules),
-        // with the container sizing between "Smart" and "Manual" rather than jumping.
-        // Like every other movement on this screen it collapses to a cut when the
-        // system asks for no animations.
+        breath
+    } else {
+        1f
+    }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(PhaseDotSize).alpha(pulse).background(dot, CircleShape))
+        Spacer(Modifier.width(8.dp))
+        // Crossfaded with the container sizing between the three words, so the row does
+        // not jump width mid-transition.
         AnimatedContent(
-            targetState = state.mode,
+            targetState = phase,
             transitionSpec = {
                 (
-                    fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
+                    fadeIn(motionSpec(reduce, 220)) togetherWith fadeOut(motionSpec(reduce, 140))
                     ).using(SizeTransform(clip = false))
             },
-            label = "connectMode",
-        ) { mode ->
+            label = "phaseEyebrow",
+        ) { value ->
             Text(
-                mode.label,
-                fontSize = 14.5.sp,
-                fontWeight = FontWeight.SemiBold,
+                phaseLabel(value),
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                fontWeight = FontWeight.Bold,
+                // Wide tracking is what turns 11sp of uppercase into a label rather than
+                // into small text. 1.6sp at this size is about 0.15em, the same ratio the
+                // section headings in Settings use.
+                letterSpacing = 1.6.sp,
                 color = RefTextMid,
                 maxLines = 1,
             )
         }
-        Spacer(Modifier.width(6.dp))               // .protocol-line gap
-        // [RefTextMid], not [RefTextLow] like the separator beside it: this chevron is
-        // the only mark that says the row opens something, and a control has to clear
-        // 3:1 against its background. Over the brightest flag band the app can draw,
-        // [RefTextLow] on the chip reads 2.6:1 and this reads 5.2:1.
-        Chevron(size = 14.dp, color = RefTextMid)
     }
 }
 
-// ── Connect bar + power circle ────────────────────────────────────────────────
-// .power-row: the bar stops 50dp short of the right edge and the 100dp circle is
-// pulled back over it (CSS margin-left: -50px), so the circle's centre lands
-// exactly on the bar's right edge and its outer half overhangs the row.
+// ── Country headline ──────────────────────────────────────────────────────────
+// The largest ink in the app: where the tunnel comes out, at 34sp ExtraBold, centred.
 //
-// The row is [PowerSize] tall — the mockup's own geometry, back to it. It carried two
-// extra bands for a while, above and below, for the mode chevrons that used to sit
-// there; with those gone the row is the circle's height again and the bar is centred
-// in it, which is also what puts the flag's own centre line behind the control.
-@Composable
-private fun ConnectRow(
-    state: HomeUiState,
-    onOpenLocations: () -> Unit,
-    onTogglePower: () -> Unit,
-    onSetMode: (ConnectMode) -> Unit,
-) {
-    Box(Modifier.fillMaxWidth().height(PowerSize)) {
-        ConnectBar(
-            state = state,
-            onClick = onOpenLocations,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(end = PowerSize / 2)
-                .fillMaxWidth()
-                .height(BarHeight),
-        )
-        PowerCircle(
-            mode = state.mode,
-            phase = state.phase,
-            enabled = state.activeConfig != null,
-            onClick = onTogglePower,
-            onSwipeUp = { onSetMode(ConnectMode.SMART) },
-            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-            modifier = Modifier.align(Alignment.CenterEnd),
-        )
-    }
-}
+// One fact and no others. The city used to lead this line with the country and the
+// config's own name under it; the flag behind the whole screen already says which country
+// this is, the city is not something the user chose, and the server's name is what the
+// selector at the foot and the list below are for. What is left is the answer.
+//
+// It changes on the same crossfade as the flag behind it, because they are the same event
+// — the user picks another server, or the tunnel reports the exit node's real country —
+// and a country name that cuts while its flag dissolves reads as two things happening.
+//
+// [headerInk] colours it, so the headline is the phase's colour too: white off, accent
+// working, green up. That is the third statement of the phase on this screen and the one
+// that carries furthest, because it is on the biggest text.
 
-/**
- * The connect bar: a glass pill naming the active server's country, with the power
- * circle cut out of its right edge.
- *
- * It carries the country's flag as a circular badge at its head — the same
- * [CountryFlagBadge] the server list draws, from the same bundled `flags/<cc>.svg`, so
- * the one flag the header washes across the top reads the same way here and in the list
- * below. The header wash still shows through the rest of the pill behind the text.
- *
- * There is no cast shadow: a [Modifier.shadow] under a translucent surface is drawn
- * beneath the surface as well as around it, which would put a grey haze over exactly the
- * part of the artwork this pill is built to let through. The hairline, the top light and
- * the material ramp are what lift it instead.
- */
+/** The headline, and its subtitle's, own size. 34sp is the largest the longest country
+ *  name this app can draw ("Bosnia and Herzegovina") still fits on one line of a 360dp
+ *  screen at default font scale; beyond that it ellipsises, which on the screen's one
+ *  headline would be worse than a smaller face. */
+private val HeadlineSize = 34.sp
+
 @Composable
-private fun ConnectBar(
-    state: HomeUiState,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val density = LocalDensity.current
+private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
-    val shape = remember(density) { connectBarShape(with(density) { PowerCut.toPx() }) }
-    // How much of the pill's own material is drawn. Connected there is a flag behind it
-    // and the ramp exists to let the artwork through the far end; off and connecting
-    // there is nothing back there but the panel, and a pill that fades to transparent
-    // over its own panel is not a pill — it is a smudge that stops halfway. So the
-    // material's alpha is raised toward solid in those two states, and the ramp only
-    // reappears with the flag it was written for.
-    val opaque by animateFloatAsState(
-        targetValue = if (state.phase == ConnPhase.CONNECTED) 0f else 1f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "barOpacity",
-    )
     val cfg = state.activeConfig
-    // The country, and only the country. The city used to lead this line and the
-    // country plus the config's own name sat under it; the flag behind the text
-    // already says which country this is, the city says nothing the user chose, and
-    // the server's name is what the browse list below is for. What is left when all
-    // three of those are gone is the one fact the bar is for: where the tunnel comes
-    // out. The config's name is the fallback only when the country is unknown —
-    // an empty bar would be worse than a technical one.
     val country = countryCodeToName(state.headerCountryCode)
+    // The config's name is the fallback only when the country is unknown — an empty
+    // headline would be worse than a technical one.
     val headline = country.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-
-    Box(
-        modifier
-            .clip(shape)
-            .background(BarSurface)
-            .border(1.dp, BarBorder, shape)
-            .clickable(onClickLabel = "Choose a server", onClick = onClick),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        // The headline's own material: near-solid where the text starts, gone by 58%,
-        // so the country reads on a surface and the flag reads through the rest of the
-        // pill. See [BarMaterial] — this is the ramp the bar had before the flag was
-        // moved inside it. [BarSolid] over it is what closes the ramp up when there is
-        // no flag behind the pill to let through.
-        Box(Modifier.matchParentSize().background(BarMaterial))
-        if (opaque > 0.01f) {
-            Box(Modifier.matchParentSize().alpha(opaque).background(BarSolid))
+    // The city, when there is one and it is not already the headline: one dim line under
+    // the country, at caption weight, so the hero can be specific without the headline
+    // having to carry two facts.
+    val city = cfg?.let { state.cityFor(it) }.orEmpty()
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        AnimatedContent(
+            targetState = headline,
+            transitionSpec = {
+                (
+                    fadeIn(motionSpec(reduce, FLAG_FADE_IN_MS)) togetherWith
+                        fadeOut(motionSpec(reduce, FLAG_FADE_OUT_MS))
+                    ).using(SizeTransform(clip = false))
+            },
+            label = "countryHeadline",
+        ) { value ->
+            Text(
+                value,
+                fontSize = HeadlineSize,
+                lineHeight = 38.sp,
+                fontWeight = FontWeight.ExtraBold,
+                // Tight tracking on a large heavy face: at 34sp the default spacing reads
+                // loose, and pulling it in is what makes the word a single mark.
+                letterSpacing = (-0.8).sp,
+                color = headerInk(state.phase),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Box(Modifier.matchParentSize().background(BarSheen))
-        // The bar's share of the ambient light: top first, then the two edges. Both
-        // stay white in every state — the connected signal is the green light behind
-        // the bar, not a colour cast over the flag.
-        Box(Modifier.matchParentSize().background(BarTopLight))
-        Box(Modifier.matchParentSize().background(BarEdgeLight))
-        // `.location-block` (z-index:2) — the flag, then the country. The flag is the
-        // same circular [CountryFlagBadge] the server list draws, from the same bundled
-        // `flags/<cc>.svg`, so one flag reads the same across the whole screen. The end
-        // inset clears the circular cut by 10dp so the last glyph never crosses the
-        // missing material.
+        if (city.isNotBlank() && city != headline) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                city,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = RefTextMid,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── Status chip ───────────────────────────────────────────────────────────────
+// The transport, the port and the connect mode, on one line of glass: "REALITY · 8443 ·
+// Smart". It opens protocol settings, and the chevron is what says so.
+//
+// It is a chip rather than bare text for the reason the flag makes everything up here a
+// chip: the row carries the screen's dimmest ink, it lands where the flag's mask is at
+// full strength, and over a white band — Japan, Poland, Finland, France's middle stripe —
+// [RefTextMid] falls under 3:1 on the artwork alone. On [GlassLight] the worst band the
+// app can draw sits at about #2c2d31 under the text, which puts the mode word back over
+// 5:1 and the transport over 12:1.
+//
+// The mode belongs here rather than beside the button because this is where the facts
+// about the connection are stated in words, and the button carries no text at all.
+
+@Composable
+private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
+    val reduce = rememberReduceMotion()
+    GlassChip(
+        shape = RoundedCornerShape(ChipCorner),
+        onClick = onOpenSettings,
+        onClickLabel = "Protocol settings",
+    ) {
         Row(
+            Modifier.padding(start = 12.dp, end = 9.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            // .connect-bar padding is 0 20px
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = ScreenPad, end = PowerCut + 10.dp),
         ) {
-            CountryFlagBadge(state.headerCountryCode, FlagSize)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
+            Text(
+                protocolLabel(state.activeConfig),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.1.sp,
+                color = RefTextHi,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                " · ",
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = RefTextLow,
+                maxLines = 1,
+            )
+            // The word changes rarely, so it is worth animating: a 160ms fade in over a
+            // 110ms fade out (enter longer than exit, per the app's own motion rules),
+            // with the container sizing between "Smart" and "Manual" rather than jumping.
+            // Like every other movement on this screen it collapses to a cut when the
+            // system asks for no animations.
+            AnimatedContent(
+                targetState = state.mode,
+                transitionSpec = {
+                    (
+                        fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
+                        ).using(SizeTransform(clip = false))
+                },
+                label = "connectMode",
+            ) { mode ->
                 Text(
-                    headline,
-                    fontSize = 22.sp,
-                    lineHeight = 24.sp,
-                    // ExtraBold, up from Bold. This is the largest and only truly
-                    // prominent piece of text in the hero, it is set over artwork rather
-                    // than over a flat surface, and it now sits at the foot of the screen
-                    // where the docked pill has to hold its own against the browse card's
-                    // own headings. A heavier face is what carries it there — the weight
-                    // is doing the same job the removed card outline used to.
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = (-0.4).sp,
-                    color = headerInk(state.phase),
+                    mode.label,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = RefTextMid,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                // The phase, in words, under the country.
-                //
-                // Every other signal for it up here is light or colour — the atmosphere,
-                // the ring, the bloom, the ink — and a state that is only ever stated as
-                // colour is a state a colour-blind user has to infer from a spinner.
-                //
-                // Set as a label rather than as a sentence: uppercase, 11sp, and tracked
-                // wide. Against a 22sp ExtraBold country name, a 12.5sp sentence-case line
-                // read as a second, competing piece of prose; a tracked caption reads as
-                // the country's own subtitle, which is what it is. The dot beside it
-                // carries the phase's colour, so the row states the phase twice over —
-                // once in text and once in hue — inside 11sp of height.
-                Spacer(Modifier.height(3.dp))
-                AnimatedContent(
-                    targetState = state.phase,
-                    transitionSpec = {
-                        (
-                            fadeIn(motionSpec(reduce, 200)) togetherWith
-                                fadeOut(motionSpec(reduce, 130))
-                            ).using(SizeTransform(clip = false))
+            }
+            Spacer(Modifier.width(5.dp))
+            // [RefTextMid], not [RefTextLow] like the separator beside it: this chevron is
+            // the only mark that says the row opens something, and a control has to clear
+            // 3:1 against its background.
+            Chevron(size = 13.dp, color = RefTextMid)
+        }
+    }
+}
+
+// ── Meta row ──────────────────────────────────────────────────────────────────
+// The two facts that only matter once the button has been pressed, on one line under it:
+// the public address, and — connected — how long the session has been up.
+//
+// Off, there is one chip here and it holds this device's own address. That is the point of
+// keeping it visible in every phase: the number the user is about to change is the number
+// they can read now, so connecting is a visible before-and-after rather than a value that
+// appears out of nothing. Connected the same slot carries the exit IP and a clock joins it.
+//
+// The address is copyable — tap it and it goes to the clipboard — which is the one utility
+// the hero offers, and the reason it is a chip: a tappable value needs a hit target and an
+// edge, and it lands on the flag where bare 15sp ink would be sitting on artwork.
+//
+// Connecting, the address slot is joined by [ConnectingPulse]: the only animation on this
+// screen that runs unasked, in the only state that has progress rather than a result.
+@Composable
+private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val reduce = rememberReduceMotion()
+    val ip = state.displayIp
+    // A floor height whether or not either chip is in it, so the hero does not grow a few
+    // dp on connect and shrink again on cancel — a header that changes height while the
+    // user waits on it is the one motion nobody asked for.
+    Row(
+        modifier.heightIn(min = 34.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        // Both changes this slot ever makes are worth a crossfade rather than a jump: the
+        // first address landing, and the swap from this device's to the exit node's when
+        // the tunnel comes up. The width animates with it, so an address arriving in an
+        // empty slot grows into it instead of appearing at full size.
+        AnimatedContent(
+            targetState = ip,
+            transitionSpec = {
+                (
+                    fadeIn(motionSpec(reduce, 260)) togetherWith fadeOut(motionSpec(reduce, 140))
+                    ).using(SizeTransform(clip = false))
+            },
+            label = "publicIp",
+        ) { value ->
+            if (value.isBlank()) {
+                Spacer(Modifier.width(0.dp))
+            } else {
+                GlassChip(
+                    shape = RoundedCornerShape(ChipCorner),
+                    onClickLabel = "Copy IP address",
+                    onClick = {
+                        clipboard.setText(AnnotatedString(value))
+                        android.widget.Toast
+                            .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
+                            .show()
                     },
-                    label = "connectPhase",
-                ) { phase ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .size(PhaseDotSize)
-                                .background(
-                                    color = when (phase) {
-                                        ConnPhase.OFF -> RefTextLow
-                                        ConnPhase.CONNECTING -> RefAccent
-                                        ConnPhase.CONNECTED -> RefGreen
-                                    },
-                                    shape = CircleShape,
-                                )
-                        )
-                        Spacer(Modifier.width(6.dp))
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
-                            when (phase) {
-                                ConnPhase.OFF -> "NOT CONNECTED"
-                                ConnPhase.CONNECTING -> "CONNECTING…"
-                                ConnPhase.CONNECTED -> "PROTECTED"
-                            },
-                            fontSize = 11.sp,
-                            lineHeight = 13.sp,
+                            "IP",
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.1.sp,
-                            color = RefTextMid,
+                            letterSpacing = 1.2.sp,
+                            color = RefTextLow,
                             maxLines = 1,
+                        )
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            value,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = RefTextHi,
+                            maxLines = 1,
+                            // maxLines alone truncates by clipping, which leaves a
+                            // half-drawn glyph at the end of a long address; with softWrap
+                            // off and ellipsis on, anything that still doesn't fit ends in
+                            // "…" instead of mid-stroke. An IPv4 address is 15 characters
+                            // at most — see [GeoService.lookupCurrentIp], now v4-only — so
+                            // in practice neither applies, but the chip can no longer
+                            // render a cut-off value whatever it is handed.
+                            softWrap = false,
                             overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(fontFeatureSettings = "tnum"),  // tabular-nums
                         )
                     }
                 }
             }
         }
+        // The clock, connected only: a session timer off or connecting would be counting
+        // something that isn't running.
+        if (state.phase == ConnPhase.CONNECTED) {
+            Spacer(Modifier.width(8.dp))
+            GlassChip(shape = RoundedCornerShape(ChipCorner)) {
+                Text(
+                    formatElapsed(state.elapsedSec),
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = RefGreen,
+                    maxLines = 1,
+                    // Tabular figures, so the seconds column does not shift the chip's
+                    // width once a second for as long as the tunnel is up.
+                    style = TextStyle(fontFeatureSettings = "tnum"),
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                )
+            }
+        }
+        if (state.phase == ConnPhase.CONNECTING) {
+            Spacer(Modifier.width(10.dp))
+            ConnectingPulse(active = true, modifier = Modifier.width(64.dp))
+        }
     }
 }
 
-/**
- * The pill, minus a circle cut out of its right edge — the Compose equivalent of
- * the mockup's `mask-image: radial-gradient(circle 52px at 100% 50%, …)`. The cut
- * is centred on the power circle's centre and [PowerCut] wide, which is what
- * leaves the ring of space between the two.
- */
-private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ ->
-    val pill = Path().apply {
-        addRoundRect(
-            RoundRect(
-                rect = Rect(0f, 0f, size.width, size.height),
-                cornerRadius = CornerRadius(size.height / 2f),
-            )
-        )
+// ── Server select ─────────────────────────────────────────────────────────────
+// The hero's foot, and the one control up here that is a row rather than a mark: the
+// active server's flag, its name, and a chevron that opens the location list.
+//
+// It is the *server*, where the headline above is the *country* — the same distinction the
+// old connect bar collapsed into one line and then had to choose between. The country is
+// the fact worth 34sp; which of the user's own configs is producing it is a detail worth a
+// row at the bottom, next to the list those configs come from.
+//
+// [GlassMedium] rather than [GlassLight]: this pill sits lowest, where the flag's mask has
+// already faded the artwork out and the hero meets the browse card, so it has to read as a
+// surface on its own rather than as a window onto something. At [SelectCorner] it is a
+// softened rectangle, not a capsule — it is the widest thing in the hero and a full capsule
+// at this width reads as a button for the screen rather than for the row.
+@Composable
+private fun ServerSelect(state: HomeUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val cfg = state.activeConfig
+    val name = cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "Choose a server"
+    GlassChip(
+        shape = RoundedCornerShape(SelectCorner),
+        surface = GlassMedium,
+        onClickLabel = "Choose a server",
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CountryFlagBadge(state.headerCountryCode, FlagSize)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "SERVER",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    color = RefTextLow,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    name,
+                    fontSize = 15.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.1).sp,
+                    color = RefTextHi,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Chevron(size = 15.dp, color = RefTextMid)
+        }
     }
-    val cut = Path().apply {
-        addOval(Rect(center = Offset(size.width, size.height / 2f), radius = cutRadiusPx))
-    }
-    op(pill, cut, PathOperation.Difference)
 }
 
 // ── Power circle ──────────────────────────────────────────────────────────────
 // The connect control: a disc with a ring around it, and between them the one thing on
 // this screen that reports progress rather than a result.
 //
-// The disc is [PowerDiscSize] inside the row's [PowerSize] box, which leaves an 8dp
-// band around it for the ring. That band is where the mockup had nothing at all, and
-// the [PowerCut] clearance in the connect bar is unchanged, so the control still reads
-// as fused to the bar's edge — the ring sits inside the space that was already there
-// rather than pushing the geometry around.
+// It is centred on the screen's own axis now, at [PowerSize], with nothing beside it. It
+// used to be half-swallowed by a connect pill — the pill stopped short of the right edge
+// and the circle was pulled back over the gap, so the two read as one fused control and
+// neither was quite the primary thing. The pill's job (which server) moved to
+// [ServerSelect] at the hero's foot and its headline (which country) moved to
+// [CountryHeadline]; what is left here is the action, alone, and big enough to be the
+// obvious target from arm's length.
+//
+// The disc is [PowerDiscSize] inside the [PowerSize] box, which leaves an 11dp band around
+// it for the ring — the same ~8% of the diameter the smaller control used, so the ring
+// still reads as a rim on the disc rather than as a separate circle near it.
 //
 // Three faces, one per [ConnPhase], crossfaded on [PHASE_FADE_MS]:
 //
@@ -1932,10 +2051,9 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 //                is what reports the result. A green disc also read as a filled
 //                *primary action* — "press me" — in exactly the state where pressing it
 //                disconnects, which is the opposite of what it should invite.
-
 //
 // It carries one gesture besides the tap: a vertical drag switches Smart / Manual.
-// Nothing draws it — the mode is stated in words in the status row and offered to a
+// Nothing draws it — the mode is stated in words in the status chip and offered to a
 // screen reader as two named actions on this button.
 //
 // The mockup's four-part box-shadow, split by what Compose can draw:
@@ -1946,10 +2064,16 @@ private fun connectBarShape(cutRadiusPx: Float): Shape = GenericShape { size, _ 
 //                                             bright top rim over a soft dark foot.
 
 /** The disc itself, inside [PowerSize]'s box — the rest of the box is the ring band. */
-private val PowerDiscSize = 84.dp
+private val PowerDiscSize = 118.dp
 
-/** The ring's own weight, and how far outside the disc it is drawn. */
-private val PowerRingStroke = 2.5.dp
+/** The ring's own weight, and how far outside the disc it is drawn.
+ *
+ *  3dp of stroke rather than the 2.5dp the 84dp disc carried: the ring's whole job is to
+ *  be read from wherever the phone is being held, and a hairline that was proportionate
+ *  around a small disc reads as a scratch around a 118dp one. The gap stays at 3dp — it
+ *  is the space that makes the ring a rim on the disc rather than a second circle near
+ *  it, and that reads the same at any diameter. */
+private val PowerRingStroke = 3.dp
 private val PowerRingGap = 3.dp
 
 /** How long one turn of the connecting arc takes. */
@@ -2033,8 +2157,8 @@ private fun PowerCircle(
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
         // The light the button throws into the room, drawn first and outside this box —
         // see [powerBloom]. Compose does not clip a node's drawing to its bounds, so a
-        // 216dp halo can be drawn from inside a 100dp box and spill across the flag, the
-        // connect pill and the browse card's top edge alike. Its colour and strength are
+        // 300dp halo can be drawn from inside a 140dp box and spill across the flag, the
+        // meta chips and the browse card's top edge alike. Its colour and strength are
         // the phase's: nothing idle (an unlit button in a dark room does not glow), the
         // accent while an attempt is in flight, green and stronger once the tunnel is up.
         if (bloomStrength > 0.005f) {
@@ -2125,11 +2249,11 @@ private fun PowerCircle(
                 Icons.Rounded.PowerSettingsNew,
                 contentDescription = label,
                 tint = ink,
-                // The mockup's stroke svg is 54px on a 100px button; this is the
-                // filled Material mark at the same proportion of the smaller disc, so
-                // it still reads as the button's own symbol rather than as a glyph
-                // parked in the middle of it.
-                modifier = Modifier.size(50.dp),
+                // The mockup's stroke svg is 54px on a 100px button — 54% of the disc.
+                // This is the filled Material mark at the same proportion of the larger
+                // disc, so growing the control did not turn its symbol into a small glyph
+                // parked in the middle of a lot of white.
+                modifier = Modifier.size(64.dp),
             )
         }
     }
@@ -2242,118 +2366,23 @@ private val PowerFaceSheen = Brush.verticalGradient(
     1.00f to Color.Black.copy(alpha = 0.14f),
 )
 
-// ── Network row ───────────────────────────────────────────────────────────────
-// .network-row: the panel's bottom row — the public IP hard right, and on the left the
-// slot that used to name the transport ("Wi-Fi" / "Mobile data").
-//
-// That label is gone. It was the one thing on the panel that said something about the
-// phone rather than about the tunnel, it changed under the user for reasons that had
-// nothing to do with the app, and the address beside it already places the connection
-// better than the words "Mobile data" ever did. [HomeUiState.networkName] is still
-// carried — the network callback that feeds it is what drives reconnects — it is simply
-// not drawn here any more.
-//
-// The slot it left is where the connecting animation lives now (see [ConnectingPulse]),
-// which is the whole reason the row was kept rather than deleted: it is a full-width
-// slot at the foot of the panel, directly under the button that was just pressed, and
-// it is empty in the two states that have nothing to report.
-//
-// What the address is depends on the tunnel, and [HomeUiState.displayIp] is where that
-// is decided: this device's own public IP while the tunnel is down, the exit node's
-// once it is up. When there is nothing to state — the very first lookup, or the couple
-// of seconds a fresh tunnel is given to settle before it is asked — the row states
-// nothing. It used to show a lone "—" there, a character the user could neither read
-// nor copy, sitting where a value belongs; the slot is simply empty now, and the
-// address fades in when it arrives.
-@Composable
-private fun NetworkRow(state: HomeUiState) {
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    val reduce = rememberReduceMotion()
-    val ip = state.displayIp
-    // The row keeps a floor height whether or not the pulse is in it, so the panel does
-    // not grow by a few dp on connect and shrink again on cancel — a panel that changes
-    // height while the user waits on it is the one motion on this screen nobody asked
-    // for. 28dp is the height of the IP slot's own text plus its padding, which is what
-    // the row measured before either child was optional.
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 28.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ConnectingPulse(
-            active = state.phase == ConnPhase.CONNECTING,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(10.dp))
-        // Both changes this slot ever makes are worth a crossfade rather than a jump:
-        // the first address landing, and the swap from this device's to the exit node's
-        // when the tunnel comes up. The width animates with it, so an address arriving
-        // in an empty slot grows into it instead of appearing at full size.
-        //
-        // It is weighted, `fill = false`, rather than left to its intrinsic width: a
-        // non-weighted child is measured first and takes whatever it asks for, so the
-        // 39-character IPv6 the old lookup returned claimed the whole row and squeezed
-        // the transport label beside it down to "M…". Weighted, neither side can take
-        // more than half, and with `fill = false` the address still only occupies what
-        // it needs — so a 15-character IPv4 sits hard right exactly as before.
-        AnimatedContent(
-            targetState = ip,
-            transitionSpec = {
-                (
-                    fadeIn(motionSpec(reduce, 260)) togetherWith fadeOut(motionSpec(reduce, 140))
-                    ).using(SizeTransform(clip = false))
-            },
-            label = "publicIp",
-            modifier = Modifier.weight(1f, fill = false),
-        ) { value ->
-            if (value.isBlank()) {
-                Spacer(Modifier.width(0.dp))
-            } else {
-                Text(
-                    value,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = headerInk(state.phase),
-                    maxLines = 1,
-                    // maxLines alone truncates by clipping, which is what left a
-                    // half-drawn glyph at the end of a long address; with softWrap off
-                    // and ellipsis on, anything that still doesn't fit ends in "…"
-                    // instead of mid-stroke. An IPv4 address is 15 characters at most
-                    // and fits with room to spare — see [GeoService.lookupCurrentIp],
-                    // which is now v4-only — so in practice neither applies, but the
-                    // row can no longer render a cut-off value whatever it is handed.
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(fontFeatureSettings = "tnum"),  // tabular-nums
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable(onClickLabel = "Copy IP address") {
-                            clipboard.setText(AnnotatedString(value))
-                            android.widget.Toast
-                                .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
-                                .show()
-                        }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                )
-            }
-        }
-    }
-}
-
 // ── Connecting pulse ──────────────────────────────────────────────────────────
 // The one thing on this screen that says work is happening rather than finished, and the
 // only animation that runs without being asked.
 //
-// It lives in the left half of [NetworkRow], at the foot of the hero panel, directly
-// under the button that started the attempt — not across the panel's background, where a
-// sweeping band made the whole top of the screen restless in exactly the state where the
-// user is already waiting on it.
+// It lives in [MetaRow], directly under the button that started the attempt — not across
+// the hero's background, where a sweeping band made the whole top of the screen restless
+// in exactly the state where the user is already waiting on it.
 //
 // What it draws is a track with a comet on it: a 2dp hairline rail the width of the slot,
 // and a bright head with a tail trailing behind it, travelling left to right once every
-// [PULSE_SWEEP_MS], leaving the rail dark again behind it. Beside the rail the word
-// "Connecting" breathes between two opacities on the same clock, so the state is stated
-// in words as well as in motion.
+// [PULSE_SWEEP_MS], leaving the rail dark again behind it.
+//
+// It carries no word of its own. It used to read "Connecting" beside the rail, from when
+// this sat at the foot of a panel with nothing else naming the state; [PhaseEyebrow] now
+// says CONNECTING at the head of the hero, in the phase's own colour, and the same word
+// twice on one screen was the label competing with itself. What is left here is the motion
+// — which is the part the eyebrow cannot do.
 //
 // The head is [RefTeal] over an [RefAccent] tail rather than one flat colour: two
 // gradient stops of different hues is what makes it read as something moving along the
@@ -2362,7 +2391,7 @@ private fun NetworkRow(state: HomeUiState) {
 //
 // The whole thing fades in and out on [PHASE_FADE_MS] with the rest of the phase change,
 // and with the system's animations off the comet parks at the middle of the rail: the
-// rail, the colour and the word all still say which state this is, nothing moves.
+// rail and its colour still say which state this is, nothing moves.
 
 /** How long the comet takes to cross the rail once. */
 private const val PULSE_SWEEP_MS = 1250
@@ -2401,65 +2430,43 @@ private fun ConnectingPulse(active: Boolean, modifier: Modifier = Modifier) {
         ),
         label = "pulseTravel",
     )
-    // The word's own breath, deliberately slower than the comet and on its own easing,
-    // so the two do not lock into one beat.
-    val breath by transition.animateFloat(
-        initialValue = 0.62f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(PULSE_SWEEP_MS * 2, easing = LinearOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulseBreath",
-    )
     val progress = if (reduce) 0.5f else travel
-    val wordAlpha = if (reduce) 1f else breath
-    Row(modifier.alpha(strength), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Connecting",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = RefTeal.copy(alpha = 0.92f * wordAlpha),
-            maxLines = 1,
+    Canvas(
+        modifier
+            .alpha(strength)
+            .height(PulseRail)
+    ) {
+        val radius = size.height / 2f
+        // The track. Always the full width, so the comet has something to travel
+        // along and the slot has a shape even at the ends of the sweep.
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.10f),
+            cornerRadius = CornerRadius(radius, radius),
         )
-        Spacer(Modifier.width(10.dp))
-        Canvas(
-            Modifier
-                .weight(1f)
-                .height(PulseRail)
-        ) {
-            val radius = size.height / 2f
-            // The track. Always the full width, so the comet has something to travel
-            // along and the slot has a shape even at the ends of the sweep.
+        // The comet. It starts and ends fully off the rail, so there is no visible
+        // re-entry at the wrap: at progress 0 the tail's start is at the left edge
+        // with the head still off it, at 1 the head has left the right edge.
+        //
+        // `tail`/`head` are the gradient's own ends, and the clip is theirs too. It
+        // has to be: a horizontal gradient is [TileMode.Clamp], so every pixel past
+        // `endX` takes the last stop's colour — filling the rail ahead of the comet
+        // with solid [RefTeal] rather than leaving it dark. Clipping to the band is
+        // what makes the comet a comet instead of a bar.
+        val comet = size.width * PULSE_COMET_FRACTION
+        val tail = progress * (size.width + comet) - comet
+        val head = tail + comet
+        clipRect(left = tail, right = head) {
             drawRoundRect(
-                color = Color.White.copy(alpha = 0.10f),
+                brush = Brush.horizontalGradient(
+                    0.00f to Color.Transparent,
+                    0.55f to RefAccent.copy(alpha = 0.55f),
+                    0.88f to RefTeal.copy(alpha = 0.95f),
+                    1.00f to RefTeal,
+                    startX = tail,
+                    endX = head,
+                ),
                 cornerRadius = CornerRadius(radius, radius),
             )
-            // The comet. It starts and ends fully off the rail, so there is no visible
-            // re-entry at the wrap: at progress 0 the tail's start is at the left edge
-            // with the head still off it, at 1 the head has left the right edge.
-            //
-            // `tail`/`head` are the gradient's own ends, and the clip is theirs too. It
-            // has to be: a horizontal gradient is [TileMode.Clamp], so every pixel past
-            // `endX` takes the last stop's colour — filling the rail ahead of the comet
-            // with solid [RefTeal] rather than leaving it dark. Clipping to the band is
-            // what makes the comet a comet instead of a bar.
-            val comet = size.width * PULSE_COMET_FRACTION
-            val tail = progress * (size.width + comet) - comet
-            val head = tail + comet
-            clipRect(left = tail, right = head) {
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        0.00f to Color.Transparent,
-                        0.55f to RefAccent.copy(alpha = 0.55f),
-                        0.88f to RefTeal.copy(alpha = 0.95f),
-                        1.00f to RefTeal,
-                        startX = tail,
-                        endX = head,
-                    ),
-                    cornerRadius = CornerRadius(radius, radius),
-                )
-            }
         }
     }
 }

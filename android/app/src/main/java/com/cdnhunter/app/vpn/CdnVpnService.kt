@@ -302,9 +302,17 @@ class CdnVpnService : VpnService() {
                     // proxy types.
                     "config head:\n${config.take(2000)}\n"
 
+                // The config is the secret: it carries the server address, the UUID or
+                // password, the SNI and the Reality public key. logcat is readable by adb
+                // and by anything with the log permission on older devices, so a release
+                // build says only how long the config is and never any of it. The full
+                // dump stays available in debug builds, where it is what makes a failed
+                // handshake diagnosable.
                 android.util.Log.i("CdnVpn", "Config length: ${config.length}")
-                android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                android.util.Log.d("CdnVpn", "Full mihomo config: $config")
+                if (com.cdnhunter.app.BuildConfig.DEBUG) {
+                    android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
+                    android.util.Log.d("CdnVpn", "Full mihomo config: $config")
+                }
 
                 val started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
                 if (!started) {

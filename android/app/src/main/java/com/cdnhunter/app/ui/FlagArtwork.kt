@@ -136,26 +136,24 @@ internal const val FLAG_RENDER_PX = 1440
 internal const val FLAG_BADGE_PX = 320
 
 /**
- * The one aspect ratio every flag in this app is drawn at, everywhere: 4:3.
+ * How flag artwork is scaled, everywhere in this app: [ContentScale.Crop] into whatever
+ * box the call site owns, and nothing in between.
  *
  * Flag artwork does not arrive at one shape. The bundled circle-flags assets are square
  * documents (`viewBox="0 0 512 512"`); flagcdn's are the real flag's own ratio, which is
- * 5:3 for Germany, 19:10 for the US, 3:2 for most of the rest. Left to itself each
- * source drew at its own shape, so the same badge was a slightly different rectangle per
- * country and the header's proportions changed when the artwork source changed — which
- * is the "inconsistent/misaligned flag sizing" this fixes.
+ * 5:3 for Germany, 19:10 for the US, 3:2 for most of the rest. There was a `FLAG_ASPECT`
+ * constant here that forced all of them into one 4:3 box first — `FillBounds` for the
+ * header panel, `Crop` for the badge — so that the same country drew at the same shape
+ * from either source. That bought shape consistency with non-uniform scaling: Germany's
+ * bands squeezed, the US canton narrowed, and at header size the warp is the first thing
+ * the eye finds. It is gone.
  *
- * 4:3 rather than a true 3:2 because the two consumers pull in opposite directions: the
- * circular badge crops to the inscribed circle, so a wide box throws away the flag's
- * left and right thirds, while the header wants width. 4:3 is the compromise that keeps
- * a recognisable centre in the badge without squashing the header.
- *
- * The scale rule is fixed per call site and follows from the crop: [ContentScale.Crop]
- * for the badge (fill the circle, lose the overhang) and `FillBounds` for the header
- * panel (it is a full-bleed wash whose own box is the panel, and a crop there would
- * silently drop a band off whichever edge the panel's ratio disagreed with).
+ * Both call sites now crop against their own box, so scaling is uniform at every screen
+ * size and the flag's own proportions are what get drawn. Each already clips: the badge
+ * to its circle ([CountryFlagBadge]'s parent), the header to the panel
+ * ([HeaderFlag]'s `clipToBounds`) — and the header's crop lands under the scrim and the
+ * alpha mask, where the top and foot of the artwork are faded out anyway.
  */
-internal const val FLAG_ASPECT = 4f / 3f
 
 
 private val CIRCLE_MASK = Regex("<mask\\s+id=\"a\">.*?</mask>", RegexOption.DOT_MATCHES_ALL)

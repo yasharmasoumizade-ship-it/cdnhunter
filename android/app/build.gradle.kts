@@ -73,6 +73,11 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG is what the sensitive log sites are gated on (see
+        // CdnVpnService.startVpn and SubscriptionParser): AGP 8 does not generate
+        // BuildConfig unless it is asked to, so this has to be on for those gates
+        // to compile.
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"

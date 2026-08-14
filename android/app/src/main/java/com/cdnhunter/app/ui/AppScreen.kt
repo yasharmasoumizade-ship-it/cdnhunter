@@ -11,7 +11,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,6 +39,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -347,11 +349,10 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
         coil.compose.AsyncImage(
             model = coil.request.ImageRequest.Builder(context)
                 .data(model)
-                // One size for every badge in the app, and one aspect ratio inside it.
-                // Left to itself Coil rasterises to whatever box asked first, so the
-                // 36dp connect-bar badge and the 30dp list badge could end up sharing
-                // whichever of the two decoded first — visibly softer in one of them.
-                // See [FLAG_BADGE_PX] and [FLAG_ASPECT].
+                // One size for every badge in the app. Left to itself Coil rasterises to
+                // whatever box asked first, so the 36dp connect-bar badge and the 30dp
+                // list badge could end up sharing whichever of the two decoded first —
+                // visibly softer in one of them. See [FLAG_BADGE_PX].
                 .size(FLAG_BADGE_PX)
                 // Explicit keys, so one country's artwork is one cache entry across
                 // every badge that draws it and the disk cache survives a restart with
@@ -363,26 +364,17 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
                 .build(),
             imageLoader = getFlagImageLoader(context),
             contentDescription = null,
-            // Crop into a fixed 4:3 box rather than into whatever the flag's own ratio
-            // is: every badge then crops the same way, so a 1.9:1 US flag and a square
-            // Swiss one fill the circle identically instead of each losing a different
-            // share of itself.
+            // Crop straight into the badge's own square box: scale uniformly until the
+            // circle is covered, lose the overhang. The flag keeps its own proportions,
+            // whatever they are (a 1.9:1 US flagcdn SVG, a square bundled asset), which
+            // is the point — a 4:3 box in between made every badge crop the same way at
+            // the cost of stretching most sources to get there, and a warped flag reads
+            // as wrong long before an inconsistent crop does.
             contentScale = ContentScale.Crop,
             filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
-            modifier = Modifier
-                // No clip of its own: a CircleShape clip on a 4:3 box is an ellipse.
-                // The parent Box is already clipped to the circle, which is what crops
-                // the overhanging sides of this box.
-                .fillMaxHeight()
-                // Unbounded, and this is load-bearing: `aspectRatio` only honours the
-                // ratio when the size it computes fits the incoming constraints, and a
-                // 4:3 box as tall as a square badge is a third wider than it. Bounded,
-                // the modifier would silently fall back to the square — which is the
-                // per-country shape drift this box exists to remove. Unbounded it keeps
-                // the ratio and overhangs, and the parent's circular clip takes the
-                // overhang off.
-                .wrapContentWidth(unbounded = true)
-                .aspectRatio(FLAG_ASPECT, matchHeightConstraintsFirst = true),
+            // No clip of its own: the parent Box is already clipped to the circle, which
+            // is what takes off whatever the crop leaves hanging over the sides.
+            modifier = Modifier.fillMaxSize(),
             // Assigning true when it is already true is not a state change, so the
             // asset's own failure can't loop this.
             onError = { remoteFailed = true },
@@ -813,8 +805,6 @@ private fun VpnTab() {
     // list inside the Home column (Windscribe-style layout), so the hoisted
     // BottomSheetScaffold state and its auto-collapse timer that used to live
     // here no longer have anything to drive.
-
-    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
 
     var connectedSinceMs by remember { mutableStateOf(0L) }
     var elapsedSec        by remember { mutableStateOf(0L) }
@@ -1977,13 +1967,347 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
     }
 }
 
+// ── Sheet design system ───────────────────────────────────────────────────────
+// The material the secondary screens are built from — Settings, Profile, and the
+// split-tunnel picker. Home has its own language because it has a flag behind it and has
+// to survive being drawn over artwork; these screens have a flat near-black page, so what
+// carries the polish here is the grid instead: one page padding, one card corner, one row
+// height, one tinted icon tile, and section labels tracked like Home's phase eyebrow.
+//
+// The parts each screen used to draw by hand — the back-chevron row, the 16sp title, the
+// `Surface`/`Column` card, the 14dp-inset divider, the stock `TextField` — are single
+// composables now, so the two screens cannot drift apart the way they had.
+
+/** Page gutter. Every screen in this file starts and ends here, so a row's ink lines up
+ *  vertically from Home's hero through Settings to Profile. */
+private val SheetPad = 20.dp
+
+/** Card corner. 18dp against the 12dp of the tiles inside them: the nesting has to be
+ *  legible, and a card that shares its children's radius reads as one flat area. */
+private val SheetCardCorner = 18.dp
+
+/** Row floor. 58dp is a comfortable target for a two-line row (label + description) and
+ *  well past the 48dp minimum for the one-line rows, which keeps every row in a group the
+ *  same height whether or not it carries a subtitle. */
+private val SheetRowHeight = 58.dp
+
+/**
+ * The frame every secondary screen sits in: the page wash, the back control, the screen's
+ * own large title, and a scroll.
+ *
+ * The title is 30sp ExtraBold on its own line rather than 16sp beside the chevron. It is
+ * the same move the hero makes with its country name — the screen states what it is once,
+ * in the largest ink on the page, and everything under it can then be quiet. It also gives
+ * the thumb a chevron at the very top-left where it can be reached, instead of a title bar
+ * whose height was set by the icon inside it.
+ *
+ * The wash is a single vertical gradient of the accent at 5%, 260dp deep. Flat #0B0B0D
+ * from edge to edge is what makes a dark screen look unfinished; this is barely visible and
+ * is enough to give the top of the page a light source, the way the flag does on Home.
+ */
+@Composable
+private fun SheetScreen(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Box(
+            Modifier.fillMaxWidth().height(260.dp).background(
+                Brush.verticalGradient(listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent)),
+            ),
+        )
+        // systemBarsPadding inside the background, not around it: MainActivity draws
+        // edge-to-edge (setDecorFitsSystemWindows(false)) so the page has to reach under
+        // the status bar while its content stays clear of the clock and the gesture bar.
+        Column(
+            Modifier.fillMaxSize().systemBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = SheetPad),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+            }
+            Text(
+                title,
+                fontSize = 30.sp,
+                lineHeight = 34.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.7).sp,
+                color = AnanasTextHi,
+                modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
+            )
+            content()
+            Spacer(Modifier.height(44.dp))
+        }
+    }
+}
+
+/**
+ * A group heading: "CONNECTION", "NETWORK", "DNS".
+ *
+ * 11sp Bold at 1.6sp of tracking — about 0.15em, the same ratio Home's phase eyebrow uses,
+ * which is what turns small uppercase into a label rather than into small text. The top
+ * space is part of the composable so the gap above a heading is not something each call
+ * site chooses; groups on this page are always separated by the same amount.
+ */
+@Composable
+private fun SectionLabel(text: String, top: Dp = 26.dp) {
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.6.sp,
+        color = AnanasMuted,
+        modifier = Modifier.padding(top = top, bottom = 10.dp, start = 4.dp),
+    )
+}
+
+/**
+ * The card a group of rows sits in: [AnanasCard] with a hairline border, clipped so the
+ * rows' own ripples stop at the corner.
+ *
+ * The border is what the old `Surface` card was missing. On a #0B0B0D page a #131316 card
+ * has barely 1.5:1 against it, so without an edge the group has no shape at all in a
+ * screenshot or in bright sun; one 1dp #1E1F24 line is enough to draw it.
+ */
+@Composable
+private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(SheetCardCorner))
+            .background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner)),
+        content = content,
+    )
+}
+
+/**
+ * The line between two rows in a [CardGroup], inset to where the row's text begins.
+ *
+ * A divider that starts under the icon cuts the icon column in half; starting it at the
+ * label instead makes the icons read as one column and the dividers as separators between
+ * text blocks. 62dp is [SheetPad] shy of the card edge plus the tile and its gap.
+ */
+@Composable
+private fun RowDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasDivider))
+}
+
+/**
+ * A row's icon: the glyph on its own tinted rounded square rather than loose on the card.
+ *
+ * This is the one visual decision that carries the whole redesign. Bare 24dp glyphs in a
+ * flat grey down the side of a card is the stock Android settings list; a 34dp tile of the
+ * icon's own colour at 14% gives each row a piece of colour, makes the icon column
+ * unmistakable, and is what the Profile screen's menu already did — so adopting it here is
+ * also what makes the two screens one design instead of two.
+ */
+@Composable
+private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(tint.copy(alpha = 0.14f)),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp)) }
+}
+
+/**
+ * A text input, built out of [BasicTextField] rather than Material's `TextField`.
+ *
+ * The stock field brought a floating label that animates into the border, a 56dp minimum
+ * height, an indicator line and its own container colour — four decisions this page has
+ * already made differently, which is why the DNS and MTU inputs read as pasted in from
+ * another app. This is the same rounded [AnanasCard2] box the rest of the page uses, with
+ * its label above it in the same 10sp tracked caps as the chips on Home, and a border that
+ * animates to the accent on focus and to [AnanasRed] while the value is not valid.
+ *
+ * It is presentation only: [onValueChange] fires on every keystroke exactly as before, and
+ * validation stays at the call site.
+ */
+@Composable
+private fun InlineField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    error: String? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val edge by animateColorAsState(
+        targetValue = when {
+            error != null -> AnanasRed
+            focused -> AnanasAccent
+            else -> AnanasBorder2
+        },
+        animationSpec = tween(160),
+        label = "fieldEdge",
+    )
+    Column(modifier.fillMaxWidth()) {
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = AnanasMuted)
+        Spacer(Modifier.height(7.dp))
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(AnanasCard2)
+                .border(1.dp, edge, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+        ) {
+            // Under the field, so the caret and the typed value draw over it. An address
+            // is figures, so the field is tabular — the digits do not shuffle sideways as
+            // the user types an octet.
+            if (value.isEmpty()) {
+                Text(placeholder, fontSize = 13.sp, color = AnanasFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AnanasTextHi,
+                    fontFeatureSettings = "tnum",
+                ),
+                cursorBrush = SolidColor(AnanasAccent),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+            )
+        }
+        if (error != null) {
+            Spacer(Modifier.height(5.dp))
+            Text(error, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = AnanasRed)
+        }
+    }
+}
+
+/**
+ * A two-or-three way choice as one control: a tracked capsule with the selected segment
+ * lit, rather than two bare words the user has to guess are tappable.
+ *
+ * `options` is (stored value, shown label) — the key is what goes to [AppSettings], the
+ * label is what the row says — so the control cannot drift from the persisted value.
+ */
+@Composable
+private fun SegmentedControl(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.clip(RoundedCornerShape(12.dp)).background(AnanasCard2)
+            .border(1.dp, AnanasBorder2, RoundedCornerShape(12.dp)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        options.forEach { (key, label) ->
+            val on = key == selected
+            val fill by animateColorAsState(
+                targetValue = if (on) AnanasAccent.copy(alpha = 0.16f) else Color.Transparent,
+                animationSpec = tween(160), label = "segFill",
+            )
+            val ink by animateColorAsState(
+                targetValue = if (on) AnanasAccentLight else AnanasMuted,
+                animationSpec = tween(160), label = "segInk",
+            )
+            Box(
+                Modifier.clip(RoundedCornerShape(9.dp)).background(fill)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onSelect(key) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    label,
+                    fontSize = 12.sp,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = ink,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A small text action inside a row — "Copy", "Clear".
+ *
+ * `accent = true` fills it and inverts the ink, for the one action in a row that is the
+ * point of the row; the rest are outlined so a card with three actions still has one
+ * obvious first choice.
+ */
+@Composable
+private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = false) {
+    Box(
+        Modifier.clip(RoundedCornerShape(10.dp))
+            .background(if (accent) AnanasAccent else AnanasCard2)
+            .then(if (accent) Modifier else Modifier.border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp)))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (accent) AnanasBg else AnanasText,
+        )
+    }
+}
+
+/**
+ * The account row at the top of Settings: avatar, name, plan, chevron.
+ *
+ * It is a card on its own above the first section label rather than a row in a group,
+ * because it is the only thing on the page that is about the person rather than about the
+ * tunnel. The avatar carries a ring of the accent at 30% — the same trick the Profile
+ * screen's larger avatar uses, so the two read as the same object at two sizes.
+ *
+ * The contents are still the static placeholder the screen shipped with; this is a layout
+ * change only, and wiring it to a real account is a separate piece of work.
+ */
+@Composable
+private fun AccountCard(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(SheetCardCorner))
+            .background(AnanasCard)
+            .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner))
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(46.dp).clip(CircleShape).background(AnanasCard2)
+                .border(1.5.dp, AnanasAccent.copy(alpha = 0.3f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("YM", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AnanasAccent)
+        }
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Yashar M.", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(AnanasAmber.copy(alpha = 0.16f))
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                ) {
+                    Text("PRO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = AnanasAmber, letterSpacing = 0.6.sp)
+                }
+                Text("Expires in 21 days", fontSize = 11.5.sp, color = AnanasMuted)
+            }
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
+    }
+}
+
 // ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
 @Composable
 private fun SettingsScreen(
     onProfileClick: () -> Unit = {}, onSplitTunnelClick: () -> Unit = {}, onBack: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val vpnPrefs = remember { context.getSharedPreferences("cdnhunter_vpn", 0) }
     var autoReconnect by remember { mutableStateOf(AppSettings.autoReconnectEnabled(context)) }
     // Backed by the same "kill_switch_enabled" key CdnVpnService reads
     // (isKillSwitchEnabled()) before deciding whether to hold a dead TUN up
@@ -1991,446 +2315,478 @@ private fun SettingsScreen(
     // switch for that behavior, not a decorative local-only state.
     var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(context)) }
 
-    // systemBarsPadding, because the window no longer fits the decor to the system bars
-    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
-    // Home's flag run behind the status bar). The background still fills the whole
-    // window — it is applied before the padding — while this screen's own rows stay
-    // clear of the clock at the top and the gesture bar at the foot.
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
-                Text("Settings", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
-            }
+    SheetScreen(title = "Settings", onBack = onBack) {
+        AccountCard(onClick = onProfileClick)
 
-            // Profile summary card
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                    .clickable { onProfileClick() }
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(42.dp).clip(CircleShape).background(AnanasCard2).border(1.5.dp, Color(0xFF2A2C31), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) { Text("YM", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent) }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Yashar M.", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 2.dp)) {
-                        Box(Modifier.clip(RoundedCornerShape(5.dp)).background(AnanasAmber.copy(0.16f)).padding(horizontal = 6.dp, vertical = 1.dp)) {
-                            Text("PRO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = AnanasAmber, letterSpacing = 0.3.sp)
-                        }
-                        Text("· Expires in 21 days", fontSize = 11.sp, color = AnanasMuted)
-                    }
+        SectionLabel("CONNECTION", top = 24.dp)
+        CardGroup {
+            SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasBlue, showChevron = true)
+            RowDivider()
+            SettingsToggleRow(
+                Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
+                autoReconnect, {
+                    autoReconnect = it
+                    AppSettings.setAutoReconnectEnabled(context, it)
+                },
+                tint = AnanasAccent,
+            )
+            RowDivider()
+            SettingsToggleRow(
+                Icons.Rounded.Lock, "Kill switch", "Block traffic on disconnect",
+                killSwitch, {
+                    killSwitch = it
+                    AppSettings.setKillSwitchEnabled(context, it)
+                },
+                tint = AnanasAmber,
+            )
+            RowDivider()
+            run {
+                val splitApps = AppSettings.splitTunnelApps(context)
+                val splitMode = AppSettings.splitTunnelMode(context)
+                val summary = when {
+                    splitApps.isEmpty() -> null
+                    splitMode == "include" -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} only"
+                    else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                 }
-                Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
-            }
-
-            Spacer(Modifier.height(26.dp))
-            Text("CONNECTION", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
-
-            Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
-                color = AnanasCard,
-            ) {
-                Column {
-                    SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasSettingsIcon, showChevron = true)
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                SettingsToggleRow(
-                    Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
-                    autoReconnect, {
-                        autoReconnect = it
-                        AppSettings.setAutoReconnectEnabled(context, it)
-                    }
+                SettingsRow(
+                    Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasPurple,
+                    showChevron = true, onClick = onSplitTunnelClick,
                 )
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+            }
+            RowDivider()
+            run {
+                var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
                 SettingsToggleRow(
-                    Icons.Rounded.Lock, "Kill switch", "Block traffic on disconnect",
-                    killSwitch, {
-                        killSwitch = it
-                        AppSettings.setKillSwitchEnabled(context, it)
-                    }
+                    Icons.Rounded.Block, "Ad blocker", "Block ads & tracking domains",
+                    adBlockEnabled, {
+                        adBlockEnabled = it
+                        AppSettings.setAdBlockerEnabled(context, it)
+                    },
+                    tint = AnanasRed,
                 )
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                run {
-                    val splitApps = AppSettings.splitTunnelApps(context)
-                    val splitMode = AppSettings.splitTunnelMode(context)
-                    val summary = when {
-                        splitApps.isEmpty() -> null
-                        splitMode == "include" -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} only"
-                        else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
-                    }
-                    SettingsRow(Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasSettingsIcon, showChevron = true, onClick = onSplitTunnelClick)
-                }
-                Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                run {
-                    var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
-                    SettingsToggleRow(
-                        Icons.Rounded.Block, "Ad blocker", "Block ads & tracking domains",
-                        adBlockEnabled, {
-                            adBlockEnabled = it
-                            AppSettings.setAdBlockerEnabled(context, it)
-                        }
-                    )
-                }
-                }
             }
+        }
 
-            Spacer(Modifier.height(26.dp))
-            Text("NETWORK", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
+        SectionLabel("NETWORK")
+        CardGroup {
+            var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
+            var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
+            var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
+            var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
+            var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
+            var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
 
-            Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
-                color = AnanasCard,
-            ) {
-                Column {
-                    var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
-                    var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
-                    var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
-                    var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
-                    var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
-                    var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
-
-                    // MTU Section
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("MTU Size", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                            Text("Default: 1500 bytes", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                            Text(
-                                "Auto", fontSize = 12.sp,
-                                fontWeight = if (mtuMode == "auto") FontWeight.Bold else FontWeight.Medium,
-                                color = if (mtuMode == "auto") AnanasAccent else AnanasMuted,
-                                modifier = Modifier.clickable {
-                                    mtuMode = "auto"
-                                    showCustomInput = false
-                                    AppSettings.setMtu(context, 1500)
-                                    AppSettings.setMtuPreset(context, "auto")
-                                }.padding(vertical = 4.dp)
-                            )
-                            Text(
-                                "Custom", fontSize = 12.sp,
-                                fontWeight = if (mtuMode == "custom") FontWeight.Bold else FontWeight.Medium,
-                                color = if (mtuMode == "custom") AnanasAccent else AnanasMuted,
-                                modifier = Modifier.clickable {
-                                    showCustomInput = !showCustomInput; mtuMode = "custom"
-                                }.padding(vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    if (showCustomInput) {
-                        Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                        TextField(
-                            value = customMtuText,
-                            onValueChange = {
-                                customMtuText = it
-                                it.toIntOrNull()?.let { value ->
-                                    if (value in 576..9000) {
-                                        AppSettings.setMtu(context, value)
-                                        AppSettings.setMtuPreset(context, "custom")
-                                    }
-                                }
-                            },
-                            label = { Text("MTU (576-9000)", fontSize = 10.sp) },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = AnanasCard2,
-                                unfocusedContainerColor = AnanasCard2
-                            ),
-                            singleLine = true
-                        )
-                    }
-
-                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                    SettingsToggleRow(
-                        Icons.Rounded.Router, "Allow LAN", "Access local network devices",
-                        allowLan, {
-                            allowLan = it
-                            AppSettings.setAllowLan(context, it)
-                        }
-                    )
-                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                    SettingsToggleRow(
-                        Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through VPN",
-                        ipv6Enabled, {
-                            ipv6Enabled = it
-                            AppSettings.setIpv6Enabled(context, it)
-                        }
-                    )
-                    Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                    SettingsToggleRow(
-                        Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
-                        useDoh, {
-                            useDoh = it
-                            AppSettings.setUseDoh(context, it)
-                            // Notify VPN service of settings change
-                            android.widget.Toast.makeText(
-                                context, 
-                                if (it) "DoH enabled (reconnect to apply)" else "DoH disabled (reconnect to apply)",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(26.dp))
-            Text("DNS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
-
-            Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
-                color = AnanasCard,
-            ) {
-                Column {
-                    var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
-                    var primaryDns by remember { mutableStateOf(AppSettings.primaryDns(context)) }
-                    var secondaryDns by remember { mutableStateOf(AppSettings.secondaryDns(context)) }
-                    var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
-
-                    // Custom DNS Toggle
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Custom DNS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                            Text("Use your own DNS servers", fontSize = 11.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-                        }
-                        MinimalToggle(
-                            checked = customDnsEnabled,
-                            onCheckedChange = {
-                                customDnsEnabled = it
-                                showDnsInputs = it
-                                AppSettings.setCustomDnsEnabled(context, it)
-                            }
-                        )
-                    }
-
-                    // DNS Inputs (shown when enabled)
-                    if (showDnsInputs) {
-                        Divider(color = AnanasDivider, thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            // Primary DNS
-                            val isPrimaryValid = AppSettings.isValidDnsServer(primaryDns)
-                            TextField(
-                                value = primaryDns,
-                                onValueChange = {
-                                    primaryDns = it
-                                    if (AppSettings.isValidDnsServer(it)) {
-                                        AppSettings.setPrimaryDns(context, it)
-                                    }
-                                },
-                                label = { Text("Primary DNS", fontSize = 10.sp) },
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = AnanasCard2,
-                                    unfocusedContainerColor = AnanasCard2,
-                                    focusedIndicatorColor = if (isPrimaryValid) AnanasAccent else AnanasRed,
-                                    unfocusedIndicatorColor = if (isPrimaryValid) AnanasBorder else AnanasRed.copy(0.5f)
-                                ),
-                                singleLine = true,
-                                isError = !isPrimaryValid && primaryDns.isNotBlank(),
-                                placeholder = { Text("8.8.8.8 or https://8.8.8.8/dns-query", fontSize = 9.sp, color = AnanasMuted.copy(0.5f)) }
-                            )
-                            if (!isPrimaryValid && primaryDns.isNotBlank()) {
-                                Text("Invalid DNS format", fontSize = 9.sp, color = AnanasRed, modifier = Modifier.padding(top = 2.dp))
-                            }
-                            
-                            // Secondary DNS
-                            val isSecondaryValid = secondaryDns.isBlank() || AppSettings.isValidDnsServer(secondaryDns)
-                            TextField(
-                                value = secondaryDns,
-                                onValueChange = {
-                                    secondaryDns = it
-                                    if (it.isBlank() || AppSettings.isValidDnsServer(it)) {
-                                        AppSettings.setSecondaryDns(context, it)
-                                    }
-                                },
-                                label = { Text("Secondary DNS (optional)", fontSize = 10.sp) },
-                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = AnanasCard2,
-                                    unfocusedContainerColor = AnanasCard2,
-                                    focusedIndicatorColor = if (isSecondaryValid) AnanasAccent else AnanasRed,
-                                    unfocusedIndicatorColor = if (isSecondaryValid) AnanasBorder else AnanasRed.copy(0.5f)
-                                ),
-                                singleLine = true,
-                                isError = !isSecondaryValid && secondaryDns.isNotBlank(),
-                                placeholder = { Text("8.8.4.4 or quic://dns.google:853", fontSize = 9.sp, color = AnanasMuted.copy(0.5f)) }
-                            )
-                            if (!isSecondaryValid && secondaryDns.isNotBlank()) {
-                                Text("Invalid DNS format", fontSize = 9.sp, color = AnanasRed, modifier = Modifier.padding(top = 2.dp))
-                            }
-                            
-                            // DNS Leak Protection Info
-                            Spacer(Modifier.height(8.dp))
-                            Box(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(AnanasCard2.copy(0.5f)).padding(10.dp)
-                            ) {
-                                Column {
-                                    Text("DNS Leak Protection", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent)
-                                    Text("• All DNS queries are hijacked and routed through the tunnel", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 3.dp))
-                                    Text("• DoH (HTTPS) is recommended for security", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-                                    Text("• Formats: IP, IP:port, https://... or quic://...", fontSize = 8.5.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            val clip = LocalClipboardManager.current
-
-            Spacer(Modifier.height(26.dp))
-            Text("DEBUG", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted, letterSpacing = 1.4.sp)
-            Spacer(Modifier.height(10.dp))
+            // MTU is the one row on the page that carries a choice rather than a switch, so
+            // it carries a segmented control where the others carry a toggle. Everything
+            // else about the row — tile, label column, height — is the same, which is what
+            // lets a group hold two kinds of control without looking assembled.
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                    .border(1.dp, AnanasBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Icon(Icons.Rounded.Terminal, null, tint = AnanasAccent, modifier = Modifier.size(24.dp))
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    IconTile(Icons.Rounded.Tune, AnanasBlue)
+                    Spacer(Modifier.width(14.dp))
                     Column {
-                        Text("Connection log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                         Text(
-                            if (CdnVpnService.lastError.isNotBlank()) "Last error: ${CdnVpnService.lastError.take(40)}" else "No errors on last connect",
-                            fontSize = 10.5.sp, color = if (CdnVpnService.lastError.isNotBlank()) AnanasRed else AnanasMuted
+                            "MTU",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.1).sp,
+                            color = AnanasTextHi,
+                        )
+                        Text(
+                            if (mtuMode == "auto") "Automatic · 1500 bytes" else "$customMtuText bytes",
+                            fontSize = 11.5.sp,
+                            color = AnanasMuted,
+                            modifier = Modifier.padding(top = 2.dp),
                         )
                     }
                 }
-                Box(
-                    Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
-                        .clickable {
-                            val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}\n\nprotectLog:\n${MihomoBridge.protectLog()}\n\ncoreLog:\n${MihomoBridge.coreLog()}"
-                            clip.setText(AnnotatedString(text))
-                            android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
+                SegmentedControl(
+                    options = listOf("auto" to "Auto", "custom" to "Custom"),
+                    selected = mtuMode,
+                    onSelect = { key ->
+                        if (key == "auto") {
+                            mtuMode = "auto"
+                            showCustomInput = false
+                            AppSettings.setMtu(context, 1500)
+                            AppSettings.setMtuPreset(context, "auto")
+                        } else {
+                            mtuMode = "custom"
+                            showCustomInput = true
                         }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasText) }
+                    },
+                )
+            }
+
+            if (showCustomInput) {
+                RowDivider()
+                InlineField(
+                    value = customMtuText,
+                    onValueChange = {
+                        customMtuText = it
+                        it.toIntOrNull()?.let { value ->
+                            if (value in 576..9000) {
+                                AppSettings.setMtu(context, value)
+                                AppSettings.setMtuPreset(context, "custom")
+                            }
+                        }
+                    },
+                    label = "MTU (576–9000)",
+                    placeholder = "1500",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    keyboardType = KeyboardType.Number,
+                    // Only complains once there is something to complain about: an empty
+                    // field mid-edit is not an error, a number outside the range is. The
+                    // value is persisted only while valid, exactly as before.
+                    error = when {
+                        customMtuText.isBlank() -> null
+                        customMtuText.toIntOrNull() == null -> "Digits only"
+                        customMtuText.toInt() !in 576..9000 -> "Out of range"
+                        else -> null
+                    },
+                )
+            }
+
+            RowDivider()
+            SettingsToggleRow(
+                Icons.Rounded.Router, "Allow LAN", "Access local network devices",
+                allowLan, {
+                    allowLan = it
+                    AppSettings.setAllowLan(context, it)
+                },
+                tint = AnanasSettingsIcon,
+            )
+            RowDivider()
+            SettingsToggleRow(
+                Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through VPN",
+                ipv6Enabled, {
+                    ipv6Enabled = it
+                    AppSettings.setIpv6Enabled(context, it)
+                },
+                tint = AnanasBlue,
+            )
+            RowDivider()
+            SettingsToggleRow(
+                Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
+                useDoh, {
+                    useDoh = it
+                    AppSettings.setUseDoh(context, it)
+                    // Notify VPN service of settings change
+                    android.widget.Toast.makeText(
+                        context,
+                        if (it) "DoH enabled (reconnect to apply)" else "DoH disabled (reconnect to apply)",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                },
+                tint = AnanasAccent,
+            )
+        }
+
+        SectionLabel("DNS")
+        CardGroup {
+            var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
+            var primaryDns by remember { mutableStateOf(AppSettings.primaryDns(context)) }
+            var secondaryDns by remember { mutableStateOf(AppSettings.secondaryDns(context)) }
+            var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
+
+            SettingsToggleRow(
+                Icons.Rounded.Dns, "Custom DNS", "Use your own resolvers",
+                customDnsEnabled, {
+                    customDnsEnabled = it
+                    showDnsInputs = it
+                    AppSettings.setCustomDnsEnabled(context, it)
+                },
+                tint = AnanasPurple,
+            )
+
+            // The resolvers, only once the toggle is on: two fields and a note, in the same
+            // card as the switch that revealed them rather than in a card of their own.
+            if (showDnsInputs) {
+                RowDivider()
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 14.dp)) {
+                    val isPrimaryValid = AppSettings.isValidDnsServer(primaryDns)
+                    InlineField(
+                        value = primaryDns,
+                        onValueChange = {
+                            primaryDns = it
+                            if (AppSettings.isValidDnsServer(it)) {
+                                AppSettings.setPrimaryDns(context, it)
+                            }
+                        },
+                        label = "PRIMARY",
+                        placeholder = "8.8.8.8 or https://8.8.8.8/dns-query",
+                        keyboardType = KeyboardType.Uri,
+                        error = if (!isPrimaryValid && primaryDns.isNotBlank()) "Not a valid resolver" else null,
+                    )
+                    Spacer(Modifier.height(14.dp))
+
+                    val isSecondaryValid = secondaryDns.isBlank() || AppSettings.isValidDnsServer(secondaryDns)
+                    InlineField(
+                        value = secondaryDns,
+                        onValueChange = {
+                            secondaryDns = it
+                            if (it.isBlank() || AppSettings.isValidDnsServer(it)) {
+                                AppSettings.setSecondaryDns(context, it)
+                            }
+                        },
+                        label = "SECONDARY · OPTIONAL",
+                        placeholder = "8.8.4.4 or quic://dns.google:853",
+                        keyboardType = KeyboardType.Uri,
+                        error = if (!isSecondaryValid && secondaryDns.isNotBlank()) "Not a valid resolver" else null,
+                    )
+
+                    // The note about what the tunnel does with DNS regardless of what is
+                    // typed above. It reads as a panel inside the card rather than as more
+                    // rows, because it is the one thing here the user cannot change.
+                    Spacer(Modifier.height(14.dp))
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(AnanasAccent.copy(alpha = 0.06f))
+                            .border(1.dp, AnanasAccent.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Icon(Icons.Rounded.Shield, null, tint = AnanasAccent, modifier = Modifier.size(14.dp))
+                            Text(
+                                "DNS leak protection",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.2.sp,
+                                color = AnanasAccent,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        listOf(
+                            "Every query is hijacked into the tunnel",
+                            "DoH is the recommended transport",
+                            "Formats: IP, IP:port, https:// or quic://",
+                        ).forEach { line ->
+                            Text(
+                                "· $line",
+                                fontSize = 10.5.sp,
+                                lineHeight = 15.sp,
+                                color = AnanasMuted,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        val clip = LocalClipboardManager.current
+
+        SectionLabel("DIAGNOSTICS")
+        CardGroup {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    IconTile(Icons.Rounded.Terminal, AnanasAccent)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Connection log",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.1).sp,
+                            color = AnanasTextHi,
+                        )
+                        Text(
+                            if (CdnVpnService.lastError.isNotBlank()) {
+                                "Last error: ${CdnVpnService.lastError.take(40)}"
+                            } else {
+                                "No errors on last connect"
+                            },
+                            fontSize = 11.5.sp,
+                            color = if (CdnVpnService.lastError.isNotBlank()) AnanasRed else AnanasMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                PillButton(
+                    "Copy",
+                    onClick = {
+                        val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}\n\nprotectLog:\n${MihomoBridge.protectLog()}\n\ncoreLog:\n${MihomoBridge.coreLog()}"
+                        clip.setText(AnnotatedString(text))
+                        android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                )
             }
 
             val crashFile = remember { File(context.filesDir, com.cdnhunter.app.CdnHunterApp.CRASH_LOG_FILE) }
-            if (crashFile.exists()) {
-                Spacer(Modifier.height(10.dp))
+            // Whether the file is there is read once into state, so "Clear" actually makes
+            // the row go away — `crashFile.exists()` in the condition is not something
+            // Compose can observe, so the old row stayed on screen after deleting it.
+            var hasCrashLog by remember { mutableStateOf(crashFile.exists()) }
+            if (hasCrashLog) {
+                RowDivider()
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AnanasCard)
-                        .border(1.dp, AnanasRed.copy(0.3f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                    Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Icon(Icons.Rounded.BugReport, null, tint = AnanasRed, modifier = Modifier.size(22.dp))
-                        Column {
-                            Text("Last crash log", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
-                            Text("Found a saved crash report", fontSize = 10.5.sp, color = AnanasMuted)
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        IconTile(Icons.Rounded.BugReport, AnanasRed)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Last crash log",
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = (-0.1).sp,
+                                color = AnanasTextHi,
+                            )
+                            Text(
+                                "A saved report is on the device",
+                                fontSize = 11.5.sp,
+                                color = AnanasMuted,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
                         }
                     }
+                    Spacer(Modifier.width(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasAccent)
-                                .clickable {
-                                    val text = runCatching { crashFile.readText() }.getOrDefault("")
-                                    clip.setText(AnnotatedString(text))
-                                    android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) { Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasBg) }
-                        Box(
-                            Modifier.clip(RoundedCornerShape(9.dp)).background(AnanasCard2).border(1.dp, AnanasBorder2, RoundedCornerShape(9.dp))
-                                .clickable { runCatching { crashFile.delete() } }
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) { Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AnanasMuted) }
+                        PillButton(
+                            "Copy",
+                            onClick = {
+                                val text = runCatching { crashFile.readText() }.getOrDefault("")
+                                clip.setText(AnnotatedString(text))
+                                android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            accent = true,
+                        )
+                        PillButton(
+                            "Clear",
+                            onClick = {
+                                runCatching { crashFile.delete() }
+                                hasCrashLog = crashFile.exists()
+                            },
+                        )
                     }
                 }
             }
-
-            Spacer(Modifier.height(40.dp))
         }
     }
 }
 
+/**
+ * A row that opens something, or just states a value: tile, label, optional value under it,
+ * optional chevron.
+ *
+ * `iconTint` is the row's colour, carried by [IconTile] rather than by a bare glyph — see
+ * that composable for why. The label is 14.5sp SemiBold with a hair of negative tracking,
+ * which is the same treatment the hero's server row uses one step down from its headline.
+ */
 @Composable
 private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
     Row(
         Modifier
             .fillMaxWidth()
             .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .heightIn(min = SheetRowHeight)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
-            Icon(icon, null, tint = iconTint, modifier = Modifier.size(24.dp))
+            IconTile(icon, iconTint)
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Text(
+                    label,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
+                    color = AnanasTextHi,
+                )
                 if (value != null) {
-                    Text(value, fontSize = 12.sp, color = AnanasMuted, modifier = Modifier.padding(top = 3.dp))
+                    Text(
+                        value,
+                        fontSize = 11.5.sp,
+                        color = AnanasMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
             }
         }
         if (showChevron) {
-            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasMuted, modifier = Modifier.size(22.dp))
+            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
         }
     }
 }
 
+/**
+ * The same row with a switch on the right instead of a chevron.
+ *
+ * `tint` defaults to the neutral [AnanasSettingsIcon] so existing rows are unchanged, but
+ * every call site in Settings now passes the colour of the thing being switched — green for
+ * the two that make the tunnel more automatic, amber for the kill switch, red for the
+ * blocker — which is what lets a group of five switches be scanned rather than read.
+ */
 @Composable
-private fun SettingsToggleRow(icon: ImageVector, label: String, desc: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingsToggleRow(
+    icon: ImageVector,
+    label: String,
+    desc: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    tint: Color = AnanasSettingsIcon,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .heightIn(min = SheetRowHeight)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
-            Icon(icon, null, tint = AnanasSettingsIcon, modifier = Modifier.size(24.dp))
+            IconTile(icon, tint)
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+                Text(
+                    label,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
+                    color = AnanasTextHi,
+                )
                 Text(
                     desc,
                     fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
                     color = AnanasMuted,
-                    modifier = Modifier.padding(top = 3.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-
+        Spacer(Modifier.width(12.dp))
         // Bespoke toggle — narrower capsule, soft drop shadow under the thumb,
         // no Material ripple halo on tap. See MinimalToggle() below.
         MinimalToggle(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
         )
     }
 }
@@ -2473,84 +2829,133 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 }
 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
+// The same frame as Settings — [SheetScreen], one gutter, one card corner, the same section
+// labels — so moving between the two screens is a change of content and not a change of app.
+// What differs is the top: the person is the subject here, so the avatar gets the space and
+// the plan card is allowed to be the one warm surface in an otherwise green-and-grey app.
+//
+// The contents are still the placeholder this screen shipped with. Wiring it to a real
+// account is separate work; this pass is layout and material only.
 @Composable
 private fun ProfileScreen(onBack: () -> Unit) {
-    // systemBarsPadding, because the window no longer fits the decor to the system bars
-    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
-    // Home's flag run behind the status bar). The background still fills the whole
-    // window — it is applied before the padding — while this screen's own rows stay
-    // clear of the clock at the top and the gesture bar at the foot.
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
-                Text("Profile", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
-            }
-
-            Column(Modifier.fillMaxWidth().padding(bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    SheetScreen(title = "Profile", onBack = onBack) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
+                // The halo is a wider disc behind the avatar rather than a thick border,
+                // because a stroke that wide reads as a second ring; and it is flat colour
+                // rather than a blur, which this app never uses.
+                Box(Modifier.matchParentSize().clip(CircleShape).background(AnanasAccent.copy(alpha = 0.09f)))
                 Box(
-                    Modifier.size(76.dp).clip(CircleShape).background(AnanasCard2).border(2.dp, Color(0xFF2A2C31), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) { Text("YM", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent) }
-                Spacer(Modifier.height(12.dp))
-                Text("Yashar M.", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                Text("yashar@ananasvpn.com", fontSize = 12.sp, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-            }
-
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF161310))
-                    .border(1.dp, Color(0xFF3A2F1E), RoundedCornerShape(16.dp)).padding(16.dp)
-            ) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Rounded.WorkspacePremium, null, tint = AnanasAmber, modifier = Modifier.size(14.dp))
-                        Text("Pro plan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasAmber)
-                    }
-                    Text("Renews Aug 10", fontSize = 11.sp, color = AnanasMuted)
-                }
-                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(0.7f).clip(RoundedCornerShape(8.dp)).background(AnanasAmber))
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("21 of 30 days remaining", fontSize = 11.sp, color = AnanasMuted)
-            }
-            Spacer(Modifier.height(20.dp))
-
-            Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("6" to "Configs", "142 GB" to "Used total", "98" to "Sessions").forEach { (v, l) ->
-                    Column(
-                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(AnanasCard)
-                            .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp)).padding(13.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(v, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-                        Text(l, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = AnanasMuted, modifier = Modifier.padding(top = 2.dp))
-                    }
-                }
-            }
-
-            @Composable fun MenuRow(icon: ImageVector, label: String, tint: Color, labelColor: Color, iconBg: Color, showChevron: Boolean = true) {
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 13.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                    Modifier.size(76.dp).clip(CircleShape).background(AnanasCard2)
+                        .border(1.5.dp, AnanasAccent.copy(alpha = 0.35f), CircleShape),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(iconBg), contentAlignment = Alignment.Center) {
-                            Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
-                        }
-                        Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = labelColor)
-                    }
-                    if (showChevron) Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(15.dp))
+                    Text("YM", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = AnanasAccent)
                 }
             }
-            MenuRow(Icons.Rounded.Diamond, "Upgrade plan", AnanasAmber, AnanasText, AnanasCard2)
-            Divider(color = AnanasDivider, thickness = 1.dp)
-            MenuRow(Icons.Rounded.History, "Payment history", AnanasMuted, AnanasText, AnanasCard2)
-            Divider(color = AnanasDivider, thickness = 1.dp)
-            MenuRow(Icons.Rounded.Logout, "Sign out", AnanasRed, AnanasRed, Color(0xFF1C1416), showChevron = false)
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Yashar M.",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.4).sp,
+                color = AnanasTextHi,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text("yashar@ananasvpn.com", fontSize = 12.5.sp, color = AnanasMuted)
+        }
+
+        SectionLabel("SUBSCRIPTION", top = 28.dp)
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(SheetCardCorner))
+                .background(Color(0xFF161310))
+                .border(1.dp, Color(0xFF3A2F1E), RoundedCornerShape(SheetCardCorner))
+                .padding(16.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
+                    Text(
+                        "Pro plan",
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.1).sp,
+                        color = AnanasAmber,
+                    )
+                }
+                Text("Renews Aug 10", fontSize = 11.5.sp, color = AnanasMuted)
+            }
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
+                Box(
+                    Modifier.fillMaxHeight().fillMaxWidth(0.7f).clip(RoundedCornerShape(8.dp))
+                        .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.75f), AnanasAmber))),
+                )
+            }
+            Spacer(Modifier.height(9.dp))
+            Text("21 of 30 days remaining", fontSize = 11.5.sp, color = AnanasMuted)
+        }
+
+        SectionLabel("ACTIVITY")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("6" to "Configs", "142 GB" to "Used total", "98" to "Sessions").forEach { (v, l) ->
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(AnanasCard)
+                        .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp))
+                        .padding(vertical = 14.dp, horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        v,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp,
+                        color = AnanasTextHi,
+                        maxLines = 1,
+                        // Tabular figures so three tiles of different numbers keep the
+                        // same optical rhythm across the row.
+                        style = TextStyle(fontFeatureSettings = "tnum"),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        l,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.2.sp,
+                        color = AnanasMuted,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+
+        SectionLabel("ACCOUNT")
+        CardGroup {
+            SettingsRow(Icons.Rounded.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true)
+            RowDivider()
+            SettingsRow(Icons.Rounded.History, "Payment history", null, AnanasBlue, showChevron = true)
+            RowDivider()
+            // The one destructive row in the app, so it is the one row whose label is not
+            // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
+            Row(
+                Modifier.fillMaxWidth().clickable { }.heightIn(min = SheetRowHeight)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                IconTile(Icons.Rounded.Logout, AnanasRed)
+                Text(
+                    "Sign out",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
+                    color = AnanasRed,
+                )
+            }
         }
     }
 }

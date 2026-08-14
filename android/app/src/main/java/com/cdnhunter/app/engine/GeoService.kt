@@ -4,9 +4,6 @@ import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
-import javax.net.ssl.*
 
 /**
  * Geo/country lookup for a server's IP — used to resolve the real flag/location
@@ -249,21 +246,23 @@ class GeoService {
         return GeoInfo(cc, lat, lon, city, isp)
     }
 
-    private fun buildClient(): OkHttpClient {
-        val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, a: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, a: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        })
-        val ctx = SSLContext.getInstance("TLS")
-        ctx.init(null, trustAll, SecureRandom())
-
-        return OkHttpClient.Builder()
-            .sslSocketFactory(ctx.socketFactory, trustAll[0] as X509TrustManager)
-            .hostnameVerifier { _, _ -> true }
+    /**
+     * The client every lookup in this file goes through.
+     *
+     * It used to install an `X509TrustManager` whose `checkServerTrusted` was empty and a
+     * hostname verifier that returned true for everything, which meant every geo and
+     * public-IP lookup accepted any certificate from any host — including while proxied
+     * through the tunnel's mixed port, where the answer decides which flag and which exit
+     * country the app reports. Anything on the path could have answered.
+     *
+     * It is the platform's own validation now: no `sslSocketFactory`, no `hostnameVerifier`,
+     * so OkHttp uses the system trust store and RFC 2818 hostname matching. All of these
+     * providers serve valid public certificates, so nothing here needed the exemption.
+     */
+    private fun buildClient(): OkHttpClient =
+        OkHttpClient.Builder()
             .followRedirects(true)
             .connectTimeout(java.time.Duration.ofSeconds(4))
             .readTimeout(java.time.Duration.ofSeconds(4))
             .build()
-    }
 }

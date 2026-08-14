@@ -26,7 +26,15 @@ object SubscriptionParser {
         name: String
     ): Subscription? = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Fetching subscription: $name from $url")
+            // The URL is a credential — a subscription link is all anyone needs to fetch
+            // the whole server list — so a release build logs only the user's own name for
+            // it, never the address.
+            if (com.cdnhunter.app.BuildConfig.DEBUG) {
+                Log.d(TAG, "Fetching subscription: $name from $url")
+            } else {
+                Log.d(TAG, "Fetching subscription: $name")
+            }
+
             
             // Fetch
             val response = try {
@@ -136,7 +144,13 @@ object SubscriptionParser {
                 "subscriptionName" to null
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse config: $line", e)
+            // A config line carries the server address plus its UUID/password, so the
+            // line itself only ever reaches the log in a debug build.
+            if (com.cdnhunter.app.BuildConfig.DEBUG) {
+                Log.w(TAG, "Failed to parse config: $line", e)
+            } else {
+                Log.w(TAG, "Failed to parse a config line from subscription", e)
+            }
             null
         }
     }

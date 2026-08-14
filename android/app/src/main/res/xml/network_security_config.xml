@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  System CAs only, everywhere, and no cleartext.
+
+  There used to be a second <domain-config> here that added
+  <certificates src="user" /> for a domain written as "*". Two problems: Android
+  matches <domain> values as literal hostnames (there is no wildcard form, so
+  "*" matched nothing and the block was misleading), and had it matched, adding
+  user-installed CAs to the trust anchors is exactly what lets a locally
+  installed root certificate intercept this app's TLS — including the geo/exit-IP
+  lookups that decide which country the app reports. Nothing here needs a
+  privately issued certificate: every endpoint the app talks to directly
+  (ipwho.is, ipapi.co, ipnumberia.com, ipify/icanhazip/ident.me, subscription
+  hosts) serves a publicly trusted one. Proxied traffic is unaffected — it is
+  tunnelled by mihomo, not validated by the platform stack.
+-->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">*</domain>
-        <trust-anchors>
-            <certificates src="system" />
-            <certificates src="user" />
-        </trust-anchors>
-    </domain-config>
 </network-security-config>
