@@ -275,22 +275,17 @@ private val RefTeal = Color(0xFF35D6B8)        // --teal
  */
 private val RefGreen = Color(0xFF1E9E5A)
 /**
- * The same deep green for iconography — the top bar's marks, and anything else that is a
- * glyph rather than a state light. One step brighter than [RefGreen] because a 20dp glyph
- * carries far less area than a lit ring does and needs the lift to read at all.
- */
-private val RefGreenIcon = Color(0xFF27B368)
-/**
- * The power button's halo when the tunnel is up: blue, not the button's own green.
+ * The room's light when the tunnel is up: blue, not the button's own green.
  *
- * The disc reports the *state* in green — mark, ring, eyebrow — and the halo reports that
- * the thing is lit, so making them different hues is what stops the whole corner of the
+ * The disc reports the *state* in green — mark, ring, eyebrow — and the light reports that
+ * the thing is lit, so making them different hues is what stops the whole top of the
  * screen becoming one green blob. Vivid and slightly over-bright on purpose: this is the
- * one light in the app allowed to be theatrical.
+ * one light in the app allowed to be theatrical. It is thrown by [drawHeroAtmosphere]
+ * across the whole backdrop; there is no longer a halo around the button itself.
  */
 private val RefGlowOn = Color(0xFF2F6BFF)
-/** The halo while an attempt is in flight: yellow-orange, i.e. "working", and the same
- *  hue the connecting arc, disc tint and phase dot take so the state is one colour. */
+/** The connecting colour: yellow-orange, i.e. "working", and the same hue the connecting
+ *  arc, disc tint and phase dot take so the state is one colour. */
 private val RefWorking = Color(0xFFFFA318)
 
 /**
@@ -329,8 +324,9 @@ private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 //
 //   OFF        — white, wide and low: the room is lit, nothing is happening.
 //   CONNECTING — [RefWorking], tighter and stronger, and the power ring's arc turns.
-//   CONNECTED  — [RefGreen], stronger again, with the bloom around the power button lit
-//                and the crown wash over the top edge at full strength.
+//   CONNECTED  — [RefGlowOn] blue, stronger again, with the crown wash over the top edge
+//                at full strength. Blue rather than green because the ring, the mark and
+//                the eyebrow already carry green: state is green, light is blue.
 //
 // The old green *hairline* along the very top edge is gone. It was one 1.5dp line of
 // near-full-strength green across the whole screen with two more running down the sides,
@@ -461,19 +457,29 @@ private val ModeSwipeThreshold = 20.dp
 // effect anywhere on this screen: a blur at these radii costs a full offscreen pass per
 // frame and, at these alphas, reads as a smudge rather than as light.
 //
+// Every ramp here is written with six or seven stops rather than three, and that is what
+// makes the difference between "ambient light" and "low-quality gradient". A radial gradient
+// interpolates linearly between its stops, so three stops over a 900px radius is three long
+// straight ramps meeting at two kinks — and on a near-black page, at these alphas, the eye
+// finds both the kinks and the 8-bit steps between them as concentric bands. Extra stops on
+// an eased curve cost nothing at draw time (the shader interpolates either way) and give the
+// falloff no straight section long enough to band.
+//
 // The strengths are deliberately about twice what this screen used to carry — this is the
 // "bolder, more atmospheric" pass — but they are still *layered* rather than summed into
 // one bright wash, and the only heavy layer is black. Idle the light is white and low;
-// connecting it is [RefWorking]; connected [RefGreen], stronger and with a tighter falloff,
-// so a state change reads as the room changing colour rather than as a repaint.
-private const val KEY_LIGHT_IDLE = 0.050f
-private const val KEY_LIGHT_ON = 0.100f
-private const val RIM_LIGHT_IDLE = 0.030f
-private const val RIM_LIGHT_ON = 0.062f
-private const val CROWN_LIGHT_IDLE = 0.055f
-private const val CROWN_LIGHT_ON = 0.150f
-private const val HORIZON_LIGHT_IDLE = 0.070f
-private const val HORIZON_LIGHT_ON = 0.170f
+// connecting it is [RefWorking]; connected [RefGlowOn], a vivid blue, stronger and with a
+// tighter falloff, so a state change reads as the room changing colour rather than as a
+// repaint. The lit values went up again when the power button's own halo was removed: the
+// room is now the only thing carrying the state, so it has to carry it on its own.
+private const val KEY_LIGHT_IDLE = 0.055f
+private const val KEY_LIGHT_ON = 0.135f
+private const val RIM_LIGHT_IDLE = 0.032f
+private const val RIM_LIGHT_ON = 0.080f
+private const val CROWN_LIGHT_IDLE = 0.058f
+private const val CROWN_LIGHT_ON = 0.185f
+private const val HORIZON_LIGHT_IDLE = 0.072f
+private const val HORIZON_LIGHT_ON = 0.205f
 
 /**
  * The whole atmosphere, drawn over the flag across the backdrop's full size — see the
@@ -491,10 +497,17 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
     val mid = if (lit) 0.34f else 0.46f
     val tail = if (lit) 0.74f else 0.88f
 
+    // Seven stops on an eased curve rather than four on a straight one — see the section
+    // comment. The two shape values above still set where the light's mass sits; what the
+    // extra stops buy is a ramp with no long linear section in it, which is the whole of the
+    // difference between this reading as light and reading as a gradient with rings in it.
     fun cone(centre: Offset, radius: Float, peak: Float) = Brush.radialGradient(
         0.00f to color.copy(alpha = peak),
-        mid to color.copy(alpha = peak * 0.42f),
-        tail to color.copy(alpha = peak * 0.07f),
+        mid * 0.45f to color.copy(alpha = peak * 0.78f),
+        mid to color.copy(alpha = peak * 0.46f),
+        (mid + tail) * 0.5f to color.copy(alpha = peak * 0.22f),
+        tail to color.copy(alpha = peak * 0.085f),
+        tail + (1f - tail) * 0.5f to color.copy(alpha = peak * 0.028f),
         1.00f to Color.Transparent,
         center = centre,
         radius = radius,
@@ -508,9 +521,12 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
     drawRect(
         brush = Brush.verticalGradient(
             0.00f to color.copy(alpha = crown),
-            0.07f to color.copy(alpha = crown * 0.62f),
-            0.20f to color.copy(alpha = crown * 0.30f),
-            0.50f to color.copy(alpha = crown * 0.08f),
+            0.04f to color.copy(alpha = crown * 0.78f),
+            0.09f to color.copy(alpha = crown * 0.55f),
+            0.16f to color.copy(alpha = crown * 0.36f),
+            0.26f to color.copy(alpha = crown * 0.22f),
+            0.40f to color.copy(alpha = crown * 0.11f),
+            0.58f to color.copy(alpha = crown * 0.04f),
             1.00f to Color.Transparent,
             startY = 0f,
             endY = crownEnd,
@@ -528,12 +544,18 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
     //    132dp are lit from behind by.
     drawRect(cone(Offset(size.width * 0.50f, size.height), size.width * 1.05f, horizon))
     // 5. The vignette. Centred above the middle, so the top corners come down with the
-    //    bottom ones and the status bar's glyphs keep something dark under them.
+    //    bottom ones and the status bar's glyphs keep something dark under them. Black at
+    //    these alphas is the layer most prone to banding on an OLED panel, hence the seven
+    //    stops: a straight ramp from 0 to 0.46 over most of the screen's width is exactly
+    //    the case where 8-bit quantisation shows as rings.
     drawRect(
         Brush.radialGradient(
             0.00f to Color.Transparent,
-            0.55f to Color.Black.copy(alpha = 0.09f),
-            0.80f to Color.Black.copy(alpha = 0.24f),
+            0.30f to Color.Black.copy(alpha = 0.02f),
+            0.48f to Color.Black.copy(alpha = 0.06f),
+            0.62f to Color.Black.copy(alpha = 0.12f),
+            0.75f to Color.Black.copy(alpha = 0.20f),
+            0.88f to Color.Black.copy(alpha = 0.31f),
             1.00f to Color.Black.copy(alpha = 0.46f),
             center = Offset(size.width * 0.50f, size.height * 0.40f),
             radius = size.width * 0.98f,
@@ -595,14 +617,23 @@ private fun headerInk(phase: ConnPhase, idle: Color = RefTextHi): Color {
     return ink
 }
 
-/** The colour of the light in the room for [phase]: white idle, amber working, green up. */
+/**
+ * The colour of the light in the room for [phase]: white idle, amber working, blue up.
+ *
+ * Connected is [RefGlowOn] rather than [RefGreen], and that is the one place the room's
+ * colour and the *state's* colour deliberately disagree. Green is the state — it is the
+ * ring, the eyebrow dot, the headline and the mark on the disc — but a green room over a
+ * flag turned every country into a swamp, and green on near-black is also the hardest hue
+ * on this palette to keep clean at low alpha. Blue reads as light rather than as a tint, so
+ * the artwork keeps its own colour and the green is left to say what the tunnel is doing.
+ */
 @Composable
 private fun phaseLight(phase: ConnPhase): Color {
     val reduce = rememberReduceMotion()
     val target = when (phase) {
         ConnPhase.OFF -> Color.White
         ConnPhase.CONNECTING -> RefWorking
-        ConnPhase.CONNECTED -> RefGreen
+        ConnPhase.CONNECTED -> RefGlowOn
     }
     val color by animateColorAsState(target, motionSpec(reduce, PHASE_FADE_MS), label = "phaseLight")
     return color
@@ -621,61 +652,6 @@ private fun phaseLight(phase: ConnPhase): Color {
  */
 private val HeroShadowAmbient = Color.Black.copy(alpha = 0.62f)
 private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
-
-// ── The power bloom ───────────────────────────────────────────────────────────
-// The light the connect button throws into the room around it, drawn *behind* the
-// button and outside its own bounds — one radial gradient centred on the disc, about
-// two and a half times its diameter.
-//
-// This is the replacement for the old connected edge light, which drew a 1.5dp green
-// hairline along the screen's very top edge and turned both corners. That was the
-// harsh flat seam: a hairline is by definition a hard edge, and on the flag it read as
-// the brightest thing on the screen and as a frame around the artwork. The signal it
-// carried — "the tunnel is up" — now comes from two softer places instead: the crown
-// wash in [drawHeroAtmosphere], which lights the whole top of the screen without an
-// edge anywhere in it, and this bloom, which puts the light where the eye already is.
-//
-// [Modifier.drawBehind] is what makes it possible without a layout box: Compose does
-// not clip a node's drawing to its own bounds, so the bloom can be drawn from inside
-// the button's own modifier chain and still spill across the flag and the hero's rows.
-//
-// It scales with the disc: 300dp is the same ~2.6x of [PowerDiscSize] the 216dp bloom was
-// of the 84dp disc it was written for. Left at 216 on the larger control the halo would
-// have ended barely 50dp outside the ring — a visible ring of light around the button
-// rather than light in the room, which is the one thing this is not supposed to look like.
-private val PowerBloomSize = 300.dp       // ~2.6x the disc; the light's full reach
-// Both strengths are deliberately high, and the falloff below is deliberately tight: the
-// halo is meant to read as a hard, vivid light source right at the button rather than as a
-// soft wash over the hero. Anything gentler than this and the coloured light is only
-// visible on an OLED panel in a dark room.
-private const val POWER_BLOOM_ON = 0.58f  // peak alpha, connected
-private const val POWER_BLOOM_WORKING = 0.50f
-
-/**
- * The bloom's brush for [phase] at [strength], or null when there is nothing to throw:
- * idle the button is unlit, and an unlit button in a dark room does not glow.
- *
- * The stops hold near-full strength through the first third and then drop away fast. That
- * is what makes the light *sharp*: a gradient that eases out evenly across its whole radius
- * reads as fog, and the previous stops (0.55 of strength by 30%, 0.20 by 58%) were exactly
- * that. Holding the core and cutting late gives the button a bright collar with a defined
- * outer edge, which is the "vivid, slightly exaggerated" look this is for.
- */
-private fun powerBloom(
-    color: Color,
-    strength: Float,
-    centre: Offset,
-    radius: Float,
-): Brush = Brush.radialGradient(
-    0.00f to color.copy(alpha = strength),
-    0.34f to color.copy(alpha = strength * 0.86f),
-    0.52f to color.copy(alpha = strength * 0.44f),
-    0.70f to color.copy(alpha = strength * 0.14f),
-    0.86f to color.copy(alpha = strength * 0.03f),
-    1.00f to Color.Transparent,
-    center = centre,
-    radius = radius,
-)
 
 
 /**
@@ -728,10 +704,10 @@ private const val HEADER_FLAG_SATURATION = 0.80f
 private const val HEADER_FLAG_ALPHA = 0.78f
 
 /**
- * The aspect ratio the flag is drawn at, as width ÷ height.
+ * The aspect ratio the *sharp* flag plate is drawn at, as width ÷ height.
  *
  * This is the fix for "the flag is too zoomed in", and the cause was geometry rather than
- * scaling: [ContentScale.Crop] fills whichever axis is short, and the backdrop it was
+ * scaling: [ContentScale.Crop] fills whichever axis is short, and the box it was
  * filling is roughly 0.9:1 — taller than it is wide. A 5:3 flag scaled to cover a box that
  * shape has to grow until its *height* fits, which throws away something like 45% of its
  * width. What was left on screen was two or three enormous bands, i.e. colours rather than
@@ -739,21 +715,37 @@ private const val HEADER_FLAG_ALPHA = 0.78f
  *
  * Drawing the artwork into a wide box instead — 1.55:1, close to the ratio most national
  * flags actually are — means the crop is a few percent off the top and foot rather than
- * half the width, so the design reads as itself: a canton, a crest, a diagonal. The box is
- * pinned to the top of the backdrop and the rest of the backdrop's height is the chrome
- * floor the artwork already fades into ([HeroFloor]), which is why nothing below it needs
- * to change.
+ * half the width, so the design reads as itself: a canton, a crest, a diagonal. The plate is
+ * pinned to the top of the screen; what fills the rest of the height is [FLAG_WASH_ALPHA]'s
+ * full-bleed layer, not chrome.
  */
 private const val HEADER_FLAG_ASPECT = 1.55f
 
 /**
- * The flag's own bottom taper, applied inside the artwork's box.
+ * The full-bleed layer under the plate: the same flag, [ContentScale.Crop] into the whole
+ * screen, at a fraction of the plate's alpha.
  *
- * Now that the artwork stops short of the backdrop's foot ([HEADER_FLAG_ASPECT]) it would
- * otherwise end on a hard horizontal line partway down the hero — a seam in the middle of
- * the screen, which is the one thing this whole arrangement exists to avoid. This dissolves
- * its last third into the chrome under it. [HeaderFlagFadeY] still runs over the backdrop
- * as a whole and is what carries the wash behind the browse card's edge.
+ * Two layers rather than one, because the two requirements genuinely conflict. "Cover the
+ * whole background, edge to edge" wants the image scaled to a ~0.46:1 box, which is what
+ * crops half a flag's width away; "look like a proper flag, not just colours" wants the
+ * artwork at something near its own ratio. So the screen gets both: the plate at the top,
+ * at [HEADER_FLAG_ASPECT], is the readable flag, and this is the colour of that same flag
+ * carried to all four edges behind it — zoomed, but at a low enough alpha that it reads as
+ * the room being lit by the artwork rather than as a second, badly cropped copy of it.
+ *
+ * It costs no extra decode: both layers request the same URL with the same
+ * `memoryCacheKey`, so Coil hands the second one the bitmap the first already holds.
+ */
+private const val FLAG_WASH_ALPHA = 0.30f
+
+/**
+ * The plate's own bottom taper, applied inside its box.
+ *
+ * Without it the plate would end on a hard horizontal line partway down the screen — a seam
+ * in the middle of the page, which is the one thing this whole arrangement exists to avoid.
+ * This dissolves its last third into the full-bleed wash under it, so the transition from
+ * "sharp flag" to "flag-coloured room" has no edge in it. [HeaderFlagFadeY] still runs over
+ * the layer as a whole and is what keeps the foot of the screen half-lit rather than dark.
  */
 private val HeaderFlagBottomFade = Brush.verticalGradient(
     0.00f to Color.Black,
@@ -814,8 +806,8 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
 )
 
 /**
- * The vertical half of the mask: full from the very first pixel row, held through the
- * rows, then taken to nothing across the bleed at the foot.
+ * The vertical half of the mask: full from the very first pixel row, held down the screen,
+ * and never taken to nothing.
  *
  * The top has no fade at all any more. It used to start transparent and reach full only
  * 16% down, which was the mask's way of keeping the artwork off the status bar — and with
@@ -825,16 +817,19 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * avoid one. [HeaderFlagScrim]'s heavy top stop protects the glyphs instead, by darkening
  * the flag rather than by removing it.
  *
- * The foot fade is the other half of the merge with the browse card. It runs from 0.72 to
- * 1.0 of the *backdrop*, which is [HeroBleed] taller than the rows — so the taper happens
- * behind the card's translucent top edge, not above it. The flag is still ~45% present
- * where the tab row begins and gone by the time the list starts.
+ * The foot no longer reaches zero either, and that is the change that makes the artwork a
+ * *background* rather than a panel at the top of one. This layer is the whole screen now
+ * (see [HeroBackdrop]), so a mask that ended at Transparent would have put the flag's own
+ * bottom edge across the middle of the page — the exact "the flag doesn't cover the
+ * screen" reading it was drawn to avoid. It stays half-present all the way to the last
+ * row instead, and what keeps the list legible over it is the browse card's own
+ * translucent fill ([panelTopFade]) plus [HeaderFlagScrim]'s heavier foot.
  */
 private val HeaderFlagFadeY = Brush.verticalGradient(
     0.00f to Color.Black,
-    0.72f to Color.Black,
-    0.88f to Color.Black.copy(alpha = 0.45f),
-    1.00f to Color.Transparent,
+    0.46f to Color.Black,
+    0.72f to Color.Black.copy(alpha = 0.72f),
+    1.00f to Color.Black.copy(alpha = 0.52f),
 )
 
 /**
@@ -903,19 +898,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                 }
             },
             label = "headerFlag",
-            modifier = Modifier
-                .fillMaxWidth()
-                // The artwork's own box: full width, [HEADER_FLAG_ASPECT] tall, pinned to
-                // the top of the backdrop — see that constant for why it is not the whole
-                // backdrop any more. Its own bottom taper is composited here, inside its
-                // box, so the flag dissolves into the chrome instead of ending on a line.
-                .aspectRatio(HEADER_FLAG_ASPECT)
-                .align(Alignment.TopCenter)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(HeaderFlagBottomFade, blendMode = BlendMode.DstIn)
-                },
+            modifier = Modifier.fillMaxSize(),
         ) { code ->
             // Two models for one country: flagcdn's true-aspect SVG for a well-known
             // exit country, the bundled circle-flags asset for everything else and for
@@ -928,51 +911,40 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             if (flag == null) {
                 Box(Modifier.fillMaxSize().background(HeaderFlagFallback))
             } else {
-                // One rule for both sources: scale uniformly until the panel is covered,
-                // clip the overhang. [ContentScale.Crop] against the panel's own box, and
-                // nothing between the image and that box — no forced ratio, no unbounded
-                // width. The flag's own proportions are what get drawn, whatever the
-                // source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
-                // American one) and whatever the panel's are on this particular phone.
-                //
-                // This is deliberately not FillBounds into a fixed 4:3 box,
-                // which is what it was: that stretched every source to one 4:3 rectangle,
-                // so the German bands were squeezed ~7% vertically and the American canton
-                // came out visibly narrow — a distortion the eye finds immediately at this
-                // size, and one that changed per country. Consistency of *shape* is not
-                // worth non-uniform scaling; the panel is a full-bleed wash, so the bands
-                // the crop takes off the top and foot are already under the scrim and the
-                // mask. See FlagArtwork.kt's scaling note, which the badge shares.
                 val cc = canonicalCountryCode(code)?.lowercase() ?: code
                 val key = if (flag === remote) "flag-cdn-$cc" else "flag-rect-$cc"
-                Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
-                    coil.compose.AsyncImage(
-                        model = coil.request.ImageRequest.Builder(context)
-                            .data(flag)
-                            .size(FLAG_RENDER_PX)
-                            // Coil keys a request by `data.toString()`, and a ByteBuffer's is
-                            // "HeapByteBuffer[pos=0 lim=N cap=N]" — two countries whose SVGs
-                            // happen to be the same byte length would share a cache entry and
-                            // one would draw the other's flag. Key by the country instead.
-                            .memoryCacheKey(key)
-                            .diskCacheKey(key)
-                            // AnimatedContent is already crossfading between two whole
-                            // panels; a second fade inside the incoming one only makes the
-                            // first half of that transition look like a load.
-                            .crossfade(false)
-                            .build(),
-                        imageLoader = getFlagImageLoader(context),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        alpha = HEADER_FLAG_ALPHA,
-                        colorFilter = desaturate,
-                        filterQuality = FilterQuality.High,
-                        // flagcdn unreachable, or no such flag there: fall back to the
-                        // bundled asset rather than to the neutral wash, which is what
-                        // every country outside VPN_FLAG_COUNTRIES already draws.
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    // 1. The wash: the same artwork cropped into the whole screen, at
+                    //    [FLAG_WASH_ALPHA]. This is what makes the flag the background
+                    //    rather than a picture at the top of one — it reaches all four
+                    //    edges, under the status bar and behind the list alike.
+                    FlagLayer(
+                        model = flag,
+                        cacheKey = key,
+                        alpha = FLAG_WASH_ALPHA,
+                        desaturate = desaturate,
                         onError = { remoteFailed = true },
-                        error = null,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    // 2. The plate: the readable flag, at something near a flag's own
+                    //    ratio, pinned to the top with its own bottom taper composited
+                    //    inside its box so it dissolves into the wash instead of ending
+                    //    on a line. See [HEADER_FLAG_ASPECT] and [HeaderFlagBottomFade].
+                    FlagLayer(
+                        model = flag,
+                        cacheKey = key,
+                        alpha = HEADER_FLAG_ALPHA,
+                        desaturate = desaturate,
+                        onError = { remoteFailed = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(HEADER_FLAG_ASPECT)
+                            .align(Alignment.TopCenter)
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(HeaderFlagBottomFade, blendMode = BlendMode.DstIn)
+                            },
                     )
                 }
             }
@@ -980,6 +952,62 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
         // Inside the masked layer, so it darkens the flag and tapers away with it.
         Box(Modifier.matchParentSize().background(HeaderFlagScrim))
     }
+}
+
+/**
+ * One drawn copy of the flag, filling whatever box [modifier] gives it.
+ *
+ * One rule for both sources and both layers: scale uniformly until the box is covered, clip
+ * the overhang. [ContentScale.Crop] against the box, and nothing between the image and that
+ * box — no forced ratio, no unbounded width. The flag's own proportions are what get drawn,
+ * whatever the source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
+ * American one) and whatever the box's are on this particular phone.
+ *
+ * This is deliberately not FillBounds into a fixed box, which is what it was: that stretched
+ * every source to one 4:3 rectangle, so the German bands were squeezed ~7% vertically and the
+ * American canton came out visibly narrow — a distortion the eye finds immediately at this
+ * size, and one that changed per country. Consistency of *shape* is not worth non-uniform
+ * scaling. See FlagArtwork.kt's scaling note, which the badge shares.
+ *
+ * [cacheKey] is why the two layers cost one decode between them, and it is also a
+ * correctness fix: Coil keys a request by `data.toString()`, and a ByteBuffer's is
+ * "HeapByteBuffer[pos=0 lim=N cap=N]" — two countries whose SVGs happen to be the same byte
+ * length would share a cache entry and one would draw the other's flag.
+ */
+@Composable
+private fun FlagLayer(
+    model: Any,
+    cacheKey: String,
+    alpha: Float,
+    desaturate: ColorFilter,
+    onError: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    coil.compose.AsyncImage(
+        model = coil.request.ImageRequest.Builder(context)
+            .data(model)
+            .size(FLAG_RENDER_PX)
+            .memoryCacheKey(cacheKey)
+            .diskCacheKey(cacheKey)
+            // AnimatedContent is already crossfading between two whole layers; a second
+            // fade inside the incoming one only makes the first half of that transition
+            // look like a load.
+            .crossfade(false)
+            .build(),
+        imageLoader = getFlagImageLoader(context),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        alpha = alpha,
+        colorFilter = desaturate,
+        filterQuality = FilterQuality.High,
+        // flagcdn unreachable, or no such flag there: fall back to the bundled asset
+        // rather than to the neutral wash, which is what every country outside
+        // VPN_FLAG_COUNTRIES already draws.
+        onError = { onError() },
+        error = null,
+        modifier = modifier,
+    )
 }
 
 // ── Glass ─────────────────────────────────────────────────────────────────────
@@ -1369,15 +1397,13 @@ internal fun HomeScreen(
     }
 
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // First, behind everything: the artwork and the light, full-bleed, taller than the
-        // rows it belongs to. It is a sibling of the column rather than a background of the
-        // header, because a background can only ever be as tall as what it is behind.
+        // First, behind everything: the artwork and the light. The flag fills this whole box
+        // — the screen, edge to edge — while the light stays in a band as tall as the hero's
+        // rows plus [HeroBleed]. See [HeroBackdrop] for why those two are different heights.
         HeroBackdrop(
             state = state,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(heroHeight + HeroBleed),
+            bandHeight = heroHeight + HeroBleed,
+            modifier = Modifier.fillMaxSize(),
         )
         Column(Modifier.fillMaxSize()) {
             Header(
@@ -1430,25 +1456,30 @@ internal fun HomeScreen(
 // ── Hero backdrop ─────────────────────────────────────────────────────────────
 // The artwork and the light, and nothing else — no rows, no touches, no chrome.
 //
-// It is drawn as a sibling *behind* the hero's rows rather than as their background,
-// because it is deliberately taller than they are: [HeroBleed] past the last row, so the
-// flag and its light pass behind the browse card's translucent top edge (see
-// [panelTopFade]) and the two read as one continuous surface. A background modifier could
-// only ever be exactly as tall as the thing it is behind, which is what made the hero look
-// like a card sitting on a page.
+// It is drawn as a sibling *behind* everything rather than as the hero's background, and it
+// is now the size of the whole screen. Two different heights are at work inside it and the
+// distinction is the point:
+//
+//   the flag        — the full screen, edge to edge, under the status bar at the top and
+//                     behind the browse card and the usage card at the foot. It has no edge
+//                     of its own anywhere, in any direction.
+//   the light + floor — a band [bandHeight] tall at the top, i.e. the hero's rows plus
+//                     [HeroBleed]. The atmosphere's geometry is written in fractions of its
+//                     own size (the horizon bloom sits at `size.height`, on the hero's foot,
+//                     which is what fuses the hero with the card) so letting it fill the
+//                     screen instead would drop that bloom to the bottom of the page and put
+//                     the key light in the middle of the list.
 //
 // There is no [Modifier.clip], no [Modifier.border] and no [Modifier.shadow] here, and
 // that is the whole of the "remove the card" change: a rounded foot, a hairline and a
-// cast shadow are what a card is. What is left is a full-bleed image on the page — it
-// runs under the status bar at the top (MainActivity draws under the system bars) and
-// under the card at the foot, and it has no edge of its own anywhere.
+// cast shadow are what a card is.
 //
-// The layers stack, from the back: [ChromeBg] over the top rows only (so the artwork is
-// never composited against nothing while it crossfades, while the bleed stays translucent
-// for the card to sit over) → the flag → [drawHeroAtmosphere]. The flag crossfades on
-// [PHASE_FADE_MS], as does the light's colour.
+// The layers stack, from the back: [ChromeBg] over the top band (so the artwork is never
+// composited against nothing while it crossfades, while the band's own foot stays
+// translucent for the card to sit over) → the flag, full screen → [drawHeroAtmosphere] over
+// the band. The flag crossfades on [PHASE_FADE_MS], as does the light's colour.
 @Composable
-private fun HeroBackdrop(state: HomeUiState, modifier: Modifier = Modifier) {
+private fun HeroBackdrop(state: HomeUiState, bandHeight: Dp, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1462,24 +1493,28 @@ private fun HeroBackdrop(state: HomeUiState, modifier: Modifier = Modifier) {
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "heroFlag",
     )
-    // White idle, blue working, green connected — the light's own colour, animated so
+    // White idle, amber working, blue connected — the light's own colour, animated so
     // changing state reads as the room changing colour rather than as a repaint.
     val ambient = phaseLight(phase)
     val lit = phase != ConnPhase.OFF
 
     Box(modifier) {
-        // The floor under the artwork, and only under the part of it the rows cover: it
-        // fades out across the bleed so the card's own translucent top is not backed by
-        // opaque chrome. Without it, a flag crossfading at 40% alpha would show the page
-        // gradient through itself.
-        Box(Modifier.matchParentSize().background(HeroFloor))
+        // The floor under the artwork, over the band only: it fades out across the bleed so
+        // the card's own translucent top is not backed by opaque chrome. Without it, a flag
+        // crossfading at 40% alpha would show the page gradient through itself.
+        Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier.matchParentSize().alpha(flagAlpha),
             )
         }
-        Box(Modifier.matchParentSize().drawBehind { drawHeroAtmosphere(ambient, lit) })
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(bandHeight)
+                .drawBehind { drawHeroAtmosphere(ambient, lit) }
+        )
     }
 }
 
@@ -1517,8 +1552,9 @@ private val HeroFloor = Brush.verticalGradient(
 //   where am I?          → [CountryHeadline], the country at 34sp, the largest ink in the app
 //   over what?           → [StatusRow], the transport · port · mode chip
 //   as what address?     → [MetaRow], the public IP
-//   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here,
-//                          hanging [PowerOverlap] over the browse card's top edge
+//   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here
+//   [the alternative]    → [ModePill], its small secondary control, [PowerFootGap] under
+//                          it, the pair hanging [PowerOverlap] over the browse card's edge
 //
 // The server selector that used to be docked at the foot of this column is gone. It named
 // the active config in a row of its own directly above a list of configs, which is the same
@@ -1534,9 +1570,9 @@ private val HeroFloor = Brush.verticalGradient(
 // should read as the thing to press.
 //
 // What changes between the three [HomeUiState.phase] values is still the *light*, not any
-// surface: the atmosphere changes colour and tightens ([drawHeroAtmosphere]), the halo
-// around the button comes up, the ring reports, and the ink follows. Nothing slides,
-// nothing sweeps, and the flag wash is on in all three states.
+// surface: the atmosphere changes colour and tightens ([drawHeroAtmosphere]), the ring
+// reports, and the ink follows. Nothing slides, nothing sweeps, and the flag wash is on in
+// all three states.
 //
 // statusBarsPadding() on this column is what keeps the top bar clear of the clock while
 // the backdrop behind it runs on to the top of the screen.
@@ -1557,6 +1593,13 @@ private val HeroTopSpace = 20.dp
 /** Between the status chip and the power circle: the hero's breathing room, and what
  *  makes the artwork around the button a place rather than a gap. */
 private val HeroOpenSpace = 26.dp
+
+/** Between the power disc's foot and the [ModePill] under it.
+ *
+ *  Small on purpose: the pill is the disc's own secondary action, not a separate control
+ *  in the column, and grouping is read from proximity. It is a little under half of
+ *  [PowerOverlap] so the pair still reads as one object hanging over the card edge. */
+private val PowerFootGap = 12.dp
 
 @Composable
 private fun Header(
@@ -1588,15 +1631,84 @@ private fun Header(
         // state, which country, over what, as what address, [the action].
         MetaRow(state = state)
         Spacer(Modifier.height(HeroOpenSpace))
-        PowerCircle(
-            mode = state.mode,
-            phase = state.phase,
-            enabled = state.activeConfig != null,
-            onClick = onTogglePower,
-            onSwipeUp = { onSetMode(ConnectMode.SMART) },
-            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+        // The disc and its secondary control travel together, so the offset that docks
+        // the button over the card is on the pair rather than on the disc — otherwise the
+        // pill would be measured below the disc's slot and drawn above its docked foot.
+        Column(
             modifier = Modifier.offset(y = PowerOverlap),
-        )
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PowerCircle(
+                mode = state.mode,
+                phase = state.phase,
+                enabled = state.activeConfig != null,
+                onClick = onTogglePower,
+                onSwipeUp = { onSetMode(ConnectMode.SMART) },
+                onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            )
+            Spacer(Modifier.height(PowerFootGap))
+            ModePill(mode = state.mode, onSetMode = onSetMode)
+        }
+    }
+}
+
+// ── Mode pill ─────────────────────────────────────────────────────────────────
+// The small secondary control under the connect disc: it toggles Smart / Manual.
+//
+// The mode was already changeable from this button — a vertical drag on the disc, up for
+// Smart and down for Manual — but nothing on the screen drew that gesture, so in practice
+// the only way to find it was to be told. [StatusRow] states the mode in words a few rows
+// up, which means the screen said what the mode was without offering any way to change it.
+// This pill is that missing control, and it sits under the disc because that is where the
+// gesture it replaces lives. The drag is kept: same two bindings, two ways in.
+//
+// It is deliberately quiet — glass, hairline, 13sp, dimmer ink than anything above it — so
+// that the hero still has exactly one primary action. A secondary button that competes with
+// the disc for the eye would undo the whole point of centring the disc.
+//
+// The label is the mode the pill *switches to*, not the one in force: the current mode is
+// already stated in the status row, so repeating it here would be the same fact twice, and
+// a button labelled with its own current value reads as a display rather than a control.
+// It swaps on the same fade-in-over-fade-out [AnimatedContent] the status row uses, with the
+// container sizing between the two words instead of jumping.
+
+/** The pill's ink and hairline. Dimmer than [RefTextMid] on purpose: see the note above. */
+private val ModePillInk = Color.White.copy(alpha = 0.72f)
+
+@Composable
+private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
+    val reduce = rememberReduceMotion()
+    val next = if (mode == ConnectMode.SMART) ConnectMode.MANUAL else ConnectMode.SMART
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(GlyphChip)
+            .border(1.dp, GlyphChipBorder, CircleShape)
+            .clickable(
+                onClickLabel = "Switch to ${next.label} mode",
+                onClick = { onSetMode(next) },
+            )
+            .padding(horizontal = 15.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = next,
+            transitionSpec = {
+                (
+                    fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
+                    ).using(SizeTransform(clip = false))
+            },
+            label = "modePill",
+        ) { target ->
+            Text(
+                "Switch to ${target.label}",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.1.sp,
+                color = ModePillInk,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1617,9 +1729,12 @@ private fun Header(
 //
 // These two chips are now the only framed things at the top of the screen: the status row
 // under them lost its glass surface (see [StatusRow]) so that a frame up here means
-// "navigation", and nothing else. Their glyphs are [RefGreenIcon] — the app's own deep
-// green rather than plain white — which is the one place the brand colour is stated
-// independently of connection state.
+// "navigation", and nothing else. Their glyphs are plain white. They were the app's deep
+// green, which was the one place the brand colour was stated independently of connection
+// state — but the flag now runs the full height of the screen behind them, and a mid-tone
+// green mark on an arbitrary flag is the one glyph colour that can land on its own hue.
+// White is the only tint that holds against every backdrop the wash can put there, and it
+// also keeps the *green* on this screen meaning exactly one thing: connected.
 
 /** The glyph inside its chip. Smaller than the 25dp bare mark it replaces — with
  *  material under it, it no longer has to carry itself on size alone. */
@@ -1659,7 +1774,7 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
             Icon(
                 Icons.Rounded.Menu,
                 contentDescription = "Settings",
-                tint = RefGreenIcon,
+                tint = Color.White,
                 modifier = Modifier.size(NavGlyph),
             )
         }
@@ -1669,7 +1784,7 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
             label = "Account",
             modifier = Modifier.offset(x = 5.dp),
         ) {
-            AccountGlyph(color = RefGreenIcon, modifier = Modifier.size(NavGlyph))
+            AccountGlyph(color = Color.White, modifier = Modifier.size(NavGlyph))
         }
     }
 }
@@ -1720,9 +1835,8 @@ private fun GlyphButton(
 // own axis — not the size.
 //
 // The phase is stated twice over, in hue and in text, inside 11sp of height. That is
-// deliberate: every other signal for it up here is light (the atmosphere, the halo, the
-// ring), and a state that is only ever colour is a state a colour-blind user has to infer
-// from a spinner.
+// deliberate: every other signal for it up here is light (the atmosphere, the ring), and a
+// state that is only ever colour is a state a colour-blind user has to infer from a spinner.
 
 /** The eyebrow's own text, per phase. Present tense, and deliberately not a sentence: it
  *  is a status label, and the shorter it is the more it reads as one. */
@@ -2066,21 +2180,24 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
 //                halo. The arc is the only indeterminate progress in the app and it is
 //                deliberately outside the disc: the face keeps its shape, so the button
 //                still looks pressable while it works.
-//   CONNECTED  — the *same white disc*, with a deep green mark on it, the ring around it
-//                lit [RefGreen], and a vivid blue halo ([RefGlowOn]) thrown into the room.
+//   CONNECTED  — the *same white disc*, with a deep green mark on it and the ring around
+//                it lit [RefGreen]. Nothing is thrown around the button itself: the halo
+//                that used to sit under it is gone, and what reports "lit" now is the
+//                room — [drawHeroAtmosphere] turns the whole backdrop [RefGlowOn] blue.
 //                The face never fills with colour in any state: the button is the one
 //                control on the screen, so it should look like the same control before and
 //                after it is pressed, and the ring is what reports the result. A green disc
 //                also read as a filled *primary action* — "press me" — in exactly the state
 //                where pressing it disconnects, which is the opposite of what it should
-//                invite. The halo is blue rather than green on purpose: state is green,
-//                light is blue, and separating the two is what keeps a lit ring inside a
-//                lit haze legible instead of one green smear.
+//                invite. The light is blue rather than green on purpose: state is green,
+//                light is blue, and separating the two is what keeps a lit ring legible
+//                instead of one green smear.
 
 //
-// It carries one gesture besides the tap: a vertical drag switches Smart / Manual.
-// Nothing draws it — the mode is stated in words in the status chip and offered to a
-// screen reader as two named actions on this button.
+// It carries one gesture besides the tap: a vertical drag switches Smart / Manual. It is a
+// shortcut rather than the only way in — [ModePill], directly under the disc, is the drawn
+// control for the same two bindings — and it is offered to a screen reader as two named
+// actions on this button.
 //
 // The mockup's four-part box-shadow, split by what Compose can draw:
 //   0 16px 34px rgba(0,0,0,0.45)      ┐ the cast shadow — Modifier.shadow
@@ -2150,29 +2267,6 @@ private fun PowerCircle(
         label = "powerMark",
     )
     val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
-    // The bloom's colour and strength, on the same [PHASE_FADE_MS] crossfade as everything
-    // else up here, so the light in the room comes up as one change rather than as an
-    // effect starting. Idle is zero: the disc is white and unlit, and a white disc that
-    // glows white on a dark page just looks like a bad screenshot.
-    val bloomColor by animateColorAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> Color.White
-            ConnPhase.CONNECTING -> RefWorking
-            ConnPhase.CONNECTED -> RefGlowOn
-        },
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerBloomColor",
-    )
-    val bloomStrength by animateFloatAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> 0f
-            ConnPhase.CONNECTING -> POWER_BLOOM_WORKING
-            ConnPhase.CONNECTED -> POWER_BLOOM_ON
-        },
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerBloom",
-    )
-    val bloomRadius = PowerBloomSize / 2
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -2181,33 +2275,6 @@ private fun PowerCircle(
         else -> "Connect"
     }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // The light the button throws into the room, drawn first and outside this box —
-        // see [powerBloom]. Compose does not clip a node's drawing to its bounds, so a
-        // 300dp halo can be drawn from inside a 140dp box and spill across the flag, the
-        // meta chips and the browse card's top edge alike. Its colour and strength are
-        // the phase's: nothing idle (an unlit button in a dark room does not glow), the
-        // accent while an attempt is in flight, green and stronger once the tunnel is up.
-        if (bloomStrength > 0.005f) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        val radius = bloomRadius.toPx()
-                        val centre = Offset(size.width / 2f, size.height / 2f)
-                        // The brush carries its own centre and radius, in this node's
-                        // coordinates, so the rect it is painted through is free to be
-                        // bigger than the node — which is the whole point. Both are stated
-                        // explicitly rather than left to the shader's defaults, because a
-                        // default-sized radial gradient sizes itself to the rect and would
-                        // put the falloff back inside the button.
-                        drawRect(
-                            brush = powerBloom(bloomColor, bloomStrength, centre, radius),
-                            topLeft = Offset(centre.x - radius, centre.y - radius),
-                            size = Size(radius * 2f, radius * 2f),
-                        )
-                    }
-            )
-        }
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
@@ -2377,8 +2444,8 @@ private val PowerFace = Brush.linearGradient(
 
 /** The connecting tint: [RefWorking] laid over the white face, light enough that the
  *  disc still reads as the same brushed surface holding a colour. Amber rather than the
- *  old blue accent so the face, the ring arc, the eyebrow dot and the halo are all
- *  saying the same thing while an attempt is in flight. */
+ *  old blue accent so the face, the ring arc, the eyebrow dot and the room's own light are
+ *  all saying the same thing while an attempt is in flight. */
 private val PowerWorkingFace = Brush.linearGradient(
     0.00f to RefWorking.copy(alpha = 0.10f),
     1.00f to RefWorking.copy(alpha = 0.26f),
@@ -2469,11 +2536,12 @@ private fun BrowseCard(
             .background(fade)
             .drawBehind { drawPanelTopEdge() }
     ) {
-        // The power disc is drawn [PowerOverlap] past the bottom of the hero's measured
-        // height (see the `offset` at its call site), so the top [PowerOverlap] of this
-        // card is painted under it. This spacer is what keeps the tab pills out from
-        // underneath: without it the disc lands on the row and covers the middle of
-        // "All / Custom". It is the same token as the offset, so the two cannot drift.
+        // The power stack — the disc and the [ModePill] under it — is drawn [PowerOverlap]
+        // past the bottom of the hero's measured height (see the `offset` at its call
+        // site), so the top [PowerOverlap] of this card is painted under the pill. This
+        // spacer is what keeps the tab pills out from underneath: without it the stack
+        // lands on the row and covers the middle of "All / Custom". It is the same token
+        // as the offset, so the two cannot drift.
         Spacer(Modifier.height(PowerOverlap))
         TabPillRow(
             selected = tab,
@@ -2555,23 +2623,32 @@ private fun BrowseCard(
 private val PanelFade = 132.dp
 
 /**
- * The browse card's fill: translucent [RefBg] at its top edge, opaque by [heightPx] down.
+ * The browse card's fill: translucent [RefBg] at its top edge, nearly opaque by [heightPx]
+ * down — and *nearly* is deliberate.
  *
  * Anchored in pixels with an explicit `startY`/`endY` rather than in fractions, because the
  * card's height is whatever is left of the screen after the hero — a fractional stop would
  * put the fade at a different place on every device and inside the list on a tall one.
- * [TileMode.Clamp] is what holds the opaque end all the way to the foot.
+ * [TileMode.Clamp] is what holds the end value all the way to the foot.
  *
  * It starts at 0.62 rather than at nothing. Fully transparent would be a prettier merge and
  * an unreadable tab row: the pills' own labels are set at 13sp, and over the pale band of a
  * flag they would have nothing behind them. 0.62 of near-black is enough for white text to
  * clear 7:1 against the worst case while the artwork is still unmistakably there.
+ *
+ * It ends at 0.92 rather than at 1.0 because the flag is the whole screen's background now
+ * (see [HeroBackdrop]) and an opaque card would be a lid over the bottom two thirds of it —
+ * the artwork would still technically reach every edge and the user would still see it stop
+ * at the top of the list. 0.92 over [FLAG_WASH_ALPHA]'s already-dim wash is a hint of the
+ * country's colour behind the rows, worth about two or three percent of luminance: every
+ * row's own fill and every label on it are unchanged in contrast terms, and the page no
+ * longer has a horizon across it.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
     0.00f to RefBg.copy(alpha = 0.62f),
-    0.35f to RefBg.copy(alpha = 0.84f),
-    0.70f to RefBg.copy(alpha = 0.96f),
-    1.00f to RefBg,
+    0.35f to RefBg.copy(alpha = 0.80f),
+    0.70f to RefBg.copy(alpha = 0.89f),
+    1.00f to RefBg.copy(alpha = 0.92f),
     startY = 0f,
     endY = heightPx,
     tileMode = TileMode.Clamp,
