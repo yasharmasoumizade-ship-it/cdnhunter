@@ -3,7 +3,6 @@ package com.cdnhunter.app.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -14,6 +13,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,32 +67,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import androidx.core.graphics.drawable.toBitmap
 
-// ── Theme ────────────────────────────────────────────────────────────────────
-// Dark theme
-val DarkBg        = Color(0xFF0B0B0D)
-val CardBg        = Color(0xFF131316)
-val CardBg2       = Color(0xFF1E1F24)
-val AccentBlue    = Color(0xFF4ADE9C)
-val AccentTeal    = Color(0xFF64D2FF)
-val GreenOk       = Color(0xFF30D158)
-val RedFail       = Color(0xFFFF453A)
-val YellowWarn    = Color(0xFFFFD60A)
-val TextPrimary   = Color(0xFFFAFAFA)
-val TextSecondary = Color(0xFF6E7078)
-val TextMuted     = Color(0xFF3A3C44)
-
-// Light theme
-val LightBg       = Color(0xFFF5F0E8)
-val LightCardBg   = Color(0xFFFFFDF7)
-val LightCardBg2  = Color(0xFFEDE8DC)
-val LightTextPrimary = Color(0xFF1C1C1E)
-val LightTextSecondary = Color(0xFF6E6E73)
-val LightTextMuted = Color(0xFFAEAEB2)
-val LightBorder   = Color(0xFFE5E5EA)
-val GreenBorder   = Color(0xFF34C759)
-
 // ── ANANAS Home/Connected reference palette ──────────────────────────────────
-// Modernized Material Design 3 Inspired Colors - Professional & Cohesive
+// The one palette. A separate dark/light pair (DarkBg/CardBg/AccentBlue…,
+// LightBg/LightCardBg/LightBorder…) used to sit above this block from before the
+// app settled on a single dark treatment; nothing read any of it, so it is gone
+// rather than sitting here looking like a theme someone could switch to.
 val AnanasBg       = Color(0xFF050505)   // Near black background
 val AnanasScreenBg = Color(0xFF0B0B0D)   // Slightly lighter
 val AnanasCard     = Color(0xFF131316)   // Card surface
@@ -102,7 +81,6 @@ val AnanasBorder2  = Color(0xFF232328)   // Alternative border
 val AnanasDivider  = Color(0xFF17171B)   // Divider
 val AnanasAccent   = Color(0xFF10B981)   // Modern green (improved from 0xFF4ADE9C)
 val AnanasAccentLight = Color(0xFF34D399)
-val AnanasAccentDark  = Color(0xFF059669)
 val AnanasSettingsIcon = Color(0xFFAEB0B8)   // Soft muted gray for settings row icons (was near-white)
 val AnanasAmber    = Color(0xFFD97706)   // Warm amber
 val AnanasRed      = Color(0xFFEF4444)   // Modern red
@@ -112,14 +90,6 @@ val AnanasTextHi   = Color(0xFFFAFAFA)   // Primary text
 val AnanasText     = Color(0xFFF0F0F2)   // Secondary text
 val AnanasMuted    = Color(0xFF6E7078)   // Muted text
 val AnanasFaint    = Color(0xFF3A3C44)   // Faint text
-val AnanasVless    = Color(0xFF64D2FF)   // VLESS color
-
-@Composable
-fun isDarkMode(): Boolean = when (LocalThemeMode.current) {
-    ThemeMode.DARK   -> true
-    ThemeMode.LIGHT  -> false
-    ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
-}
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 val LocalThemeMode = androidx.compose.runtime.compositionLocalOf { ThemeMode.SYSTEM }
@@ -2196,6 +2166,10 @@ private fun SegmentedControl(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    // Off by default so the MTU row's control stays as wide as its two short words.
+    // On, each segment takes an equal share of the row — for a full-width control
+    // whose labels are sentences rather than words.
+    equalWeight: Boolean = false,
 ) {
     Row(
         modifier.clip(RoundedCornerShape(12.dp)).background(AnanasCard2)
@@ -2213,12 +2187,14 @@ private fun SegmentedControl(
                 animationSpec = tween(160), label = "segInk",
             )
             Box(
-                Modifier.clip(RoundedCornerShape(9.dp)).background(fill)
+                (if (equalWeight) Modifier.weight(1f) else Modifier)
+                    .clip(RoundedCornerShape(9.dp)).background(fill)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) { onSelect(key) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     label,
@@ -3002,103 +2978,165 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
         AppSettings.setSplitTunnelMode(context, newMode)
     }
 
-    // systemBarsPadding, because the window no longer fits the decor to the system bars
-    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
-    // Home's flag run behind the status bar). The background still fills the whole
-    // window — it is applied before the padding — while this screen's own rows stay
-    // clear of the clock at the top and the gesture bar at the foot.
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
-        Column(Modifier.fillMaxSize()) {
+    // Deliberately not built on SheetScreen, even though it wears the same clothes:
+    // SheetScreen scrolls its whole body, and an app list is a LazyColumn that has to
+    // own the leftover height itself (this device may have 200 apps installed). So the
+    // header is laid out fixed, the list takes weight(1f), and the tokens/materials are
+    // the sheet's — same background, same accent wash, same 30sp title, same card edges.
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        Box(
+            Modifier.fillMaxWidth().height(260.dp).background(
+                Brush.verticalGradient(listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent))
+            )
+        )
+        Column(Modifier.fillMaxSize().systemBarsPadding()) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
+                Modifier.fillMaxWidth().padding(horizontal = SheetPad).padding(top = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
-                Text("Split tunneling", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
             }
+            Text(
+                "Split tunneling",
+                fontSize = 30.sp,
+                lineHeight = 34.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.7).sp,
+                color = AnanasTextHi,
+                modifier = Modifier.padding(horizontal = SheetPad).padding(top = 16.dp),
+            )
+            // The two modes are easy to invert in your head, so the screen says which
+            // one is live in a sentence instead of leaving it to the labels.
+            Text(
+                if (mode == "include") "The VPN carries only the apps you pick. Everything else goes direct."
+                else "The apps you pick go direct. Everything else goes through the VPN.",
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.Medium,
+                color = AnanasMuted,
+                modifier = Modifier.padding(horizontal = SheetPad).padding(top = 8.dp, end = 8.dp),
+            )
 
-            // Mode picker: exclude (VPN off just for selected apps, on for
-            // everything else -- e.g. excluding a banking app) vs include
-            // (VPN ONLY for selected apps, off for everything else).
-            // Switching modes doesn't clear the selection -- the same app
-            // list just gets reinterpreted under the new mode, matching how
-            // most VPN apps with this feature behave (Windscribe included).
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf("exclude" to "Exclude selected", "include" to "Only selected").forEach { (value, label) ->
-                    val isSelected = mode == value
-                    Box(
-                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                            .background(if (isSelected) AnanasAccent.copy(0.16f) else AnanasCard)
-                            .border(1.dp, if (isSelected) AnanasAccent.copy(0.5f) else AnanasBorder, RoundedCornerShape(12.dp))
-                            .clickable { persist(selected, value) }
-                            .padding(vertical = 11.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (isSelected) AnanasAccent else AnanasMuted)
-                    }
-                }
-            }
-
-            Box(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp)
-                    .clip(RoundedCornerShape(12.dp)).background(AnanasCard).border(1.dp, AnanasBorder, RoundedCornerShape(12.dp))
-            ) {
-                TextField(
-                    value = search, onValueChange = { search = it },
-                    placeholder = { Text("Search apps", fontSize = 13.sp, color = AnanasFaint) },
-                    leadingIcon = { Icon(Icons.Rounded.Search, null, tint = AnanasFaint, modifier = Modifier.size(18.dp)) },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = AnanasText, unfocusedTextColor = AnanasText,
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+            Column(Modifier.padding(horizontal = SheetPad)) {
+                // Switching modes doesn't clear the selection -- the same app list just
+                // gets reinterpreted under the new mode, matching how most VPN apps with
+                // this feature behave (Windscribe included).
+                SectionLabel("MODE", top = 22.dp)
+                SegmentedControl(
+                    options = listOf("exclude" to "Exclude selected", "include" to "Only selected"),
+                    selected = mode,
+                    onSelect = { persist(selected, it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    equalWeight = true,
                 )
+                SectionLabel(
+                    if (selected.isEmpty()) "APPS" else "APPS · ${selected.size} SELECTED",
+                    top = 22.dp,
+                )
+                InlineField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = "SEARCH",
+                    placeholder = "App name",
+                )
+                Spacer(Modifier.height(14.dp))
             }
 
             if (apps == null) {
-                Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = AnanasAccent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
                 }
+            } else if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (search.isBlank()) "No apps found on this device" else "No app matches “$search”",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AnanasFaint,
+                    )
+                }
             } else {
-                LazyColumn(Modifier.weight(1f).padding(horizontal = 20.dp)) {
-                    items(filtered, key = { it.packageName }) { app ->
+                // One card holding the whole list, the way CardGroup holds a settings
+                // group — the rows scroll inside the frame rather than the frame
+                // scrolling with them.
+                LazyColumn(
+                    Modifier.weight(1f).padding(horizontal = SheetPad)
+                        .clip(RoundedCornerShape(SheetCardCorner))
+                        .background(AnanasCard)
+                        .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner)),
+                ) {
+                    itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
                         val isChecked = selected.contains(app.packageName)
+                        if (index > 0) RowDivider()
                         Row(
                             Modifier.fillMaxWidth()
                                 .clickable {
                                     persist(if (isChecked) selected - app.packageName else selected + app.packageName, mode)
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(horizontal = 14.dp)
+                                .heightIn(min = SheetRowHeight),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             if (app.icon != null) {
                                 Image(
                                     bitmap = app.icon.toBitmap(width = 84, height = 84).asImageBitmap(),
                                     contentDescription = null,
-                                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
+                                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)),
                                 )
                             } else {
-                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(AnanasCard2))
+                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(AnanasCard2))
                             }
-                            Text(app.label, fontSize = 13.5.sp, color = AnanasText, modifier = Modifier.weight(1f))
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = { checked ->
-                                    persist(if (checked) selected + app.packageName else selected - app.packageName, mode)
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = AnanasAccent, uncheckedColor = AnanasFaint)
-                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    app.label,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = AnanasTextHi,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    app.packageName,
+                                    fontSize = 11.5.sp,
+                                    color = AnanasMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            SelectDot(selected = isChecked)
                         }
                     }
-                    item { Spacer(Modifier.height(24.dp)) }
+                    item { Spacer(Modifier.height(8.dp)) }
                 }
+                Spacer(Modifier.height(SheetPad))
             }
+        }
+    }
+}
+
+/**
+ * The multi-select mark on an app row. A filled accent disc with a tick when the app is
+ * picked, a hollow ring when it is not — the same two-state language as the toggles in
+ * Settings, at the size a list row can carry, and without Material's checkbox bringing
+ * its own palette and ripple into these cards.
+ */
+@Composable
+private fun SelectDot(selected: Boolean) {
+    val fill by animateColorAsState(
+        targetValue = if (selected) AnanasAccent else Color.Transparent,
+        animationSpec = tween(140), label = "dotFill",
+    )
+    val edge by animateColorAsState(
+        targetValue = if (selected) AnanasAccent else AnanasBorder2,
+        animationSpec = tween(140), label = "dotEdge",
+    )
+    Box(
+        Modifier.size(22.dp).clip(CircleShape).background(fill).border(1.5.dp, edge, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(Icons.Rounded.Check, null, tint = AnanasScreenBg, modifier = Modifier.size(14.dp))
         }
     }
 }
