@@ -71,33 +71,39 @@ package com.cdnhunter.app.ui
 //
 // The fade is an alpha mask, not a coat of paint. Two gradients multiply into the
 // artwork's own alpha ([HeaderFlagFadeX], [HeaderFlagFadeY]): the horizontal one holds
-// the flag at full strength from the left edge to just past the middle and takes it to
-// nothing by the right, the vertical one takes it to nothing at the status bar and
-// again at the header's foot. Masking rather than scrimming is what keeps this ambient:
-// where the flag is gone the page's own gradient is what shows, at exactly the value it
-// has everywhere else, so the header has no edges of its own — no darker rectangle at
-// the top, no seam where it meets the browse card.
+// the flag at full strength from the left edge and eases it only slightly by the right,
+// the vertical one holds it full down the screen and never takes it below 0.88. Neither
+// reaches zero any more — the flag is the whole background now, edge to edge, and a mask
+// that fell away would be the flag "not covering the screen", which is exactly what it is
+// there to prevent. Masking rather than scrimming is still what keeps this ambient: where
+// the mask eases, the page's own gradient is what shows through, so the artwork has no
+// edges of its own — no darker rectangle at the top, no seam where it meets the browse
+// card.
 //
 // Two things sit between the artwork and that mask: a slight desaturation
 // ([HEADER_FLAG_SATURATION] — a printer's colours brought onto a screen), and a soft
 // vertical scrim ([HeaderFlagScrim]) drawn inside the masked layer, so it darkens the
 // flag and tapers away with it instead of tinting the page. There is no vignette any
 // more: darkening the corners was the horizontal mask's job the moment the flag stopped
-// reaching them. Together with [HEADER_FLAG_ALPHA] these take the flag down to a
-// background without taking its colour away. The worst case for legibility is the
-// brightest band the app can draw — a white flag, at the left, level with the status
-// row, where the mask is full and the scrim at its lightest — and at 0.88 alpha that
-// composited to #515152, which [RefTextHi] cleared at 7.4:1 and the white power disc
-// cleared easily. [HEADER_FLAG_ALPHA] is 0.70 now, which can only darken that band, so
-// those are floors rather than measurements. The screen's dimmer inks still do not clear
-// it — [RefTextMid] was 3.0:1 there — which is what the glass under them is for.
+// reaching them.
+//
+// The balance between those two moved deliberately. The artwork is now near-opaque —
+// [HEADER_FLAG_ALPHA] 0.92 for the sharp plate, [FLAG_WASH_ALPHA] 0.62 for the full-bleed
+// layer under it — and the scrim is what buys legibility back, shaped so it is heavy only
+// where text actually lands: the status bar at the top, the band the browse card's first
+// rows sit over at the foot, and light through the middle where the flag is just flag.
+// Dimming the whole image to protect two bands is what made it read as grey. The worst
+// case is still the brightest band the app can draw — a white flag, at the left, level
+// with the top bar — and there the 0.58 scrim stop puts it around #6b6b6c, which
+// [RefTextHi] and the white power disc clear comfortably. The screen's dimmer inks do not
+// clear it, which is what the glass under them is for.
 //
 // Choosing another server crossfades the flag instead of cutting to it: a 420ms fade
 // in over a 260ms fade out, the incoming flag settling from 1.04 and the outgoing one
 // easing back to 0.99, so the change reads as one image replacing another.
 //
 // Everything on the hero that carries text carries it on glass — one material, three
-// sizes: the status chip, the two meta chips, the server row. See the [GlassChip]
+// sizes: the mode pill, the IP chip, the server row. See the [GlassChip]
 // section. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
 // on artwork whose brightest band the app can draw is a white flag, where they read at
 // 3:1 and below with nothing under them. Glass is the fix rather than a heavier scrim
@@ -121,8 +127,9 @@ package com.cdnhunter.app.ui
 // `.power-glow` is `display:none` — and nothing is attached to it: the two mode
 // chevrons that used to sit above and below it are gone, and so is the connect pill its
 // right half used to be cut into. Smart / Manual is still switched by swiping the circle
-// up or down, or by its two accessibility actions, and the mode is still named in the
-// status chip, which is where this screen states the connection's facts in words. The one
+// up or down, or by its two accessibility actions, and the mode is now named and changed
+// in [ModePill], docked directly under the disc — the status chip that used to state it
+// alongside the transport and the port is gone. The one
 // thing on it that answers to the tunnel is its mark, which goes green while the tunnel is
 // up (see [headerInk]), and the ring around it, which carries the phase.
 //
@@ -241,6 +248,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -250,6 +258,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -698,10 +707,17 @@ private const val HEADER_FLAG_SATURATION = 0.80f
  * at the top and behind the browse card's first 132dp at the foot, with no frame at any
  * edge. A background can afford to be a little more present than a floating image could:
  * at 0.70, with no card outline left to say "this is the hero", the artwork read as a
- * grey suggestion of a flag. At 0.78, under the scrim, the country is unmistakable from
- * across a room and every row on top of it still clears 7:1.
+ * grey suggestion of a flag.
+ *
+ * 0.92 now, up from 0.78, because "recognisable as a flag" was still losing to "faded
+ * background" — at 0.78 under [HeaderFlagScrim] the artwork was a tinted hint of itself,
+ * and the brief for this screen is a flag that is unmistakably a flag and *also* works as
+ * a backdrop. The legibility of the rows on top of it is not paid for by dimming the
+ * artwork any more; it is paid for by the scrim, which is where it belongs, because the
+ * scrim can be shaped — heavy exactly where text lands, light where the flag is just
+ * flag. See [HeaderFlagScrim].
  */
-private const val HEADER_FLAG_ALPHA = 0.78f
+private const val HEADER_FLAG_ALPHA = 0.92f
 
 /**
  * The aspect ratio the *sharp* flag plate is drawn at, as width ÷ height.
@@ -735,8 +751,15 @@ private const val HEADER_FLAG_ASPECT = 1.55f
  *
  * It costs no extra decode: both layers request the same URL with the same
  * `memoryCacheKey`, so Coil hands the second one the bitmap the first already holds.
+ *
+ * 0.62 now, up from 0.30. At 0.30 this layer did its job as *light* and failed at the
+ * other half of the brief — the flag was "cut off" partway down the screen, which was
+ * never a clip: it was the plate ending and a wash too dim to be read as the same flag
+ * continuing. Carrying the wash to nearly two thirds means the artwork is legibly present
+ * from the status bar to the last row, so the plate reads as the sharp part of one
+ * full-screen flag rather than as the only part of it.
  */
-private const val FLAG_WASH_ALPHA = 0.30f
+private const val FLAG_WASH_ALPHA = 0.62f
 
 /**
  * The plate's own bottom taper, applied inside its box.
@@ -746,11 +769,18 @@ private const val FLAG_WASH_ALPHA = 0.30f
  * This dissolves its last third into the full-bleed wash under it, so the transition from
  * "sharp flag" to "flag-coloured room" has no edge in it. [HeaderFlagFadeY] still runs over
  * the layer as a whole and is what keeps the foot of the screen half-lit rather than dark.
+ *
+ * The taper starts higher and runs longer than it did (0.44 rather than 0.66 to the first
+ * break) now that the wash under it is [FLAG_WASH_ALPHA] = 0.62 rather than 0.30. With a
+ * dim wash the plate had to stay opaque as long as possible or the flag simply stopped;
+ * with a strong one the handover can be gradual, and a long dissolve between two copies of
+ * the same artwork at similar alpha is invisible — which is the whole point.
  */
 private val HeaderFlagBottomFade = Brush.verticalGradient(
     0.00f to Color.Black,
-    0.66f to Color.Black,
-    0.88f to Color.Black.copy(alpha = 0.35f),
+    0.44f to Color.Black,
+    0.66f to Color.Black.copy(alpha = 0.74f),
+    0.84f to Color.Black.copy(alpha = 0.38f),
     1.00f to Color.Transparent,
 )
 
@@ -775,34 +805,45 @@ private const val FLAG_SETTLE_MS = 620
  * The top stop is heavier than it was and it starts at full strength rather than easing
  * in, because the artwork now runs all the way under the clock and the battery: those
  * glyphs are drawn by the system in white with no shadow of their own, and the only thing
- * standing between them and a white flag stripe is this. 0.62 over a 0.78 flag puts the
- * worst case — white on the palest stripe any bundled flag has — a little over 5:1.
+ * standing between them and a white flag stripe is this.
+ *
+ * Everything between the two ends is much lighter than it was — 0.18 through the middle
+ * against 0.36–0.40 before. That is the trade this screen now makes deliberately: the flag
+ * itself is near-opaque ([HEADER_FLAG_ALPHA], [FLAG_WASH_ALPHA]) and the scrim is what
+ * buys legibility back, shaped so it is heavy only where text actually lands. The two
+ * heavy stops are the status bar at the top and, at the foot, the band the browse card's
+ * first rows sit over; the middle is the power button and open artwork, where nothing but
+ * the country headline is drawn and that headline is 34sp white with the atmosphere's own
+ * light behind it. Dimming the whole flag to protect two bands was the thing that made it
+ * read as grey.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.62f),
-    0.14f to Color.Black.copy(alpha = 0.46f),
-    0.34f to Color.Black.copy(alpha = 0.36f),
-    0.62f to Color.Black.copy(alpha = 0.40f),
-    0.86f to Color.Black.copy(alpha = 0.52f),
-    1.00f to Color.Black.copy(alpha = 0.60f),
+    0.00f to Color.Black.copy(alpha = 0.58f),
+    0.13f to Color.Black.copy(alpha = 0.34f),
+    0.30f to Color.Black.copy(alpha = 0.18f),
+    0.58f to Color.Black.copy(alpha = 0.20f),
+    0.80f to Color.Black.copy(alpha = 0.34f),
+    1.00f to Color.Black.copy(alpha = 0.44f),
 )
 
 /**
- * The horizontal half of the flag's alpha mask: full from the left edge to past the
- * middle, then eased down to a little under half by the right.
+ * The horizontal half of the flag's alpha mask: full from the left edge, held nearly all
+ * the way across, and eased only slightly by the right.
  *
- * It no longer reaches zero, and that is the point. The flag is full-bleed now — the
- * artwork is the top of the screen, edge to edge — so a mask that fell to nothing at the
- * right would leave a bare vertical strip of page down the side of the screen, which is
- * exactly the "floating panel" reading the card outline used to give. Ending at 0.44
- * keeps the right-hand edge lit while still letting the left carry the colour, so the
- * artwork has a direction without having a border. The colour is irrelevant; only the
- * alpha is read, by the [BlendMode.DstIn] pass in [HeaderFlag].
+ * It no longer reaches zero, and it barely falls at all now. The flag is full-bleed — the
+ * artwork is the whole screen, edge to edge — so a mask that fell to nothing at the right
+ * would leave a bare vertical strip of page down the side, which is exactly the "floating
+ * panel" reading the card outline used to give; and 0.44, which is where this ended
+ * before, was enough of a fall to be *seen* as a fall: a flag that visibly gave up on its
+ * own right-hand third. Ending at 0.86 keeps a trace of direction — the left is still
+ * where the colour is heaviest, which is where [ConnectWordmark] sits — without the right
+ * edge reading as cropped or unfinished. The colour is irrelevant; only the alpha is read,
+ * by the [BlendMode.DstIn] pass in [HeaderFlag].
  */
 private val HeaderFlagFadeX = Brush.horizontalGradient(
     0.00f to Color.Black,
-    0.58f to Color.Black,
-    1.00f to Color.Black.copy(alpha = 0.44f),
+    0.72f to Color.Black,
+    1.00f to Color.Black.copy(alpha = 0.86f),
 )
 
 /**
@@ -821,15 +862,16 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * *background* rather than a panel at the top of one. This layer is the whole screen now
  * (see [HeroBackdrop]), so a mask that ended at Transparent would have put the flag's own
  * bottom edge across the middle of the page — the exact "the flag doesn't cover the
- * screen" reading it was drawn to avoid. It stays half-present all the way to the last
- * row instead, and what keeps the list legible over it is the browse card's own
- * translucent fill ([panelTopFade]) plus [HeaderFlagScrim]'s heavier foot.
+ * screen" reading it was drawn to avoid. It now holds 0.88 to the very last row instead of
+ * falling to 0.52, so there is no point down the page where the flag can be said to stop;
+ * what keeps the list legible over it is the browse card's own translucent fill
+ * ([panelTopFade]) plus [HeaderFlagScrim]'s heavier foot, both of which sit *over* the
+ * artwork rather than removing it.
  */
 private val HeaderFlagFadeY = Brush.verticalGradient(
     0.00f to Color.Black,
-    0.46f to Color.Black,
-    0.72f to Color.Black.copy(alpha = 0.72f),
-    1.00f to Color.Black.copy(alpha = 0.52f),
+    0.60f to Color.Black,
+    1.00f to Color.Black.copy(alpha = 0.88f),
 )
 
 /**
@@ -1015,13 +1057,13 @@ private fun FlagLayer(
 // is not a card: no cast shadow over the artwork, no border heavier than a hairline, no
 // opaque fill.
 //
-// The reason is the flag. It is the top of the screen, at 0.78 alpha under a scrim, and
-// every opaque rectangle drawn on it is a hole in the only piece of artwork the app has.
+// The reason is the flag. It is the whole screen, at 0.92 alpha under a scrim, and every
+// opaque rectangle drawn on it is a hole in the only piece of artwork the app has.
 // So the surface is a translucent floor plus a top-light plus a hairline — the three
 // things that make glass read as raised — and the flag carries on through all of them.
 //
 // There used to be a second, heavier weight for the server selector at the hero's foot;
-// both that row and the status chip's frame are gone (see [Header] and [StatusRow]), so one
+// that row is gone, and so is the status chip it was weighed against (see [Header]), so one
 // weight is all that is left.
 
 /** The lighter floor: enough to seat 14sp secondary ink on the palest flag band, little
@@ -1049,7 +1091,7 @@ private val GlassSheen = Brush.verticalGradient(
 /** The phase dot beside the eyebrow: the phase stated as hue, at label scale. */
 private val PhaseDotSize = 7.dp
 
-/** Corner radius on the hero's own chips — the status row and the IP pill. Fully
+/** Corner radius on the hero's own chips — now just the IP pill. Fully
  *  rounded would read as a tag; this is the same corner-to-height relationship the top
  *  bar's glyph chips use, so every small frame on the screen agrees. */
 private val ChipCorner = 11.dp
@@ -1277,70 +1319,6 @@ private fun HomeUiState.rowSubtitle(cfg: SavedConfig): String {
     return if (name != null) "$ping · $name" else ping
 }
 
-/**
- * `.protocol-line` — the transport the active config actually dials, and the port.
- *
- * Not the base protocol. This line used to read the config's [SavedConfig.proto], which
- * is "VLESS" for every server this app is ever handed — a word that is the same on every
- * row of every list and therefore says nothing about the server under it. The transport
- * does say something: it is what decides whether a server survives a given network, and
- * it is the field someone comparing two configs actually reads. So the line now reads
- * "Reality · 8443", "WebSocket · 443", "gRPC · 2087".
- *
- * [com.cdnhunter.app.vpn.ConfigUriParser.transportOf] resolves it from the URI itself
- * rather than from [SavedConfig.network], because the parsed proxy map cannot express
- * two of the cases: mihomo omits `network` entirely for plain TCP, and REALITY is not a
- * transport in it at all (it is `reality-opts` beside `tls: true`). It never throws and
- * never returns blank — anything it cannot read comes back "TCP", which is what an
- * unadorned proxy is — but the `ifBlank` here is kept as the belt to that braces, so a
- * future change there cannot empty this line.
- *
- * The port is [SavedConfig.port], which is what the parser read out of the URI itself;
- * the mockup's literal "443" was only ever placeholder copy, and a config on 8443, 2087
- * or 80 says so here. A config whose URI carried no port at all falls back to its
- * protocol's default in the parser, so there is never a port shown that the connection
- * isn't actually using.
- */
-private fun protocolLabel(cfg: SavedConfig?): String {
-    if (cfg == null) return "No server selected"
-    val transport = com.cdnhunter.app.vpn.ConfigUriParser.transportOf(cfg.uri).ifBlank { "TCP" }
-    return if (cfg.port > 0) "${shortTransport(transport)} · ${cfg.port}" else shortTransport(transport)
-}
-
-/**
- * The transport, as a code rather than as a name — for the status chip only.
- *
- * The chip is one line of 14sp text that also carries the port and the mode, inside a pill
- * that shares the hero's top row with two navigation chips. "WebSocket · 443 · Manual"
- * either ellipsised or pushed the mode word off the end of the row on a narrow phone, and
- * "Reality · WebSocket" — which [com.cdnhunter.app.vpn.ConfigUriParser.transportOf] returns
- * for a REALITY connection over ws — never fitted at all. Abbreviating is the fix that
- * keeps every field: the codes are the ones the protocols' own documentation uses, so WS,
- * gRPC, H2 and XHTTP are what a user who cares about the difference already reads them as.
- *
- * This is deliberately *not* applied in the server list below, where [rowSubtitle] has a
- * whole line to itself and the full name is more useful than a code. Anything unrecognised
- * is passed through unchanged — including "Reality · X", whose own transport half is
- * shortened in place, so a new stream type in the parser cannot come out blank here.
- */
-private fun shortTransport(transport: String): String {
-    // "Reality · WebSocket" → "REALITY · WS": the parser composes that form itself, so the
-    // split has to be undone and redone rather than matched whole.
-    val parts = transport.split(" · ")
-    if (parts.size == 2) return "${shortTransport(parts[0])} · ${shortTransport(parts[1])}"
-    return when (transport.lowercase()) {
-        "websocket", "ws" -> "WS"
-        "grpc" -> "gRPC"
-        "http/2", "h2" -> "H2"
-        "xhttp", "splithttp" -> "XHTTP"
-        "quic" -> "QUIC"
-        "reality" -> "REALITY"
-        "tls" -> "TLS"
-        "tcp" -> "TCP"
-        else -> transport
-    }
-}
-
 /** "2.4" to "GB" — the ring's own one-decimal label, split so the unit can wrap. */
 private fun ringLabel(bytes: Long): Pair<String, String> {
     val kb = bytes / 1024.0
@@ -1509,6 +1487,22 @@ private fun HeroBackdrop(state: HomeUiState, bandHeight: Dp, modifier: Modifier 
                 modifier = Modifier.matchParentSize().alpha(flagAlpha),
             )
         }
+        // Over the flag, under the light. Being under [drawHeroAtmosphere] is what makes the
+        // wordmark part of the room rather than a label pasted on it: the key light and the
+        // crown wash fall across the letters, so they take the phase's own colour and go
+        // blue with everything else when the tunnel comes up.
+        ConnectWordmark(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = ConnectWordTopClearance)
+                // coerced because the band is measured: on the first frame, before the
+                // hero's rows have reported a height, it is [HeroBackdropFallback] + the
+                // bleed, and a negative height is a crash rather than a small wordmark.
+                .height(
+                    (bandHeight - ConnectWordTopClearance - ConnectWordFootClearance)
+                        .coerceAtLeast(0.dp)
+                ),
+        )
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1535,6 +1529,147 @@ private val HeroFloor = Brush.verticalGradient(
     1.00f to Color.Transparent,
 )
 
+// ── Connect wordmark ──────────────────────────────────────────────────────────
+// "CONNECT" set vertically down the left edge of the hero, one letter per line.
+//
+// It is typography used as architecture. The hero is a centred column — eyebrow, country,
+// address, button — which reads cleanly but leaves the two side margins as dead space, and
+// a full-bleed flag behind dead space just looks like an image with nothing happening on
+// it. A single word running the height of the left edge gives the composition a spine: the
+// eye now has a vertical to read the centred column against, and the flag has something on
+// it that is part of the design rather than a row of chrome.
+//
+// It is drawn inside [HeroBackdrop], between the flag and [drawHeroAtmosphere], which is
+// what keeps it a *surface* rather than a label. The light falls on it: the key light warms
+// it while idle, and when the tunnel comes up [RefGlowOn]'s blue crown wash goes across it
+// with the rest of the room. Nothing about the wordmark itself animates — it does not need
+// to, because the thing lighting it does.
+//
+// The letters are cut, not printed. Three passes per glyph:
+//
+//   1. a dark copy pushed down-right, which is the shadow the letter casts into the surface
+//   2. a pale copy pushed up-left, which is the light catching the opposite bevel
+//   3. the face itself, filled with [ConnectWordFace] — a vertical gradient, bright at the
+//      top and falling to a deep warm bronze at the foot
+//
+// That is the standard two-bevel emboss, and doing it with three text draws rather than a
+// blur is deliberate: the offsets are sub-pixel-stable and the whole thing is static, so it
+// costs three draw calls per letter once and never again. A [Modifier.blur] here would be a
+// full offscreen composite every frame for a softer edge nobody asked for. The face's own
+// pass does use one offscreen layer, per letter, to clip its gradient to the glyph — the
+// same [BlendMode] trick the flag's mask uses, and just as static.
+//
+// The colour is champagne into bronze rather than white. White is what a wordmark is when
+// nobody has decided anything about it, and at this size — filling the hero's height — a
+// white one would compete with [CountryHeadline], which is the actual largest ink on the
+// screen and needs to stay that way. A metal reads as material instead of as text: it is
+// unmistakably deliberate, it sits back from white without being grey, and it is the one
+// warm thing on a screen that is otherwise green, blue and slate, so it cannot be confused
+// with any state the app reports.
+
+/** The word. Seven letters, which is what sets the letter size — see [ConnectWordmark]. */
+private const val CONNECT_WORD = "CONNECT"
+
+/** How far below the top of the band the wordmark starts.
+ *
+ *  Enough to clear the status bar and the top bar's settings chip, which are the two things
+ *  that occupy the top-left corner. The wordmark owns the left edge from under them down. */
+private val ConnectWordTopClearance = 104.dp
+
+/** And how far short of the band's foot it stops, so the last letter is not sitting in the
+ *  browse card's top edge. The band includes [HeroBleed], most of which is behind the card. */
+private val ConnectWordFootClearance = 96.dp
+
+/** The column's own width, and the left margin it sits on.
+ *
+ *  Narrower than [ScreenPad]'s gutter on purpose: the wordmark is meant to run off nothing
+ *  and touch nothing, and a letter column that starts inside the content margin would read
+ *  as a list item rather than as part of the surface. */
+private val ConnectWordInset = 6.dp
+
+/** The face: champagne at the top, warm bronze at the foot. Composited through each glyph
+ *  ([ConnectWordLetter]) rather than over the column, so every letter gets the full sweep —
+ *  which is what makes them read as seven pieces of the same metal rather than as one
+ *  gradient someone laid over a word. */
+private val ConnectWordFace = Brush.verticalGradient(
+    0.00f to Color(0xFFF2E4C0).copy(alpha = 0.92f),
+    0.42f to Color(0xFFD8BE86).copy(alpha = 0.78f),
+    1.00f to Color(0xFF8A6E3E).copy(alpha = 0.62f),
+)
+
+/** The bevel the light catches: pushed up-left, so it reads as the far wall of a cut. */
+private val ConnectWordHighlight = Color.White.copy(alpha = 0.16f)
+
+/** The shadow the letter casts: pushed down-right, and darker than the page under it. */
+private val ConnectWordShadow = Color.Black.copy(alpha = 0.52f)
+
+/** How far the two emboss copies are pushed off the face. Small — at this size 2dp is
+ *  already a visible bevel, and more reads as a badly registered second copy. */
+private val ConnectWordBevel = 2.dp
+
+@Composable
+private fun ConnectWordmark(modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.padding(start = ConnectWordInset)) {
+        // The letters size themselves off the height they are given, so the word fills the
+        // hero on a small phone and on a tablet without a breakpoint anywhere. One slot per
+        // letter; the glyph is drawn at 0.92 of its slot, which leaves the ~8% of leading
+        // that stops "C" and "O" from touching.
+        val slot = maxHeight / CONNECT_WORD.length
+        val face = with(LocalDensity.current) { (slot * 0.92f).toSp() }
+        Column(
+            Modifier.fillMaxHeight().clearAndSetSemantics { },
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            CONNECT_WORD.forEach { ch -> ConnectWordLetter(ch, face) }
+        }
+    }
+}
+
+/** One letter of [CONNECT_WORD], embossed: shadow, highlight, face. */
+@Composable
+private fun ConnectWordLetter(ch: Char, size: TextUnit) {
+    val letter = ch.toString()
+    // lineHeight pinned to the font size strips the extra leading a heavy face carries, so
+    // the seven boxes stack to the height the slots actually allow.
+    val base = TextStyle(
+        fontSize = size,
+        lineHeight = size,
+        fontWeight = FontWeight.Black,
+        // Tight, because a stack of single letters has no word shape to hold it together;
+        // what holds it together is the letters being the same width and hard against the
+        // same left edge.
+        letterSpacing = 0.sp,
+    )
+    Box {
+        Text(
+            letter,
+            style = base.copy(color = ConnectWordShadow),
+            modifier = Modifier.offset(x = ConnectWordBevel, y = ConnectWordBevel),
+        )
+        Text(
+            letter,
+            style = base.copy(color = ConnectWordHighlight),
+            modifier = Modifier.offset(x = -ConnectWordBevel, y = -ConnectWordBevel),
+        )
+        // The face's gradient is painted *through* the glyph rather than set on the text
+        // style: the letter is drawn opaque white into an offscreen layer and
+        // [ConnectWordFace] is then composited [BlendMode.SrcIn] over it, so the brush is
+        // clipped to the glyph's own coverage — antialiased edges included. Same idiom the
+        // flag's mask uses ([HeaderFlag]), and it keeps the whole wordmark on stable API
+        // rather than on the text-brush overload.
+        Text(
+            letter,
+            style = base.copy(color = Color.White),
+            modifier = Modifier
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(ConnectWordFace, blendMode = BlendMode.SrcIn)
+                },
+        )
+    }
+}
+
 // ── Header ────────────────────────────────────────────────────────────────────
 // The hero's rows — the content only. Everything visual behind them is [HeroBackdrop]'s,
 // which is drawn by [HomeScreen] as a sibling so it can be taller than this. This
@@ -1550,11 +1685,18 @@ private val HeroFloor = Brush.verticalGradient(
 //
 //   am I protected?      → [PhaseEyebrow], a tracked caption with the phase's own dot
 //   where am I?          → [CountryHeadline], the country at 34sp, the largest ink in the app
-//   over what?           → [StatusRow], the transport · port · mode chip
 //   as what address?     → [MetaRow], the public IP
 //   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here
 //   [the alternative]    → [ModePill], its small secondary control, [PowerFootGap] under
 //                          it, the pair hanging [PowerOverlap] over the browse card's edge
+//
+// The "over what?" line — the transport · port · mode chip that sat between the headline
+// and the address — is gone. It answered a question nobody standing at this screen is
+// asking: whether the tunnel is up, and where it comes out, are what the hero is for, and
+// the transport and the port are facts about a *config*, which is what the list below and
+// the config editor are for. Its one irreplaceable field was the mode, and that moved to
+// [ModePill], where it is a control rather than a read-out. Deleting it also gave the
+// column back 40-odd dp, which is what brings the browse card up toward the button.
 //
 // The server selector that used to be docked at the foot of this column is gone. It named
 // the active config in a row of its own directly above a list of configs, which is the same
@@ -1590,9 +1732,15 @@ private val PowerOverlap = 26.dp
 /** Between the top bar and the phase caption — the column's own head clearance. */
 private val HeroTopSpace = 20.dp
 
-/** Between the status chip and the power circle: the hero's breathing room, and what
- *  makes the artwork around the button a place rather than a gap. */
-private val HeroOpenSpace = 26.dp
+/** Between the address and the power circle: the hero's breathing room, and what makes the
+ *  artwork around the button a place rather than a gap.
+ *
+ *  14dp now, down from 26. Two things came out of the column above it — the server selector
+ *  first, the transport · port · mode row second — and with both gone the same 26dp read as
+ *  the hero having run out of things to say rather than as deliberate space. Since the whole
+ *  point of the change was to bring the server list up toward the button, the gap directly
+ *  above the button is the one that had to give. */
+private val HeroOpenSpace = 14.dp
 
 /** Between the power disc's foot and the [ModePill] under it.
  *
@@ -1622,13 +1770,11 @@ private fun Header(
         PhaseEyebrow(state.phase)
         Spacer(Modifier.height(9.dp))
         CountryHeadline(state)
-        Spacer(Modifier.height(13.dp))
-        StatusRow(state = state, onOpenSettings = onOpenSettings)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         // The address moved above the button, which is the other half of the docking
         // change: the button is now the last thing in the hero, so nothing sits between
         // its foot and the card it overlaps. The order still reads as a sentence — what
-        // state, which country, over what, as what address, [the action].
+        // state, which country, as what address, [the action].
         MetaRow(state = state)
         Spacer(Modifier.height(HeroOpenSpace))
         // The disc and its secondary control travel together, so the offset that docks
@@ -1653,33 +1799,40 @@ private fun Header(
 }
 
 // ── Mode pill ─────────────────────────────────────────────────────────────────
-// The small secondary control under the connect disc: it toggles Smart / Manual.
+// The small secondary control under the connect disc: it states the connect mode and
+// toggles it.
 //
 // The mode was already changeable from this button — a vertical drag on the disc, up for
 // Smart and down for Manual — but nothing on the screen drew that gesture, so in practice
-// the only way to find it was to be told. [StatusRow] states the mode in words a few rows
-// up, which means the screen said what the mode was without offering any way to change it.
-// This pill is that missing control, and it sits under the disc because that is where the
-// gesture it replaces lives. The drag is kept: same two bindings, two ways in.
+// the only way to find it was to be told. This pill is that missing control, and it sits
+// under the disc because that is where the gesture it replaces lives. The drag is kept:
+// same two bindings, two ways in.
 //
-// It is deliberately quiet — glass, hairline, 13sp, dimmer ink than anything above it — so
-// that the hero still has exactly one primary action. A secondary button that competes with
-// the disc for the eye would undo the whole point of centring the disc.
+// It is deliberately quiet — glass, hairline, 12.5sp, dimmer ink than anything above it —
+// so that the hero still has exactly one primary action. A secondary button that competes
+// with the disc for the eye would undo the whole point of centring the disc.
 //
-// The label is the mode the pill *switches to*, not the one in force: the current mode is
-// already stated in the status row, so repeating it here would be the same fact twice, and
-// a button labelled with its own current value reads as a display rather than a control.
-// It swaps on the same fade-in-over-fade-out [AnimatedContent] the status row uses, with the
-// container sizing between the two words instead of jumping.
+// The label reads "Mode · Smart": the *current* mode, not the one a tap would switch to.
+// It states the fact because nothing else on the screen does any more — the status row
+// that used to carry the mode alongside the transport and the port is gone — and a control
+// that is the only place a value appears has to show the value. "Mode ·" in front of it is
+// what keeps it from reading as a bare label: the prefix is the noun, the word after it is
+// the setting, and together they read as a setting one can change rather than as a status
+// light. Only the mode word swaps, on the fade-in-over-fade-out [AnimatedContent] this
+// screen uses everywhere, with the container sizing between "Smart" and "Manual" rather
+// than jumping.
 
 /** The pill's ink and hairline. Dimmer than [RefTextMid] on purpose: see the note above. */
 private val ModePillInk = Color.White.copy(alpha = 0.72f)
+
+/** The "Mode ·" prefix, one step down again so the value is what the eye lands on. */
+private val ModePillLabelInk = Color.White.copy(alpha = 0.46f)
 
 @Composable
 private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
     val reduce = rememberReduceMotion()
     val next = if (mode == ConnectMode.SMART) ConnectMode.MANUAL else ConnectMode.SMART
-    Box(
+    Row(
         Modifier
             .clip(CircleShape)
             .background(GlyphChip)
@@ -1689,10 +1842,18 @@ private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
                 onClick = { onSetMode(next) },
             )
             .padding(horizontal = 15.dp, vertical = 7.dp),
-        contentAlignment = Alignment.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(
+            "Mode · ",
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.1.sp,
+            color = ModePillLabelInk,
+            maxLines = 1,
+        )
         AnimatedContent(
-            targetState = next,
+            targetState = mode,
             transitionSpec = {
                 (
                     fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
@@ -1701,9 +1862,9 @@ private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
             label = "modePill",
         ) { target ->
             Text(
-                "Switch to ${target.label}",
+                target.label,
                 fontSize = 12.5.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 letterSpacing = 0.1.sp,
                 color = ModePillInk,
                 maxLines = 1,
@@ -1728,8 +1889,9 @@ private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
 // the reach is unchanged.
 //
 // These two chips are now the only framed things at the top of the screen: the status row
-// under them lost its glass surface (see [StatusRow]) so that a frame up here means
-// "navigation", and nothing else. Their glyphs are plain white. They were the app's deep
+// that used to sit under them first lost its glass surface and is now deleted outright (see
+// [Header]), so a frame up here means "navigation", and nothing else. Their glyphs are plain
+// white. They were the app's deep
 // green, which was the one place the brand colour was stated independently of connection
 // state — but the flag now runs the full height of the screen behind them, and a mid-tone
 // green mark on an arbitrary flag is the one glyph colour that can land on its own hue.
@@ -1982,77 +2144,6 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-// ── Status row ────────────────────────────────────────────────────────────────
-// The transport, the port and the connect mode on one line: "REALITY · 8443 · Smart". It
-// opens protocol settings, and the chevron is what says so.
-//
-// It is bare ink now rather than a glass chip. The frame was there to seat the row's dimmer
-// ink on a bright flag band, and two things paid for removing it: the artwork is drawn
-// smaller and further up than it was ([HEADER_FLAG_ASPECT]), so this line mostly lands on
-// chrome rather than on a stripe; and the two navigation chips above are meant to be the
-// only framed things at the top of the screen, which they cannot be while a wider bordered
-// pill sits directly under them. The transport and the mode were lifted to [RefTextHi] and
-// [RefTextMid] respectively to cover the worst case that is left.
-//
-// The mode belongs here rather than beside the button because this is where the facts
-// about the connection are stated in words, and the button carries no text at all.
-
-@Composable
-private fun StatusRow(state: HomeUiState, onOpenSettings: () -> Unit) {
-    val reduce = rememberReduceMotion()
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(ChipCorner))
-            .clickable(onClickLabel = "Protocol settings", onClick = onOpenSettings)
-            .padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-            Text(
-                protocolLabel(state.activeConfig),
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.1.sp,
-                color = RefTextHi,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                " · ",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = RefTextLow,
-                maxLines = 1,
-            )
-            // The word changes rarely, so it is worth animating: a 160ms fade in over a
-            // 110ms fade out (enter longer than exit, per the app's own motion rules),
-            // with the container sizing between "Smart" and "Manual" rather than jumping.
-            // Like every other movement on this screen it collapses to a cut when the
-            // system asks for no animations.
-            AnimatedContent(
-                targetState = state.mode,
-                transitionSpec = {
-                    (
-                        fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
-                        ).using(SizeTransform(clip = false))
-                },
-                label = "connectMode",
-            ) { mode ->
-                Text(
-                    mode.label,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = RefTextMid,
-                    maxLines = 1,
-                )
-            }
-            Spacer(Modifier.width(5.dp))
-            // [RefTextMid], not [RefTextLow] like the separator beside it: this chevron is
-            // the only mark that says the row opens something, and a control has to clear
-            // 3:1 against its background.
-            Chevron(size = 13.dp, color = RefTextMid)
     }
 }
 
