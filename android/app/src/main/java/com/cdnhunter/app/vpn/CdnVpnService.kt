@@ -141,7 +141,7 @@ class CdnVpnService : VpnService() {
                 if (!hadNetwork) {
                     hadNetwork = true
                     if (isAutoReconnectEnabled() && !isRunning.get() && !killSwitchBlocking.get()
-                        && getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE).getString("active_config_id", "").isNullOrBlank().not()
+                        && SecurePrefs.vpn(this@CdnVpnService).getString("active_config_id", "").isNullOrBlank().not()
                     ) {
                         debugLog += "\nNetwork restored after being fully down — auto-reconnecting."
                         reconnectAttempt = 0
@@ -376,7 +376,7 @@ class CdnVpnService : VpnService() {
                 // itself.
                 scope.launch(Dispatchers.IO) {
                     try {
-                        val configId = getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE)
+                        val configId = SecurePrefs.vpn(this@CdnVpnService)
                             .getString("active_config_id", "") ?: ""
                         val info = com.cdnhunter.app.engine.GeoService().lookupCurrentExitGeoInfo()
                         if (info.cc.isNotBlank()) {
@@ -483,7 +483,7 @@ class CdnVpnService : VpnService() {
     // waiting to reconnect.
     private fun persistAccurateGeo(configId: String, cc: String, city: String) {
         try {
-            val prefs = getSharedPreferences("cdnhunter_vpn", MODE_PRIVATE)
+            val prefs = SecurePrefs.vpn(this)
             val sep = "\u0001"
             val raw = prefs.getString("saved_configs", "") ?: return
             if (raw.isBlank()) return

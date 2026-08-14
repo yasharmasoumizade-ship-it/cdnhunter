@@ -12,7 +12,7 @@ object VpnConfigBuilder {
     const val ERROR_LOG_NAME = "mihomo_error.log"
 
     fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
-        val prefs = ctx.getSharedPreferences("cdnhunter_vpn", Context.MODE_PRIVATE)
+        val prefs = SecurePrefs.vpn(ctx)
         val userConfig = prefs.getString("user_config", "") ?: ""
         val mtu = AppSettings.mtu(ctx)
         val allowLan = AppSettings.allowLan(ctx)

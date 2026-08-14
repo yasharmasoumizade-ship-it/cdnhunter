@@ -105,6 +105,11 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
     implementation("androidx.core:core-ktx:1.12.0")
+    // At-rest encryption for the two SharedPreferences files that hold server
+    // credentials and subscription URLs (see vpn/SecurePrefs.kt). 1.1.0-alpha06 is
+    // the version that ships the MasterKey builder API; 1.0.0 only has the
+    // deprecated MasterKeys helper.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")

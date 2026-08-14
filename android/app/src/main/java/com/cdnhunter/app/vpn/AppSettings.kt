@@ -11,7 +11,9 @@ import android.content.Context
  * built.
  */
 object AppSettings {
-    private const val PREFS = "cdnhunter_settings"
+    // Kept in sync with SecurePrefs.SETTINGS — that object owns opening this file and
+    // migrating it out of plaintext, since subscriptions live here.
+    private const val PREFS = SecurePrefs.SETTINGS
 
     private const val KEY_USE_DOH = "use_doh"
     private const val KEY_KILL_SWITCH = "kill_switch"
@@ -68,7 +70,7 @@ object AppSettings {
     const val MODE_SMART = "smart"
     const val MODE_MANUAL = "manual"
 
-    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(ctx: Context) = SecurePrefs.get(ctx, PREFS)
 
     fun useDoh(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_USE_DOH, true)
     fun setUseDoh(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_USE_DOH, value).apply()

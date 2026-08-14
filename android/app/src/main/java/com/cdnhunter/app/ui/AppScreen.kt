@@ -59,6 +59,7 @@ import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
+import com.cdnhunter.app.vpn.SecurePrefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -604,7 +605,7 @@ private fun parseConfig(uri: String): SavedConfig? {
 private const val CONFIG_FIELD_SEP = "\u0001"
 
 private fun loadConfigs(context: Context): List<SavedConfig> {
-    val prefs = context.getSharedPreferences("cdnhunter_vpn", 0)
+    val prefs = SecurePrefs.vpn(context)
     val raw = prefs.getString("saved_configs", "") ?: ""
     if (raw.isBlank()) {
         // Migrate legacy single config
@@ -657,7 +658,7 @@ private fun saveConfigs(context: Context, configs: List<SavedConfig>) {
             cfg.subscriptionName.orEmpty(),
         ).joinToString(CONFIG_FIELD_SEP)
     }
-    context.getSharedPreferences("cdnhunter_vpn", 0)
+    SecurePrefs.vpn(context)
         .edit().putString("saved_configs", serialized).apply()
 }
 
@@ -765,7 +766,7 @@ private fun VpnTab() {
     var connectRequestedAtMs by remember { mutableStateOf(0L) }
     var activeId   by remember {
         mutableStateOf(
-            context.getSharedPreferences("cdnhunter_vpn", 0).getString("active_config_id", "") ?: ""
+            SecurePrefs.vpn(context).getString("active_config_id", "") ?: ""
         )
     }
     // Smart / Manual (see ui/SmartMode.kt). Manual is what the app has always done
@@ -1078,7 +1079,7 @@ private fun VpnTab() {
             connecting = true
             connectRequestedAtMs = System.currentTimeMillis()
             activeId = cfg.id
-            context.getSharedPreferences("cdnhunter_vpn", 0)
+            SecurePrefs.vpn(context)
                 .edit()
                 .putString("user_config", cfg.uri)
                 .putString("active_config_id", cfg.id)
@@ -1102,7 +1103,7 @@ private fun VpnTab() {
     // If we're not connected, just mark it active and go back — don't auto-connect.
     fun selectConfig(cfg: SavedConfig) {
         activeId = cfg.id
-        context.getSharedPreferences("cdnhunter_vpn", 0)
+        SecurePrefs.vpn(context)
             .edit()
             .putString("user_config", cfg.uri)
             .putString("active_config_id", cfg.id)
