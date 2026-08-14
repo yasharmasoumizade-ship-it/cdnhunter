@@ -46,6 +46,18 @@ class MainActivity : ComponentActivity() {
         // WindowCompat is what holds on those devices, and it is the only way to set
         // the navigation bar's glyphs at all below API 27, where
         // windowLightNavigationBar does not exist.
+        // Draw under both system bars. The home hero is one full-bleed image now — the
+        // active server's flag, edge to edge — and "edge to edge" has to include the
+        // strip the clock and the battery sit in, or the artwork stops at a horizontal
+        // line 28dp down the screen and the whole panel reads as a card again.
+        //
+        // The status bar is painted transparent in themes.xml to go with this; the
+        // navigation bar keeps the app's chrome colour, because nothing at the foot of
+        // the screen wants to be seen through. Every screen that is not Home pads itself
+        // off the bars with statusBarsPadding()/navigationBarsPadding() — Home does it
+        // per row, which is what lets the flag run behind the glyphs while the top bar
+        // still clears them.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false

@@ -226,6 +226,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -235,6 +236,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -277,60 +279,53 @@ private val PillInk = Color(0xFF05070C)        // .tab-pill.active text colour
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 
 // ── Hero surface ──────────────────────────────────────────────────────────────
-// The top of the screen is one panel, and it is always the same panel: [ChromeBg] — the
-// same #0B0B0D the system status bar and navigation bar are painted
-// (res/values/themes.xml), so the top of the app reads as part of the window — under
-// [HeroOffSurface], under the country's flag whenever there is a server to show one for
-// (see [HomeUiState.heroFlagCountry]), lit from above and seated by its own floor.
+// The top of the screen is not a panel any more. It is the page, with the country's flag
+// drawn full-bleed across it — edge to edge, and up behind the system status bar, which
+// is what [MainActivity]'s `setDecorFitsSystemWindows(false)` and the transparent
+// `statusBarColor` in themes.xml are for. There is no card here: no rounded foot, no
+// hairline frame, no cast shadow, no chrome-coloured face under the artwork. The flag IS
+// the background, and the rows are laid on it.
 //
-// What [ConnPhase] changes is the light on it, not the panel itself:
+// It is also drawn TALLER than the rows it carries, by [HeroBleed], so the artwork and its
+// light pass behind the browse card's top edge instead of stopping at it. The card's first
+// [PanelFade] of height is translucent (see [panelTopFade]), so the two read as one
+// continuous surface with a long dissolve in the middle rather than as two floating
+// pieces — see [HeroBackdrop] and [BrowseCard].
 //
-//   OFF        — white light, the plain [HeroBorder] hairline.
-//   CONNECTING — the light turns [RefAccent] and tightens, the hairline lights with it,
-//                and the power ring's arc turns. The animation that says "working" is
-//                down in the status panel ([ConnectingPulse]), not up here: a band
-//                sweeping across the flag made the whole top of the screen restless in
-//                the one state where the user is already waiting on it.
-//   CONNECTED  — the light turns [RefGreen], the hairline brightens, the power ring
-//                closes into a lit circle.
+// What [ConnPhase] changes is the light on it, and only the light:
 //
-// The panel is framed rather than full-bleed: rounded at the foot, a hairline around
-// it, a top sheen, an inner floor at its foot and a two-colour shadow under it. That is
-// the "card" — a raised surface the rows sit on, with no hard rectangle anywhere on it.
+//   OFF        — white, wide and low: the room is lit, nothing is happening.
+//   CONNECTING — [RefAccent], tighter and stronger, and the power ring's arc turns.
+//   CONNECTED  — [RefGreen], stronger again, with the bloom around the power button lit
+//                and the crown wash over the top edge at full strength.
+//
+// The old green *hairline* along the very top edge is gone. It was one 1.5dp line of
+// near-full-strength green across the whole screen with two more running down the sides,
+// and against the flag it read as exactly what it was — a drawn seam — rather than as
+// light. What replaces it is [drawHeroAtmosphere]'s crown: the same signal as a soft wash
+// bleeding in over the top edge, with no edge of its own anywhere in it.
 
 
-/** The window's own colour: `android:statusBarColor` / `navigationBarColor`. */
+/** The app's chrome colour: `android:navigationBarColor`, and the window behind Compose. */
 private val ChromeBg = Color(0xFF0B0B0D)
 
-/** The panel's foot corners. Wider than the browse card's [PanelCorner] on purpose:
- *  it is the larger surface, and the two radii read as one family rather than a
- *  repeat. */
-private val HeroCorner = 34.dp
+/**
+ * How far the hero's artwork and light carry on *below* the last of its rows — i.e. how
+ * much of the backdrop the browse card is drawn over.
+ *
+ * A little more than [PanelFade], so the flag and the horizon bloom are still going where
+ * the card has already turned solid: the dissolve ends inside the artwork rather than at
+ * the end of it, which is what leaves no line anywhere in the transition.
+ */
+private val HeroBleed = 138.dp
 
 /**
- * The OFF face: [ChromeBg] with a barely-there lift toward the top, so the panel is
- * the window's colour and still reads as a surface with light falling on it. The last
- * stop is a shade under the chrome, which is what separates the panel's foot from the
- * page it floats over without drawing a line there.
+ * What the backdrop measures on the first frame only, before the header's rows have been
+ * measured once (see [HomeScreen]'s `heroContentPx`). Within a few dp of the real value on
+ * a normal phone at default font scale, so nothing visibly moves when the measurement
+ * lands.
  */
-private val HeroOffSurface = Brush.verticalGradient(
-    0.00f to Color(0xFF12141A),
-    0.42f to Color(0xFF0E1014),
-    1.00f to Color(0xFF090A0D),
-)
-
-/** The hairline around the panel, idle. White, not [RefBorder]: over both the chrome
- *  and a flag it has to be the same edge. */
-private val HeroBorder = Color.White.copy(alpha = 0.07f)
-
-/** A single highlight along the panel's top inside edge — the light in the room
- *  catching the glass, and the reason the frame doesn't need a second border. */
-private val HeroSheen = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.08f),
-    0.02f to Color.White.copy(alpha = 0.03f),
-    0.07f to Color.Transparent,
-    1.00f to Color.Transparent,
-)
+private val HeroBackdropFallback = 340.dp
 
 /** How long the phase crossfade takes — the ink, the light, and every surface. */
 private const val PHASE_FADE_MS = 520
@@ -404,100 +399,109 @@ private val ActionGlyph = 22.dp
 private val ModeSwipeThreshold = 20.dp
 
 // ── Lighting ──────────────────────────────────────────────────────────────────
-// The hero panel is lit rather than tinted, and all of it is built from three kinds of
-// layer, in this order, on every state:
+// The hero is lit rather than tinted, and the light is the loudest thing about it. Five
+// layers, all of them plain gradients, in this order:
 //
-//   1. a key light   — one soft cone from above and slightly right of the connect
-//                      control, which is what makes the panel read as a surface with a
-//                      light source rather than as a flat rectangle;
-//   2. two rim fills  — off each side edge, level with the connect bar, so the panel's
-//                      sides lift away from the page instead of ending at a hairline;
-//   3. a floor        — a wide, very dark gradient at the foot, which is the panel's own
-//                      contact shadow: it is what seats the panel on the page and what
-//                      lets the browse card below start from black without a seam.
+//   1. the crown    — light bleeding in over the very top edge of the screen, across the
+//                     whole width, strongest in the first few percent and gone by
+//                     mid-panel. This is what says "connected" at a glance, and it is the
+//                     replacement for the old 1.5dp green hairline that used to be drawn
+//                     there: same signal, no seam.
+//   2. a key light  — one broad cone from above and right of the connect control, which is
+//                     what makes the flag read as a lit surface rather than as a picture.
+//   3. two rim fills— off each side edge, level with the connect bar, so the artwork lifts
+//                     off the page at the screen's own edges instead of ending flat.
+//   4. the horizon  — a wide bloom centred on the hero's foot, i.e. exactly where the
+//                     browse card's translucent top edge crosses it. This is the layer
+//                     that fuses the two: the card's first 132dp are lit from behind by
+//                     the flag's own light, so the "seam" between them is the brightest
+//                     part of the transition rather than a line in it.
+//   5. a vignette   — black, radial, centred high, which pulls the corners down and holds
+//                     the eye on the control. It is also what keeps the status bar's own
+//                     glyphs legible now that the flag runs behind them.
 //
-// Every one of them is a plain gradient brush. There is no [Modifier.blur] and no render
+// Every one of them is a [Brush] gradient. There is no [Modifier.blur] and no render
 // effect anywhere on this screen: a blur at these radii costs a full offscreen pass per
-// frame and, at these alphas, reads as a smudge rather than as light. A gradient with the
-// right stops is both cheaper and cleaner.
+// frame and, at these alphas, reads as a smudge rather than as light.
 //
-// The strengths are deliberately small and they are *layered* rather than summed into one
-// bright wash — that is the whole difference between this and a glow blob. The key light
-// peaks at 5.4% and is gone by the panel's foot; the rims peak at 3.2%; the floor is the
-// only heavy layer and it is black, not colour. Cover any single one of them and the
-// panel looks flat; look for any single one of them and it is hard to find. That is the
-// intent.
-//
-// Idle the light is white. Connecting it is [RefAccent], connected [RefGreen], with a
-// tighter falloff and a little more strength in both — the same three sources, sharpened,
+// The strengths are deliberately about twice what this screen used to carry — this is the
+// "bolder, more atmospheric" pass — but they are still *layered* rather than summed into
+// one bright wash, and the only heavy layer is black. Idle the light is white and low;
+// connecting it is [RefAccent]; connected [RefGreen], stronger and with a tighter falloff,
 // so a state change reads as the room changing colour rather than as a repaint.
-private const val KEY_LIGHT_IDLE = 0.034f
-private const val KEY_LIGHT_ON = 0.054f
-private const val RIM_LIGHT_IDLE = 0.020f
-private const val RIM_LIGHT_ON = 0.032f
+private const val KEY_LIGHT_IDLE = 0.050f
+private const val KEY_LIGHT_ON = 0.100f
+private const val RIM_LIGHT_IDLE = 0.030f
+private const val RIM_LIGHT_ON = 0.062f
+private const val CROWN_LIGHT_IDLE = 0.055f
+private const val CROWN_LIGHT_ON = 0.150f
+private const val HORIZON_LIGHT_IDLE = 0.070f
+private const val HORIZON_LIGHT_ON = 0.170f
 
 /**
- * The panel's contact shadow, drawn inside its own foot: a black gradient over the
- * bottom fifth of the panel.
- *
- * This is what a [Modifier.shadow] under the panel cannot do. The panel's foot is where
- * it meets the browse card, and an outer shadow there would be drawn *behind* the card
- * — invisible. Drawn inside instead, it darkens the panel's own last few dp, so the
- * panel appears to curve away from the light and the card below reads as sitting in
- * front of it. It is the same trick the connect bar's [BarSheen] uses at its foot, at
- * panel scale.
+ * The whole atmosphere, drawn over the flag across the backdrop's full size — see the
+ * section comment for what the five layers are and why each one is there. [color] is the
+ * phase's own colour, crossfaded by [phaseLight]; [lit] raises every strength and tightens
+ * the falloff for the two states that have something to report.
  */
-private val HeroFloor = Brush.verticalGradient(
-    0.00f to Color.Transparent,
-    0.72f to Color.Transparent,
-    0.88f to Color.Black.copy(alpha = 0.10f),
-    1.00f to Color.Black.copy(alpha = 0.26f),
-)
-
-/**
- * The panel's cast shadow, as two colours rather than one.
- *
- * [Modifier.shadow] takes an ambient and a spot colour, and giving both the platform
- * default (opaque black at the elevation's own alpha) is what makes an elevated dark
- * surface look like it is sitting in dirty grey fog. The ambient half is the light
- * bouncing around the room — near-black and wide; the spot half is the key light's own
- * shadow — deeper, and the one that gives the panel its direction. Tuned for a panel on
- * near-black: at 24dp the platform's own values would put a visible grey halo over the
- * page's gradient.
- */
-private val HeroShadowAmbient = Color.Black.copy(alpha = 0.62f)
-private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
-
-/** How far the panel is lifted off the page. */
-private val HeroElevation = 24.dp
-
-/**
- * The screen-level light: key light, then the two rims. [color] is the phase's own
- * colour and [lit] tightens the falloff for the two states that have one.
- */
-private fun DrawScope.drawHeroLighting(color: Color, lit: Boolean) {
+private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
     val key = if (lit) KEY_LIGHT_ON else KEY_LIGHT_IDLE
     val rim = if (lit) RIM_LIGHT_ON else RIM_LIGHT_IDLE
+    val crown = if (lit) CROWN_LIGHT_ON else CROWN_LIGHT_IDLE
+    val horizon = if (lit) HORIZON_LIGHT_ON else HORIZON_LIGHT_IDLE
     // Lit pulls the mid stop in and the tail down, so the falloff is a shorter, cleaner
-    // ramp; idle spreads the same light over more of the panel.
+    // ramp; idle spreads the same light over more of the screen.
     val mid = if (lit) 0.34f else 0.46f
     val tail = if (lit) 0.74f else 0.88f
 
     fun cone(centre: Offset, radius: Float, peak: Float) = Brush.radialGradient(
         0.00f to color.copy(alpha = peak),
         mid to color.copy(alpha = peak * 0.42f),
-        tail to color.copy(alpha = peak * 0.06f),
+        tail to color.copy(alpha = peak * 0.07f),
         1.00f to Color.Transparent,
         center = centre,
         radius = radius,
     )
 
-    // The key light: above the panel, centred over the bar/button seam, so the
-    // brightest part of the wash lands on the connect pill's top edge.
-    drawRect(cone(Offset(size.width * 0.55f, -size.height * 0.30f), size.height * 1.30f, key))
-    // The two rims: level with the connect bar, just outside the panel's own edges.
-    drawRect(cone(Offset(-size.width * 0.16f, size.height * 0.56f), size.width * 0.80f, rim))
-    drawRect(cone(Offset(size.width * 1.16f, size.height * 0.52f), size.width * 0.80f, rim))
+    // 1. The crown. Its own stops are the whole point: 100% of the strength in the first
+    //    pixel row, still 40% of it 18% down, a trace at the middle, nothing after. That
+    //    is a light source above the phone, and there is no value of `y` at which it
+    //    steps — which is what the hairline it replaces could never manage.
+    val crownEnd = size.height * 0.60f
+    drawRect(
+        brush = Brush.verticalGradient(
+            0.00f to color.copy(alpha = crown),
+            0.07f to color.copy(alpha = crown * 0.62f),
+            0.20f to color.copy(alpha = crown * 0.30f),
+            0.50f to color.copy(alpha = crown * 0.08f),
+            1.00f to Color.Transparent,
+            startY = 0f,
+            endY = crownEnd,
+        ),
+        size = Size(size.width, crownEnd),
+    )
+    // 2. The key light: above and right of the connect control, which now sits low, so the
+    //    brightest part of the wash falls across the middle of the flag and down onto the
+    //    pill's top edge.
+    drawRect(cone(Offset(size.width * 0.64f, size.height * 0.16f), size.height * 1.15f, key))
+    // 3. The two rims, level with the connect bar and just outside the screen's edges.
+    drawRect(cone(Offset(-size.width * 0.14f, size.height * 0.70f), size.width * 0.88f, rim))
+    drawRect(cone(Offset(size.width * 1.14f, size.height * 0.66f), size.width * 0.88f, rim))
+    // 4. The horizon, centred on the hero's own foot: the light the browse card's first
+    //    132dp are lit from behind by.
+    drawRect(cone(Offset(size.width * 0.50f, size.height), size.width * 1.05f, horizon))
+    // 5. The vignette. Centred above the middle, so the top corners come down with the
+    //    bottom ones and the status bar's glyphs keep something dark under them.
+    drawRect(
+        Brush.radialGradient(
+            0.00f to Color.Transparent,
+            0.55f to Color.Black.copy(alpha = 0.09f),
+            0.80f to Color.Black.copy(alpha = 0.24f),
+            1.00f to Color.Black.copy(alpha = 0.46f),
+            center = Offset(size.width * 0.50f, size.height * 0.40f),
+            radius = size.width * 0.98f,
+        )
+    )
 }
 
 
@@ -590,84 +594,58 @@ private fun phaseLight(phase: ConnPhase): Color {
     return color
 }
 
-// ── Connected edge light ──────────────────────────────────────────────────────
-// The screen's top edge lights up green while the tunnel is up: a hairline along the
-// very top, brightest at the centre and fading toward both corners, turning each
-// corner and running a short way down the sides, over a soft bleed inward. Three
-// plain gradient brushes and nothing else — no blur, no shadow, no render effect —
-// so it reads as light on an edge rather than as a green fog over the header.
+/**
+ * A cast shadow's ambient and spot halves, as two colours rather than one.
+ *
+ * [Modifier.shadow] takes both, and giving each the platform default (opaque black at
+ * the elevation's own alpha) is what makes an elevated dark surface look like it is
+ * sitting in dirty grey fog. The ambient half is the light bouncing around the room —
+ * near-black and wide; the spot half is the key light's own shadow, deeper, and the one
+ * that gives the surface its direction. Tuned for near-black: the platform's own values
+ * put a visible grey halo over this page's gradient. Used by the top bar's glyph chips
+ * and by the power disc.
+ */
+private val HeroShadowAmbient = Color.Black.copy(alpha = 0.62f)
+private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
+
+// ── The power bloom ───────────────────────────────────────────────────────────
+// The light the connect button throws into the room around it, drawn *behind* the
+// button and outside its own bounds — one radial gradient centred on the disc, about
+// two and a half times its diameter.
 //
-// Every alpha here is a little over half what it was. The edge used to be drawn on
-// near-black; on the header flag the old strength read as a green filter over the
-// artwork, and the hairline itself was bright enough to be the first thing the eye
-// went to on the whole screen. It is [RefGreen], the same one the ambient light uses,
-// because it is the same signal seen from the screen's border instead of from behind
-// the connect bar.
-private val EdgeGlowBleed = 92.dp         // how far inward the wash reaches
-private val EdgeGlowSideRun = 148.dp      // how far down each side the ring carries
-private val EdgeGlowLine = 1.5.dp         // the lit edge itself
+// This is the replacement for the old connected edge light, which drew a 1.5dp green
+// hairline along the screen's very top edge and turned both corners. That was the
+// harsh flat seam: a hairline is by definition a hard edge, and on the flag it read as
+// the brightest thing on the screen and as a frame around the artwork. The signal it
+// carried — "the tunnel is up" — now comes from two softer places instead: the crown
+// wash in [drawHeroAtmosphere], which lights the whole top of the screen without an
+// edge anywhere in it, and this bloom, which puts the light where the eye already is.
+//
+// [Modifier.drawBehind] is what makes it possible without a layout box: Compose does
+// not clip a node's drawing to its own bounds, so the bloom can be drawn from inside
+// the button's own modifier chain and still spill across the flag and the connect bar.
+private val PowerBloomSize = 216.dp       // ~2.6x the disc; the light's full reach
+private const val POWER_BLOOM_ON = 0.30f  // peak alpha, connected
+private const val POWER_BLOOM_WORKING = 0.22f
 
-@Composable
-private fun ConnectedEdgeGlow(connected: Boolean, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
-    // 520ms matches the ambient light's own crossfade, so connecting reads as one
-    // change of light rather than as two effects starting at the same time.
-    val strength by animateFloatAsState(
-        targetValue = if (connected) 1f else 0f,
-        animationSpec = motionSpec(reduce, 520),
-        label = "edgeGlow",
-    )
-    if (strength <= 0.01f) return
-    Box(modifier.drawBehind { drawTopEdgeRing(strength) })
-}
-
-private fun DrawScope.drawTopEdgeRing(strength: Float) {
-    fun green(alpha: Float) = RefGreen.copy(alpha = alpha * strength)
-
-    val bleed = EdgeGlowBleed.toPx()
-    val line = EdgeGlowLine.toPx()
-    val sideRun = EdgeGlowSideRun.toPx()
-
-    // The wash: strongest right under the edge, gone by the end of the bleed.
-    drawRect(
-        brush = Brush.verticalGradient(
-            0.00f to green(0.085f),
-            0.22f to green(0.038f),
-            0.55f to green(0.012f),
-            1.00f to Color.Transparent,
-            startY = 0f,
-            endY = bleed,
-        ),
-        size = Size(size.width, bleed),
-    )
-    // The lit edge. The centre is where the light is; the corners are where it has
-    // travelled furthest, so they keep only a trace of it.
-    drawRect(
-        brush = Brush.horizontalGradient(
-            0.00f to green(0.06f),
-            0.18f to green(0.24f),
-            0.50f to green(0.42f),
-            0.82f to green(0.24f),
-            1.00f to green(0.06f),
-        ),
-        size = Size(size.width, line),
-    )
-    // Both corners turned: the same hairline continuing down each side, fading out
-    // well before the connect bar, so the effect reads as an edge and not a frame.
-    val sideBrush = Brush.verticalGradient(
-        0.00f to green(0.17f),
-        0.35f to green(0.05f),
-        1.00f to Color.Transparent,
-        startY = 0f,
-        endY = sideRun,
-    )
-    drawRect(brush = sideBrush, topLeft = Offset(0f, 0f), size = Size(line, sideRun))
-    drawRect(
-        brush = sideBrush,
-        topLeft = Offset(size.width - line, 0f),
-        size = Size(line, sideRun),
-    )
-}
+/**
+ * The bloom's brush for [phase] at [strength], or null when there is nothing to throw:
+ * idle the button is unlit, and an unlit button in a dark room does not glow.
+ */
+private fun powerBloom(
+    color: Color,
+    strength: Float,
+    centre: Offset,
+    radius: Float,
+): Brush = Brush.radialGradient(
+    0.00f to color.copy(alpha = strength),
+    0.30f to color.copy(alpha = strength * 0.55f),
+    0.58f to color.copy(alpha = strength * 0.20f),
+    0.80f to color.copy(alpha = strength * 0.06f),
+    1.00f to Color.Transparent,
+    center = centre,
+    radius = radius,
+)
 
 /**
  * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
@@ -708,14 +686,16 @@ private const val HEADER_FLAG_SATURATION = 0.80f
 /**
  * How much the artwork itself gives up before [HeaderFlagScrim] is even applied.
  *
- * Lower than it was, because the wash is on in every state now rather than only while
- * connected (see [HomeUiState.heroFlagCountry]). A value tuned for "the flag is the
- * reward for connecting" is too loud for "the flag is what the panel looks like": at 0.88
- * the artwork was a background *image* the rows sat on top of, and the app spent most of
- * its life looking like it. At 0.70, under the scrim, it is an ambient tint — the country
- * is unmistakable, and nothing on the panel is competing with the text.
+ * The wash is on in every state (see [HomeUiState.heroFlagCountry]) and it is now the
+ * screen's actual background rather than a panel's fill — it runs behind the status bar
+ * at the top and behind the browse card's first 132dp at the foot, with no frame at any
+ * edge. A background can afford to be a little more present than a floating image could:
+ * at 0.70, with no card outline left to say "this is the hero", the artwork read as a
+ * grey suggestion of a flag. At 0.78, under the scrim, the country is unmistakable from
+ * across a room and every row on top of it still clears 7:1.
  */
-private const val HEADER_FLAG_ALPHA = 0.70f
+private const val HEADER_FLAG_ALPHA = 0.78f
+
 
 
 // The flag crossfade. Enter is longer than exit, per the app's own motion rules, and
@@ -728,45 +708,65 @@ private const val FLAG_SETTLE_MS = 620
 
 /**
  * A soft vertical scrim, drawn *inside* the masked flag layer: heaviest at the very
- * top, where the status bar's own glyphs have to survive whatever band lands there, and
- * again toward the foot; lifted through the middle, where the connect control sits and
- * the flag is allowed to be a flag. Because it lives inside the mask it tapers away
- * exactly where the flag does — it darkens the artwork, never the page. There is no
- * opaque [RefBg] bottom stop any more: the foot fade into the page is [HeaderFlagFadeY]'s
- * job, so the scrim only ever has the flag to darken.
+ * top, where the status bar's own glyphs have to survive whatever band of the flag lands
+ * behind them, and again toward the foot; lifted through the middle, where the flag is
+ * allowed to be a flag. Because it lives inside the mask it tapers away exactly where the
+ * flag does — it darkens the artwork, never the page.
+ *
+ * The top stop is heavier than it was and it starts at full strength rather than easing
+ * in, because the artwork now runs all the way under the clock and the battery: those
+ * glyphs are drawn by the system in white with no shadow of their own, and the only thing
+ * standing between them and a white flag stripe is this. 0.62 over a 0.78 flag puts the
+ * worst case — white on the palest stripe any bundled flag has — a little over 5:1.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.55f),
-    0.22f to Color.Black.copy(alpha = 0.40f),
-    0.50f to Color.Black.copy(alpha = 0.38f),
-    0.78f to Color.Black.copy(alpha = 0.46f),
-    1.00f to Color.Black.copy(alpha = 0.58f),
+    0.00f to Color.Black.copy(alpha = 0.62f),
+    0.14f to Color.Black.copy(alpha = 0.46f),
+    0.34f to Color.Black.copy(alpha = 0.36f),
+    0.62f to Color.Black.copy(alpha = 0.40f),
+    0.86f to Color.Black.copy(alpha = 0.52f),
+    1.00f to Color.Black.copy(alpha = 0.60f),
 )
 
 /**
- * The horizontal half of the flag's alpha mask. The flag is held at full strength from
- * the left edge to just past the middle, then taken to nothing by the right. This is
- * what holds the wash at the left of the screen — and what darkens the right-hand
- * corners without a vignette, because where the mask reaches zero the page's own
- * gradient is simply what shows. The colour is irrelevant; only the alpha is read, by
- * the [BlendMode.DstIn] pass in [HeaderFlag].
+ * The horizontal half of the flag's alpha mask: full from the left edge to past the
+ * middle, then eased down to a little under half by the right.
+ *
+ * It no longer reaches zero, and that is the point. The flag is full-bleed now — the
+ * artwork is the top of the screen, edge to edge — so a mask that fell to nothing at the
+ * right would leave a bare vertical strip of page down the side of the screen, which is
+ * exactly the "floating panel" reading the card outline used to give. Ending at 0.44
+ * keeps the right-hand edge lit while still letting the left carry the colour, so the
+ * artwork has a direction without having a border. The colour is irrelevant; only the
+ * alpha is read, by the [BlendMode.DstIn] pass in [HeaderFlag].
  */
 private val HeaderFlagFadeX = Brush.horizontalGradient(
     0.00f to Color.Black,
-    0.52f to Color.Black,
-    1.00f to Color.Transparent,
+    0.58f to Color.Black,
+    1.00f to Color.Black.copy(alpha = 0.44f),
 )
 
 /**
- * The vertical half of the mask: nothing at the status bar, nothing at the header's
- * foot, full in between. The top fade keeps the artwork from crowding the status bar's
- * glyphs; the foot fade is what lets the browse card meet plain page with no seam, in
- * place of the scrim's old opaque-[RefBg] bottom stop.
+ * The vertical half of the mask: full from the very first pixel row, held through the
+ * rows, then taken to nothing across the bleed at the foot.
+ *
+ * The top has no fade at all any more. It used to start transparent and reach full only
+ * 16% down, which was the mask's way of keeping the artwork off the status bar — and with
+ * the window now drawing under that bar (MainActivity's `setDecorFitsSystemWindows(false)`)
+ * the same stops would have put a pale horizontal band across the top of the screen at
+ * exactly the height of the clock: a seam, drawn by the very thing that was there to
+ * avoid one. [HeaderFlagScrim]'s heavy top stop protects the glyphs instead, by darkening
+ * the flag rather than by removing it.
+ *
+ * The foot fade is the other half of the merge with the browse card. It runs from 0.72 to
+ * 1.0 of the *backdrop*, which is [HeroBleed] taller than the rows — so the taper happens
+ * behind the card's translucent top edge, not above it. The flag is still ~45% present
+ * where the tab row begins and gone by the time the list starts.
  */
 private val HeaderFlagFadeY = Brush.verticalGradient(
-    0.00f to Color.Transparent,
-    0.16f to Color.Black,
-    0.70f to Color.Black,
+    0.00f to Color.Black,
+    0.72f to Color.Black,
+    0.88f to Color.Black.copy(alpha = 0.45f),
     1.00f to Color.Transparent,
 )
 
@@ -916,37 +916,47 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
 
 /**
  * The glass floor, top-lit so the pill still reads as a raised surface rather than a
- * flat cut-out. Same shape as the opaque version this replaces — bright at the top,
- * [RefElev1] through the middle, deeper at the foot — at roughly a third the alpha,
- * which is what lets the flag through across the whole pill.
+ * flat cut-out. Bright at the top, [RefElev1] through the middle, deeper at the foot.
+ *
+ * Denser than it was, and deliberately so: the pill is docked at the foot of the hero
+ * now, where the browse card's top edge begins, and it is the only surface at that seam.
+ * A third of an alpha was enough when it floated mid-artwork with a framed panel behind
+ * it; carrying the join between the hero and the card, it has to read as real glass. The
+ * flag still comes through — 0.58 at the foot over a 0.78 flag is a tinted window, not a
+ * wall — and the 22sp ExtraBold country name over it clears 8:1 on every bundled flag.
  */
 private val BarSurface = Brush.verticalGradient(
-    0.00f to Color(0xFF1A1D25).copy(alpha = 0.42f),
-    0.55f to RefElev1.copy(alpha = 0.36f),
-    1.00f to Color(0xFF0B0D11).copy(alpha = 0.50f),
+    0.00f to Color(0xFF1C1F28).copy(alpha = 0.52f),
+    0.55f to RefElev1.copy(alpha = 0.46f),
+    1.00f to Color(0xFF0B0D11).copy(alpha = 0.58f),
 )
 
 /**
  * The material under the headline: near-solid where the country name starts, gone by
- * 58% of the pill's width.
+ * 62% of the pill's width.
  *
- * This is the ramp the bar carried before the flag was moved inside it, restored
- * to the job it was written for. It reads as one surface with the flag showing
- * through its far end rather than as two halves, because the stops are a long ease
- * rather than a step: 0.94 → 0.88 over the first seventh, then down through 0.52 and
- * 0.16 to nothing at 0.58, by which point the pill has [PowerCut] left before the
- * power circle's clearance takes over.
+ * It reads as one surface with the flag showing through its far end rather than as two
+ * halves, because the stops are a long ease rather than a step: 0.96 → 0.90 over the first
+ * seventh, then down through 0.56 and 0.18 to nothing at 0.62, by which point the pill has
+ * [PowerCut] left before the power circle's clearance takes over.
  */
 private val BarMaterial = Brush.horizontalGradient(
-    0.00f to RefElev1.copy(alpha = 0.94f),
-    0.14f to RefElev1.copy(alpha = 0.88f),
-    0.30f to RefElev1.copy(alpha = 0.52f),
-    0.44f to RefElev1.copy(alpha = 0.16f),
-    0.58f to Color.Transparent,
+    0.00f to RefElev1.copy(alpha = 0.96f),
+    0.14f to RefElev1.copy(alpha = 0.90f),
+    0.32f to RefElev1.copy(alpha = 0.56f),
+    0.48f to RefElev1.copy(alpha = 0.18f),
+    0.62f to Color.Transparent,
 )
 
-/** The pill's hairline. Over artwork, [RefBorder] disappeared; white does not. */
-private val BarBorder = Color.White.copy(alpha = 0.11f)
+/**
+ * The pill's hairline. Over artwork, [RefBorder] disappeared; white does not — and at the
+ * foot of the hero, with no card outline anywhere else on the screen, this is the only
+ * drawn edge left up here, so it is a little brighter than the 0.11 it used to be.
+ */
+private val BarBorder = Color.White.copy(alpha = 0.15f)
+
+/** The phase dot beside the pill's caption: the phase stated as hue, at label scale. */
+private val PhaseDotSize = 6.dp
 
 /**
  * What closes [BarMaterial]'s ramp when there is no flag behind the pill — i.e. every
@@ -1185,7 +1195,41 @@ private fun HomeUiState.rowSubtitle(cfg: SavedConfig): String {
 private fun protocolLabel(cfg: SavedConfig?): String {
     if (cfg == null) return "No server selected"
     val transport = com.cdnhunter.app.vpn.ConfigUriParser.transportOf(cfg.uri).ifBlank { "TCP" }
-    return if (cfg.port > 0) "$transport · ${cfg.port}" else transport
+    return if (cfg.port > 0) "${shortTransport(transport)} · ${cfg.port}" else shortTransport(transport)
+}
+
+/**
+ * The transport, as a code rather than as a name — for the status chip only.
+ *
+ * The chip is one line of 14sp text that also carries the port and the mode, inside a pill
+ * that shares the hero's top row with two navigation chips. "WebSocket · 443 · Manual"
+ * either ellipsised or pushed the mode word off the end of the row on a narrow phone, and
+ * "Reality · WebSocket" — which [com.cdnhunter.app.vpn.ConfigUriParser.transportOf] returns
+ * for a REALITY connection over ws — never fitted at all. Abbreviating is the fix that
+ * keeps every field: the codes are the ones the protocols' own documentation uses, so WS,
+ * gRPC, H2 and XHTTP are what a user who cares about the difference already reads them as.
+ *
+ * This is deliberately *not* applied in the server list below, where [rowSubtitle] has a
+ * whole line to itself and the full name is more useful than a code. Anything unrecognised
+ * is passed through unchanged — including "Reality · X", whose own transport half is
+ * shortened in place, so a new stream type in the parser cannot come out blank here.
+ */
+private fun shortTransport(transport: String): String {
+    // "Reality · WebSocket" → "REALITY · WS": the parser composes that form itself, so the
+    // split has to be undone and redone rather than matched whole.
+    val parts = transport.split(" · ")
+    if (parts.size == 2) return "${shortTransport(parts[0])} · ${shortTransport(parts[1])}"
+    return when (transport.lowercase()) {
+        "websocket", "ws" -> "WS"
+        "grpc" -> "gRPC"
+        "http/2", "h2" -> "H2"
+        "xhttp", "splithttp" -> "XHTTP"
+        "quic" -> "QUIC"
+        "reality" -> "REALITY"
+        "tls" -> "TLS"
+        "tcp" -> "TCP"
+        else -> transport
+    }
 }
 
 /** "2.4" to "GB" — the ring's own one-decimal label, split so the unit can wrap. */
@@ -1233,7 +1277,27 @@ internal fun HomeScreen(
     }
     val activeId = state.activeConfig?.id
 
+    // How tall the hero's rows measured, in px. The backdrop behind them is drawn
+    // [HeroBleed] taller than this — see [HeroBackdrop] — which is what carries the flag
+    // and its light down behind the browse card's translucent top edge instead of stopping
+    // at the last row. Measured rather than fixed because the rows' own height moves with
+    // the status bar inset, the font scale and the phase text.
+    var heroContentPx by remember { mutableStateOf(0) }
+    val heroHeight = with(LocalDensity.current) {
+        if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
+    }
+
     Box(modifier.fillMaxSize().background(PageGradient)) {
+        // First, behind everything: the artwork and the light, full-bleed, taller than the
+        // rows it belongs to. It is a sibling of the column rather than a background of the
+        // header, because a background can only ever be as tall as what it is behind.
+        HeroBackdrop(
+            state = state,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(heroHeight + HeroBleed),
+        )
         Column(Modifier.fillMaxSize()) {
             Header(
                 state = state,
@@ -1242,6 +1306,7 @@ internal fun HomeScreen(
                 onOpenLocations = onOpenLocations,
                 onTogglePower = onTogglePower,
                 onSetMode = onSetMode,
+                modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             BrowseCard(
                 state = state,
@@ -1274,55 +1339,33 @@ internal fun HomeScreen(
                 .padding(horizontal = CardMargin)
                 .padding(bottom = CardMargin),
         )
-
-        // Last, so nothing paints over it: the green ring on the screen's top edge
-        // while the tunnel is up. Purely drawn — no clickable, no pointer input —
-        // so every row underneath keeps its own touches.
-        ConnectedEdgeGlow(
-            connected = state.connected,
-            modifier = Modifier.matchParentSize(),
-        )
     }
 }
 
-// ── Header ────────────────────────────────────────────────────────────────────
-// The hero panel. One framed surface — rounded at the foot, hairlined, lit from above,
-// seated on the page by its own shadow and its own inner floor — carrying the four rows.
+// ── Hero backdrop ─────────────────────────────────────────────────────────────
+// The artwork and the light, and nothing else — no rows, no touches, no chrome.
 //
-// What changes between the three [HomeUiState.phase] values is the *light*, not the
-// panel. The flag wash is on in all three whenever there is a server to show one for
-// (see [HomeUiState.heroFlagCountry]), so connecting no longer paints a moving band
-// across the artwork; that animation moved down into the status panel where it belongs
-// (see [ConnectingPulse]). Up here a phase change is: the key light and the two rims
-// change colour and tighten ([drawHeroLighting]), the frame changes colour, and the ink
-// follows. Nothing slides, nothing sweeps.
+// It is drawn as a sibling *behind* the hero's rows rather than as their background,
+// because it is deliberately taller than they are: [HeroBleed] past the last row, so the
+// flag and its light pass behind the browse card's translucent top edge (see
+// [panelTopFade]) and the two read as one continuous surface. A background modifier could
+// only ever be exactly as tall as the thing it is behind, which is what made the hero look
+// like a card sitting on a page.
 //
-//   OFF        — white light, [HeroBorder] frame, flag wash if a server exists.
-//   CONNECTING — [RefAccent] light, accent frame.
-//   CONNECTED  — [RefGreen] light, brighter frame.
+// There is no [Modifier.clip], no [Modifier.border] and no [Modifier.shadow] here, and
+// that is the whole of the "remove the card" change: a rounded foot, a hairline and a
+// cast shadow are what a card is. What is left is a full-bleed image on the page — it
+// runs under the status bar at the top (MainActivity draws under the system bars) and
+// under the card at the foot, and it has no edge of its own anywhere.
 //
-// The layers stack, from the back: [ChromeBg] (the window's own colour, so the panel is
-// never transparent) → [HeroOffSurface] → the flag → the lighting → [HeroFloor] → the
-// [HeroSheen] top highlight → the frame. The flag crossfades on [PHASE_FADE_MS], as do
-// the colours; the OFF surface under it never fades, which is what keeps the panel opaque
-// mid-transition.
-//
-// The gaps between rows are the mockup's own margins (4 / 12 / 22dp), spelled out one
-// by one rather than smoothed into a single rhythm. The rows measure the panel; every
-// layer behind them matches its size, so the panel is exactly as tall as its content
-// and needs no height of its own.
+// The layers stack, from the back: [ChromeBg] over the top rows only (so the artwork is
+// never composited against nothing while it crossfades, while the bleed stays translucent
+// for the card to sit over) → the flag → [drawHeroAtmosphere]. The flag crossfades on
+// [PHASE_FADE_MS], as does the light's colour.
 @Composable
-private fun Header(
-    state: HomeUiState,
-    onOpenSettings: () -> Unit,
-    onOpenProfile: () -> Unit,
-    onOpenLocations: () -> Unit,
-    onTogglePower: () -> Unit,
-    onSetMode: (ConnectMode) -> Unit,
-) {
+private fun HeroBackdrop(state: HomeUiState, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
     val phase = state.phase
-    val shape = remember { RoundedCornerShape(bottomStart = HeroCorner, bottomEnd = HeroCorner) }
     // The wash is gated on there being a country to draw, not on the phase — see
     // [HomeUiState.heroFlagCountry]. Held while it fades out so the artwork does not
     // vanish on the frame the last server is deleted.
@@ -1338,74 +1381,101 @@ private fun Header(
     // changing state reads as the room changing colour rather than as a repaint.
     val ambient = phaseLight(phase)
     val lit = phase != ConnPhase.OFF
-    val frame by animateColorAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> HeroBorder
-            ConnPhase.CONNECTING -> RefAccent.copy(alpha = 0.34f)
-            ConnPhase.CONNECTED -> Color.White.copy(alpha = 0.11f)
-        },
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "heroFrame",
-    )
-    Box(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier
-                .matchParentSize()
-                // The panel's lift. Drawn on the opaque surface itself, not on a
-                // translucent layer, so the shadow stays under the panel instead of
-                // hazing what it is drawn over — and with both shadow colours given
-                // explicitly, because the platform defaults fog a dark page.
-                .shadow(
-                    elevation = HeroElevation,
-                    shape = shape,
-                    clip = false,
-                    ambientColor = HeroShadowAmbient,
-                    spotColor = HeroShadowSpot,
-                )
-                .clip(shape)
-                .background(ChromeBg)
-        ) {
-            Box(Modifier.matchParentSize().background(HeroOffSurface))
-            if (flagAlpha > 0.01f) {
-                HeaderFlag(
-                    countryCode = lastFlagCountry,
-                    modifier = Modifier.matchParentSize().alpha(flagAlpha),
-                )
-            }
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawHeroLighting(ambient, lit)
-                        // Last, and over the light: the floor is the panel curving out
-                        // of the light, so it has to darken what the light just added.
-                        drawRect(HeroFloor)
-                    }
+
+    Box(modifier) {
+        // The floor under the artwork, and only under the part of it the rows cover: it
+        // fades out across the bleed so the card's own translucent top is not backed by
+        // opaque chrome. Without it, a flag crossfading at 40% alpha would show the page
+        // gradient through itself.
+        Box(Modifier.matchParentSize().background(HeroFloor))
+        if (flagAlpha > 0.01f) {
+            HeaderFlag(
+                countryCode = lastFlagCountry,
+                modifier = Modifier.matchParentSize().alpha(flagAlpha),
             )
-            Box(Modifier.matchParentSize().background(HeroSheen))
         }
-        // Above every face, so the frame is a crisp edge rather than something the
-        // flag can paint over. Purely drawn — no pointer input — so the rows keep
-        // their own touches.
-        Box(Modifier.matchParentSize().border(1.dp, frame, shape))
-        Column(
-            Modifier
-                .statusBarsPadding()
-                .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = 20.dp)
-        ) {
-            TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
-            Spacer(Modifier.height(4.dp))          // .status-row margin-top
-            StatusRow(state = state, onOpenSettings = onOpenSettings)
-            Spacer(Modifier.height(12.dp))         // .power-row margin-top
-            ConnectRow(
-                state = state,
-                onOpenLocations = onOpenLocations,
-                onTogglePower = onTogglePower,
-                onSetMode = onSetMode,
-            )
-            Spacer(Modifier.height(22.dp))         // .network-row margin-top
-            NetworkRow(state = state)
-        }
+        Box(Modifier.matchParentSize().drawBehind { drawHeroAtmosphere(ambient, lit) })
+    }
+}
+
+/**
+ * What the artwork is composited over: the app's chrome colour under the rows, gone by
+ * the foot of the bleed.
+ *
+ * The taper matters as much as the colour. Opaque all the way down and the backdrop would
+ * be a black rectangle behind the browse card's translucent top — i.e. the seam this whole
+ * arrangement exists to remove, just moved [HeroBleed] lower. Ending at nothing means the
+ * last thing under the card's top edge is the page's own gradient, which is what the rest
+ * of the card is over too.
+ */
+private val HeroFloor = Brush.verticalGradient(
+    0.00f to ChromeBg,
+    0.62f to ChromeBg,
+    0.82f to ChromeBg.copy(alpha = 0.55f),
+    1.00f to Color.Transparent,
+)
+
+// ── Header ────────────────────────────────────────────────────────────────────
+// The hero's rows — the content only. Everything visual behind them is [HeroBackdrop]'s,
+// which is drawn by [HomeScreen] as a sibling so it can be taller than this. This
+// composable has no surface, no frame and no background of its own; what it reports, via
+// its own [Modifier.onSizeChanged] at the call site, is how tall the backdrop needs to be.
+//
+// The order of the rows is the redesign's other half. The connect control used to sit
+// third of four, mid-hero, floating in the middle of the artwork with a row of small text
+// under it; it is last now, at the foot, with only [ConnectPad] between it and the browse
+// card's top edge. Docked there, the pill and the card read as one panel — the pill is
+// what the card's top edge is, and the flag and its light are the room they are both in.
+//
+// What changes between the three [HomeUiState.phase] values is the *light*, not any
+// surface. The flag wash is on in all three whenever there is a server to show one for, so
+// connecting no longer paints a moving band across the artwork; that animation lives in
+// the status panel (see [ConnectingPulse]). Up here a phase change is: the atmosphere
+// changes colour and tightens ([drawHeroAtmosphere]), the power bloom comes up, and the
+// ink follows. Nothing slides, nothing sweeps.
+//
+// statusBarsPadding() on this column is what keeps the top bar clear of the clock while
+// the backdrop behind it runs on to the top of the screen.
+
+/** Between the connect control and the browse card's top edge. Small on purpose: this
+ *  gap is the only thing separating the two, and the point is that they touch. */
+private val ConnectPad = 10.dp
+
+/** Between the status/network rows and the docked connect control — the hero's breathing
+ *  room, and what makes the artwork's middle a place rather than a gap. */
+private val HeroOpenSpace = 34.dp
+
+@Composable
+private fun Header(
+    state: HomeUiState,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenLocations: () -> Unit,
+    onTogglePower: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(start = ScreenPad, end = ScreenPad, top = 4.dp, bottom = ConnectPad)
+    ) {
+        TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
+        Spacer(Modifier.height(4.dp))          // .status-row margin-top
+        StatusRow(state = state, onOpenSettings = onOpenSettings)
+        Spacer(Modifier.height(14.dp))
+        NetworkRow(state = state)
+        // The open middle: this is where the flag gets to be a flag, and where the key
+        // light peaks. Weighted rather than fixed would fight the browse card for the
+        // screen; fixed keeps the list's own height predictable.
+        Spacer(Modifier.height(HeroOpenSpace))
+        ConnectRow(
+            state = state,
+            onOpenLocations = onOpenLocations,
+            onTogglePower = onTogglePower,
+            onSetMode = onSetMode,
+        )
     }
 }
 
@@ -1742,24 +1812,33 @@ private fun ConnectBar(
             Column(Modifier.weight(1f)) {
                 Text(
                     headline,
-                    fontSize = 21.sp,
-                    lineHeight = 23.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp,
+                    fontSize = 22.sp,
+                    lineHeight = 24.sp,
+                    // ExtraBold, up from Bold. This is the largest and only truly
+                    // prominent piece of text in the hero, it is set over artwork rather
+                    // than over a flat surface, and it now sits at the foot of the screen
+                    // where the docked pill has to hold its own against the browse card's
+                    // own headings. A heavier face is what carries it there — the weight
+                    // is doing the same job the removed card outline used to.
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.4).sp,
                     color = headerInk(state.phase),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 // The phase, in words, under the country.
                 //
-                // Every other signal for it up here is light or colour — the panel's
-                // face, the ring, the ink — and a state that is only ever stated as
+                // Every other signal for it up here is light or colour — the atmosphere,
+                // the ring, the bloom, the ink — and a state that is only ever stated as
                 // colour is a state a colour-blind user has to infer from a spinner.
-                // It is [RefTextMid], a step behind the country, because the country is
-                // still what this bar is for; and it crossfades rather than cutting,
-                // because it changes at exactly the moments the rest of the header is
-                // already crossfading.
-                Spacer(Modifier.height(2.dp))
+                //
+                // Set as a label rather than as a sentence: uppercase, 11sp, and tracked
+                // wide. Against a 22sp ExtraBold country name, a 12.5sp sentence-case line
+                // read as a second, competing piece of prose; a tracked caption reads as
+                // the country's own subtitle, which is what it is. The dot beside it
+                // carries the phase's colour, so the row states the phase twice over —
+                // once in text and once in hue — inside 11sp of height.
+                Spacer(Modifier.height(3.dp))
                 AnimatedContent(
                     targetState = state.phase,
                     transitionSpec = {
@@ -1770,20 +1849,35 @@ private fun ConnectBar(
                     },
                     label = "connectPhase",
                 ) { phase ->
-                    Text(
-                        when (phase) {
-                            ConnPhase.OFF -> "Not connected"
-                            ConnPhase.CONNECTING -> "Connecting…"
-                            ConnPhase.CONNECTED -> "Protected"
-                        },
-                        fontSize = 12.5.sp,
-                        lineHeight = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.2.sp,
-                        color = RefTextMid,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(PhaseDotSize)
+                                .background(
+                                    color = when (phase) {
+                                        ConnPhase.OFF -> RefTextLow
+                                        ConnPhase.CONNECTING -> RefAccent
+                                        ConnPhase.CONNECTED -> RefGreen
+                                    },
+                                    shape = CircleShape,
+                                )
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            when (phase) {
+                                ConnPhase.OFF -> "NOT CONNECTED"
+                                ConnPhase.CONNECTING -> "CONNECTING…"
+                                ConnPhase.CONNECTED -> "PROTECTED"
+                            },
+                            fontSize = 11.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.1.sp,
+                            color = RefTextMid,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -1906,6 +2000,29 @@ private fun PowerCircle(
         label = "powerMark",
     )
     val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
+    // The bloom's colour and strength, on the same [PHASE_FADE_MS] crossfade as everything
+    // else up here, so the light in the room comes up as one change rather than as an
+    // effect starting. Idle is zero: the disc is white and unlit, and a white disc that
+    // glows white on a dark page just looks like a bad screenshot.
+    val bloomColor by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> Color.White
+            ConnPhase.CONNECTING -> RefAccent
+            ConnPhase.CONNECTED -> RefGreen
+        },
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerBloomColor",
+    )
+    val bloomStrength by animateFloatAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> 0f
+            ConnPhase.CONNECTING -> POWER_BLOOM_WORKING
+            ConnPhase.CONNECTED -> POWER_BLOOM_ON
+        },
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerBloom",
+    )
+    val bloomRadius = PowerBloomSize / 2
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -1914,6 +2031,33 @@ private fun PowerCircle(
         else -> "Connect"
     }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // The light the button throws into the room, drawn first and outside this box —
+        // see [powerBloom]. Compose does not clip a node's drawing to its bounds, so a
+        // 216dp halo can be drawn from inside a 100dp box and spill across the flag, the
+        // connect pill and the browse card's top edge alike. Its colour and strength are
+        // the phase's: nothing idle (an unlit button in a dark room does not glow), the
+        // accent while an attempt is in flight, green and stronger once the tunnel is up.
+        if (bloomStrength > 0.005f) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawBehind {
+                        val radius = bloomRadius.toPx()
+                        val centre = Offset(size.width / 2f, size.height / 2f)
+                        // The brush carries its own centre and radius, in this node's
+                        // coordinates, so the rect it is painted through is free to be
+                        // bigger than the node — which is the whole point. Both are stated
+                        // explicitly rather than left to the shader's defaults, because a
+                        // default-sized radial gradient sizes itself to the rect and would
+                        // put the falloff back inside the button.
+                        drawRect(
+                            brush = powerBloom(bloomColor, bloomStrength, centre, radius),
+                            topLeft = Offset(centre.x - radius, centre.y - radius),
+                            size = Size(radius * 2f, radius * 2f),
+                        )
+                    }
+            )
+        }
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
@@ -2321,8 +2465,11 @@ private fun ConnectingPulse(active: Boolean, modifier: Modifier = Modifier) {
 }
 
 // ── Browse card ───────────────────────────────────────────────────────────────
-// .browse-card: the list's own panel, 28dp top corners and a light hairline along
-// that top edge, sitting 10dp below the header.
+// .browse-card: the list's own panel, 28dp top corners, meeting the hero directly — no
+// margin between them, and its first [PanelFade] translucent so the flag and the hero's
+// horizon light carry on through the tab row (see [panelTopFade]). It is deliberately not
+// a separate floating piece any more: the connect pill is docked immediately above this
+// edge and the artwork runs behind both, so the two read as one panel.
 //
 // The list pulls to refresh, and what it refreshes is the pings: dragging it down
 // re-measures every server *currently shown in it* — the tab's own list, filtered by
@@ -2372,12 +2519,20 @@ private fun BrowseCard(
     LaunchedEffect(state.refreshingPings) {
         if (state.refreshingPings) pullState.startRefresh() else pullState.endRefresh()
     }
+    val density = LocalDensity.current
+    val fade = remember(density) { panelTopFade(with(density) { PanelFade.toPx() }) }
     Column(
         modifier
             .fillMaxWidth()
-            .padding(top = 10.dp)                  // .browse-card margin-top
             .clip(RoundedCornerShape(topStart = PanelCorner, topEnd = PanelCorner))
-            .background(RefBg)
+            // The card's own fill is a gradient now, not [RefBg] flat: translucent at its
+            // top edge and opaque by [PanelFade] down. That is what merges it with the
+            // hero. The backdrop above is drawn [HeroBleed] taller than the hero's rows, so
+            // what is behind these first 132dp is the flag and its horizon light — and
+            // because the fill lets them through, the tab row sits *in* the artwork instead
+            // of on a panel that starts below it. There is no gap and no visible join: the
+            // brightest part of the transition is the light itself.
+            .background(fade)
             .drawBehind { drawPanelTopEdge() }
     ) {
         TabPillRow(
@@ -2396,6 +2551,14 @@ private fun BrowseCard(
                 // is the drag surface, so a pull that starts on the empty hint or in the
                 // gap beside a row works exactly like one that starts on a row.
                 .nestedScroll(pullState.nestedScrollConnection)
+                // [PullToRefreshContainer] positions itself with a negative
+                // `translationY` of its own height, so at rest it is parked *above* this
+                // Box rather than hidden inside it. Nothing here clipped, so the parked
+                // spinner painted over the tab row — a grey puck sitting on top of the
+                // word "Custom", which read as a rendering fault rather than as an
+                // indicator. Clipping to bounds is what the pattern assumes: the spinner
+                // is invisible until the drag pulls it down into the list's own area.
+                .clipToBounds()
         ) {
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -2441,13 +2604,59 @@ private fun BrowseCard(
     }
 }
 
-/** .browse-card border-top: only the top edge and its two corner arcs. */
+/**
+ * How far down the browse card the hero's artwork and light are still allowed through.
+ *
+ * Roughly the tab row plus its margins, which is what makes the merge read as intended:
+ * the card's controls sit in the flag's own light, the list below them does not. Longer and
+ * the first server rows would be set over artwork; shorter and the fade would land inside
+ * the tab pills, which is a seam in a worse place than the one it replaced.
+ */
+private val PanelFade = 132.dp
+
+/**
+ * The browse card's fill: translucent [RefBg] at its top edge, opaque by [heightPx] down.
+ *
+ * Anchored in pixels with an explicit `startY`/`endY` rather than in fractions, because the
+ * card's height is whatever is left of the screen after the hero — a fractional stop would
+ * put the fade at a different place on every device and inside the list on a tall one.
+ * [TileMode.Clamp] is what holds the opaque end all the way to the foot.
+ *
+ * It starts at 0.62 rather than at nothing. Fully transparent would be a prettier merge and
+ * an unreadable tab row: the pills' own labels are set at 13sp, and over the pale band of a
+ * flag they would have nothing behind them. 0.62 of near-black is enough for white text to
+ * clear 7:1 against the worst case while the artwork is still unmistakably there.
+ */
+private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
+    0.00f to RefBg.copy(alpha = 0.62f),
+    0.35f to RefBg.copy(alpha = 0.84f),
+    0.70f to RefBg.copy(alpha = 0.96f),
+    1.00f to RefBg,
+    startY = 0f,
+    endY = heightPx,
+    tileMode = TileMode.Clamp,
+)
+
+/**
+ * The card's top edge and its two corner arcs.
+ *
+ * Softer than the 0.14 hairline it was. That value was tuned for a card meeting the page
+ * on plain near-black, where an edge had to declare itself; this edge is now drawn over the
+ * hero's own light, and at 0.14 it read as exactly what the redesign set out to remove — a
+ * bright line across the screen. At 0.08, with the fade and the horizon light behind it, it
+ * still catches the corners and no longer reads as a border.
+ */
 private fun DrawScope.drawPanelTopEdge() {
     val hairline = 1.dp.toPx()
     val radius = PanelCorner.toPx()
     clipRect(top = 0f, bottom = radius + hairline) {
         drawRoundRect(
-            color = Color.White.copy(alpha = 0.14f),
+            brush = Brush.horizontalGradient(
+                0.00f to Color.White.copy(alpha = 0.03f),
+                0.28f to Color.White.copy(alpha = 0.08f),
+                0.72f to Color.White.copy(alpha = 0.08f),
+                1.00f to Color.White.copy(alpha = 0.03f),
+            ),
             topLeft = Offset(hairline / 2f, hairline / 2f),
             size = Size(size.width - hairline, size.height - hairline),
             cornerRadius = CornerRadius(radius),

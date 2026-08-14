@@ -1795,7 +1795,12 @@ private fun LocationsScreen(
     }
     var expandedSubId by remember { mutableStateOf<String?>(null) }
 
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    // systemBarsPadding, because the window no longer fits the decor to the system bars
+    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
+    // Home's flag run behind the status bar). The background still fills the whole
+    // window — it is applied before the padding — while this screen's own rows stay
+    // clear of the clock at the top and the gesture bar at the foot.
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp),
@@ -1986,7 +1991,12 @@ private fun SettingsScreen(
     // switch for that behavior, not a decorative local-only state.
     var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(context)) }
 
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    // systemBarsPadding, because the window no longer fits the decor to the system bars
+    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
+    // Home's flag run behind the status bar). The background still fills the whole
+    // window — it is applied before the padding — while this screen's own rows stay
+    // clear of the clock at the top and the gesture bar at the foot.
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp),
@@ -2465,7 +2475,12 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
 @Composable
 private fun ProfileScreen(onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    // systemBarsPadding, because the window no longer fits the decor to the system bars
+    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
+    // Home's flag run behind the status bar). The background still fills the whole
+    // window — it is applied before the padding — while this screen's own rows stay
+    // clear of the clock at the top and the gesture bar at the foot.
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 22.dp),
@@ -2581,7 +2596,12 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
         AppSettings.setSplitTunnelMode(context, newMode)
     }
 
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    // systemBarsPadding, because the window no longer fits the decor to the system bars
+    // (MainActivity's WindowCompat.setDecorFitsSystemWindows(false), which is what lets
+    // Home's flag run behind the status bar). The background still fills the whole
+    // window — it is applied before the padding — while this screen's own rows stay
+    // clear of the clock at the top and the gesture bar at the foot.
+    Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 16.dp),

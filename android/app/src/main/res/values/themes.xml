@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      The app's window chrome. Every colour here is #0B0B0D — the one value the app
-      calls chrome: the status bar at the top, the navigation bar at the foot, the
-      window behind Compose, and (as HomeScreen.kt's ChromeBg) the disconnected hero
-      panel. So a disconnected app is one uninterrupted surface from the notification
-      icons down to the gesture bar, with no seam where the app's own drawing starts.
+      The app's window chrome. The navigation bar, the window behind Compose and (as
+      HomeScreen.kt's ChromeBg) the app's own chrome colour are all #0B0B0D. The status
+      bar is transparent: MainActivity turns off decor fitting so the home hero's flag
+      is drawn behind it (see WindowCompat.setDecorFitsSystemWindows there), and a
+      painted status bar would cut that image off with a hard horizontal seam. Every
+      screen keeps its content clear of the bar with statusBarsPadding(), so nothing but
+      background art is ever underneath it.
 
       windowBackground matters even though Compose paints over all of it: it is what
       the system draws for the launch window before the first frame, and left at the
@@ -21,7 +23,7 @@
       set: windowLightNavigationBar is API 27 and this app ships to 24.
     -->
     <style name="Theme.CDNHunter" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#FF0B0B0D</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">#FF0B0B0D</item>
         <item name="android:windowBackground">#FF0B0B0D</item>
         <item name="android:windowLightStatusBar">false</item>
