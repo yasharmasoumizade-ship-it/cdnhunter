@@ -131,11 +131,11 @@ package com.cdnhunter.app.ui
 // `.power-glow` is `display:none` — and nothing is attached to it: the two mode
 // chevrons that used to sit above and below it are gone, and so is the connect pill its
 // right half used to be cut into. Smart / Manual is still switched by swiping the circle
-// up or down, or by its two accessibility actions, and the mode is now named and changed
-// in [ModePill], docked on the seam between the hero and the browse card — the status chip that used to state it
-// alongside the transport and the port is gone. The one
-// thing on it that answers to the tunnel is its mark, which goes teal while the tunnel is
-// up (see [headerInk]), and the ring around it, which carries the phase.
+// up or down, or by its two accessibility actions, and it is no longer *named* anywhere in the
+// hero: the status chip that used to state it alongside the transport and the port is gone, and
+// so is the mode pill that replaced that chip. The one thing on the disc that answers to the
+// tunnel is its mark, which goes teal while the tunnel is up, and the ring around it, which
+// carries the phase.
 //
 // There is no green anywhere on this screen. Connected is one colour, [RefLive] — a
 // refined teal, the mockup's `--teal` family — and it is stated in exactly four places:
@@ -239,7 +239,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -262,7 +264,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF060709)          // --bg
@@ -291,11 +295,13 @@ private val RefFrost = Color(0xFFA6DCFF)
  * The lit edge of the frosted pane — [RefFrost] carried most of the way to white.
  *
  * It lives up here with the palette rather than down in the panel section it is named for
- * because it now has two users on opposite sides of the file: the card's own top edge
- * ([drawPanelTopEdge]) and the mode pill's hairline ([ModePillEdge]), which is docked on that
- * edge and has to be lit by the same white or the seam reads as two different materials
- * meeting. Top-level properties initialise in file order, so the shared token has to be
- * declared before the first of them.
+ * because it used to have two users on opposite sides of the file: the card's own top edge
+ * ([drawPanelTopEdge]) and the mode pill's hairline, which was docked on that edge and had to be
+ * lit by the same white or the seam read as two different materials meeting. The pill is gone
+ * and the sole remaining user is the card, but the reason to keep the declaration here is
+ * unchanged and worth stating: top-level properties initialise in file order, so a token shared
+ * across sections has to be declared before the first of them, and moving it back down is how
+ * the next shared use of it becomes a "must be initialized" compile error.
  */
 private val PanelEdgeInk = Color(0xFFE8F6FF)
 
@@ -436,15 +442,15 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * backdrop the browse card is drawn over. The flag's own reach is [FlagFootRise] and now runs
  * the other way — it stops short of the rows rather than past them.
  *
- * 88dp, a little past [PanelFade], so the horizon bloom is still going where the card has
- * already turned solid: the dissolve ends inside the light rather than at the end of it,
- * which is what leaves no line anywhere in the transition. It was 138dp, which was tuned
- * against a 132dp fade; with the card's chrome moved into the hero the fade came up to 84dp
- * and this had to come up with it, or the bloom's centre — which sits exactly on the band's
- * foot ([drawHeroAtmosphere]) — would be 50dp inside opaque paint and the seam would go
- * back to being a line.
+ * 40dp, and the rule behind the number has not changed even though the number has: a little
+ * past [PanelFade], so the horizon bloom is still going where the card has already turned
+ * solid, which is what leaves no line anywhere in the transition. The bloom's centre sits
+ * exactly on this band's foot ([drawHeroAtmosphere]), so the two have to move together — it was
+ * 138dp against a 132dp fade, then 88 against 84, and now 40 against 30. Set it *shorter* than
+ * the fade and the last few dp of the dissolve would have nothing behind them; set it much
+ * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 88.dp
+private val HeroBleed = 40.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -699,28 +705,11 @@ private fun rememberReduceMotion(): Boolean {
 private fun <T> motionSpec(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
     if (reduce) snap() else tween(durationMs)
 
-/**
- * The header's headline ink: [idle] while the tunnel is down, [RefWorking] while an
- * attempt is in flight, [RefLive] while it is up — crossfaded on the same
- * [PHASE_FADE_MS] the ambient light and the hero's surfaces use, so the top of the
- * screen changes state as one thing. The country on the connect bar, the protocol on
- * the status chip, the transport and the public IP all share this; the power mark
- * shares it too, from its own dark idle. Secondary inks up here — the mode word, the
- * separators, the chevron, the top bar's navigation glyphs — deliberately do not,
- * because they are settings and punctuation rather than connection state. Like the light, it
- * cuts instantly when the system asks for no animations.
- */
-@Composable
-private fun headerInk(phase: ConnPhase, idle: Color = RefTextHi): Color {
-    val reduce = rememberReduceMotion()
-    val target = when (phase) {
-        ConnPhase.OFF -> idle
-        ConnPhase.CONNECTING -> RefWorking
-        ConnPhase.CONNECTED -> RefLive
-    }
-    val ink by animateColorAsState(target, motionSpec(reduce, PHASE_FADE_MS), label = "headerInk")
-    return ink
-}
+// `headerInk` — the phase's colour as a single [Color], crossfaded on [PHASE_FADE_MS] — used to
+// live here. Its last caller was the country headline, which now takes a [Brush] instead so it
+// can carry the flag's own hues ([headlineBrush]), and a brush is not something a Color helper
+// can return. The phase-to-colour rule it held is unchanged and is stated inside that function:
+// [RefWorking] in flight, [RefLive] up, the country's tint at rest.
 
 /**
  * The colour of the light in the room for [phase]: white idle, amber working, blue up.
@@ -835,14 +824,18 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * alternative, `FillWidth`, leaves a hard horizontal edge, because the bottom taper
  * ([HeaderFlagBottomFade]) masks the *layer* and not the image inside it.
  *
- * The trade, and it is a real one: the artwork now ends above the tab row rather than under
- * the card, so the tab pills and the docked [ModePill] sit on the darkened band
- * ([HeroDepthScrim] plus [HeroFloor]) instead of on flag. That reads as intentional — it is
- * the same shading every other control on the hero is being helped by, and the flag's last
- * 14% dissolves into it over ~40dp rather than stopping — and it is what makes the controls
- * legible over an arbitrary country's arbitrary bright band.
+ * The trade, and it is a real one: the artwork ends above the tab row rather than under the
+ * card, so the tab pills sit on the darkened band ([HeroDepthScrim] plus [HeroFloor]) instead of
+ * on flag. That reads as intentional — it is the same shading every other control on the hero is
+ * being helped by, and the flag's last 14% dissolves into it over ~40dp rather than stopping —
+ * and it is what makes the controls legible over an arbitrary country's arbitrary bright band.
+ *
+ * 48dp, down from 64. The hero itself lost about 10dp at the top ([TopBarInk]) and the card came
+ * up to meet the tabs, so a rise tuned for the taller hero was leaving a deeper dark shelf under
+ * the artwork than the design wants: the flag should run out just above the tab row, not a row
+ * and a half above it.
  */
-private val FlagFootRise = 64.dp
+private val FlagFootRise = 48.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -1397,14 +1390,11 @@ internal fun HomeScreen(
                     if (!searchOpen) query = ""
                 },
                 onAddServer = onAddServer,
-                // Above the card in paint order, because the [ModePill] at the foot of
-                // this column is drawn half below the hero's own bounds ([dockOnSeam]) and a
-                // later sibling would otherwise cover the half that overhangs. Children of
-                // a Column paint in declaration order; zIndex is what overrides that
-                // without reordering them.
-                modifier = Modifier
-                    .zIndex(1f)
-                    .onSizeChanged { heroContentPx = it.height },
+                // The one thing this reports is its own height: the backdrop behind it is
+                // sized off that, and so is where the browse card starts. There is no
+                // z-index on it any more — nothing in the hero overhangs the card now that
+                // the mode pill is gone, so declaration order is the right paint order.
+                modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             BrowseCard(
                 state = state,
@@ -1565,9 +1555,8 @@ private val HeroFloor = Brush.verticalGradient(
  *  - down to 0.05 through the middle, which is where the power disc is — the disc is a white
  *    object with its own shadow and needs the artwork *behind* it left alone, or the button
  *    stops looking like it is sitting on something;
- *  - back to 0.26 at the foot, under the tab pills and the docked [ModePill], and running on
- *    past where the flag now ends ([FlagFootRise]) so the artwork's last 14% dissolves into
- *    shade rather than into nothing.
+ *  - back to 0.26 at the foot, under the tab pills, and running on past where the flag now ends
+ *    ([FlagFootRise]) so the artwork's last 14% dissolves into shade rather than into nothing.
  *
  * Seven stops for two ramps, and the count is the point: a three-stop version of this banded
  * visibly on a dark flag, because 8-bit alpha over near-black has very little room between
@@ -1626,23 +1615,19 @@ private val HeroDepthEdge = Brush.horizontalGradient(
 //   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here
 //   [what to connect to] → [TabPillRow], the list's own controls, lifted out of the card
 //                          and floated here in the hero (see below)
-//   [the alternative]    → [ModePill], docked on the seam itself, half in the hero and half
-//                          in the card, and measured as nothing so the card can start right
-//                          under the tabs (see [dockOnSeam])
 //
-// Two rows that used to be somewhere else are now the last two things in this column, and
-// both moves are the same idea: the boundary between the hero and the list is the most
-// useful place on this screen, so the controls that belong to *both* halves live on it.
-// [TabPillRow] — Main/Custom and the add and search glyphs — was the first thing inside
-// [BrowseCard]; it now sits in the hero, immediately above the card's top edge, so the card
-// begins with the list rather than with its own chrome and the flag is what those controls
-// are set against. [ModePill] is docked lower still, straddling the edge, which is what
-// makes it read as a handle on the panel rather than a third row of hero furniture.
+// The row that used to be somewhere else is the last thing in this column, and the move is
+// this idea: the boundary between the hero and the list is the most useful place on this
+// screen, so the controls that belong to *both* halves live on it. [TabPillRow] —
+// Main/Custom and the add and search glyphs — was the first thing inside [BrowseCard]; it
+// now sits in the hero, [TabRowFootGap] above the card's top edge, so the card begins with
+// the list rather than with its own chrome and the flag is what those controls are set
+// against. That gap is deliberately tiny: the tabs and the card are one group.
 //
 // The status eyebrow above the headline is gone — the dot and the word ("NOT CONNECTED",
 // "CONNECTING", "PROTECTED") that used to be the column's first line, together with
 // `phaseLabel`, `phaseDotColor` and their dot token. The phase is still stated three times
-// over without it: the ring around the disc, the colour of the headline ([headerInk]) and
+// over without it: the ring around the disc, the colour of the headline ([headlineBrush]) and
 // the colour of the room itself ([drawHeroAtmosphere]). What the caption added on top of
 // those was a line of 11sp chrome at the very top of a hero that was asked to get shorter.
 //
@@ -1650,8 +1635,9 @@ private val HeroDepthEdge = Brush.horizontalGradient(
 // and the address — is gone. It answered a question nobody standing at this screen is
 // asking: whether the tunnel is up, and where it comes out, are what the hero is for, and
 // the transport and the port are facts about a *config*, which is what the list below and
-// the config editor are for. Its one irreplaceable field was the mode, and that moved to
-// [ModePill], where it is a control rather than a read-out.
+// the config editor are for. Its one irreplaceable field was the mode, which is now stated
+// nowhere in the hero at all: the pill that took it over has itself been deleted, and the gesture
+// and the two accessibility actions on the disc are the whole of that control.
 //
 // The server selector that used to be docked at the foot of this column is gone. It named
 // the active config in a row of its own directly above a list of configs, which is the same
@@ -1677,14 +1663,12 @@ private val HeroDepthEdge = Brush.horizontalGradient(
 // statusBarsPadding() on this column is what keeps the top bar clear of the clock while
 // the backdrop behind it runs on to the top of the screen.
 
-/** Between the top bar and the country headline — the column's own head clearance.
- *
- *  2dp, down from 6, 12, and 20 before that. The status caption this used to hold off is
- *  deleted, so what is under it now is 34sp of headline, which needs no help being seen as
- *  a new thing; every dp here is a dp the whole hero sits lower by. At 2 it is a hair rather
- *  than a gap — the headline hangs off the top bar, and the top bar's own 48dp touch targets
- *  are what actually keep the two apart. */
-private val HeroTopSpace = 2.dp
+// Between the top bar and the country headline there is now nothing at all — no token and no
+// spacer. It was 20dp, then 12, then 6, then 2, and the last step to zero is not the same kind
+// of change as the ones before it: what holds the headline off the navigation chips is no
+// longer a gap in the column but the [TopBar]'s own reported height, which is 10dp less than
+// the 48dp tap targets inside it (see [TopBarInk]). Spending a spacer here as well would be
+// paying twice for the same clearance.
 
 /** Between the headline block and the address.
  *
@@ -1710,52 +1694,21 @@ private val HeroOpenSpace = 2.dp
 private val PowerFootGap = 10.dp
 
 /**
- * Between the tab row and the seam the [ModePill] is docked on — and, since the pill takes no
- * height of its own (see [dockOnSeam]), this is now the *whole* distance from the bottom of
- * the tab pills to the top edge of the browse card.
+ * The whole distance from the bottom of the tab pills to the top edge of the browse card.
  *
- * 8dp. The gap it sits in was about 34dp before the pill stopped taking a slot, then 14dp, and
- * is now this: the tab row and the card read as one group with a hairline of artwork between
- * them, which is what the brief asked for — controls belonging to the list they sit on rather
- * than floating in their own band of flag.
+ * 6dp: 34 before the mode pill stopped taking a layout slot, then 14, then 8, and now this.
+ * With the pill deleted outright there is nothing left to hold clear of, so this is free to be
+ * what the design wants — a hairline of artwork between the list's controls and the list's
+ * panel, so the two read as one object.
  *
- * 8 is the floor, and the pill is why. It straddles the seam, so whatever fraction of it is
- * placed above the line rises back into this gap; [dockOnSeam] now places it at 38% rather than
- * 50% for exactly this reason, which puts about 13dp of pill into an 8dp gap plus the tab row's
- * own 9dp of empty bottom padding. Any tighter, or any deeper a dock, and the pill starts
- * climbing over the Main / Custom pills themselves.
+ * A warning for anyone tempted to close it further, because it cost two rounds to find: this
+ * number was never what made the gap look big. The card's top used to be *translucent* for
+ * 84dp ([PanelFade]) and started at 62% opacity, so its edge was invisible and the eye put the
+ * card's beginning wherever the paint finally turned solid — about 80dp lower than the card
+ * actually starts. Tightening a 14dp spacer to 8 changed nothing anyone could see. What fixed
+ * it was making the edge legible: see [PanelFade] and [drawPanelTopEdge].
  */
-private val TabRowFootGap = 8.dp
-
-/**
- * Docks a child on the hero's foot: **measured as no height at all**, drawn centred on the
- * seam between the hero and the browse card.
- *
- * This is what raises the card. The pill used to be a normal row in the column offset 15dp
- * downwards, and an offset moves drawing only — the 33dp slot it was measured into stayed
- * behind, and [Header]'s measured height is what [BrowseCard] is laid out under, so the card
- * began a pill's height below the tab row with nothing but flag in between. Reporting a height
- * of zero and placing the pill at a negative offset gets the identical dock — out of a slot
- * that no longer exists.
- *
- * The fraction is 38%, not 50%. A true half-and-half straddle is the cleanest way to draw a
- * badge *on* a seam, but it also spends half a pill height climbing back up into
- * [TabRowFootGap], and that gap is now 8dp; biasing the pill downwards keeps the same "sitting
- * on the edge" read — a third of it over the artwork, the rest over the frosted glass, the
- * card's top edge still crossing it — while giving back the ~4dp that lets the gap close.
- *
- * Nothing clips it: the column has no [Modifier.clip], and [Header] carries a z-index at its
- * call site, so the half that hangs over the card is painted after the card and survives.
- * [CardTopRoom] is what keeps that half off the first server row.
- */
-private const val DOCK_RISE_FRACTION = 0.38f
-
-private fun Modifier.dockOnSeam(): Modifier = layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    layout(placeable.width, 0) {
-        placeable.place(0, -(placeable.height * DOCK_RISE_FRACTION).toInt())
-    }
-}
+private val TabRowFootGap = 6.dp
 
 @Composable
 private fun Header(
@@ -1775,13 +1728,12 @@ private fun Header(
         modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            // No top padding of its own: [HeroTopSpace] is the head clearance, and the top
-            // bar's rows carry 48dp touch targets that already hold the status bar off.
+            // No top padding of its own: the head clearance is the [TopBar]'s own reported
+            // height, which is shorter than the 48dp touch targets inside it ([TopBarInk]).
             .padding(start = ScreenPad, end = ScreenPad),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
-        Spacer(Modifier.height(HeroTopSpace))
         CountryHeadline(state)
         Spacer(Modifier.height(HeadlineFootGap))
         // The address sits above the button: the order reads as a sentence — which country,
@@ -1807,137 +1759,27 @@ private fun Header(
             onToggleSearch = onToggleSearch,
             onAdd = onAddServer,
         )
+        // The hero's measured foot is the foot of this spacer, which is exactly where the
+        // browse card's top edge is. Nothing is docked on that line any more — see the note
+        // where the mode pill used to be.
         Spacer(Modifier.height(TabRowFootGap))
-        // Docked on the seam, and taking no height while it does it — see [dockOnSeam]. The
-        // hero's measured foot is therefore the foot of the spacer above, which is where the
-        // card starts; the pill is drawn straddling that line.
-        ModePill(
-            mode = state.mode,
-            onSetMode = onSetMode,
-            modifier = Modifier.dockOnSeam(),
-        )
     }
 }
 
 // ── Mode pill ─────────────────────────────────────────────────────────────────
-// The small secondary control under the connect disc: it states the connect mode and
-// toggles it.
+// Gone. The badge that used to sit on the seam between the hero and the browse card — glass,
+// hairline, "Mode · Manual", docked half in and half out of the card's top edge — is deleted:
+// the composable, its six tokens and the `dockOnSeam` layout modifier that put it there.
 //
-// The mode was already changeable from this button — a vertical drag on the disc, up for
-// Smart and down for Manual — but nothing on the screen drew that gesture, so in practice
-// the only way to find it was to be told. This pill is that missing control, and it sits
-// under the disc because that is where the gesture it replaces lives. The drag is kept:
-// same two bindings, two ways in.
+// Two things go with it. The seam has nothing on it any more, so [CardTopRoom] is back to a
+// plain head clearance rather than a hole cut for an overhanging object, and [Header] no
+// longer needs a z-index to paint over the card.
 //
-// It is deliberately quiet — glass, hairline, 12.5sp, dimmer ink than anything above it —
-// so that the hero still has exactly one primary action. A secondary button that competes
-// with the disc for the eye would undo the whole point of centring the disc.
-//
-// The label reads "Mode · Smart": the *current* mode, not the one a tap would switch to.
-// It states the fact because nothing else on the screen does any more — the status row
-// that used to carry the mode alongside the transport and the port is gone — and a control
-// that is the only place a value appears has to show the value. "Mode ·" in front of it is
-// what keeps it from reading as a bare label: the prefix is the noun, the word after it is
-// the setting, and together they read as a setting one can change rather than as a status
-// light. Only the mode word swaps, on the fade-in-over-fade-out [AnimatedContent] this
-// screen uses everywhere, with the container sizing between "Smart" and "Manual" rather
-// than jumping.
-
-/** The pill's ink. Dimmer than [RefTextMid] on purpose: see the note above. */
-private val ModePillInk = Color.White.copy(alpha = 0.86f)
-
-/**
- * The pill's own material, now that it is docked on the seam rather than parked under the
- * disc: a cold dark glass, lighter at the top than at the foot.
- *
- * It used to be [GlyphChip], the same fill as the two navigation chips at the top of the
- * screen — which was right while it was one small frame among several, and wrong once it
- * became the only object on the boundary between the two halves of the screen. What it is
- * over is half flag and half frosted card, so it needs enough body to read on either; and
- * the top-lit gradient is what keeps it from looking like a flat sticker laid across the
- * edge. The blue in it is [RefPanelBg]'s blue, so the pill belongs to the card it is docked
- * on rather than to the chrome it came from.
- */
-private val ModePillFill = Brush.verticalGradient(
-    0.00f to Color(0xFF1B2130).copy(alpha = 0.96f),
-    0.55f to Color(0xFF101521).copy(alpha = 0.96f),
-    1.00f to Color(0xFF070A11).copy(alpha = 0.97f),
-)
-
-/** Its hairline: lit across the top, out by the foot. */
-private val ModePillEdge = Brush.verticalGradient(
-    0.00f to PanelEdgeInk.copy(alpha = 0.20f),
-    0.45f to PanelEdgeInk.copy(alpha = 0.07f),
-    1.00f to PanelEdgeInk.copy(alpha = 0.02f),
-)
-
-/** How far the pill is lifted off the seam, and in what colour. */
-private val ModePillLift = 12.dp
-private val ModePillShadow = Color(0xFF03060C)
-
-/** The "Mode ·" prefix, one step down again so the value is what the eye lands on. */
-private val ModePillLabelInk = Color.White.copy(alpha = 0.46f)
-
-@Composable
-private fun ModePill(
-    mode: ConnectMode,
-    onSetMode: (ConnectMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val reduce = rememberReduceMotion()
-    val next = if (mode == ConnectMode.SMART) ConnectMode.MANUAL else ConnectMode.SMART
-    Row(
-        modifier
-            // The shadow is what lifts it off the seam it is docked on: without one, a pill
-            // whose own fill is nearly the card's fill reads as a hole in the edge rather
-            // than as an object on it. It is before the clip because a shadow is cast by
-            // the shape, so the shape has to be named to it.
-            .shadow(
-                elevation = ModePillLift,
-                shape = CircleShape,
-                ambientColor = ModePillShadow,
-                spotColor = ModePillShadow,
-            )
-            .clip(CircleShape)
-            .background(ModePillFill)
-            // A gradient hairline rather than a flat one: brighter across the top, gone by
-            // the foot, which is the same lit-from-above logic as the card's own edge.
-            .border(1.dp, ModePillEdge, CircleShape)
-            .clickable(
-                onClickLabel = "Switch to ${next.label} mode",
-                onClick = { onSetMode(next) },
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Mode · ",
-            fontSize = 12.5.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 0.1.sp,
-            color = ModePillLabelInk,
-            maxLines = 1,
-        )
-        AnimatedContent(
-            targetState = mode,
-            transitionSpec = {
-                (
-                    fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 110))
-                    ).using(SizeTransform(clip = false))
-            },
-            label = "modePill",
-        ) { target ->
-            Text(
-                target.label,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.1.sp,
-                color = ModePillInk,
-                maxLines = 1,
-            )
-        }
-    }
-}
+// The mode itself is still changeable, and by the gesture that always did it: a vertical drag
+// on the connect disc, up for Smart and down for Manual, plus the two named accessibility
+// actions on the same button (see [PowerCircle]). Nothing on the screen states the current
+// mode now — that is the trade this removal makes, and it is deliberate: the hero is down to
+// one country, one address and one action.
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
 // Two navigation marks, one at each end: hamburger → Settings, account → Profile.
@@ -1989,9 +1831,51 @@ private val GlyphChipBorder = heroEdge
  *  same 12dp the status chip uses so the two sit on one plane. */
 private val GlyphChipElevation = 12.dp
 
+/**
+ * The height the top bar *reports* to the hero column, as against the [TapTarget] it measures.
+ *
+ * 38dp — [NavChip], the size of the frames that are actually visible in this row. The row is
+ * still 48dp of touchable height, because 48 is the floor for a hit target and shrinking one to
+ * buy layout is the kind of trade that makes an app hard to use in a moving vehicle; what
+ * changes is that the 5dp of empty reach above and below each chip is no longer *also* charged
+ * to the column below it. The row measures 48, reports 38, and places its content centred in
+ * the difference, so the chips do not move on screen — everything under them comes up by 10dp.
+ *
+ * This is the whole of the "move the country name higher" ask that could be paid for honestly:
+ * the spacer between this row and the headline was already zero, the status-bar inset is only
+ * applied once ([Header] takes it; [AppScreen] deliberately does not), and Compose 1.6 already
+ * trims the font padding off the headline's own line box. Ten dp of nothing was the last thing
+ * left between the clock and the country.
+ */
+private val TopBarInk = NavChip
+
+/**
+ * Report [reported] height while measuring, and drawing, at whatever the content actually is.
+ *
+ * The content is centred in the difference and is not clipped to the reported box — it draws
+ * outside its own bounds, which is exactly the point. Used for rows whose touchable area has to
+ * stay bigger than their visible one ([TopBar]); the deleted mode pill's `dockOnSeam` was the
+ * same trick with the placement biased instead of centred.
+ */
+private fun Modifier.reportHeight(reported: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val height = reported.roundToPx().coerceIn(0, placeable.height)
+    layout(placeable.width, height) {
+        placeable.place(0, -(placeable.height - height) / 2)
+    }
+}
+
 @Composable
 private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // Outside the height: a size modifier reports whatever it was asked for, so the
+            // trim has to sit above it in the chain to be the thing the column sees.
+            .reportHeight(TopBarInk)
+            .height(TapTarget),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         // The mockup's tap boxes are 40px; these are 48dp for reach and nudged
         // back out by 5dp so the chips still sit on the mockup's margins.
         GlyphButton(
@@ -2065,15 +1949,169 @@ private fun GlyphButton(
 // — the user picks another server, or the tunnel reports the exit node's real country —
 // and a country name that cuts while its flag dissolves reads as two things happening.
 //
-// [headerInk] colours it, so the headline is the phase's colour too: white off, accent
-// working, teal up. That is the third statement of the phase on this screen and the one
-// that carries furthest, because it is on the biggest text.
+// [headlineBrush] colours it, so the headline is the phase's colour too — accent working, teal
+// up — and at rest it is the *flag's* colours rather than white. That is the third statement of
+// the phase on this screen and the one that carries furthest, because it is on the biggest text.
 
 /** The headline, and its subtitle's, own size. 34sp is the largest the longest country
  *  name this app can draw ("Bosnia and Herzegovina") still fits on one line of a 360dp
  *  screen at default font scale; beyond that it ellipsises, which on the screen's one
  *  headline would be worse than a smaller face. */
 private val HeadlineSize = 34.sp
+
+// ── Flag-tinted headline ──────────────────────────────────────────────────────
+// The country's name, in the country's own colours.
+//
+// The headline used to be one fixed white ([RefTextHi]) over whatever artwork happened to be
+// behind it, which is the safe choice and also the one that makes the largest text on the
+// screen the only thing up here with no relationship to the flag it is printed on. Every other
+// layer in the hero already takes its cue from the artwork — the wash, the horizon light, the
+// scrim — and the word sat on top of all of it as chrome.
+//
+// The treatment is a two-stop vertical gradient across the glyphs, from a light tint of the
+// flag's first dominant hue to a light tint of its second: Sweden's blue into its gold, Italy's
+// green into its red, Japan's crimson into its white. Not sampled from the bitmap, and that is
+// a decision rather than a shortcut. Sampling means decoding the flag on the UI thread, or
+// carrying a palette extraction on every flag change, to arrive at an *average* — and the
+// average of a flag is mud, because flags are chosen for contrast. It also cannot be tuned: the
+// blue of the Swedish flag at full saturation fails contrast at 34sp over dark artwork, so the
+// sampled colour would need lightening by hand anyway. A curated table skips both problems and
+// is auditable, one line per country.
+//
+// Contrast is what fixes the *lightness* of every entry below. All of them sit in a narrow
+// luminance band — pastels, nothing below roughly #A8 in its brightest channel — so the
+// headline clears its contrast floor over the darkest and the brightest band of any flag the
+// app draws, with the hero's own scrim ([HeroDepthScrim]) underneath it. What varies between
+// countries is hue, never how bright the word is.
+//
+// The phase still wins. [headlineBrush] lerps both stops towards [RefWorking] while an attempt
+// is in flight and towards [RefLive] while the tunnel is up, on the same [PHASE_FADE_MS] the
+// ambient light and every other surface up here use, so connecting and connected still read at a
+// glance and the flag's hues come back as the state falls away. Off — the state the user spends
+// most of their time looking at — it is the flag's own colours.
+
+/** Blue into gold: SE, UA, KZ. */
+private val InkBlueGold = Color(0xFFA9C9F2) to Color(0xFFF2DB99)
+
+/** Blue into near-white ice: FI, EE, GR, IL, AR. */
+private val InkBlueIce = Color(0xFFBAD6F6) to Color(0xFFECF3FC)
+
+/** The blue-white-red family, and the largest one: US, GB, FR, NL, RU and the rest. */
+private val InkTricolour = Color(0xFFB7CCF2) to Color(0xFFF0BEC1)
+
+/** Red into white — the other large family, from DK and CH to JP and SG. */
+private val InkRedWhite = Color(0xFFF5C2BD) to Color(0xFFF3EEEE)
+
+/** Gold into red: ES, VN. */
+private val InkGoldRed = Color(0xFFF5DDA0) to Color(0xFFF1B3A4)
+
+/** Gold into red over black: DE, BE. The black band is what the tints cannot state, so the
+ *  gold carries the flag and the red follows it. */
+private val InkIronGold = Color(0xFFF4D68F) to Color(0xFFEDB0A0)
+
+/** Green into gold: BR, LT, ZA. */
+private val InkGreenGold = Color(0xFFAADCB6) to Color(0xFFF0DB98)
+
+/** Green into orange: IE, NG. */
+private val InkEmerald = Color(0xFFA9DEB9) to Color(0xFFF5CD9F)
+
+/** Green into red, usually across a white middle: IT, HU, IR, MX, BG. */
+private val InkGreenWhiteRed = Color(0xFFA8DDB2) to Color(0xFFF1BCB6)
+
+/** Green into crimson: PT, KE. */
+private val InkGreenCrimson = Color(0xFFA9DCB4) to Color(0xFFF1B2A5)
+
+/** The Gulf's green-white-red-black: AE, SA, KW, IQ, OM, AZ. */
+private val InkDesertGreen = Color(0xFFB4E0BD) to Color(0xFFEFC6B9)
+
+/** Blue into gold into red: RO, MD, AM. */
+private val InkBlueGoldRed = Color(0xFFB4CBF2) to Color(0xFFF3DA9E)
+
+/** Saffron into green: IN. */
+private val InkSaffron = Color(0xFFF5C79A) to Color(0xFFB6E0BA)
+
+/** Blue into red on white: KR, TW. */
+private val InkEastAsia = Color(0xFFB8D3F2) to Color(0xFFF1BBB7)
+
+/** White into copper: CY. */
+private val InkCopper = Color(0xFFF4DFC8) to Color(0xFFF2C9A4)
+
+/** Red into gold: EG. */
+private val InkRedGold = Color(0xFFF1BBB0) to Color(0xFFF3DEA6)
+
+/** Gold into blue: CO. */
+private val InkGoldBlue = Color(0xFFF3DB9E) to Color(0xFFAFCDF2)
+
+/** No flag, or one with no entry below: the white the headline always was, cooled very
+ *  slightly towards its foot so the treatment is consistent even where the hues are not. */
+private val InkNeutral = RefTextHi to Color(0xFFD7DDE8)
+
+/**
+ * The two tints for one ISO 3166-1 alpha-2 code, or [InkNeutral] for anything unlisted.
+ *
+ * Grouped by the hue pair rather than written out per country, because that is what the flags
+ * themselves do — there are only so many ways to arrange red and white — and a table of 70
+ * near-duplicate colour literals would be 70 things to get subtly wrong. The codes covered are
+ * the ones the app fetches artwork for (`VPN_FLAG_COUNTRIES` in FlagArtwork.kt); anything
+ * outside that set is drawing the bundled placeholder, which has no country colours to
+ * harmonise with, so the neutral pair is the honest answer for it.
+ */
+private fun flagInk(code: String): Pair<Color, Color> = when (code.uppercase()) {
+    "SE", "UA", "KZ" -> InkBlueGold
+    "FI", "EE", "GR", "IL", "AR" -> InkBlueIce
+    "US", "GB", "FR", "NL", "RU", "CZ", "SK", "SI", "HR", "RS",
+    "NO", "IS", "NZ", "AU", "CL", "LU", "TH", "PH", "MY" -> InkTricolour
+    "DK", "CH", "AT", "PL", "ID", "SG", "TR", "JP", "PE", "CA",
+    "BH", "QA", "LV", "GE", "HK" -> InkRedWhite
+    "ES", "VN" -> InkGoldRed
+    "DE", "BE" -> InkIronGold
+    "BR", "LT", "ZA" -> InkGreenGold
+    "IE", "NG" -> InkEmerald
+    "IT", "HU", "IR", "MX", "BG" -> InkGreenWhiteRed
+    "PT", "KE" -> InkGreenCrimson
+    "AE", "SA", "KW", "IQ", "OM", "AZ" -> InkDesertGreen
+    "RO", "MD", "AM" -> InkBlueGoldRed
+    "IN" -> InkSaffron
+    "KR", "TW" -> InkEastAsia
+    "CY" -> InkCopper
+    "EG" -> InkRedGold
+    "CO" -> InkGoldBlue
+    else -> InkNeutral
+}
+
+/**
+ * The headline's ink: [flagInk]'s pair as a vertical gradient across the glyphs, carried towards
+ * the phase's colour as the phase takes over.
+ *
+ * A brush rather than a colour, which is why the deleted `headerInk` helper could not be reused
+ * and why the crossfade it got from [animateColorAsState] has to be rebuilt here: nothing
+ * animates a [Brush]. Two phase fractions animate instead, on the same [PHASE_FADE_MS], and each
+ * stop is lerped towards the state's colour by them — the gradient stays a gradient throughout,
+ * and at rest in a state it is that state's colour top and bottom, which is exactly where the old
+ * fixed ink ended up too.
+ *
+ * The lerps are applied in sequence rather than picked between, so the CONNECTING → CONNECTED
+ * handover — amber falling as teal rises — passes through a blend of the two instead of
+ * snapping between them.
+ */
+@Composable
+private fun headlineBrush(phase: ConnPhase, countryCode: String): Brush {
+    val reduce = rememberReduceMotion()
+    val working by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "headlineWorking",
+    )
+    val live by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "headlineLive",
+    )
+    val (top, bottom) = flagInk(countryCode)
+    fun state(tint: Color): Color =
+        lerp(lerp(tint, RefWorking, working), RefLive, live)
+    return Brush.verticalGradient(0f to state(top), 1f to state(bottom))
+}
 
 @Composable
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
@@ -2089,6 +2127,11 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     // the country, at caption weight, so the hero can be specific without the headline
     // having to carry two facts.
     val city = cfg?.let { state.cityFor(it) }.orEmpty()
+    // The tint follows the flag that is actually on screen ([HomeUiState.heroFlagCountry]),
+    // not the config's own country: at launch the flag is the cached one for a moment, and a
+    // headline coloured for a flag that is not up yet would be the one frame where the two
+    // disagree.
+    val ink = headlineBrush(state.phase, state.heroFlagCountry)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         AnimatedContent(
             targetState = headline,
@@ -2108,10 +2151,14 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 // Tight tracking on a large heavy face: at 34sp the default spacing reads
                 // loose, and pulling it in is what makes the word a single mark.
                 letterSpacing = (-0.8).sp,
-                color = headerInk(state.phase),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                // The brush replaces `color` outright — a TextStyle carrying both would use
+                // the brush and silently drop the colour, so there is no `color` here at all.
+                // The shadow is what keeps a pastel legible where a flag's own light band
+                // comes through the scrim; white never needed it, tinted ink does.
+                style = TextStyle(brush = ink, shadow = HeroInkShadow),
             )
         }
         if (city.isNotBlank() && city != headline) {
@@ -2137,9 +2184,15 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
 // connecting is a visible before-and-after rather than a value that appears out of nothing.
 // Connected, the same slot carries the exit node's.
 //
-// The address is copyable — tap it and it goes to the clipboard — which is the one utility
-// the hero offers, and the reason it is a chip: a tappable value needs a hit target and an
-// edge.
+// The address is copyable — tap it and it goes to the clipboard — which is the one utility the
+// hero offers. It used to be a chip, on the argument that a tappable value needs a hit target
+// and an edge; the edge is gone (a container floating on the flag was one object too many up
+// here) and the hit target is not — the ink keeps the chip's padding, its clip and its ripple.
+//
+// It is never absent. Until the first lookup lands — and if the lookup never lands — the line
+// still reads "IP —", dimmed, at the same size and in the same place. See the empty branch in
+// [MetaRow] for why: a slot that renders nothing at all is indistinguishable from a bug, and
+// this one had spent a release looking like one.
 //
 // Two things used to sit beside it and both are gone. The session clock was a timer for
 // something the user is not timing — the tunnel being up is the fact, not how long it has
@@ -2177,61 +2230,74 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
             },
             label = "publicIp",
         ) { value ->
-            if (value.isBlank()) {
-                Spacer(Modifier.width(0.dp))
-            } else {
-                Row(
-                    // No container: a clip and a click, so the copy affordance keeps a
-                    // rounded ripple and a real hit target, and nothing is painted over the
-                    // flag. The padding is what the chip's used to be, minus its frame — the
-                    // ink needs the same room to be tappable whether or not it is in a box.
-                    Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(
-                            onClickLabel = "Copy IP address",
-                            onClick = {
-                                clipboard.setText(AnnotatedString(value))
-                                android.widget.Toast
-                                    .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
-                                    .show()
-                            },
-                        )
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "IP",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        // A step up from [RefTextLow], which was tuned to sit on glass. On
-                        // bare artwork the label is the first thing a bright flag band eats.
-                        color = RefTextMid,
-                        maxLines = 1,
-                        style = TextStyle(shadow = HeroInkShadow),
+            // Whether there is an address yet. The blank branch used to be
+            // `Spacer(Modifier.width(0.dp))` — nothing drawn, no height, no label — so any
+            // time [HomeUiState.displayIp] came back empty (before the first geo lookup
+            // lands, when it fails, when it is disabled) the hero had no address line at all
+            // and the effect was of a missing element rather than a pending value. The
+            // binding is untouched; what changed is that the empty case now has a rendering:
+            // the label, and an em dash where the number goes, both dimmed. Nothing is
+            // tappable while there is nothing to copy.
+            val pending = value.isBlank()
+            Row(
+                // No container: a clip and a click, so the copy affordance keeps a
+                // rounded ripple and a real hit target, and nothing is painted over the
+                // flag. The padding is what the chip's used to be, minus its frame — the
+                // ink needs the same room to be tappable whether or not it is in a box.
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .then(
+                        if (pending) {
+                            Modifier
+                        } else {
+                            Modifier.clickable(
+                                onClickLabel = "Copy IP address",
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(value))
+                                    android.widget.Toast
+                                        .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
+                                        .show()
+                                },
+                            )
+                        },
                     )
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        value,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = RefTextHi,
-                        maxLines = 1,
-                        // maxLines alone truncates by clipping, which leaves a half-drawn
-                        // glyph at the end of a long address; with softWrap off and ellipsis
-                        // on, anything that still doesn't fit ends in "…" instead of
-                        // mid-stroke. An IPv4 address is 15 characters at most — see
-                        // [GeoService.lookupCurrentIp], now v4-only — so in practice neither
-                        // applies, but the value can no longer render cut off whatever it is
-                        // handed.
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(
-                            fontFeatureSettings = "tnum",   // tabular-nums
-                            shadow = HeroInkShadow,
-                        ),
-                    )
-                }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "IP",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    // A step up from [RefTextLow], which was tuned to sit on glass. On
+                    // bare artwork the label is the first thing a bright flag band eats.
+                    color = if (pending) RefTextLow else RefTextMid,
+                    maxLines = 1,
+                    style = TextStyle(shadow = HeroInkShadow),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    // An em dash rather than "—.—.—.—" or "Looking up…": the first is a
+                    // fake value, the second is a sentence in a slot sized for a number.
+                    if (pending) "—" else value,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (pending) RefTextLow else RefTextHi,
+                    maxLines = 1,
+                    // maxLines alone truncates by clipping, which leaves a half-drawn
+                    // glyph at the end of a long address; with softWrap off and ellipsis
+                    // on, anything that still doesn't fit ends in "…" instead of
+                    // mid-stroke. An IPv4 address is 15 characters at most — see
+                    // [GeoService.lookupCurrentIp], now v4-only — so in practice neither
+                    // applies, but the value can no longer render cut off whatever it is
+                    // handed.
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(
+                        fontFeatureSettings = "tnum",   // tabular-nums
+                        shadow = HeroInkShadow,
+                    ),
+                )
             }
         }
     }
@@ -2241,9 +2307,10 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
 // The connect control: a disc with a ring around it, and between them the one thing on
 // this screen that reports progress rather than a result.
 //
-// It is centred on the screen's own axis, at [PowerSize], with nothing beside it. It used to
-// hang over the browse card's top edge; what sits on that edge now is the [ModePill], and the
-// disc has the hero's own space to itself. It used to be half-swallowed by a connect pill — the pill
+// It is centred on the screen's own axis, at [PowerSize], with nothing beside it and nothing
+// under it: it used to hang over the browse card's top edge, then a mode pill sat on that edge
+// instead, and now the edge carries nothing at all and the disc has the hero's own space to
+// itself. It used to be half-swallowed by a connect pill — the pill
 // stopped short of the right edge and the circle was pulled back over the gap, so the two
 // read as one fused control and neither was quite the primary thing. That pill's job (which
 // server) is now the list itself and its headline (which country) moved to
@@ -2278,10 +2345,11 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
 //                instead of one smear.
 
 //
-// It carries one gesture besides the tap: a vertical drag switches Smart / Manual. It is a
-// shortcut rather than the only way in — [ModePill], directly under the disc, is the drawn
-// control for the same two bindings — and it is offered to a screen reader as two named
-// actions on this button.
+// It carries one gesture besides the tap: a vertical drag switches Smart / Manual. With the mode
+// pill deleted this is now the *only* way to change the mode — there is no drawn control for it
+// anywhere else, in the hero or in settings — which makes the two named accessibility actions on
+// this button load-bearing rather than a nicety, and worth knowing about if the mode ever needs a
+// visible home again.
 //
 // The mockup's four-part box-shadow, split by what Compose can draw:
 //   0 16px 34px rgba(0,0,0,0.45)      ┐ the cast shadow — Modifier.shadow
@@ -2303,33 +2371,35 @@ private val PowerDiscSize = 118.dp
 private val PowerRingStroke = 3.dp
 private val PowerRingGap = 3.dp
 
-/** How long one turn of the connecting arc takes. */
-private const val POWER_ARC_SPIN_MS = 1000
-
-/** The widest the connecting arc opens. */
-private const val POWER_ARC_SWEEP_DEG = 240f
-
-/** The narrowest it closes to.
+/** How long one turn of the connecting comet takes.
  *
- *  The arc used to be a fixed 240° sweep turning at a constant rate, which is what a
- *  progress spinner from a widget set looks like. Breathing between 96° and 240° over
- *  [POWER_ARC_BREATH_MS] while it turns gives the same "working, no idea how long" message
- *  with a pulse in it — the ring reads as drawing breath rather than as a part rotating. */
-private const val POWER_ARC_SWEEP_MIN = 96f
+ *  1400ms, up from 1000. The arc it replaced was a hard-edged 240° band, and a hard edge can
+ *  be spun quickly without looking hectic because there is nothing to read but its position.
+ *  A comet has a length, and length turning this fast reads as a fan blade — slowing it by
+ *  40% is what lets the eye follow the head round. This is still the app's only indeterminate
+ *  progress and the only animation that runs without being asked for. */
+private const val POWER_ARC_SPIN_MS = 1400
 
-/** How long the connecting arc takes to open and close once. Deliberately not a multiple of
- *  [POWER_ARC_SPIN_MS], so the sweep and the rotation drift against each other instead of
- *  landing on the same beat every second. */
-private const val POWER_ARC_BREATH_MS = 1450
-
-/** How long the live ring takes to breathe once, out or back.
+/** How much of the circle the comet's tail covers.
  *
- *  Slow on purpose. This runs for as long as the tunnel is up, and anything quicker than a
- *  couple of seconds stops being ambient and starts being something in the corner of the eye
- *  asking to be looked at. Only the bloom's width and alpha move; the ring itself is a
- *  constant, because a primary state indicator that fades in and out is one you have to wait
- *  for to read. */
-private const val POWER_BREATH_MS = 2600
+ *  300° of the 360, so the tail very nearly catches its own head: the missing 60° is the one
+ *  thing that says which way round it is going, and closing it completely would turn the
+ *  comet into a plain lit ring with a bright spot on it.
+ *
+ *  What was here before was a fixed 240° arc of flat colour, breathing between 96° and 240° as
+ *  it turned — a spinner from a widget set with a pulse bolted on. This is a single stroke
+ *  whose *alpha* runs from nothing at the tail to full at the head ([powerComet]), which is
+ *  how motion actually looks: the trail is where the head has been, fading. Nothing about it
+ *  needs to breathe, so nothing does, and the sweep is a constant again. */
+private const val POWER_ARC_SWEEP_DEG = 300f
+
+/** Where the comet's head sits when nothing is turning: the top of the circle.
+ *
+ *  The arc is drawn from 0° (three o'clock) forwards, so its head is [POWER_ARC_SWEEP_DEG]
+ *  round; this offset is what carries that head to twelve o'clock, and the spin is added to
+ *  it. With the system's animations off it is the whole rotation — a still comet parked at the
+ *  top, which is a legible "working" mark rather than one extreme of an animation. */
+private const val POWER_ARC_HEAD_OFFSET = -90f - POWER_ARC_SWEEP_DEG
 
 /** How far the disc travels down on a press, and how far the light travels with it.
  *
@@ -2599,22 +2669,30 @@ private fun PowerCircle(
 }
 
 /**
- * The ring in the band around the disc: a hairline track in every state, plus one arc
+ * The ring in the band around the disc: a hairline track in every state, plus one mark
  * that says what the connection is doing.
  *
- * Connecting, the arc turns — [POWER_ARC_SWEEP_DEG] of [RefWorking] once every
- * [POWER_ARC_SPIN_MS], which is the app's only indeterminate progress and the only
- * animation that runs without being asked. Connected, it is the full circle in
- * [RefLive] over a wider, fainter stroke of the same colour, so the ring reads as lit
- * rather than as drawn. Both fade with [PHASE_FADE_MS], and with the system's
- * animations off the arc parks at the top instead of spinning — the colour still says
- * which state this is.
+ * Connecting, a comet turns — [POWER_ARC_SWEEP_DEG] of tail fading back from a bright head,
+ * once every [POWER_ARC_SPIN_MS]; see [powerComet] for why it is a gradient rather than an
+ * arc of flat colour. Connected, it is the full circle in [RefLive] over a wider, fainter
+ * stroke of the same colour, so the ring reads as lit rather than as drawn — and it is
+ * completely still. Both fade with [PHASE_FADE_MS], and with the system's animations off the
+ * comet parks at the top instead of turning ([POWER_ARC_HEAD_OFFSET]).
+ *
+ * Nothing here breathes. The live ring used to pulse its bloom on a 2.6s cycle, which is a
+ * detail that looks considered in a screenshot and is a light flashing in your hand for as
+ * long as the tunnel is up — on the one screen a user leaves open. The state is already said
+ * three times over in colour: the ring, the headline's ink and the room's own light.
  */
 @Composable
 private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
     val transition = rememberInfiniteTransition(label = "powerArc")
-    val spin by transition.animateFloat(
+    // Held as a State and read *inside* the draw lambda rather than unwrapped with `by` up
+    // here. A spin read in composition invalidates this composable sixty times a second for
+    // as long as the screen is up, in every phase; read in the draw scope, and only under the
+    // `working` branch, it invalidates nothing at all unless the comet is actually on screen.
+    val spin = transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
@@ -2633,43 +2711,13 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "powerArcLive",
     )
-    // Two breaths, deliberately at different rates and both eased rather than linear: a
-    // linear reverse-repeat has a visible corner at each end, which on a slow pulse is the
-    // one thing that gives it away as an animation.
-    val breath by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(POWER_BREATH_MS, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "powerLiveBreath",
-    )
-    val sweepBreath by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(POWER_ARC_BREATH_MS, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "powerArcBreath",
-    )
-    val rotation = if (reduce) 0f else spin
-    // With animations off both breaths park mid-way, which is the state the numbers below
-    // were tuned around — so a still ring looks like the ring, not like one extreme of it.
-    val pulse = if (reduce) 0.5f else breath
-    val sweep = if (reduce) {
-        POWER_ARC_SWEEP_DEG
-    } else {
-        POWER_ARC_SWEEP_MIN + (POWER_ARC_SWEEP_DEG - POWER_ARC_SWEEP_MIN) * sweepBreath
-    }
     Canvas(modifier) {
         val stroke = PowerRingStroke.toPx()
         val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
         val topLeft = Offset(center.x - radius, center.y - radius)
         val arcSize = Size(radius * 2f, radius * 2f)
 
-        // The track. Always there, so the band never looks empty and the arc has
+        // The track. Always there, so the band never looks empty and the mark has
         // something to travel along — and lit from the top rather than flat, so it reads
         // as a machined groove around the disc instead of a drawn circle. A flat 10% white
         // hairline is the giveaway detail on a lot of otherwise careful dark UI: real edges
@@ -2680,12 +2728,14 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             style = Stroke(width = stroke),
         )
         if (live > 0.01f) {
-            // Lit: a soft wide bloom under the ring itself, breathing — see
-            // [POWER_BREATH_MS]. The ring proper does not move; only the glow around it.
+            // Lit, and static: a soft wide bloom under the ring, then the ring itself. Two
+            // strokes on the same circle rather than one, because a single wide stroke at
+            // this alpha is a fat soft ring, and what this wants to look like is a thin
+            // bright one with light coming off it.
             drawCircle(
-                color = RefLive.copy(alpha = (0.11f + 0.10f * pulse) * live),
+                color = RefLive.copy(alpha = 0.16f * live),
                 radius = radius,
-                style = Stroke(width = stroke * (2.4f + 1.6f * pulse)),
+                style = Stroke(width = stroke * 3.2f),
             )
             drawCircle(
                 color = RefLive.copy(alpha = 0.92f * live),
@@ -2694,18 +2744,78 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             )
         }
         if (working > 0.01f) {
-            // -90° puts the arc's head at the top of the circle at rotation 0.
-            drawArc(
-                color = RefWorking.copy(alpha = 0.95f * working),
-                startAngle = rotation - 90f,
-                sweepAngle = sweep,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
+            // The comet. Rotating the whole drawing rather than the start angle is what
+            // carries the sweep gradient round with the stroke — a brush is fixed in the
+            // layer's own coordinates, so an arc that moved while its gradient stood still
+            // would be a stroke fading in and out on the spot.
+            rotate(
+                degrees = if (reduce) {
+                    POWER_ARC_HEAD_OFFSET
+                } else {
+                    spin.value + POWER_ARC_HEAD_OFFSET
+                },
+                pivot = center,
+            ) {
+                drawArc(
+                    brush = powerComet(working, center),
+                    startAngle = 0f,
+                    sweepAngle = POWER_ARC_SWEEP_DEG,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+                // The head, as a dot on top of the stroke's own end: a round cap alone is
+                // the same width as the tail, and what makes this read as something moving
+                // rather than as a gradient on a ring is that the leading edge is the
+                // brightest, densest point on it. The halo under it is the light it throws.
+                val head = POWER_ARC_SWEEP_DEG * PI.toFloat() / 180f
+                val headAt = Offset(
+                    x = center.x + radius * cos(head),
+                    y = center.y + radius * sin(head),
+                )
+                drawCircle(
+                    color = RefWorking.copy(alpha = 0.22f * working),
+                    radius = stroke * 2.1f,
+                    center = headAt,
+                )
+                drawCircle(
+                    color = RefWorking.copy(alpha = working),
+                    radius = stroke * 0.85f,
+                    center = headAt,
+                )
+            }
         }
     }
+}
+
+/**
+ * The connecting mark's colour along its length: nothing at the tail, [RefWorking] at the head.
+ *
+ * A [Brush.sweepGradient] is the only brush whose axis is the same shape as the thing being
+ * painted here. Its fractions run once round the circle from three o'clock, so the arc — drawn
+ * from 0° for [POWER_ARC_SWEEP_DEG] — occupies the first `sweep / 360` of them, and the stops
+ * are placed as fractions *of that*: `head` is where the stroke ends.
+ *
+ * The ramp is deliberately back-loaded. A linear fade from transparent to opaque spreads the
+ * interesting part of a comet over its whole length and reads as a smear; keeping most of the
+ * tail faint and putting the climb in the last third is what gives it a head and a trail. The
+ * one stop past the head is transparent and is never drawn — the arc stops short of it — but a
+ * sweep gradient wraps, so leaving it out would bleed the head's own colour round the gap and
+ * back into the tail.
+ */
+private fun powerComet(alpha: Float, center: Offset): Brush {
+    val head = POWER_ARC_SWEEP_DEG / 360f
+    return Brush.sweepGradient(
+        0.00f to RefWorking.copy(alpha = 0f),
+        head * 0.34f to RefWorking.copy(alpha = 0.06f * alpha),
+        head * 0.62f to RefWorking.copy(alpha = 0.20f * alpha),
+        head * 0.82f to RefWorking.copy(alpha = 0.48f * alpha),
+        head * 0.94f to RefWorking.copy(alpha = 0.82f * alpha),
+        head to RefWorking.copy(alpha = 0.98f * alpha),
+        1.00f to RefWorking.copy(alpha = 0f),
+        center = center,
+    )
 }
 
 // linear-gradient(160deg, #ffffff 0%, #e7e9ee 55%, #d9dce3 100%)
@@ -2853,12 +2963,11 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's own head clearance, and the only chrome left in it. Two things used to
-        // be here: a [PowerOverlap] spacer holding the tab pills out from under the docked
-        // power disc, and the tab row itself. Both are gone — the disc no longer docks and
-        // the row is in the hero (see [Header]) — so this card begins with the list. What
-        // this spacer is for is the [ModePill] that overhangs the edge: it is docked half in
-        // and half out, and without room under it the first server row would be under it.
+        // The card's own head clearance, and the only chrome left in it. Three things used to be
+        // here: a [PowerOverlap] spacer holding the tab pills out from under the docked power
+        // disc, the tab row itself, and clearance for the mode pill that overhung this edge. All
+        // three are gone — the disc no longer docks, the row is in the hero (see [Header]) and
+        // the pill is deleted — so this is 8dp of plain padding and the card begins with the list.
         Spacer(Modifier.height(CardTopRoom))
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         Box(
@@ -2924,30 +3033,30 @@ private fun BrowseCard(
 /**
  * How far down the browse card the hero's artwork and light are still allowed through.
  *
- * Roughly the tab row plus its margins, which is what makes the merge read as intended:
- * the card's controls sit in the flag's own light, the list below them does not. Longer and
- * the first server rows would be set over artwork; shorter and the fade would land inside
- * the tab pills, which is a seam in a worse place than the one it replaced.
+ * 30dp, down from 84 — and this is the number that fixed the complaint two rounds of spacer
+ * tightening could not. A card whose first 84dp are translucent, starting at 62% opacity, has
+ * no visible top edge: the eye reads the card as beginning wherever the paint finally looks
+ * solid, which was some 80dp below the actual edge. Everything above that point — the tab row,
+ * the gap, the top of the card itself — read as one loose empty region of flag. The spacers
+ * were already tight; the *edge* was missing.
  *
- * 84dp, down from 112 and 132 before that. The card's chrome has been leaving it in stages —
- * first the tab row and the search field got shorter, then the tab row moved out of the card
- * altogether (see [Header]) — and each time, a fade tuned for the old contents reached further
- * into the list than intended. What the first 84dp holds now is the card's head clearance, the
- * docked [ModePill] that overhangs it and the search field when it is open: exactly the things
- * that should be standing in the flag's light, and no server rows.
+ * 30dp still dissolves the join (a hard line across the screen is what this whole treatment
+ * exists to avoid) but it dissolves it over a hairline rather than over a chunk of layout, and
+ * it now starts at 0.78 rather than 0.62 — see [panelTopFade]. Paired with a stronger
+ * [drawPanelTopEdge], the card announces where it starts, and the tabs sitting
+ * [TabRowFootGap] above it read as attached to it.
  */
-private val PanelFade = 84.dp
+private val PanelFade = 30.dp
 
 /**
- * The clear air at the top of the browse card, under the docked [ModePill].
+ * The clear air at the top of the browse card, above the first row.
  *
- * The pill is drawn straddling the hero's foot ([dockOnSeam]), biased downwards, so about 62%
- * of it — 21dp or so, plus its shadow — is inside this card. This is what that part has to sit
- * in front of instead of a server name. 26dp, up from 22: the pill sits deeper into the card
- * than it used to, so the clearance under it grew by what the dock gave back to
- * [TabRowFootGap].
+ * 8dp, down from 26. The 26 was clearance for the docked mode pill that overhung this card;
+ * with the pill deleted there is nothing overhanging any more, so this is back to being plain
+ * padding, and plain padding is the last thing that should be adding height between the tabs
+ * and the first server. The search field, when open, brings its own margins.
  */
-private val CardTopRoom = 26.dp
+private val CardTopRoom = 8.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
@@ -2960,8 +3069,12 @@ private val CardTopRoom = 26.dp
  */
 private val PanelFrostFade = 340.dp
 
-/** How far down the card's top edge the specular sweep in [drawPanelSheen] reaches. */
-private val PanelSheenDepth = 72.dp
+/** How far down the card's top edge the specular sweep in [drawPanelSheen] reaches.
+ *
+ *  48dp, down from 72 with [PanelFade]. The sheen is the light that appears to be *on* the
+ *  glass; a sweep running well past the point where the glass has gone opaque reads as a
+ *  gradient in the list instead. */
+private val PanelSheenDepth = 48.dp
 
 /**
  * The browse card's fill: translucent [RefBg] at its top edge, nearly opaque by [heightPx]
@@ -2972,27 +3085,29 @@ private val PanelSheenDepth = 72.dp
  * put the fade at a different place on every device and inside the list on a tall one.
  * [TileMode.Clamp] is what holds the end value all the way to the foot.
  *
- * It starts at 0.62 rather than at nothing. Fully transparent would be a prettier merge and
- * an unreadable tab row: the pills' own labels are set at 13sp, and over the pale band of a
- * flag they would have nothing behind them. 0.62 of near-black is enough for white text to
- * clear 7:1 against the worst case while the artwork is still unmistakably there.
+ * It starts at 0.78 rather than at nothing, and rather than at the 0.62 it started at before.
+ * Fully transparent would be a prettier merge and a card with no visible beginning — which is
+ * exactly the bug this round is fixing: at 0.62 over 84dp the top edge could not be located by
+ * eye, so the tab row above it looked like it was floating in open artwork instead of sitting
+ * on the card. 0.78 over [PanelFade]'s 30dp reads as an edge on the first pixel and still lets
+ * the flag through it.
  *
- * It ends at 0.92 rather than at 1.0 because the flag is the whole screen's background now
+ * It ends at 0.94 rather than at 1.0 because the flag is the whole screen's background now
  * (see [HeroBackdrop]) and an opaque card would be a lid over the bottom two thirds of it —
  * the artwork would still technically reach every edge and the user would still see it stop
- * at the top of the list. 0.92 over the flag's own dimmed, desaturated artwork is a hint of
- * the country's colour behind the rows, worth about two or three percent of luminance: every
- * row's own fill and every label on it are unchanged in contrast terms, and the page no
- * longer has a horizon across it.
+ * at the top of the list. 0.94 over the flag's own dimmed, desaturated artwork is a hint of
+ * the country's colour behind the rows, worth a percent or two of luminance: every row's own
+ * fill and every label on it are unchanged in contrast terms, and the page no longer has a
+ * horizon across it.
  *
  * The base is [RefPanelBg], a colder near-black than the page's [RefBg], which is the first
  * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefPanelBg.copy(alpha = 0.62f),
-    0.35f to RefPanelBg.copy(alpha = 0.80f),
-    0.70f to RefPanelBg.copy(alpha = 0.89f),
-    1.00f to RefPanelBg.copy(alpha = 0.92f),
+    0.00f to RefPanelBg.copy(alpha = 0.78f),
+    0.35f to RefPanelBg.copy(alpha = 0.88f),
+    0.70f to RefPanelBg.copy(alpha = 0.92f),
+    1.00f to RefPanelBg.copy(alpha = 0.94f),
     startY = 0f,
     endY = heightPx,
     tileMode = TileMode.Clamp,
@@ -3064,11 +3179,12 @@ private fun DrawScope.drawPanelSheen() {
 /**
  * The card's top edge and its two corner arcs.
  *
- * Softer than the 0.14 hairline it was. That value was tuned for a card meeting the page
- * on plain near-black, where an edge had to declare itself; this edge is now drawn over the
- * hero's own light, and at 0.14 it read as exactly what the redesign set out to remove — a
- * bright line across the screen. At 0.08, with the fade and the horizon light behind it, it
- * still catches the corners and no longer reads as a border.
+ * 0.13 at the peak, up from 0.08 and originally 0.14. The 0.08 was tuned for an edge that was
+ * *meant* to be hard to find, when the card's first 84dp were translucent and the join was
+ * supposed to be a dissolve rather than a boundary. That turned out to be the whole reason the
+ * tabs looked adrift above an empty region of flag: nothing on the screen said where the card
+ * began. With [PanelFade] now a 30dp hairline, this edge is the thing that says it — bright
+ * enough to be located at a glance, still short of the 0.14 border that the redesign removed.
  *
  * Icy rather than white, now that the pane under it is frosted: this is the lit edge of that
  * glass, and a neutral white one sat on top of the wash instead of belonging to it. The tint
@@ -3081,10 +3197,10 @@ private fun DrawScope.drawPanelTopEdge() {
     clipRect(top = 0f, bottom = radius + hairline) {
         drawRoundRect(
             brush = Brush.horizontalGradient(
-                0.00f to PanelEdgeInk.copy(alpha = 0.03f),
-                0.28f to PanelEdgeInk.copy(alpha = 0.09f),
-                0.72f to PanelEdgeInk.copy(alpha = 0.09f),
-                1.00f to PanelEdgeInk.copy(alpha = 0.03f),
+                0.00f to PanelEdgeInk.copy(alpha = 0.04f),
+                0.28f to PanelEdgeInk.copy(alpha = 0.13f),
+                0.72f to PanelEdgeInk.copy(alpha = 0.13f),
+                1.00f to PanelEdgeInk.copy(alpha = 0.04f),
             ),
             topLeft = Offset(hairline / 2f, hairline / 2f),
             size = Size(size.width - hairline, size.height - hairline),
@@ -3111,10 +3227,12 @@ private fun TabPillRow(
     Row(
         Modifier
             .fillMaxWidth()
-            // 9dp rather than 14: this is chrome on a screen whose whole ask is "show me
-            // more servers", so it is what pays first. It now buys hero height rather than
-            // card height, which is the same argument one row higher.
-            .padding(horizontal = ListPad, vertical = 9.dp),    // .tab-row
+            // 7dp rather than 9, and 14 before that: this is chrome on a screen whose whole ask
+            // is "show me more servers", so it is what pays first. Its lower half is now also
+            // half of the gap between the pills and the card's top edge — 7 here plus
+            // [TabRowFootGap] — which is the number that has to stay small for the tabs to read
+            // as attached to the card rather than as floating above it.
+            .padding(horizontal = ListPad, vertical = 7.dp),    // .tab-row
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val tabs = HomeTab.values()
