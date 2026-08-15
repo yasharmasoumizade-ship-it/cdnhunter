@@ -235,6 +235,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -760,12 +761,17 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * How far the flag carries *below the hero's last row* — i.e. how deep under the browse
  * card's top edge the artwork keeps going.
  *
- * 28dp, and it is measured from the hero's rows rather than from the light's band, which is
+ * 12dp, and it is measured from the hero's rows rather than from the light's band, which is
  * the whole of the change: the flag's box used to be `heroHeight + HeroBleed + FlagBleed`,
  * so at the old values the artwork ran 234dp past the last row — a third of the screen of
  * flag behind an opaque card. Now it is `heroHeight + FlagBleed` (see [HeroBackdrop]), and
- * 28dp is enough to put the artwork just inside the card's translucent head without
- * reaching the point where the fill has gone solid.
+ * 12dp past the card's top edge is all the transition needs: the card's own head is
+ * translucent for [PanelFade], so the artwork is still visible through the glass for a good
+ * way after it has technically ended, and every dp beyond that is flag drawn under paint.
+ *
+ * It came down from 28dp with the card, which was raised to sit directly under the tab row
+ * (see [TabRowFootGap]); the hero got shorter at the same time, and this is measured off the
+ * hero, so the artwork lost that height twice over.
  *
  * There is no visible edge where it stops because it never stops in the open: the flag's own
  * bottom fade ([HeaderFlagBottomFade]) takes the last 14% of the artwork to nothing, and all
@@ -776,7 +782,7 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * about 1.6× further to cover — throwing away that much more of a landscape flag's width.
  * See the call site in [HeroBackdrop].
  */
-private val FlagBleed = 28.dp
+private val FlagBleed = 12.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -1396,7 +1402,7 @@ internal fun HomeScreen(
                 },
                 onAddServer = onAddServer,
                 // Above the card in paint order, because the [ModePill] at the foot of
-                // this column is drawn [ModePillDock] below the hero's own bounds and a
+                // this column is drawn half below the hero's own bounds ([dockOnSeam]) and a
                 // later sibling would otherwise cover the half that overhangs. Children of
                 // a Column paint in declaration order; zIndex is what overrides that
                 // without reordering them.
@@ -1440,7 +1446,7 @@ internal fun HomeScreen(
 // distinction is the point:
 //
 //   the flag        — edge to edge horizontally, and vertically from under the status bar
-//                     down to only [FlagBleed] past the hero's last row: a shallow overlap
+//                     down to only [FlagBleed] past the hero's last row: a 12dp overlap
 //                     with the browse card's translucent head, enough for the transition and
 //                     no more. It is measured from the rows, not from the band, so it is far
 //                     the shorter of the two heights — the light reaches three times deeper.
@@ -1504,7 +1510,7 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
             // the box's shape is the flag's zoom: every dp of height added here is width
             // thrown off the sides of the artwork. Full screen is about 0.45:1 and keeps
             // roughly half of a 5:3 flag; the band plus a 96dp bleed, which is what this was,
-            // came to about 0.6:1; the hero plus 28dp is nearer 0.9:1, which is a little over
+            // came to about 0.6:1; the hero plus 12dp is nearer 0.9:1, which is a little over
             // 1.5× zoom instead of 2.5× — so most of the flag's actual pattern is on screen,
             // and an emblem in the middle of one is no longer filling the frame.
             HeaderFlag(
@@ -1561,7 +1567,8 @@ private val HeroFloor = Brush.verticalGradient(
 //   [what to connect to] → [TabPillRow], the list's own controls, lifted out of the card
 //                          and floated here in the hero (see below)
 //   [the alternative]    → [ModePill], docked on the seam itself, half in the hero and half
-//                          in the card (see [ModePillDock])
+//                          in the card, and measured as nothing so the card can start right
+//                          under the tabs (see [dockOnSeam])
 //
 // Two rows that used to be somewhere else are now the last two things in this column, and
 // both moves are the same idea: the boundary between the hero and the list is the most
@@ -1636,20 +1643,42 @@ private val HeroOpenSpace = 4.dp
  *  user presses, below it is what they browse. */
 private val PowerFootGap = 10.dp
 
-/** Between the tab row and the seam the [ModePill] is docked on. */
-private val TabRowFootGap = 2.dp
-
-/** How far the [ModePill] is drawn below its own layout slot, which is what docks it on the
- *  boundary between the hero and the browse card.
+/**
+ * Between the tab row and the seam the [ModePill] is docked on — and, since the pill takes no
+ * height of its own (see [dockOnSeam]), this is now the *whole* distance from the bottom of
+ * the tab pills to the top edge of the browse card.
  *
- *  The pill measures about 30dp tall, so half of that puts its centre line exactly on the
- *  card's top edge: the top half is over the hero's artwork, the bottom half is over the
- *  card's frosted glass, and the card's hairline runs through the middle of it. Like every
- *  other dock on this screen it is an offset rather than a negative margin — the hero keeps
- *  the measured height that [HeroBackdrop] sizes itself from, and only the drawing moves.
- *  [Header] carries a z-index at its call site, so the card cannot paint over the half that
- *  overhangs it. */
-private val ModePillDock = 15.dp
+ * 14dp, up from 2 — but the gap it sits in went from about 34dp to 14dp, because what used to
+ * be under the tab row was this 2dp plus a 33dp pill slot. The card starts directly under its
+ * own controls now, with just enough flag showing between them to read as a boundary.
+ *
+ * It cannot go much below this. The pill straddles the seam, so its top half — about 17dp —
+ * rises back into this gap; at 14dp that puts it a couple of dp inside the tab row's own 9dp
+ * of bottom padding, which is empty. Any tighter and the pill would start climbing over the
+ * Main / Custom pills themselves.
+ */
+private val TabRowFootGap = 14.dp
+
+/**
+ * Docks a child on the hero's foot: **measured as no height at all**, drawn centred on the
+ * seam between the hero and the browse card.
+ *
+ * This is what raises the card. The pill used to be a normal row in the column offset 15dp
+ * downwards, and an offset moves drawing only — the 33dp slot it was measured into stayed
+ * behind, and [Header]'s measured height is what [BrowseCard] is laid out under, so the card
+ * began a pill's height below the tab row with nothing but flag in between. Reporting a height
+ * of zero and placing the pill at minus half its own height gets the identical dock — centre
+ * line exactly on the card's top edge, top half over the artwork, bottom half over the frosted
+ * glass — out of a slot that no longer exists.
+ *
+ * Nothing clips it: the column has no [Modifier.clip], and [Header] carries a z-index at its
+ * call site, so the half that hangs over the card is painted after the card and survives.
+ * [CardTopRoom] is what keeps that half off the first server row.
+ */
+private fun Modifier.dockOnSeam(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, 0) { placeable.place(0, -placeable.height / 2) }
+}
 
 @Composable
 private fun Header(
@@ -1700,13 +1729,13 @@ private fun Header(
             onAdd = onAddServer,
         )
         Spacer(Modifier.height(TabRowFootGap))
-        // Docked on the seam: measured here, drawn [ModePillDock] lower, so half of it is
-        // over the card. Nothing follows it in this column — the hero's measured foot is
-        // this pill's slot, which is exactly where the card starts.
+        // Docked on the seam, and taking no height while it does it — see [dockOnSeam]. The
+        // hero's measured foot is therefore the foot of the spacer above, which is where the
+        // card starts; the pill is drawn straddling that line.
         ModePill(
             mode = state.mode,
             onSetMode = onSetMode,
-            modifier = Modifier.offset(y = ModePillDock),
+            modifier = Modifier.dockOnSeam(),
         )
     }
 }
@@ -2599,8 +2628,9 @@ private val PanelFade = 84.dp
 /**
  * The clear air at the top of the browse card, under the docked [ModePill].
  *
- * The pill is drawn [ModePillDock] past the hero's foot, so about half of it is inside this
- * card. This is what the other half of it has to sit in front of instead of a server name.
+ * The pill is drawn straddling the hero's foot ([dockOnSeam]), so about half of it — 17dp or
+ * so, plus its shadow — is inside this card. This is what that half has to sit in front of
+ * instead of a server name.
  */
 private val CardTopRoom = 22.dp
 
