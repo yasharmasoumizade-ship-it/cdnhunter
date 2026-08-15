@@ -23,10 +23,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -39,12 +44,15 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +61,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.platform.LocalDensity
 import java.io.File
 import com.cdnhunter.app.vpn.CdnVpnService
@@ -713,6 +722,17 @@ private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNN
  */
 private const val CONNECT_REQUEST_GRACE_MS = 12_000L
 
+/**
+ * The public-IP lookup's attempt ladder: one entry per attempt, each the wait *after* that
+ * attempt fails. Three attempts over ~6s, then the hero offers a manual retry.
+ *
+ * Bounded deliberately. Every entry is a round trip to a third-party address service, and on the
+ * networks this app exists for those are exactly the hosts most likely to be unreachable — an
+ * unbounded poll would spend the radio on a request that is not going to succeed. The last
+ * entry's value is never waited on.
+ */
+private val IP_LOOKUP_BACKOFF_MS = longArrayOf(1_200L, 2_500L, 0L)
+
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -794,6 +814,12 @@ private fun VpnTab() {
     // outside world sees for it (resolved through the tunnel while it's up).
     var networkName by remember { mutableStateOf(describeActiveNetwork(context)) }
     var publicIp by remember { mutableStateOf("") }
+    // A lookup is in flight. Home distinguishes "still asking" from "every provider failed",
+    // because the second one is a tap target that retries and the first one must not be.
+    var ipLookupPending by remember { mutableStateOf(true) }
+    // Bumped to ask again after the automatic attempts have all failed. Part of the
+    // LaunchedEffect's key, so a bump restarts the whole attempt ladder.
+    var ipRetryTick by remember { mutableStateOf(0) }
 
     // The country Home's hero panel washed last time the app ran, read once at launch.
     // It only covers the gap between `configs` arriving from disk and geo resolution
@@ -892,23 +918,42 @@ private fun VpnTab() {
             delay(1000)
         }
     }
-    // Public IP for Home's network row. Re-resolved whenever the tunnel comes up or
-    // goes down; the delay lets a fresh tunnel settle before the first request is
-    // sent through it, and the lookup is proxied exactly when connected so what's
-    // shown is the exit IP rather than this device's own (this app's process is
-    // excluded from its own VPN).
-    LaunchedEffect(connected) {
+    // Public IP for Home's hero. Re-resolved whenever the tunnel comes up or goes down, and
+    // whenever Home asks again (ipRetryTick). The lookup is proxied exactly when connected so
+    // what's shown is the exit IP rather than this device's own — this app's process is excluded
+    // from its own VPN, so an unproxied lookup while connected reports the ISP's address.
+    //
+    // Three attempts, not one. GeoService.lookupCurrentIp returns "" when all of its providers
+    // fail, which on a censored or captive network is a normal outcome rather than an error, and
+    // a single attempt keyed only on `connected` left the hero with a permanently blank address
+    // for the rest of the session. The delays let a fresh tunnel settle and then give a flaky
+    // path two more chances; after that the address line becomes a retry target (see
+    // HomeUiState.ipLookupPending and MetaRow).
+    LaunchedEffect(connected, ipRetryTick) {
         networkName = describeActiveNetwork(context)
         publicIp = ""
-        if (connected) delay(2500)
-        val resolved = withContext(Dispatchers.IO) {
-            try {
-                com.cdnhunter.app.engine.GeoService().lookupCurrentIp(proxied = connected)
-            } catch (e: Exception) {
-                ""
+        ipLookupPending = true
+        try {
+            if (connected) delay(2500)
+            for ((attempt, backoffMs) in IP_LOOKUP_BACKOFF_MS.withIndex()) {
+                val resolved = withContext(Dispatchers.IO) {
+                    try {
+                        com.cdnhunter.app.engine.GeoService().lookupCurrentIp(proxied = connected)
+                    } catch (e: Exception) {
+                        ""
+                    }
+                }
+                if (resolved.isNotBlank()) {
+                    publicIp = resolved
+                    return@LaunchedEffect
+                }
+                if (attempt < IP_LOOKUP_BACKOFF_MS.lastIndex) delay(backoffMs)
             }
+        } finally {
+            // Also runs when the effect is cancelled by a connect/disconnect or a retry, so the
+            // hero never keeps saying "Checking…" for a lookup that no longer exists.
+            ipLookupPending = false
         }
-        publicIp = resolved
     }
 
     // Keeps the network label honest when the phone moves between Wi-Fi and mobile
@@ -1375,6 +1420,7 @@ private fun VpnTab() {
                         exitGeoConfigId = exitGeoConfigId,
                         networkName = networkName,
                         publicIp = publicIp,
+                        ipLookupPending = ipLookupPending,
                         lastFlagCountry = lastFlagCountry,
                         refreshingPings = refreshingPings,
                     ),
@@ -1385,6 +1431,7 @@ private fun VpnTab() {
                     onSelectConfig = { cfg -> selectConfigManually(cfg) },
                     onAddServer = { showAddMenu = true },
                     onSetMode = { mode -> setConnectMode(mode) },
+                    onRetryIp = { ipRetryTick++ },
                     onRefreshPings = { shown -> refreshPings(shown) },
                 )
                 // Same add-config sheet used on Locations, reused here so the new
@@ -1419,7 +1466,9 @@ private fun VpnTab() {
             AnanasScreen.SETTINGS -> SettingsScreen(
                 onProfileClick = { navigateTo(AnanasScreen.PROFILE) },
                 onSplitTunnelClick = { navigateTo(AnanasScreen.SPLIT_TUNNEL) },
-                onBack = { navigateBack() }
+                onBack = { navigateBack() },
+                mode = connectMode,
+                onSetMode = { m -> setConnectMode(m) },
             )
 
             AnanasScreen.PROFILE -> ProfileScreen(onBack = { navigateBack() })
@@ -1465,13 +1514,20 @@ private fun AddConfigSheet(
 
 @Composable
 private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, highlight: Boolean = false, onClick: () -> Unit) {
+    val shape = remember { RoundedCornerShape(14.dp) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (highlight) AnanasAccent else AnanasCard2)
-            .border(1.dp, if (highlight) Color.Transparent else AnanasBorder2, RoundedCornerShape(14.dp))
-            .clickable { onClick() }
+            .sheetRaised(
+                shape = shape,
+                pressed = pressed,
+                fill = if (highlight) SheetAccentFill else SheetControlFill,
+                pressedFill = if (highlight) SheetAccentPressedFill else SheetControlPressedFill,
+                elevation = if (highlight) 10.dp else 6.dp,
+            )
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -1682,9 +1738,7 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier
-                .clip(RoundedCornerShape(22.dp))
-                .background(AnanasCard)
-                .border(1.dp, AnanasBorder2, RoundedCornerShape(22.dp))
+                .sheetSurface(RoundedCornerShape(22.dp), elevation = 24.dp)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1703,10 +1757,12 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.height(18.dp))
+            val copyInteraction = remember { MutableInteractionSource() }
+            val copyPressed by copyInteraction.collectIsPressedAsState()
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AnanasCard2)
-                    .border(1.dp, AnanasBorder2, RoundedCornerShape(14.dp))
-                    .clickable {
+                Modifier.fillMaxWidth()
+                    .sheetRaised(RoundedCornerShape(14.dp), copyPressed)
+                    .clickable(interactionSource = copyInteraction, indication = null) {
                         clip.setText(AnnotatedString(cfg.uri))
                         android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
                     }
@@ -1779,24 +1835,27 @@ private fun LocationsScreen(
                 AnanasIconButton(Icons.Rounded.Add, onClick = onToggleAddMenu)
             }
 
-            // Minimal search field — no card/border, just an underline, Windscribe-style.
+            // Minimal search field — no card and no box, just the glyph and the line of type.
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(Icons.Rounded.Search, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
-                androidx.compose.foundation.text.BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = AnanasText),
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(AnanasAccent),
-                    decorationBox = { inner ->
-                        if (query.isEmpty()) Text("Search", fontSize = 13.sp, color = Color(0xFF54565E))
-                        inner()
+                // Box(CenterStart) + SheetSearchStyle is the caret fix: the field's own line box
+                // is taller than its glyphs, so without both the caret sat high of the text.
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) {
+                        Text("Search", style = SheetSearchStyle, color = Color(0xFF54565E), maxLines = 1)
                     }
-                )
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = SheetSearchStyle,
+                        cursorBrush = SolidColor(AnanasAccent),
+                    )
+                }
             }
 
             if (configs.isEmpty()) {
@@ -1939,88 +1998,319 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
 }
 
 // ── Sheet design system ───────────────────────────────────────────────────────
-// The material the secondary screens are built from — Settings, Profile, and the
-// split-tunnel picker. Home has its own language because it has a flag behind it and has
-// to survive being drawn over artwork; these screens have a flat near-black page, so what
-// carries the polish here is the grid instead: one page padding, one card corner, one row
-// height, one tinted icon tile, and section labels tracked like Home's phase eyebrow.
-//
-// The parts each screen used to draw by hand — the back-chevron row, the 16sp title, the
-// `Surface`/`Column` card, the 14dp-inset divider, the stock `TextField` — are single
-// composables now, so the two screens cannot drift apart the way they had.
+// The material the secondary screens share — Settings, Profile, split tunneling. Home has its
+// own language because it draws over a flag; these screens are a flat near-black page, so the
+// grid carries them: one gutter, one card corner, one row height, one tinted icon tile.
 
-/** Page gutter. Every screen in this file starts and ends here, so a row's ink lines up
- *  vertically from Home's hero through Settings to Profile. */
+/** Page gutter, so a row's ink lines up from Home's hero through Settings to Profile. */
 private val SheetPad = 20.dp
 
-/** Card corner. 18dp against the 12dp of the tiles inside them: the nesting has to be
- *  legible, and a card that shares its children's radius reads as one flat area. */
+/** Card corner. 18dp against the 12dp of the tiles inside, so the nesting stays legible. */
 private val SheetCardCorner = 18.dp
 
-/** Row floor. 58dp is a comfortable target for a two-line row (label + description) and
- *  well past the 48dp minimum for the one-line rows, which keeps every row in a group the
- *  same height whether or not it carries a subtitle. */
+/** Row floor: fits a two-line row, and keeps one-line rows in a group the same height. */
 private val SheetRowHeight = 58.dp
 
+// ── Depth, in place of borders ────────────────────────────────────────────────
+// These surfaces used to be drawn with a 1dp hairline each; nine outlines on one scroll is nine
+// competing rectangles, and on a page this dark the line is the loudest thing in frame. What
+// replaces them is Home's light model — gradient fill, lit top edge, shaded foot, real shadow.
+
+/** Pure black: the page is near-black already, so a tinted shadow only muddies it. */
+private val SheetShadow = Color(0xFF000000)
+
+/** Depth of the specular band and the foot shade — absolute dp, so a 58dp row and a 300dp
+ *  card are lit by the same size of highlight. */
+private val SheetCrownDepth = 9.dp
+
+/** The band of light along a surface's top edge. */
+private val SheetCrown = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.075f),
+    0.30f to Color.White.copy(alpha = 0.026f),
+    1.00f to Color.Transparent,
+)
+
+/** The shade at a surface's foot. */
+private val SheetFoot = Brush.verticalGradient(
+    0.00f to Color.Transparent,
+    1.00f to Color.Black.copy(alpha = 0.24f),
+)
+
+/** A card's material: [AnanasCard2] over [AnanasCard], top-lit. */
+private val SheetCardFill = Brush.verticalGradient(listOf(AnanasCard2, AnanasCard))
+
+/** A control's material — a step brighter than a card's, since controls sit *on* cards. */
+private val SheetControlFill = Brush.verticalGradient(
+    listOf(Color(0xFF1B1C22), Color(0xFF141519)),
+)
+
+private val SheetControlPressedFill = Brush.verticalGradient(
+    listOf(Color(0xFF111216), Color(0xFF16171C)),
+)
+
+/** Shallower than Home's 0.955: a big scale on a 34dp target reads as a glitch. */
+private const val SHEET_PRESS_SCALE = 0.965f
+
 /**
- * The frame every secondary screen sits in: the page wash, the back control, the screen's
- * own large title, and a scroll.
+ * A raised, borderless surface: drop shadow, gradient fill, lit top edge, shaded foot.
  *
- * The title is 30sp ExtraBold on its own line rather than 16sp beside the chevron. It is
- * the same move the hero makes with its country name — the screen states what it is once,
- * in the largest ink on the page, and everything under it can then be quiet. It also gives
- * the thumb a chevron at the very top-left where it can be reached, instead of a title bar
- * whose height was set by the icon inside it.
+ * The bands are drawn in [Modifier.drawBehind] *after* the fill, so they paint over the
+ * background and under the content.
+ */
+private fun Modifier.sheetSurface(
+    shape: Shape,
+    fill: Brush = SheetCardFill,
+    elevation: Dp = 10.dp,
+): Modifier = this
+    .shadow(elevation, shape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
+    .clip(shape)
+    .background(fill)
+    .drawBehind {
+        val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
+        drawRect(brush = SheetCrown, size = Size(size.width, band))
+        drawRect(
+            brush = SheetFoot,
+            topLeft = Offset(0f, size.height - band),
+            size = Size(size.width, band),
+        )
+    }
+
+/** [Modifier.sheetSurface] for something pressed: it shrinks and loses most of its shadow,
+ *  which is what sells the height. */
+private fun Modifier.sheetRaised(
+    shape: Shape,
+    pressed: Boolean,
+    fill: Brush = SheetControlFill,
+    pressedFill: Brush = SheetControlPressedFill,
+    elevation: Dp = 6.dp,
+): Modifier = this
+    .scale(if (pressed) SHEET_PRESS_SCALE else 1f)
+    .sheetSurface(
+        shape = shape,
+        fill = if (pressed) pressedFill else fill,
+        elevation = if (pressed) elevation / 3 else elevation,
+    )
+
+/** A well's material — the inverse of a control's: darker than the card it is cut into. */
+private val SheetWellFill = Brush.verticalGradient(
+    listOf(Color(0xFF0C0D11), Color(0xFF121317)),
+)
+
+/** The shade cast *into* a well by its own top edge, which is what makes it read as a hole. */
+private val SheetWellShade = Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.34f),
+    0.45f to Color.Black.copy(alpha = 0.10f),
+    1.00f to Color.Transparent,
+)
+
+/** How thick a field's focus/error rule is. 1.5dp: the only edge a field ever draws. */
+private val SheetFieldRuleDepth = 1.5.dp
+
+/** The accent rule down the leading edge of an informational note. */
+private val SheetNoteRuleWidth = 3.dp
+
+/** The accent tint over a lit segment in a [SegmentedControl]. */
+private val SheetSegmentTint = Brush.verticalGradient(
+    listOf(AnanasAccent.copy(alpha = 0.20f), AnanasAccent.copy(alpha = 0.11f)),
+)
+
+/** An accent [PillButton]'s material, and the same pressed. Lighter at the top for the same
+ *  reason everything else here is: one light source, above the screen. */
+private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasAccentLight, AnanasAccent))
+private val SheetAccentPressedFill = Brush.verticalGradient(listOf(AnanasAccent, AnanasAccentLight))
+
+/** A tile riding inside [SheetScreen]'s glass header. Brighter than a card on the page,
+ *  because the glass it sits on is brighter than the page. */
+private val SheetGlassTileFill = Brush.verticalGradient(
+    listOf(Color(0xFF23252E), Color(0xFF191B22)),
+)
+
+/** The avatar's ring, and the disc it sits behind — see [AvatarRing]. The ring is brightest
+ *  at the top left, so the avatar catches the same light as everything else. */
+private val SheetAvatarRing = Brush.linearGradient(
+    listOf(AnanasAccent.copy(alpha = 0.55f), AnanasAccent.copy(alpha = 0.10f)),
+)
+private val SheetAvatarWell = Brush.verticalGradient(
+    listOf(Color(0xFF15161C), Color(0xFF1B1D24)),
+)
+
+/** Profile's plan card: the one warm surface in a green-and-grey app, lit like the cold ones. */
+private val SheetPlanFill = Brush.verticalGradient(
+    listOf(Color(0xFF1E1911), Color(0xFF15120E)),
+)
+
+/** [MinimalToggle]'s thumb, lit from above so it reads as a bead in a groove, not a flat dot. */
+private val SheetThumbFill = Brush.verticalGradient(
+    listOf(Color(0xFFFFFFFF), Color(0xFFDDE0E6)),
+)
+
+/**
+ * Every text input on these screens shares this, and the reason is the caret.
  *
- * The wash is a single vertical gradient of the accent at 5%, 260dp deep. Flat #0B0B0D
- * from edge to edge is what makes a dark screen look unfinished; this is barely visible and
- * is enough to give the top of the page a light source, the way the flag does on Home.
+ * A `BasicTextField` lays its line out inside the font's own ascent/descent, which on Roboto is
+ * taller than the glyphs, and draws the caret to that taller box — so in a top-aligning container
+ * the text sits low and the caret high. All three of these are needed to fix it:
+ * `includeFontPadding = false`, an explicit `lineHeight` with [LineHeightStyle.Alignment.Center],
+ * and `Trim.None` (the default trims exactly the space being relied on). The container centres it
+ * — see [InlineField] and the Locations search field.
+ *
+ * `tnum` because these fields hold addresses and MTUs: figures should not shuffle sideways as an
+ * octet is typed.
+ */
+private val SheetFieldStyle = TextStyle(
+    fontSize = 14.sp,
+    lineHeight = 19.sp,
+    fontWeight = FontWeight.Medium,
+    color = AnanasTextHi,
+    fontFeatureSettings = "tnum",
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None,
+    ),
+)
+
+/** [SheetFieldStyle] for a search field: text rather than figures, so no `tnum`, and a shade
+ *  smaller since it sits next to a 16dp glyph rather than in a box of its own. */
+private val SheetSearchStyle = TextStyle(
+    fontSize = 13.5.sp,
+    lineHeight = 18.sp,
+    color = AnanasText,
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None,
+    ),
+)
+
+/** Rounded at the bottom only — see [Modifier.sheetHeaderPanel] for why the panel has no
+ *  other visible edge. */
+private val SheetHeaderShape = RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp)
+
+/** The glass itself: brighter at the top where the light comes from, settling to nearly the
+ *  page's own value at the bottom so the join is a curve, not a step. */
+private val SheetHeaderGlass = Brush.verticalGradient(
+    0.00f to Color(0xFF1C1E26),
+    0.34f to Color(0xFF16181F),
+    0.72f to Color(0xFF111318),
+    1.00f to Color(0xFF0D0E13),
+)
+
+/** A whisper of the accent across the glass, from the same light source as the page wash. */
+private val SheetHeaderTint = Brush.verticalGradient(
+    0.00f to AnanasAccent.copy(alpha = 0.055f),
+    0.60f to AnanasAccent.copy(alpha = 0.012f),
+    1.00f to Color.Transparent,
+)
+
+/** The lit bottom rim — the glass's thickness where it ends, and the one edge on the panel
+ *  that is meant to be seen. Drawn inside the clip, so it follows the corner curve. */
+private val SheetHeaderRim = Brush.verticalGradient(
+    0.00f to Color.Transparent,
+    0.62f to Color.White.copy(alpha = 0.035f),
+    1.00f to Color.White.copy(alpha = 0.10f),
+)
+
+/** How deep that rim runs. */
+private val SheetHeaderRimDepth = 6.dp
+
+/** How much air is left between the panel's last row and its bottom edge. */
+private val SheetHeaderFootRoom = 22.dp
+
+/** How far the panel's shadow reaches on to the page below it. */
+private val SheetHeaderLift = 22.dp
+
+/** Page wash: the accent at 5% for 260dp. Flat #0B0B0D edge to edge is what makes a dark
+ *  screen look unfinished; this is barely visible and gives the top of the page a light
+ *  source, the way the flag does on Home. */
+private val SheetPageWash = Brush.verticalGradient(
+    listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent),
+)
+
+/**
+ * The glass panel every secondary screen opens with: full-bleed, rounded only at the bottom, its
+ * top running off the screen behind the status bar — so the one edge the eye can read is the lit
+ * curve below the content, and the panel reads as a sheet sliding down from above the device.
+ *
+ * The status-bar inset is applied *inside* the fill, which is what lets the glass reach under the
+ * clock while its content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
+ */
+private fun Modifier.sheetHeaderPanel(): Modifier = this
+    .fillMaxWidth()
+    .shadow(
+        elevation = SheetHeaderLift,
+        shape = SheetHeaderShape,
+        clip = false,
+        ambientColor = SheetShadow,
+        spotColor = SheetShadow,
+    )
+    .clip(SheetHeaderShape)
+    .background(SheetHeaderGlass)
+    .background(SheetHeaderTint)
+    .drawBehind {
+        val rim = SheetHeaderRimDepth.toPx()
+        drawRect(
+            brush = SheetHeaderRim,
+            topLeft = Offset(0f, size.height - rim),
+            size = Size(size.width, rim),
+        )
+    }
+    .statusBarsPadding()
+    .padding(horizontal = SheetPad)
+
+/**
+ * The frame every secondary screen sits in: the page wash, the glass header panel, and a scroll.
+ *
+ * The title is 30sp ExtraBold on its own line rather than 16sp beside the chevron — the same
+ * move the hero makes with its country name. The screen states what it is once, in the largest
+ * ink on the page, and everything under it can then be quiet.
+ *
+ * [headerContent] is whatever else belongs *inside* the glass: Settings puts its account row
+ * there, Profile its avatar block. Anything passed here shares the panel with the title instead
+ * of becoming another card on the page — see [sheetHeaderPanel].
  */
 @Composable
 private fun SheetScreen(
     title: String,
     onBack: () -> Unit,
+    headerContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        Box(
-            Modifier.fillMaxWidth().height(260.dp).background(
-                Brush.verticalGradient(listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent)),
-            ),
-        )
-        // systemBarsPadding inside the background, not around it: MainActivity draws
-        // edge-to-edge (setDecorFitsSystemWindows(false)) so the page has to reach under
-        // the status bar while its content stays clear of the clock and the gesture bar.
-        Column(
-            Modifier.fillMaxSize().systemBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = SheetPad),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+        Box(Modifier.fillMaxWidth().height(260.dp).background(SheetPageWash))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Column(Modifier.sheetHeaderPanel()) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+                }
+                Text(
+                    title,
+                    fontSize = 30.sp,
+                    lineHeight = 34.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.7).sp,
+                    color = AnanasTextHi,
+                    modifier = Modifier.padding(top = 14.dp, bottom = if (headerContent == null) 4.dp else 18.dp),
+                )
+                headerContent?.invoke(this)
+                Spacer(Modifier.height(SheetHeaderFootRoom))
             }
-            Text(
-                title,
-                fontSize = 30.sp,
-                lineHeight = 34.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.7).sp,
-                color = AnanasTextHi,
-                modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
-            )
-            content()
-            Spacer(Modifier.height(44.dp))
+            Column(
+                Modifier.fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = SheetPad),
+            ) {
+                content()
+                Spacer(Modifier.height(44.dp))
+            }
         }
     }
 }
 
 /**
- * A group heading: "CONNECTION", "NETWORK", "DNS".
- *
- * 11sp Bold at 1.6sp of tracking — about 0.15em, the same ratio Home's phase eyebrow uses,
- * which is what turns small uppercase into a label rather than into small text. The top
- * space is part of the composable so the gap above a heading is not something each call
- * site chooses; groups on this page are always separated by the same amount.
+ * A group heading: "CONNECTION", "NETWORK", "DNS". 11sp Bold at 1.6sp of tracking — the same
+ * ratio Home's phase eyebrow uses. The top space belongs to the composable, not to the call
+ * site, so groups on this page are always separated by the same amount.
  */
 @Composable
 private fun SectionLabel(text: String, top: Dp = 26.dp) {
@@ -2034,46 +2324,26 @@ private fun SectionLabel(text: String, top: Dp = 26.dp) {
     )
 }
 
-/**
- * The card a group of rows sits in: [AnanasCard] with a hairline border, clipped so the
- * rows' own ripples stop at the corner.
- *
- * The border is what the old `Surface` card was missing. On a #0B0B0D page a #131316 card
- * has barely 1.5:1 against it, so without an edge the group has no shape at all in a
- * screenshot or in bright sun; one 1dp #1E1F24 line is enough to draw it.
- */
+/** The card a group of rows sits in — clipped, so the rows' own ripples stop at the corner.
+ *  Borderless; what separates it from the page is [Modifier.sheetSurface]. */
 @Composable
 private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val shape = remember { RoundedCornerShape(SheetCardCorner) }
     Column(
-        modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(SheetCardCorner))
-            .background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner)),
+        modifier.fillMaxWidth().sheetSurface(shape),
         content = content,
     )
 }
 
-/**
- * The line between two rows in a [CardGroup], inset to where the row's text begins.
- *
- * A divider that starts under the icon cuts the icon column in half; starting it at the
- * label instead makes the icons read as one column and the dividers as separators between
- * text blocks. 62dp is [SheetPad] shy of the card edge plus the tile and its gap.
- */
+/** The line between two rows in a [CardGroup], inset to where the row's text begins so the
+ *  icons read as one column. 62dp = [SheetPad] shy of the card edge, plus the tile and its gap. */
 @Composable
 private fun RowDivider() {
     Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasDivider))
 }
 
-/**
- * A row's icon: the glyph on its own tinted rounded square rather than loose on the card.
- *
- * This is the one visual decision that carries the whole redesign. Bare 24dp glyphs in a
- * flat grey down the side of a card is the stock Android settings list; a 34dp tile of the
- * icon's own colour at 14% gives each row a piece of colour, makes the icon column
- * unmistakable, and is what the Profile screen's menu already did — so adopting it here is
- * also what makes the two screens one design instead of two.
- */
+/** A row's icon: the glyph on its own tinted rounded square rather than loose on the card, which
+ *  is what makes the icon column unmistakable and matches Profile's menu. */
 @Composable
 private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
     Box(
@@ -2083,17 +2353,16 @@ private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifi
 }
 
 /**
- * A text input, built out of [BasicTextField] rather than Material's `TextField`.
+ * A text input, built out of [BasicTextField] rather than Material's `TextField` — the stock
+ * field's floating label, 56dp floor, indicator line and container colour are four decisions
+ * this page has already made differently.
  *
- * The stock field brought a floating label that animates into the border, a 56dp minimum
- * height, an indicator line and its own container colour — four decisions this page has
- * already made differently, which is why the DNS and MTU inputs read as pasted in from
- * another app. This is the same rounded [AnanasCard2] box the rest of the page uses, with
- * its label above it in the same 10sp tracked caps as the chips on Home, and a border that
- * animates to the accent on focus and to [AnanasRed] while the value is not valid.
+ * *Recessed* rather than raised: the light bands run the other way round ([SheetWellFill], shade
+ * at the top), so a field reads as a hole in the card while a button reads as an object on it.
+ * The only edge it draws is the focus/error underline — a state indicator, not a box outline.
  *
- * It is presentation only: [onValueChange] fires on every keystroke exactly as before, and
- * validation stays at the call site.
+ * Presentation only: [onValueChange] fires on every keystroke as before, validation stays at the
+ * call site.
  */
 @Composable
 private fun InlineField(
@@ -2106,11 +2375,12 @@ private fun InlineField(
     error: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val edge by animateColorAsState(
+    val shape = remember { RoundedCornerShape(12.dp) }
+    val underline by animateColorAsState(
         targetValue = when {
             error != null -> AnanasRed
             focused -> AnanasAccent
-            else -> AnanasBorder2
+            else -> Color.Transparent
         },
         animationSpec = tween(160),
         label = "fieldEdge",
@@ -2120,27 +2390,38 @@ private fun InlineField(
         Spacer(Modifier.height(7.dp))
         Box(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(AnanasCard2)
-                .border(1.dp, edge, RoundedCornerShape(12.dp))
+                .clip(shape)
+                .background(SheetWellFill)
+                .drawBehind {
+                    val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
+                    drawRect(brush = SheetWellShade, size = Size(size.width, band))
+                    val rule = SheetFieldRuleDepth.toPx()
+                    drawRect(
+                        color = underline,
+                        topLeft = Offset(0f, size.height - rule),
+                        size = Size(size.width, rule),
+                    )
+                }
                 .padding(horizontal = 12.dp, vertical = 11.dp),
+            // Centres the caret, not just the text: see [SheetFieldStyle].
+            contentAlignment = Alignment.CenterStart,
         ) {
-            // Under the field, so the caret and the typed value draw over it. An address
-            // is figures, so the field is tabular — the digits do not shuffle sideways as
-            // the user types an octet.
+            // Under the field, so the caret and the typed value draw over it. Same metrics as the
+            // field, or the placeholder sits on a different baseline to the value replacing it.
             if (value.isEmpty()) {
-                Text(placeholder, fontSize = 13.sp, color = AnanasFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    placeholder,
+                    style = SheetFieldStyle,
+                    color = AnanasFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                textStyle = TextStyle(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = AnanasTextHi,
-                    fontFeatureSettings = "tnum",
-                ),
+                textStyle = SheetFieldStyle,
                 cursorBrush = SolidColor(AnanasAccent),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
@@ -2154,11 +2435,13 @@ private fun InlineField(
 }
 
 /**
- * A two-or-three way choice as one control: a tracked capsule with the selected segment
- * lit, rather than two bare words the user has to guess are tappable.
+ * A two-or-three way choice as one control: a tracked capsule with the selected segment lit.
  *
- * `options` is (stored value, shown label) — the key is what goes to [AppSettings], the
- * label is what the row says — so the control cannot drift from the persisted value.
+ * `options` is (stored value, shown label) — the key is what goes to [AppSettings] — so the
+ * control cannot drift from the persisted value.
+ *
+ * The track is a well and the selected segment a raised tile inside it: now that the outline is
+ * gone, the choice that is on is the one standing out of the groove.
  */
 @Composable
 private fun SegmentedControl(
@@ -2171,26 +2454,36 @@ private fun SegmentedControl(
     // whose labels are sentences rather than words.
     equalWeight: Boolean = false,
 ) {
+    val trackShape = remember { RoundedCornerShape(12.dp) }
+    val segShape = remember { RoundedCornerShape(9.dp) }
     Row(
-        modifier.clip(RoundedCornerShape(12.dp)).background(AnanasCard2)
-            .border(1.dp, AnanasBorder2, RoundedCornerShape(12.dp)).padding(3.dp),
+        modifier
+            .clip(trackShape)
+            .background(SheetWellFill)
+            .drawBehind {
+                val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
+                drawRect(brush = SheetWellShade, size = Size(size.width, band))
+            }
+            .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         options.forEach { (key, label) ->
             val on = key == selected
-            val fill by animateColorAsState(
-                targetValue = if (on) AnanasAccent.copy(alpha = 0.16f) else Color.Transparent,
-                animationSpec = tween(160), label = "segFill",
-            )
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
             val ink by animateColorAsState(
                 targetValue = if (on) AnanasAccentLight else AnanasMuted,
                 animationSpec = tween(160), label = "segInk",
             )
             Box(
                 (if (equalWeight) Modifier.weight(1f) else Modifier)
-                    .clip(RoundedCornerShape(9.dp)).background(fill)
+                    .then(
+                        if (on) Modifier.sheetRaised(segShape, pressed, elevation = 5.dp)
+                        else Modifier.clip(segShape)
+                    )
+                    .then(if (on) Modifier.background(SheetSegmentTint) else Modifier)
                     .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
+                        interactionSource = interaction,
                         indication = null,
                     ) { onSelect(key) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
@@ -2208,19 +2501,25 @@ private fun SegmentedControl(
 }
 
 /**
- * A small text action inside a row — "Copy", "Clear".
- *
- * `accent = true` fills it and inverts the ink, for the one action in a row that is the
- * point of the row; the rest are outlined so a card with three actions still has one
- * obvious first choice.
+ * A small text action inside a row — "Copy", "Clear". `accent = true` fills it and inverts the
+ * ink, for the one action that is the point of the row. Both are raised objects that sink on
+ * press ([sheetRaised]); the lift replaces the outline the neutral one used to wear.
  */
 @Composable
 private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = false) {
+    val shape = remember { RoundedCornerShape(10.dp) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp))
-            .background(if (accent) AnanasAccent else AnanasCard2)
-            .then(if (accent) Modifier else Modifier.border(1.dp, AnanasBorder2, RoundedCornerShape(10.dp)))
-            .clickable(onClick = onClick)
+        Modifier
+            .sheetRaised(
+                shape = shape,
+                pressed = pressed,
+                fill = if (accent) SheetAccentFill else SheetControlFill,
+                pressedFill = if (accent) SheetAccentPressedFill else SheetControlPressedFill,
+                elevation = if (accent) 8.dp else 5.dp,
+            )
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 8.dp),
     ) {
         Text(
@@ -2233,34 +2532,23 @@ private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = fals
 }
 
 /**
- * The account row at the top of Settings: avatar, name, plan, chevron.
- *
- * It is a card on its own above the first section label rather than a row in a group,
- * because it is the only thing on the page that is about the person rather than about the
- * tunnel. The avatar carries a ring of the accent at 30% — the same trick the Profile
- * screen's larger avatar uses, so the two read as the same object at two sizes.
- *
- * The contents are still the static placeholder the screen shipped with; this is a layout
- * change only, and wiring it to a real account is a separate piece of work.
+ * The account block at the top of Settings: avatar, name, plan, chevron. It rides inside
+ * [SheetScreen]'s glass header rather than sitting on the page as a card of its own, and is
+ * separated by a lift rather than an outline.
  */
 @Composable
 private fun AccountCard(onClick: () -> Unit) {
+    val shape = remember { RoundedCornerShape(SheetCardCorner) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(SheetCardCorner))
-            .background(AnanasCard)
-            .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner))
-            .clickable(onClick = onClick)
+            .sheetRaised(shape, pressed, fill = SheetGlassTileFill, elevation = 8.dp)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(46.dp).clip(CircleShape).background(AnanasCard2)
-                .border(1.5.dp, AnanasAccent.copy(alpha = 0.3f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("YM", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AnanasAccent)
-        }
+        AvatarRing(size = 46.dp, initials = "YM", initialsSize = 15.sp)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text("Yashar M.", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi)
@@ -2279,10 +2567,83 @@ private fun AccountCard(onClick: () -> Unit) {
     }
 }
 
+/**
+ * The avatar, at whatever size is asked for: a gradient ring with a dark disc and the initials
+ * inside it. One composable so Settings' 46dp version and Profile's larger one cannot drift.
+ */
+@Composable
+private fun AvatarRing(size: Dp, initials: String, initialsSize: TextUnit, ringWidth: Dp = 1.5.dp) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(SheetAvatarRing).padding(ringWidth),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.fillMaxSize().clip(CircleShape).background(SheetAvatarWell),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AnanasAccent)
+        }
+    }
+}
+
 // ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
+
+/**
+ * Which server the power button acts on — [ConnectMode.SMART] or [ConnectMode.MANUAL] — as a row
+ * in the CONNECTION group, so the mode has a visible entry point rather than only the gesture.
+ *
+ * The write goes out through [onSetMode], which is VpnTab's own `setConnectMode`: the same path
+ * Home's swipe takes, persisted to [AppSettings] and taking effect on the next connect. Nothing
+ * about the mode's behaviour changes here.
+ */
+@Composable
+private fun ModeChoiceRow(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            IconTile(Icons.Rounded.AutoAwesome, AnanasAccent)
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(
+                    "Server choice",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
+                    color = AnanasTextHi,
+                )
+                Text(
+                    when (mode) {
+                        ConnectMode.SMART -> "Best-measuring server, picked for you"
+                        ConnectMode.MANUAL -> "The one you tap in the list"
+                    },
+                    fontSize = 11.5.sp,
+                    color = AnanasMuted,
+                    maxLines = 2,
+                    modifier = Modifier.padding(top = 2.dp, end = 8.dp),
+                )
+            }
+        }
+        SegmentedControl(
+            options = ConnectMode.values().map { it.name to it.label },
+            selected = mode.name,
+            onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
+        )
+    }
+}
+
 @Composable
 private fun SettingsScreen(
-    onProfileClick: () -> Unit = {}, onSplitTunnelClick: () -> Unit = {}, onBack: () -> Unit = {},
+    onProfileClick: () -> Unit = {},
+    onSplitTunnelClick: () -> Unit = {},
+    onBack: () -> Unit = {},
+    // The live value and setter from VpnTab, which owns both — so this control drives exactly
+    // the same state Home's gesture does, with no second copy to keep in sync.
+    mode: ConnectMode = ConnectMode.MANUAL,
+    onSetMode: (ConnectMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     var autoReconnect by remember { mutableStateOf(AppSettings.autoReconnectEnabled(context)) }
@@ -2292,11 +2653,19 @@ private fun SettingsScreen(
     // switch for that behavior, not a decorative local-only state.
     var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(context)) }
 
-    SheetScreen(title = "Settings", onBack = onBack) {
-        AccountCard(onClick = onProfileClick)
-
-        SectionLabel("CONNECTION", top = 24.dp)
+    SheetScreen(
+        title = "Settings",
+        onBack = onBack,
+        headerContent = { AccountCard(onClick = onProfileClick) },
+    ) {
+        SectionLabel("CONNECTION", top = 8.dp)
         CardGroup {
+            // Server choice, first in the group because it decides what every other row here
+            // applies to. This is the only visible entry point to Smart mode: the hero's mode
+            // pill was removed in the redesign, which left the horizontal swipe on the power
+            // disc as the sole way to change it — discoverable by nobody.
+            ModeChoiceRow(mode = mode, onSetMode = onSetMode)
+            RowDivider()
             SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasBlue, showChevron = true)
             RowDivider()
             SettingsToggleRow(
@@ -2517,14 +2886,20 @@ private fun SettingsScreen(
                     )
 
                     // The note about what the tunnel does with DNS regardless of what is
-                    // typed above. It reads as a panel inside the card rather than as more
-                    // rows, because it is the one thing here the user cannot change.
+                    // typed above. A tinted panel marked with an accent rule down its leading
+                    // edge rather than ringed: it is a note, and a note that is boxed reads as
+                    // another control the user is meant to be able to change.
                     Spacer(Modifier.height(14.dp))
                     Column(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(AnanasAccent.copy(alpha = 0.06f))
-                            .border(1.dp, AnanasAccent.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
-                            .padding(12.dp),
+                            .background(AnanasAccent.copy(alpha = 0.07f))
+                            .drawBehind {
+                                drawRect(
+                                    color = AnanasAccent.copy(alpha = 0.55f),
+                                    size = Size(SheetNoteRuleWidth.toPx(), size.height),
+                                )
+                            }
+                            .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             Icon(Icons.Rounded.Shield, null, tint = AnanasAccent, modifier = Modifier.size(14.dp))
@@ -2657,14 +3032,8 @@ private fun SettingsScreen(
     }
 }
 
-/**
- * A row that opens something, or just states a value: tile, label, optional value under it,
- * optional chevron.
- *
- * `iconTint` is the row's colour, carried by [IconTile] rather than by a bare glyph — see
- * that composable for why. The label is 14.5sp SemiBold with a hair of negative tracking,
- * which is the same treatment the hero's server row uses one step down from its headline.
- */
+/** A row that opens something, or just states a value: tile, label, optional value under it,
+ *  optional chevron. */
 @Composable
 private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
     Row(
@@ -2708,14 +3077,8 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
     }
 }
 
-/**
- * The same row with a switch on the right instead of a chevron.
- *
- * `tint` defaults to the neutral [AnanasSettingsIcon] so existing rows are unchanged, but
- * every call site in Settings now passes the colour of the thing being switched — green for
- * the two that make the tunnel more automatic, amber for the kill switch, red for the
- * blocker — which is what lets a group of five switches be scanned rather than read.
- */
+/** The same row with a switch on the right instead of a chevron. `tint` is the colour of the
+ *  thing being switched, so a group of five switches can be scanned rather than read. */
 @Composable
 private fun SettingsToggleRow(
     icon: ImageVector,
@@ -2769,10 +3132,10 @@ private fun SettingsToggleRow(
 }
 
 // Hand-built toggle instead of Material3's Switch: a narrower capsule track
-// (44x24 vs Material's wider default), a plain white circular thumb carrying
-// its own soft drop shadow for a touch of depth, smooth 180ms slide + color
-// crossfade, and — critically — no ripple halo on tap (Switch always draws
-// one, which read as a stray flash on this dark background).
+// (44x24 vs Material's wider default), a thumb that reads as a lit object sitting
+// in a groove, smooth 180ms slide + color crossfade, and — critically — no ripple
+// halo on tap (Switch always draws one, which read as a stray flash on this dark
+// background).
 @Composable
 private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val trackColor by animateColorAsState(
@@ -2789,6 +3152,10 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
             .height(24.dp)
             .clip(RoundedCornerShape(50))
             .background(trackColor)
+            // The track is a groove, so it is shaded at the top rather than lit there —
+            // the opposite of every raised surface on these screens, which is what makes
+            // the thumb read as standing above it.
+            .drawBehind { drawRect(brush = SheetWellShade, size = Size(size.width, size.height / 2f)) }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -2798,55 +3165,49 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
             Modifier
                 .padding(start = thumbOffset, top = 2.dp)
                 .size(20.dp)
-                .shadow(3.dp, CircleShape, clip = false)
+                .shadow(5.dp, CircleShape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(SheetThumbFill)
         )
     }
 }
 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
-// The same frame as Settings — [SheetScreen], one gutter, one card corner, the same section
-// labels — so moving between the two screens is a change of content and not a change of app.
-// What differs is the top: the person is the subject here, so the avatar gets the space and
-// the plan card is allowed to be the one warm surface in an otherwise green-and-grey app.
-//
-// The contents are still the placeholder this screen shipped with. Wiring it to a real
-// account is separate work; this pass is layout and material only.
+// The same frame as Settings, and for the same reason: the person lives in the glass header
+// (see [SheetScreen]'s headerContent), so both screens open with one panel and continue into
+// the same gutter, card corner and section labels. Contents are still placeholder; wiring
+// this to a real account is separate work.
 @Composable
 private fun ProfileScreen(onBack: () -> Unit) {
-    SheetScreen(title = "Profile", onBack = onBack) {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
-                // The halo is a wider disc behind the avatar rather than a thick border,
-                // because a stroke that wide reads as a second ring; and it is flat colour
-                // rather than a blur, which this app never uses.
-                Box(Modifier.matchParentSize().clip(CircleShape).background(AnanasAccent.copy(alpha = 0.09f)))
-                Box(
-                    Modifier.size(76.dp).clip(CircleShape).background(AnanasCard2)
-                        .border(1.5.dp, AnanasAccent.copy(alpha = 0.35f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("YM", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = AnanasAccent)
+    SheetScreen(
+        title = "Profile",
+        onBack = onBack,
+        headerContent = {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                AvatarRing(size = 62.dp, initials = "YM", initialsSize = 20.sp, ringWidth = 2.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Yashar M.",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.4).sp,
+                        color = AnanasTextHi,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text("yashar@ananasvpn.com", fontSize = 12.5.sp, color = AnanasMuted, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Yashar M.",
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.4).sp,
-                color = AnanasTextHi,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text("yashar@ananasvpn.com", fontSize = 12.5.sp, color = AnanasMuted)
-        }
-
-        SectionLabel("SUBSCRIPTION", top = 28.dp)
+        },
+    ) {
+        SectionLabel("SUBSCRIPTION", top = 8.dp)
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(SheetCardCorner))
-                .background(Color(0xFF161310))
-                .border(1.dp, Color(0xFF3A2F1E), RoundedCornerShape(SheetCardCorner))
+            Modifier.fillMaxWidth()
+                .sheetSurface(RoundedCornerShape(SheetCardCorner), SheetPlanFill)
                 .padding(16.dp),
         ) {
             Row(
@@ -2881,8 +3242,8 @@ private fun ProfileScreen(onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf("6" to "Configs", "142 GB" to "Used total", "98" to "Sessions").forEach { (v, l) ->
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(AnanasCard)
-                        .border(1.dp, AnanasBorder, RoundedCornerShape(14.dp))
+                    Modifier.weight(1f)
+                        .sheetSurface(RoundedCornerShape(14.dp), SheetGlassTileFill, elevation = 6.dp)
                         .padding(vertical = 14.dp, horizontal = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -2981,47 +3342,44 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
     // Deliberately not built on SheetScreen, even though it wears the same clothes:
     // SheetScreen scrolls its whole body, and an app list is a LazyColumn that has to
     // own the leftover height itself (this device may have 200 apps installed). So the
-    // header is laid out fixed, the list takes weight(1f), and the tokens/materials are
-    // the sheet's — same background, same accent wash, same 30sp title, same card edges.
+    // header is laid out fixed and the list takes weight(1f) — but the panel itself is
+    // the shared [Modifier.sheetHeaderPanel], so it is the same glass as the other screens.
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        Box(
-            Modifier.fillMaxWidth().height(260.dp).background(
-                Brush.verticalGradient(listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent))
-            )
-        )
-        Column(Modifier.fillMaxSize().systemBarsPadding()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = SheetPad).padding(top = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
-            }
-            Text(
-                "Split tunneling",
-                fontSize = 30.sp,
-                lineHeight = 34.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.7).sp,
-                color = AnanasTextHi,
-                modifier = Modifier.padding(horizontal = SheetPad).padding(top = 16.dp),
-            )
-            // The two modes are easy to invert in your head, so the screen says which
-            // one is live in a sentence instead of leaving it to the labels.
-            Text(
-                if (mode == "include") "The VPN carries only the apps you pick. Everything else goes direct."
-                else "The apps you pick go direct. Everything else goes through the VPN.",
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                fontWeight = FontWeight.Medium,
-                color = AnanasMuted,
-                modifier = Modifier.padding(horizontal = SheetPad).padding(top = 8.dp, end = 8.dp),
-            )
-
-            Column(Modifier.padding(horizontal = SheetPad)) {
+        Box(Modifier.fillMaxWidth().height(260.dp).background(SheetPageWash))
+        // The status-bar inset lives inside the glass panel, so only the bottom inset is
+        // taken here — the list must end above the navigation bar, not under it.
+        Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+            Column(Modifier.sheetHeaderPanel()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+                }
+                Text(
+                    "Split tunneling",
+                    fontSize = 30.sp,
+                    lineHeight = 34.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.7).sp,
+                    color = AnanasTextHi,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+                // The two modes are easy to invert in your head, so the screen says which
+                // one is live in a sentence instead of leaving it to the labels.
+                Text(
+                    if (mode == "include") "The VPN carries only the apps you pick. Everything else goes direct."
+                    else "The apps you pick go direct. Everything else goes through the VPN.",
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AnanasMuted,
+                    modifier = Modifier.padding(top = 8.dp, end = 8.dp),
+                )
                 // Switching modes doesn't clear the selection -- the same app list just
                 // gets reinterpreted under the new mode, matching how most VPN apps with
                 // this feature behave (Windscribe included).
-                SectionLabel("MODE", top = 22.dp)
+                SectionLabel("MODE", top = 20.dp)
                 SegmentedControl(
                     options = listOf("exclude" to "Exclude selected", "include" to "Only selected"),
                     selected = mode,
@@ -3029,9 +3387,13 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     equalWeight = true,
                 )
+                Spacer(Modifier.height(SheetHeaderFootRoom))
+            }
+
+            Column(Modifier.padding(horizontal = SheetPad)) {
                 SectionLabel(
                     if (selected.isEmpty()) "APPS" else "APPS · ${selected.size} SELECTED",
-                    top = 22.dp,
+                    top = 20.dp,
                 )
                 InlineField(
                     value = search,
@@ -3061,9 +3423,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                 // scrolling with them.
                 LazyColumn(
                     Modifier.weight(1f).padding(horizontal = SheetPad)
-                        .clip(RoundedCornerShape(SheetCardCorner))
-                        .background(AnanasCard)
-                        .border(1.dp, AnanasBorder, RoundedCornerShape(SheetCardCorner)),
+                        .sheetSurface(RoundedCornerShape(SheetCardCorner)),
                 ) {
                     itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
                         val isChecked = selected.contains(app.packageName)
@@ -3144,11 +3504,13 @@ private fun SelectDot(selected: Boolean) {
 // ── Icon button (top bar) ───────────────────────────────────────────────────────
 @Composable
 private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(
         modifier
             .size(38.dp)
-            .clip(CircleShape)
-            .clickable { onClick() },
+            .sheetRaised(CircleShape, pressed, elevation = 5.dp)
+            .clickable(interactionSource = interaction, indication = null) { onClick() },
         contentAlignment = Alignment.Center
     ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
 }
