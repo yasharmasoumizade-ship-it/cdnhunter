@@ -275,6 +275,18 @@ private val RefPanelBg = Color(0xFF06080D)
  * card, and the card is cold glass catching it.
  */
 private val RefFrost = Color(0xFFA6DCFF)
+
+/**
+ * The lit edge of the frosted pane — [RefFrost] carried most of the way to white.
+ *
+ * It lives up here with the palette rather than down in the panel section it is named for
+ * because it now has two users on opposite sides of the file: the card's own top edge
+ * ([drawPanelTopEdge]) and the mode pill's hairline ([ModePillEdge]), which is docked on that
+ * edge and has to be lit by the same white or the seam reads as two different materials
+ * meeting. Top-level properties initialise in file order, so the shared token has to be
+ * declared before the first of them.
+ */
+private val PanelEdgeInk = Color(0xFFE8F6FF)
 private val RefElev1 = Color(0xFF0F1116)       // --bg-elev-1
 private val RefElev2 = Color(0xFF15171E)       // --bg-elev-2
 private val RefBorder = Color(0xFF23262F)      // --border
@@ -2703,9 +2715,6 @@ private fun DrawScope.drawPanelSheen() {
         )
     }
 }
-
-/** The lit edge of the frosted pane — [RefFrost] carried most of the way to white. */
-private val PanelEdgeInk = Color(0xFFE8F6FF)
 
 /**
  * The card's top edge and its two corner arcs.
