@@ -15,7 +15,6 @@ package com.cdnhunter.app.ui
 //                   the top and foot
 //   • top bar     — hamburger → Settings, account glyph → Profile
 //   • hero        — one centred column, and the whole point of the screen:
-//                     eyebrow    — a coloured dot and the phase in tracked caps
 //                     headline   — the exit country at 34sp, the largest ink in the app
 //                     status     — "REALITY · 8443 · Smart" on a glass chip → Settings
 //                     power      — a 140dp white disc with a phase ring, centred and
@@ -23,9 +22,11 @@ package com.cdnhunter.app.ui
 //                     meta       — the public IP (tap to copy) and, connected, the
 //                                  session clock; connecting, the progress pulse
 //                     server     — the active config on a glass row → Locations
-//   • browse card — 28dp-topped panel: Main / Custom pills, + and search buttons,
-//                   then one row per server
-//                   (flag, country · city, ping, three load bars)
+//   • browse card — 28dp-topped panel, and now nothing but the list: one row per server
+//                   (flag, country · city, ping, three load bars). Its chrome — the
+//                   Main / Custom pills and the + and search buttons — has moved *out* of
+//                   it and up into the hero, where those controls float above the card's
+//                   top edge; the mode pill is docked on the seam between the two
 //   • usage card  — floats over the list bottom: session-traffic ring, live
 //                   speed, chevron → Locations
 //
@@ -103,8 +104,9 @@ package com.cdnhunter.app.ui
 // easing back to 0.99, so the change reads as one image replacing another.
 //
 // Everything on the hero that carries text carries it on glass — one material, three
-// sizes: the mode pill, the IP chip, the server row. See the [GlassChip]
-// section. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
+// sizes: the mode pill, the IP chip, the server row. The [GlassChip] section is the
+// primitive; the mode pill has since been given its own deeper fill and lit edge, because
+// it is the one chip that sits on the seam over the browse card rather than on flag. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
 // on artwork whose brightest band the app can draw is a white flag, where they read at
 // 3:1 and below with nothing under them. Glass is the fix rather than a heavier scrim
 // because these are all controls — every one of them opens something or copies something
@@ -128,20 +130,20 @@ package com.cdnhunter.app.ui
 // chevrons that used to sit above and below it are gone, and so is the connect pill its
 // right half used to be cut into. Smart / Manual is still switched by swiping the circle
 // up or down, or by its two accessibility actions, and the mode is now named and changed
-// in [ModePill], docked directly under the disc — the status chip that used to state it
+// in [ModePill], docked on the seam between the hero and the browse card — the status chip that used to state it
 // alongside the transport and the port is gone. The one
 // thing on it that answers to the tunnel is its mark, which goes teal while the tunnel is
 // up (see [headerInk]), and the ring around it, which carries the phase.
 //
 // There is no green anywhere on this screen. Connected is one colour, [RefLive] — a
 // refined teal, the mockup's `--teal` family — and it is stated in exactly four places:
-// the header's headline ink, the eyebrow dot, the power ring and the power mark. The
-// usage ring's accent and the active row's dot were already that teal, so the whole
-// screen now agrees. There is no ON/OFF pill and no pending state: the screen is either
+// the header's headline ink, the power ring, the power mark and the usage ring's accent.
+// It used to be stated in two more — the phase eyebrow's dot and a dot beside the active
+// server's name — and both of those are now gone, along with the ink they carried. There is no ON/OFF pill and no pending state: the screen is either
 // connected or it isn't.
 //
-// That teal is the header's ink and nothing below it. The country headline, the
-// eyebrow's dot and the session clock cross to [RefLive] together, on the same 520ms
+// That teal is the header's ink and nothing below it. The country headline and the
+// session clock cross to [RefLive] together, on the same 520ms
 // fade as the light, so the top of the screen changes state as one thing. What stays put
 // is deliberate: the top bar's two glyphs — hamburger and account — are navigation, not
 // connection state, and they are the same white whether the tunnel is up or down; so are
@@ -150,7 +152,7 @@ package com.cdnhunter.app.ui
 //
 // Motion here is minimal and all of it respects the system's "remove animations"
 // setting (see [rememberReduceMotion]): the flag crossfade, the ambient colour
-// crossfade, the connected ink crossfade, the wordmark's print-in, and the two
+// crossfade, the connected ink crossfade, and the two
 // words that ever change on their own — the mode and the public IP — all collapse to an
 // instant cut when animations are off.
 
@@ -222,7 +224,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
@@ -239,7 +240,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -249,11 +249,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import kotlinx.coroutines.delay
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF060709)          // --bg
@@ -289,18 +287,18 @@ private val RefTeal = Color(0xFF35D6B8)        // --teal
  * The connected colour: a deep, refined teal. There is no green on this screen.
  *
  * The mockup's `--green` (#34D17A) is gone entirely — at 118dp of lit ring plus a crown
- * wash plus an eyebrow dot it read as a highlighter rather than as a state, and against a
+ * wash it read as a highlighter rather than as a state, and against a
  * flag it turned every country into a swamp. This is [RefTeal]'s hue held a little deeper
  * and a shade less bright, which still clears 4.5:1 on [RefBg] for the ring and the
  * caption but sits back into the page instead of shouting off it. Deliberately the same
- * family as the usage ring's accent and the active row's dot, so "live" is one colour
- * everywhere on the screen rather than two.
+ * family as the usage ring's accent, so "live" is one colour everywhere on the screen
+ * rather than two.
  */
 private val RefLive = Color(0xFF22B9A2)
 /**
  * The room's light when the tunnel is up: blue, not the state's own teal.
  *
- * The disc reports the *state* in [RefLive] — mark, ring, eyebrow — and the light reports
+ * The disc reports the *state* in [RefLive] — mark and ring — and the light reports
  * that the thing is lit, so making them different hues is what stops the whole top of the
  * screen becoming one teal blob. Vivid and slightly over-bright on purpose: this is the
  * one light in the app allowed to be theatrical. It is thrown by [drawHeroAtmosphere]
@@ -348,8 +346,8 @@ private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 //   OFF        — white, wide and low: the room is lit, nothing is happening.
 //   CONNECTING — [RefWorking], tighter and stronger, and the power ring's arc turns.
 //   CONNECTED  — [RefGlowOn] blue, stronger again, with the crown wash over the top edge
-//                at full strength. Blue rather than teal because the ring, the mark and
-//                the eyebrow already carry [RefLive]: state is teal, light is blue.
+//                at full strength. Blue rather than teal because the ring and the mark
+//                already carry [RefLive]: state is teal, light is blue.
 //
 // The old *hairline* along the very top edge is gone. It was one 1.5dp line of
 // near-full-strength colour across the whole screen with two more running down the sides,
@@ -362,14 +360,19 @@ private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 private val ChromeBg = Color(0xFF0B0B0D)
 
 /**
- * How far the hero's artwork and light carry on *below* the last of its rows — i.e. how
- * much of the backdrop the browse card is drawn over.
+ * How far the hero's *light* carries on below the last of its rows — i.e. how much of the
+ * backdrop the browse card is drawn over. The flag's own reach is [FlagBleed] and is now a
+ * separate, much shorter number.
  *
- * A little more than [PanelFade], so the flag and the horizon bloom are still going where
- * the card has already turned solid: the dissolve ends inside the artwork rather than at
- * the end of it, which is what leaves no line anywhere in the transition.
+ * 88dp, a little past [PanelFade], so the horizon bloom is still going where the card has
+ * already turned solid: the dissolve ends inside the light rather than at the end of it,
+ * which is what leaves no line anywhere in the transition. It was 138dp, which was tuned
+ * against a 132dp fade; with the card's chrome moved into the hero the fade came up to 84dp
+ * and this had to come up with it, or the bloom's centre — which sits exactly on the band's
+ * foot ([drawHeroAtmosphere]) — would be 50dp inside opaque paint and the seam would go
+ * back to being a line.
  */
-private val HeroBleed = 138.dp
+private val HeroBleed = 88.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -389,9 +392,8 @@ private const val PHASE_FADE_MS = 520
 // — nothing painted over the connect bar's flag, so the flag's own colours are the
 // real ones whether the tunnel is up or down.
 //
-// [RefTeal] is used at full strength where the mockup uses it and the flag isn't
-// underneath: the usage ring's `conic-gradient(var(--teal) …)` and the active row's
-// dot.
+// [RefTeal] is used at full strength in the one place the mockup uses it and the flag
+// isn't underneath: the usage ring's `conic-gradient(var(--teal) …)`.
 
 // ── Dimensions — CSS px read as dp (the mockup's device is 390px wide) ─────────
 private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
@@ -495,14 +497,23 @@ private val ModeSwipeThreshold = 20.dp
 // tighter falloff, so a state change reads as the room changing colour rather than as a
 // repaint. The lit values went up again when the power button's own halo was removed: the
 // room is now the only thing carrying the state, so it has to carry it on its own.
-private const val KEY_LIGHT_IDLE = 0.055f
-private const val KEY_LIGHT_ON = 0.135f
-private const val RIM_LIGHT_IDLE = 0.032f
-private const val RIM_LIGHT_ON = 0.080f
-private const val CROWN_LIGHT_IDLE = 0.058f
-private const val CROWN_LIGHT_ON = 0.185f
-private const val HORIZON_LIGHT_IDLE = 0.072f
-private const val HORIZON_LIGHT_ON = 0.205f
+//
+// They went up a third time here, by roughly half again on every layer. Two things made room
+// for it: the hero got shorter, so the same light is spread over less height and any given
+// alpha reads dimmer than it did; and the phase caption and the wordmark both came off the
+// artwork, so there is less on it competing with the light for attention. The ceiling on these
+// values is not taste but the ink over them — the address chip and the tab labels are white on
+// this artwork, and a crown wash past about 0.3 starts eating their contrast at the top of the
+// screen where it is strongest. The vignette is untouched: it is what keeps the corners under
+// the brighter wash from turning grey.
+private const val KEY_LIGHT_IDLE = 0.082f
+private const val KEY_LIGHT_ON = 0.200f
+private const val RIM_LIGHT_IDLE = 0.048f
+private const val RIM_LIGHT_ON = 0.120f
+private const val CROWN_LIGHT_IDLE = 0.086f
+private const val CROWN_LIGHT_ON = 0.272f
+private const val HORIZON_LIGHT_IDLE = 0.108f
+private const val HORIZON_LIGHT_ON = 0.300f
 
 /**
  * The whole atmosphere, drawn over the flag across the backdrop's full size — see the
@@ -593,7 +604,7 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
  * animator duration scale to zero.
  *
  * Every animation on this screen reads this and collapses to [snap] when it is true:
- * an ambient light that fades, a wordmark that prints in and a chevron that brightens
+ * an ambient light that fades, a mode word that swaps and a chevron that brightens
  * are all decoration, and decoration is exactly what that setting turns off.
  */
 @Composable
@@ -644,7 +655,7 @@ private fun headerInk(phase: ConnPhase, idle: Color = RefTextHi): Color {
  *
  * Connected is [RefGlowOn] rather than [RefLive], and that is the one place the room's
  * colour and the *state's* colour deliberately disagree. Teal is the state — it is the
- * ring, the eyebrow dot, the headline and the mark on the disc — but a teal room over a
+ * ring, the headline and the mark on the disc — but a teal room over a
  * flag drained the warm half of the world's flags, and a saturated room light on
  * near-black is the hardest thing on this palette to keep clean at low alpha. Blue reads
  * as light rather than as a tint, so the artwork keeps its own colour and the teal is left
@@ -734,23 +745,26 @@ private const val HEADER_FLAG_SATURATION = 0.80f
 private const val HEADER_FLAG_ALPHA = 0.94f
 
 /**
- * How far the flag carries *below* the hero's own band — i.e. how deep under the browse
+ * How far the flag carries *below the hero's last row* — i.e. how deep under the browse
  * card's top edge the artwork keeps going.
  *
- * The band the light is drawn on already reaches [HeroBleed] past the last hero row; the
- * flag now goes this much further again, so the artwork is still at full strength where
- * the card has long since turned solid. Deliberately bigger than it needs to be to "touch"
- * the card: the card's own top is translucent for [PanelFade], and a flag that stopped
- * inside that window would put a visible horizontal edge in the middle of the glass.
- * Ending well inside the opaque part means the only thing that ever ends the flag is the
- * card being paint.
+ * 28dp, and it is measured from the hero's rows rather than from the light's band, which is
+ * the whole of the change: the flag's box used to be `heroHeight + HeroBleed + FlagBleed`,
+ * so at the old values the artwork ran 234dp past the last row — a third of the screen of
+ * flag behind an opaque card. Now it is `heroHeight + FlagBleed` (see [HeroBackdrop]), and
+ * 28dp is enough to put the artwork just inside the card's translucent head without
+ * reaching the point where the fill has gone solid.
  *
- * The light does not follow it down here on purpose — see [HeroBleed]. [drawHeroAtmosphere]
- * writes its geometry in fractions of its own band, and the horizon bloom sits on the foot
- * of that band, which is what fuses the hero to the card; dragging the band lower would
- * drag the bloom under the card and lose the fuse.
+ * There is no visible edge where it stops because it never stops in the open: the flag's own
+ * bottom fade ([HeaderFlagBottomFade]) takes the last 14% of the artwork to nothing, and all
+ * of that happens under the card's glass.
+ *
+ * Shrinking this also un-zooms the flag, which is the other reason for the number.
+ * [ContentScale.Crop] covers the box, so a box 234dp taller than this one had to be scaled
+ * about 1.6× further to cover — throwing away that much more of a landscape flag's width.
+ * See the call site in [HeroBackdrop].
  */
-private val FlagBleed = 96.dp
+private val FlagBleed = 28.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -821,9 +835,9 @@ private val HeaderFlagScrim = Brush.verticalGradient(
  * would leave a bare vertical strip of page down the side, which is exactly the "floating
  * panel" reading the card outline used to give; and 0.44, which is where this ended
  * before, was enough of a fall to be *seen* as a fall: a flag that visibly gave up on its
- * own right-hand third. Ending at 0.86 keeps a trace of direction — the left is still
- * where the colour is heaviest, which is where [ConnectWordmark] sits — without the right
- * edge reading as cropped or unfinished. The colour is irrelevant; only the alpha is read,
+ * own right-hand third. Ending at 0.86 keeps a trace of direction — the left stays the
+ * heavier side, which is where the light comes from — without the right edge reading as
+ * cropped or unfinished. The colour is irrelevant; only the alpha is read,
  * by the [BlendMode.DstIn] pass in [HeaderFlag].
  */
 private val HeaderFlagFadeX = Brush.horizontalGradient(
@@ -1047,10 +1061,6 @@ private val GlassLight = Brush.verticalGradient(
     1.00f to RefElev1.copy(alpha = 0.74f),
 )
 
-/** The white edge every glass surface up here carries. Over artwork [RefBorder]
- *  disappears; white at a tenth does not, and it is the only drawn line in the hero. */
-private val GlassBorder = Color.White.copy(alpha = 0.13f)
-
 /** The top-light on a glass surface: a bright first row easing to nothing by 40%, and a
  *  dark foot so the bottom edge never reads brighter than the top. Compose has no inset
  *  box-shadow; this is both of the mockup's. */
@@ -1062,17 +1072,19 @@ private val GlassSheen = Brush.verticalGradient(
     1.00f to Color.Black.copy(alpha = 0.14f),
 )
 
-/** The phase dot beside the eyebrow: the phase stated as hue, at label scale. */
-private val PhaseDotSize = 7.dp
-
 /** Corner radius on the hero's own chips — now just the IP pill. Fully
  *  rounded would read as a tag; this is the same corner-to-height relationship the top
  *  bar's glyph chips use, so every small frame on the screen agrees. */
 private val ChipCorner = 11.dp
 
 /**
- * One glass chip: floor, top-light, hairline, clipped to [shape] — the hero's only
- * surface primitive, so nothing up here can drift out of the material system by accident.
+ * One glass chip: floor, top-light, clipped to [shape] — the hero's only surface
+ * primitive, so nothing up here can drift out of the material system by accident.
+ *
+ * There is no hairline. It carried a white 13% border, which was the only drawn line in the
+ * hero and read as a frame around a 20dp pill rather than as an edge; [GlassSheen]'s bright
+ * first row and dark foot already give the surface its lift, and with the border gone the
+ * chip's fill is what separates it from the artwork. The token went with it.
  *
  * [onClick] is taken here rather than left to the call site's own modifier because the
  * order matters: applied inside, the click lands *after* the clip, so the ripple is bound
@@ -1091,7 +1103,6 @@ private fun GlassChip(
         modifier
             .clip(shape)
             .background(surface)
-            .border(1.dp, GlassBorder, shape)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(onClickLabel = onClickLabel, onClick = onClick)
@@ -1349,25 +1360,34 @@ internal fun HomeScreen(
     }
 
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // First, behind everything: the artwork and the light. The flag fills this whole box
-        // — the screen, edge to edge — while the light stays in a band as tall as the hero's
-        // rows plus [HeroBleed]. See [HeroBackdrop] for why those two are different heights.
+        // First, behind everything: the artwork and the light. Both are sized off the hero
+        // and neither fills this box — the light runs [HeroBleed] past the hero's last row,
+        // the flag only [FlagBleed]. See [HeroBackdrop] for why those differ.
         HeroBackdrop(
             state = state,
-            bandHeight = heroHeight + HeroBleed,
+            heroHeight = heroHeight,
             modifier = Modifier.fillMaxSize(),
         )
         Column(Modifier.fillMaxSize()) {
             Header(
                 state = state,
+                tab = tab,
+                searchOpen = searchOpen,
                 onOpenSettings = onOpenSettings,
                 onOpenProfile = onOpenProfile,
                 onTogglePower = onTogglePower,
                 onSetMode = onSetMode,
-                // Above the card in paint order, because the power button is drawn
-                // [PowerOverlap] below the hero's own bounds and a later sibling would
-                // otherwise cover its foot. Children of a Column paint in declaration
-                // order; zIndex is what overrides that without reordering them.
+                onSelectTab = { tab = it },
+                onToggleSearch = {
+                    searchOpen = !searchOpen
+                    if (!searchOpen) query = ""
+                },
+                onAddServer = onAddServer,
+                // Above the card in paint order, because the [ModePill] at the foot of
+                // this column is drawn [ModePillDock] below the hero's own bounds and a
+                // later sibling would otherwise cover the half that overhangs. Children of
+                // a Column paint in declaration order; zIndex is what overrides that
+                // without reordering them.
                 modifier = Modifier
                     .zIndex(1f)
                     .onSizeChanged { heroContentPx = it.height },
@@ -1379,12 +1399,7 @@ internal fun HomeScreen(
                 tab = tab,
                 query = query,
                 searchOpen = searchOpen,
-                onSelectTab = { tab = it },
                 onQueryChange = { query = it },
-                onToggleSearch = {
-                    searchOpen = !searchOpen
-                    if (!searchOpen) query = ""
-                },
                 onSelectConfig = onSelectConfig,
                 onAddServer = onAddServer,
                 onRefreshPings = onRefreshPings,
@@ -1413,10 +1428,13 @@ internal fun HomeScreen(
 // distinction is the point:
 //
 //   the flag        — edge to edge horizontally, and vertically from under the status bar
-//                     down to [FlagBleed] past the foot of the band, which is well inside
-//                     the browse card. Not the whole screen: a full-screen box would crop
-//                     half of a landscape flag's width away (see the call site), and the
-//                     part of the screen it would gain is behind an opaque card anyway.
+//                     down to only [FlagBleed] past the hero's last row: a shallow overlap
+//                     with the browse card's translucent head, enough for the transition and
+//                     no more. It is measured from the rows, not from the band, so it is far
+//                     the shorter of the two heights — the light reaches three times deeper.
+//                     Height is zoom here (see the call site), which is the second reason it
+//                     is short; the part of the screen a taller box would gain is behind an
+//                     opaque card anyway.
 //   the light + floor — a band [bandHeight] tall at the top, i.e. the hero's rows plus
 //                     [HeroBleed]. The atmosphere's geometry is written in fractions of its
 //                     own size (the horizon bloom sits at `size.height`, on the hero's foot,
@@ -1430,10 +1448,21 @@ internal fun HomeScreen(
 //
 // The layers stack, from the back: [ChromeBg] over the top band (so the artwork is never
 // composited against nothing while it crossfades, while the band's own foot stays
-// translucent for the card to sit over) → the one flag layer → the [ConnectWordmark] →
-// [drawHeroAtmosphere] over the band, so the room's light falls on the letters. The flag crossfades on [PHASE_FADE_MS], as does the light's colour.
+// translucent for the card to sit over) → the one flag layer → [drawHeroAtmosphere] over
+// the band. The flag crossfades on [PHASE_FADE_MS], as does the light's colour.
+//
+// There used to be a fourth layer between the flag and the light: "CONNECT" set vertically
+// down the left edge, printing itself in letter by letter. It is deleted, not disabled —
+// the composables, their nine tokens and the [kotlinx.coroutines.delay] loop that drove
+// them are all gone. It was the one piece of this screen that was decoration rather than
+// report, and with the hero compacted there is no longer a left margin for it to live in.
 @Composable
-private fun HeroBackdrop(state: HomeUiState, bandHeight: Dp, modifier: Modifier = Modifier) {
+private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier = Modifier) {
+    // The two heights this composable is made of, and they are deliberately different — see
+    // the section comment. The light's band reaches [HeroBleed] past the hero's rows; the
+    // flag only [FlagBleed], which is a quarter of that.
+    val bandHeight = heroHeight + HeroBleed
+    val flagHeight = heroHeight + FlagBleed
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1458,38 +1487,23 @@ private fun HeroBackdrop(state: HomeUiState, bandHeight: Dp, modifier: Modifier 
         // crossfading at 40% alpha would show the page gradient through itself.
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
-            // The flag's box is the hero band plus [FlagBleed] — not the whole screen. Two
-            // reasons, and they pull the same way. It is what puts the artwork *past* the
-            // browse card's top edge instead of merely up to it, and it is also what keeps
-            // the crop sane: [ContentScale.Crop] scales to cover the box, so the taller the
-            // box the more of a landscape flag's width is thrown away. A full-screen box is
-            // roughly 0.45:1 and keeps about half a 5:3 flag; this one is nearer 0.6:1.
+            // The flag's box is the hero's rows plus [FlagBleed] — not the light's band, and
+            // certainly not the screen. [ContentScale.Crop] scales to *cover* this box, so
+            // the box's shape is the flag's zoom: every dp of height added here is width
+            // thrown off the sides of the artwork. Full screen is about 0.45:1 and keeps
+            // roughly half of a 5:3 flag; the band plus a 96dp bleed, which is what this was,
+            // came to about 0.6:1; the hero plus 28dp is nearer 0.9:1, which is a little over
+            // 1.5× zoom instead of 2.5× — so most of the flag's actual pattern is on screen,
+            // and an emblem in the middle of one is no longer filling the frame.
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
-                    .height(bandHeight + FlagBleed)
+                    .height(flagHeight)
                     .alpha(flagAlpha),
             )
         }
-        // Over the flag, under the light. Being under [drawHeroAtmosphere] is what makes the
-        // wordmark part of the room rather than a label pasted on it: the key light and the
-        // crown wash fall across the letters, so they take the phase's own colour and go
-        // blue with everything else when the tunnel comes up.
-        ConnectWordmark(
-            phase = phase,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = ConnectWordTopClearance)
-                // coerced because the band is measured: on the first frame, before the
-                // hero's rows have reported a height, it is [HeroBackdropFallback] + the
-                // bleed, and a negative height is a crash rather than a small wordmark.
-                .height(
-                    (bandHeight - ConnectWordTopClearance - ConnectWordFootClearance)
-                        .coerceAtLeast(0.dp)
-                ),
-        )
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1516,285 +1530,6 @@ private val HeroFloor = Brush.verticalGradient(
     1.00f to Color.Transparent,
 )
 
-// ── Connect wordmark ──────────────────────────────────────────────────────────
-// "CONNECT" set vertically down the left edge of the hero, one letter per line.
-//
-// It is typography used as architecture. The hero is a centred column — eyebrow, country,
-// address, button — which reads cleanly but leaves the two side margins as dead space, and
-// a full-bleed flag behind dead space just looks like an image with nothing happening on
-// it. A single word running the height of the left edge gives the composition a spine: the
-// eye now has a vertical to read the centred column against, and the flag has something on
-// it that is part of the design rather than a row of chrome.
-//
-// It is drawn inside [HeroBackdrop], between the flag and [drawHeroAtmosphere], which is
-// what keeps it a *surface* rather than a label. The light falls on it: the key light warms
-// it while idle, and when the tunnel comes up [RefGlowOn]'s blue crown wash goes across it
-// with the rest of the room.
-//
-// It prints itself in. The seven letters do not appear together — they arrive top to bottom,
-// one every [CONNECT_LETTER_STAGGER_MS], each one fading up over [CONNECT_LETTER_IN_MS] from
-// slightly left of where it lands. That is a terminal printing a word, and it is the only
-// place in the app that borrows the idiom, which is the point: it happens on the way in and
-// then stops. It replays on exactly one trigger — [ConnPhase] changing (see the
-// [LaunchedEffect] in [ConnectWordmark]) — because the wordmark is the screen's title card
-// and the two moments it should re-state itself are the screen arriving and the tunnel
-// changing state. It does not loop: a word that keeps retyping itself under a live
-// connection is a distraction, and this screen's motion rules say decoration ends.
-//
-// Each letter strikes like a tube: the glow is brightest and widest on the frame it lands
-// and settles back over [CONNECT_STRIKE_MS] to [CONNECT_GLOW_REST]. With the system's
-// animations off, all seven are simply there at rest strength on the first frame — no
-// stagger, no strike (see [rememberReduceMotion]).
-//
-// The letters are cut, then lit. Four passes per glyph:
-//
-//   1. the glow — the same letter in [ConnectWordGlow], drawn with a wide, zero-offset
-//      [Shadow] and a transparent face, so what lands on the flag is only the bloom
-//   2. a dark copy pushed down-right, which is the shadow the letter casts into the surface
-//   3. a pale copy pushed up-left, which is the light catching the opposite bevel
-//   4. the face itself, filled with [ConnectWordFace] — a vertical gradient, bright at the
-//      top and falling to a deep steel blue at the foot
-//
-// Passes 2–4 are the standard two-bevel emboss, and doing it with three text draws rather
-// than a blur is deliberate: the offsets are sub-pixel-stable, so it costs three draw calls
-// per letter. A [Modifier.blur] would be a full offscreen composite every frame. The glow is
-// the one soft thing here and it is *not* a blur either — [Shadow] on a [TextStyle] is the
-// platform's own text shadow layer, blurred by the text renderer while it rasterises the
-// glyph, which is the cheapest real bloom available and the only one that follows the
-// letter's own outline instead of its bounding box. The face's pass does use one offscreen
-// layer, per letter, to clip its gradient to the glyph — the same [BlendMode] trick the
-// flag's mask uses.
-//
-// The colour is cold metal under a cyan tube, not white and not warm. White is what a
-// wordmark is when nobody has decided anything about it, and at this size — filling the
-// hero's height — a white one would compete with [CountryHeadline], which is the actual
-// largest ink on the screen and needs to stay that way. Platinum into steel reads as
-// material instead of as text, and it puts the wordmark in the same cold family as the
-// blue room light ([RefGlowOn]), the connected teal ([RefLive]) and the browse card's icy
-// glass ([panelTopFade]) — the champagne-into-bronze it used to be was the one warm thing
-// on the screen, which made it look like it belonged to a different app.
-
-/** The word. Seven letters, which is what sets the letter size — see [ConnectWordmark]. */
-private const val CONNECT_WORD = "CONNECT"
-
-/** The gap between one letter landing and the next starting. Seven letters at 84ms is a
- *  ~590ms print, which is long enough to read as sequential and short enough that the word
- *  is whole before anyone has finished looking at the country name. */
-private const val CONNECT_LETTER_STAGGER_MS = 84
-
-/** How long one letter takes to arrive. Deliberately shorter than the stagger, so each
- *  letter is finished before the next begins — overlapping fades read as a wash coming in,
- *  not as printing. */
-private const val CONNECT_LETTER_IN_MS = 150
-
-/** How long the tube takes to settle after a letter strikes. Longer than the letter's own
- *  fade, so the glow is still calming down while the next letter is already arriving —
- *  which is what makes the column read as one word being written rather than seven
- *  independent events. */
-private const val CONNECT_STRIKE_MS = 620
-
-/** How far left of its place a letter starts, as a fraction of its own size. Small: this is
- *  a print head settling, not a slide-in. */
-private const val CONNECT_LETTER_DRIFT = 0.16f
-
-/** The glow's alpha at rest, and at the instant a letter strikes. The strike is roughly
- *  twice the resting bloom, which is a neon tube's own behaviour and reads as the letter
- *  being switched on rather than faded in. */
-private const val CONNECT_GLOW_REST = 0.42f
-private const val CONNECT_GLOW_STRIKE = 0.95f
-
-/** The glow's blur radius at rest, in px, and its multiplier at the strike. In px because
- *  [Shadow.blurRadius] is a raw px value rather than a [Dp] — it is scaled off the letter's
- *  own size in [ConnectWordLetter] so it holds on every density. */
-private const val CONNECT_GLOW_REST_RADIUS = 0.20f
-private const val CONNECT_GLOW_STRIKE_RADIUS = 0.34f
-
-/** How far below the top of the band the wordmark starts.
- *
- *  Enough to clear the status bar and the top bar's settings chip, which are the two things
- *  that occupy the top-left corner. The wordmark owns the left edge from under them down. */
-private val ConnectWordTopClearance = 104.dp
-
-/** And how far short of the band's foot it stops, so the last letter is not sitting in the
- *  browse card's top edge. The band includes [HeroBleed], most of which is behind the card. */
-private val ConnectWordFootClearance = 96.dp
-
-/** The column's own width, and the left margin it sits on.
- *
- *  Narrower than [ScreenPad]'s gutter on purpose: the wordmark is meant to run off nothing
- *  and touch nothing, and a letter column that starts inside the content margin would read
- *  as a list item rather than as part of the surface. */
-private val ConnectWordInset = 6.dp
-
-/** The face: platinum at the top, steel blue at the foot. Composited through each glyph
- *  ([ConnectWordLetter]) rather than over the column, so every letter gets the full sweep —
- *  which is what makes them read as seven pieces of the same metal rather than as one
- *  gradient someone laid over a word. */
-private val ConnectWordFace = Brush.verticalGradient(
-    0.00f to Color(0xFFEAF4FF).copy(alpha = 0.94f),
-    0.42f to Color(0xFFA9C4DE).copy(alpha = 0.80f),
-    1.00f to Color(0xFF44607C).copy(alpha = 0.66f),
-)
-
-/** The tube: an icy cyan, brighter and colder than anything else on the screen.
- *
- *  Close enough to [RefLive] to belong to the same family and far enough off it to never be
- *  mistaken for the connection's own colour — this glows in every phase, so it must not look
- *  like a state. */
-private val ConnectWordGlow = Color(0xFF74EEFF)
-
-/** The bevel the light catches: pushed up-left, so it reads as the far wall of a cut. */
-private val ConnectWordHighlight = Color.White.copy(alpha = 0.16f)
-
-/** The shadow the letter casts: pushed down-right, and darker than the page under it. */
-private val ConnectWordShadow = Color.Black.copy(alpha = 0.52f)
-
-/** How far the two emboss copies are pushed off the face. Small — at this size 2dp is
- *  already a visible bevel, and more reads as a badly registered second copy. */
-private val ConnectWordBevel = 2.dp
-
-@Composable
-private fun ConnectWordmark(phase: ConnPhase, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
-    // How many letters have been printed. Starts whole when animations are off, so the
-    // reduce-motion case is a screen that simply has a wordmark on it.
-    var printed by remember { mutableIntStateOf(if (reduce) CONNECT_WORD.length else 0) }
-    // The trigger. Keyed on the phase, so the word retypes when the tunnel changes state,
-    // and it runs on first composition too, which covers "when the screen appears".
-    LaunchedEffect(phase, reduce) {
-        if (reduce) {
-            printed = CONNECT_WORD.length
-            return@LaunchedEffect
-        }
-        printed = 0
-        for (i in CONNECT_WORD.indices) {
-            printed = i + 1
-            delay(CONNECT_LETTER_STAGGER_MS.toLong())
-        }
-    }
-    BoxWithConstraints(modifier.padding(start = ConnectWordInset)) {
-        // The letters size themselves off the height they are given, so the word fills the
-        // hero on a small phone and on a tablet without a breakpoint anywhere. One slot per
-        // letter; the glyph is drawn at 0.92 of its slot, which leaves the ~8% of leading
-        // that stops "C" and "O" from touching.
-        val slot = maxHeight / CONNECT_WORD.length
-        val face = with(LocalDensity.current) { (slot * 0.92f).toSp() }
-        val facePx = with(LocalDensity.current) { (slot * 0.92f).toPx() }
-        Column(
-            Modifier.fillMaxHeight().clearAndSetSemantics { },
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            CONNECT_WORD.forEachIndexed { i, ch ->
-                ConnectWordLetter(
-                    ch = ch,
-                    size = face,
-                    sizePx = facePx,
-                    shown = i < printed,
-                    reduce = reduce,
-                )
-            }
-        }
-    }
-}
-
-/** One letter of [CONNECT_WORD]: a glow, an emboss, and a metal face, printed in when
- *  [shown] turns true.
- *
- *  [sizePx] is the same measurement as [size] in raw pixels, because [Shadow.blurRadius] is
- *  not a [Dp] and a glow written in px would be a third as wide on a 1x screen as on a 3x
- *  one. */
-@Composable
-private fun ConnectWordLetter(
-    ch: Char,
-    size: TextUnit,
-    sizePx: Float,
-    shown: Boolean,
-    reduce: Boolean,
-) {
-    val letter = ch.toString()
-    // The letter's own arrival: alpha and the last of its drift. Snaps when animations are
-    // off, in which case [shown] is already true on the first frame anyway.
-    val ink by animateFloatAsState(
-        targetValue = if (shown) 1f else 0f,
-        animationSpec = motionSpec(reduce, CONNECT_LETTER_IN_MS),
-        label = "connectLetterInk",
-    )
-    // The strike, on its own slower spec: 0 the moment the letter lands, 1 once the tube has
-    // settled. Everything about the glow is read off this.
-    val settle by animateFloatAsState(
-        targetValue = if (shown) 1f else 0f,
-        animationSpec = motionSpec(reduce, CONNECT_STRIKE_MS),
-        label = "connectLetterStrike",
-    )
-    val strike = 1f - settle
-    val glowAlpha = (CONNECT_GLOW_REST + (CONNECT_GLOW_STRIKE - CONNECT_GLOW_REST) * strike) * ink
-    val glowRadius =
-        sizePx * (CONNECT_GLOW_REST_RADIUS + (CONNECT_GLOW_STRIKE_RADIUS - CONNECT_GLOW_REST_RADIUS) * strike)
-    // lineHeight pinned to the font size strips the extra leading a heavy face carries, so
-    // the seven boxes stack to the height the slots actually allow.
-    val base = TextStyle(
-        fontSize = size,
-        lineHeight = size,
-        fontWeight = FontWeight.Black,
-        // Tight, because a stack of single letters has no word shape to hold it together;
-        // what holds it together is the letters being the same width and hard against the
-        // same left edge.
-        letterSpacing = 0.sp,
-    )
-    Box(
-        Modifier.graphicsLayer {
-            alpha = ink
-            // The drift is the print head arriving, and it is measured in the letter's own
-            // size so it is the same gesture at every density and every screen height.
-            translationX = -sizePx * CONNECT_LETTER_DRIFT * (1f - ink)
-        }
-    ) {
-        // The glow. A transparent face with a wide, centred shadow behind it: the text
-        // renderer blurs the glyph's own outline, so the bloom is letter-shaped rather than
-        // a soft rectangle. Skipped entirely once it would be invisible, which is also what
-        // keeps this free while the letter is still waiting to be printed.
-        if (glowAlpha > 0.01f) {
-            Text(
-                letter,
-                style = base.copy(
-                    color = Color.Transparent,
-                    shadow = Shadow(
-                        color = ConnectWordGlow.copy(alpha = glowAlpha),
-                        offset = Offset.Zero,
-                        blurRadius = glowRadius,
-                    ),
-                ),
-            )
-        }
-        Text(
-            letter,
-            style = base.copy(color = ConnectWordShadow),
-            modifier = Modifier.offset(x = ConnectWordBevel, y = ConnectWordBevel),
-        )
-        Text(
-            letter,
-            style = base.copy(color = ConnectWordHighlight),
-            modifier = Modifier.offset(x = -ConnectWordBevel, y = -ConnectWordBevel),
-        )
-        // The face's gradient is painted *through* the glyph rather than set on the text
-        // style: the letter is drawn opaque white into an offscreen layer and
-        // [ConnectWordFace] is then composited [BlendMode.SrcIn] over it, so the brush is
-        // clipped to the glyph's own coverage — antialiased edges included. Same idiom the
-        // flag's mask uses ([HeaderFlag]), and it keeps the whole wordmark on stable API
-        // rather than on the text-brush overload.
-        Text(
-            letter,
-            style = base.copy(color = Color.White),
-            modifier = Modifier
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(ConnectWordFace, blendMode = BlendMode.SrcIn)
-                },
-        )
-    }
-}
-
 // ── Header ────────────────────────────────────────────────────────────────────
 // The hero's rows — the content only. Everything visual behind them is [HeroBackdrop]'s,
 // which is drawn by [HomeScreen] as a sibling so it can be taller than this. This
@@ -1808,27 +1543,46 @@ private fun ConnectWordLetter(
 // different axes. What replaces it reads top to bottom, on one axis, in the order the user
 // actually asks the questions:
 //
-//   am I protected?      → [PhaseEyebrow], a tracked caption with the phase's own dot
 //   where am I?          → [CountryHeadline], the country at 34sp, the largest ink in the app
 //   as what address?     → [MetaRow], the public IP
 //   [the action]         → [PowerCircle], centred, 140dp, the only round thing up here
-//   [the alternative]    → [ModePill], its small secondary control, [PowerFootGap] under
-//                          it, the pair hanging [PowerOverlap] over the browse card's edge
+//   [what to connect to] → [TabPillRow], the list's own controls, lifted out of the card
+//                          and floated here in the hero (see below)
+//   [the alternative]    → [ModePill], docked on the seam itself, half in the hero and half
+//                          in the card (see [ModePillDock])
+//
+// Two rows that used to be somewhere else are now the last two things in this column, and
+// both moves are the same idea: the boundary between the hero and the list is the most
+// useful place on this screen, so the controls that belong to *both* halves live on it.
+// [TabPillRow] — Main/Custom and the add and search glyphs — was the first thing inside
+// [BrowseCard]; it now sits in the hero, immediately above the card's top edge, so the card
+// begins with the list rather than with its own chrome and the flag is what those controls
+// are set against. [ModePill] is docked lower still, straddling the edge, which is what
+// makes it read as a handle on the panel rather than a third row of hero furniture.
+//
+// The status eyebrow above the headline is gone — the dot and the word ("NOT CONNECTED",
+// "CONNECTING", "PROTECTED") that used to be the column's first line, together with
+// `phaseLabel`, `phaseDotColor` and their dot token. The phase is still stated three times
+// over without it: the ring around the disc, the colour of the headline ([headerInk]) and
+// the colour of the room itself ([drawHeroAtmosphere]). What the caption added on top of
+// those was a line of 11sp chrome at the very top of a hero that was asked to get shorter.
 //
 // The "over what?" line — the transport · port · mode chip that sat between the headline
 // and the address — is gone. It answered a question nobody standing at this screen is
 // asking: whether the tunnel is up, and where it comes out, are what the hero is for, and
 // the transport and the port are facts about a *config*, which is what the list below and
 // the config editor are for. Its one irreplaceable field was the mode, and that moved to
-// [ModePill], where it is a control rather than a read-out. Deleting it also gave the
-// column back 40-odd dp, which is what brings the browse card up toward the button.
+// [ModePill], where it is a control rather than a read-out.
 //
 // The server selector that used to be docked at the foot of this column is gone. It named
 // the active config in a row of its own directly above a list of configs, which is the same
 // fact stated twice; the country headline already says where the tunnel comes out, and
-// tapping any row in the list below is how another server gets chosen. Deleting it is what
-// lets the list itself come up under the button — see [PowerOverlap].
-
+// tapping any row in the list below is how another server gets chosen.
+//
+// The power disc no longer hangs over the card's edge. It docked there while it was the last
+// thing in the column; with the tab row and the mode pill under it, the thing on the seam is
+// the pill, and a disc pushed down into the panel as well would have put three objects in
+// the same 40dp. `PowerOverlap` went with it.
 //
 // Centring the action is the point of it. A VPN has exactly one control and everything else
 // on the screen is a report about that control's state; put it on the screen's own axis and
@@ -1844,59 +1598,59 @@ private fun ConnectWordLetter(
 // statusBarsPadding() on this column is what keeps the top bar clear of the clock while
 // the backdrop behind it runs on to the top of the screen.
 
-/** How far the power button hangs over the browse card's top edge.
+/** Between the top bar and the country headline — the column's own head clearance.
  *
- *  The button is the last thing in the hero and it is drawn [PowerOverlap] lower than its
- *  own layout slot, so its foot sits *on* the card below rather than above it — the control
- *  reads as embedded in the list panel instead of parked in the space over it. It is an
- *  offset rather than a negative margin because there is no such thing: the hero keeps its
- *  measured height (which is what [HeroBackdrop] sizes itself from), and only the drawing
- *  moves. [Header] is given a z-index at the call site so the card cannot paint over it. */
-private val PowerOverlap = 26.dp
+ *  6dp, down from 12 and from 20 before that. The status caption this used to hold off is
+ *  deleted, so what is under it now is 34sp of headline, which needs no help being seen as
+ *  a new thing; every dp here is a dp the whole hero sits lower by. */
+private val HeroTopSpace = 6.dp
 
-/** Between the top bar and the phase caption — the column's own head clearance.
- *
- *  12dp now, down from 20. The whole column above the button was asked to close up so the
- *  control sits higher on the screen: this is the first of the four gaps that gave, and it is
- *  the safest one to take from, because the top bar's chips already carry their own visual
- *  padding and the caption under them is 11sp. */
-private val HeroTopSpace = 12.dp
+/** Between the headline block and the address. */
+private val HeadlineFootGap = 6.dp
 
 /** Between the address and the power circle: the hero's breathing room, and what makes the
  *  artwork around the button a place rather than a gap.
  *
- *  8dp now, down from 26 by way of 14. Two things came out of the column above it — the
- *  server selector first, the transport · port · mode row second — and with both gone the
- *  original 26dp read as the hero having run out of things to say rather than as deliberate
- *  space. The rest went to raising the button: the space that matters around this control is
- *  the space *under* it (see [PowerFootRoom]), because that is the side the eye travels to
- *  the list through. */
-private val HeroOpenSpace = 8.dp
+ *  4dp, down from 8 by way of 26. The disc's own box is [PowerSize] against a
+ *  [PowerDiscSize] mark, so it already carries an 11dp band of its own on every side — a
+ *  gap here is added to that band, not to the disc, which is why it can go this low without
+ *  the address touching anything. */
+private val HeroOpenSpace = 4.dp
 
-/** Between the power disc's foot and the [ModePill] under it.
+/** Between the power disc's foot and the [TabPillRow] under it.
  *
- *  Small on purpose: the pill is the disc's own secondary action, not a separate control
- *  in the column, and grouping is read from proximity. It is a little under half of
- *  [PowerOverlap] so the pair still reads as one object hanging over the card edge. */
-private val PowerFootGap = 12.dp
+ *  This is now the gap between the hero's action and the list's controls, which is the one
+ *  place in the column where a *break* is wanted rather than grouping: above it is what the
+ *  user presses, below it is what they browse. */
+private val PowerFootGap = 10.dp
 
-/** The clear air under the whole power stack, inside the hero's own measured height.
+/** Between the tab row and the seam the [ModePill] is docked on. */
+private val TabRowFootGap = 2.dp
+
+/** How far the [ModePill] is drawn below its own layout slot, which is what docks it on the
+ *  boundary between the hero and the browse card.
  *
- *  This is the other half of "move the button up": the four gaps above it closed by 17dp,
- *  and this opens 18dp below it. Because [BrowseCard] is laid out directly under the hero's
- *  measured height, a spacer here is the only thing that moves the card *down* — every other
- *  change in this column pulls it up. The pair still docks over the card's top edge, just by
- *  the 8dp that is left of [PowerOverlap] once this is subtracted, which is enough to keep
- *  the disc reading as embedded in the panel without the pill sitting in the tab row. */
-private val PowerFootRoom = 18.dp
+ *  The pill measures about 30dp tall, so half of that puts its centre line exactly on the
+ *  card's top edge: the top half is over the hero's artwork, the bottom half is over the
+ *  card's frosted glass, and the card's hairline runs through the middle of it. Like every
+ *  other dock on this screen it is an offset rather than a negative margin — the hero keeps
+ *  the measured height that [HeroBackdrop] sizes itself from, and only the drawing moves.
+ *  [Header] carries a z-index at its call site, so the card cannot paint over the half that
+ *  overhangs it. */
+private val ModePillDock = 15.dp
 
 @Composable
 private fun Header(
     state: HomeUiState,
+    tab: HomeTab,
+    searchOpen: Boolean,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
     onTogglePower: () -> Unit,
     onSetMode: (ConnectMode) -> Unit,
+    onSelectTab: (HomeTab) -> Unit,
+    onToggleSearch: () -> Unit,
+    onAddServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1908,39 +1662,40 @@ private fun Header(
     ) {
         TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
         Spacer(Modifier.height(HeroTopSpace))
-        PhaseEyebrow(state.phase)
-        Spacer(Modifier.height(8.dp))
         CountryHeadline(state)
-        Spacer(Modifier.height(8.dp))
-        // The address moved above the button, which is the other half of the docking
-        // change: the button is now the last thing in the hero, so nothing sits between
-        // its foot and the card it overlaps. The order still reads as a sentence — what
-        // state, which country, as what address, [the action].
+        Spacer(Modifier.height(HeadlineFootGap))
+        // The address sits above the button: the order reads as a sentence — which country,
+        // as what address, [the action].
         MetaRow(state = state)
         Spacer(Modifier.height(HeroOpenSpace))
-        // The disc and its secondary control travel together, so the offset that docks
-        // the button over the card is on the pair rather than on the disc — otherwise the
-        // pill would be measured below the disc's slot and drawn above its docked foot.
-        Column(
-            modifier = Modifier.offset(y = PowerOverlap),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            PowerCircle(
-                mode = state.mode,
-                phase = state.phase,
-                enabled = state.activeConfig != null,
-                onClick = onTogglePower,
-                onSwipeUp = { onSetMode(ConnectMode.SMART) },
-                onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-            )
-            Spacer(Modifier.height(PowerFootGap))
-            ModePill(mode = state.mode, onSetMode = onSetMode)
-        }
-        // Inside the hero's measured height, so it is what holds the card off the stack —
-        // see [PowerFootRoom]. It is outside the offset column on purpose: the offset moves
-        // drawing only, so a spacer inside it would be drawn 26dp lower and measured in the
-        // same place, which is not what "room under the button" means.
-        Spacer(Modifier.height(PowerFootRoom))
+        PowerCircle(
+            mode = state.mode,
+            phase = state.phase,
+            enabled = state.activeConfig != null,
+            onClick = onTogglePower,
+            onSwipeUp = { onSetMode(ConnectMode.SMART) },
+            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+        )
+        Spacer(Modifier.height(PowerFootGap))
+        // The list's own controls, in the hero rather than in the card — see the section
+        // comment. They are the last full-width row of the hero, so the card's top edge is
+        // immediately under them and the first thing inside the card is a server.
+        TabPillRow(
+            selected = tab,
+            searchOpen = searchOpen,
+            onSelect = onSelectTab,
+            onToggleSearch = onToggleSearch,
+            onAdd = onAddServer,
+        )
+        Spacer(Modifier.height(TabRowFootGap))
+        // Docked on the seam: measured here, drawn [ModePillDock] lower, so half of it is
+        // over the card. Nothing follows it in this column — the hero's measured foot is
+        // this pill's slot, which is exactly where the card starts.
+        ModePill(
+            mode = state.mode,
+            onSetMode = onSetMode,
+            modifier = Modifier.offset(y = ModePillDock),
+        )
     }
 }
 
@@ -1968,26 +1723,71 @@ private fun Header(
 // screen uses everywhere, with the container sizing between "Smart" and "Manual" rather
 // than jumping.
 
-/** The pill's ink and hairline. Dimmer than [RefTextMid] on purpose: see the note above. */
-private val ModePillInk = Color.White.copy(alpha = 0.72f)
+/** The pill's ink. Dimmer than [RefTextMid] on purpose: see the note above. */
+private val ModePillInk = Color.White.copy(alpha = 0.86f)
+
+/**
+ * The pill's own material, now that it is docked on the seam rather than parked under the
+ * disc: a cold dark glass, lighter at the top than at the foot.
+ *
+ * It used to be [GlyphChip], the same fill as the two navigation chips at the top of the
+ * screen — which was right while it was one small frame among several, and wrong once it
+ * became the only object on the boundary between the two halves of the screen. What it is
+ * over is half flag and half frosted card, so it needs enough body to read on either; and
+ * the top-lit gradient is what keeps it from looking like a flat sticker laid across the
+ * edge. The blue in it is [RefPanelBg]'s blue, so the pill belongs to the card it is docked
+ * on rather than to the chrome it came from.
+ */
+private val ModePillFill = Brush.verticalGradient(
+    0.00f to Color(0xFF1B2130).copy(alpha = 0.96f),
+    0.55f to Color(0xFF101521).copy(alpha = 0.96f),
+    1.00f to Color(0xFF070A11).copy(alpha = 0.97f),
+)
+
+/** Its hairline: lit across the top, out by the foot. */
+private val ModePillEdge = Brush.verticalGradient(
+    0.00f to PanelEdgeInk.copy(alpha = 0.20f),
+    0.45f to PanelEdgeInk.copy(alpha = 0.07f),
+    1.00f to PanelEdgeInk.copy(alpha = 0.02f),
+)
+
+/** How far the pill is lifted off the seam, and in what colour. */
+private val ModePillLift = 12.dp
+private val ModePillShadow = Color(0xFF03060C)
 
 /** The "Mode ·" prefix, one step down again so the value is what the eye lands on. */
 private val ModePillLabelInk = Color.White.copy(alpha = 0.46f)
 
 @Composable
-private fun ModePill(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
+private fun ModePill(
+    mode: ConnectMode,
+    onSetMode: (ConnectMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val reduce = rememberReduceMotion()
     val next = if (mode == ConnectMode.SMART) ConnectMode.MANUAL else ConnectMode.SMART
     Row(
-        Modifier
+        modifier
+            // The shadow is what lifts it off the seam it is docked on: without one, a pill
+            // whose own fill is nearly the card's fill reads as a hole in the edge rather
+            // than as an object on it. It is before the clip because a shadow is cast by
+            // the shape, so the shape has to be named to it.
+            .shadow(
+                elevation = ModePillLift,
+                shape = CircleShape,
+                ambientColor = ModePillShadow,
+                spotColor = ModePillShadow,
+            )
             .clip(CircleShape)
-            .background(GlyphChip)
-            .border(1.dp, GlyphChipBorder, CircleShape)
+            .background(ModePillFill)
+            // A gradient hairline rather than a flat one: brighter across the top, gone by
+            // the foot, which is the same lit-from-above logic as the card's own edge.
+            .border(1.dp, ModePillEdge, CircleShape)
             .clickable(
                 onClickLabel = "Switch to ${next.label} mode",
                 onClick = { onSetMode(next) },
             )
-            .padding(horizontal = 15.dp, vertical = 7.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -2130,90 +1930,6 @@ private fun GlyphButton(
                 .border(1.dp, GlyphChipBorder, shape),
             contentAlignment = Alignment.Center,
         ) { content() }
-    }
-}
-
-// ── Phase eyebrow ─────────────────────────────────────────────────────────────
-// The first line of the hero, and the answer to the only question a VPN app is opened to
-// ask: a dot in the phase's colour, and the phase in words, tracked wide at caption size.
-//
-// It is a caption rather than a headline because the country under it is the headline, and
-// two large lines stacked would leave neither of them primary. What makes it read at a
-// glance anyway is the colour and the position — first thing, dead centre, on the screen's
-// own axis — not the size.
-//
-// The phase is stated twice over, in hue and in text, inside 11sp of height. That is
-// deliberate: every other signal for it up here is light (the atmosphere, the ring), and a
-// state that is only ever colour is a state a colour-blind user has to infer from a spinner.
-
-/** The eyebrow's own text, per phase. Present tense, and deliberately not a sentence: it
- *  is a status label, and the shorter it is the more it reads as one. */
-private fun phaseLabel(phase: ConnPhase): String = when (phase) {
-    ConnPhase.OFF -> "NOT CONNECTED"
-    ConnPhase.CONNECTING -> "CONNECTING"
-    ConnPhase.CONNECTED -> "PROTECTED"
-}
-
-/** The dot's colour, and the eyebrow's: grey off, amber working, teal up. */
-private fun phaseDotColor(phase: ConnPhase): Color = when (phase) {
-    ConnPhase.OFF -> RefTextLow
-    ConnPhase.CONNECTING -> RefWorking
-    ConnPhase.CONNECTED -> RefLive
-}
-
-@Composable
-private fun PhaseEyebrow(phase: ConnPhase, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
-    val dot by animateColorAsState(
-        targetValue = phaseDotColor(phase),
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "eyebrowDot",
-    )
-    // The dot breathes while an attempt is in flight, and only then — the animation is
-    // created inside the branch, so an idle or connected screen has no frame callback of
-    // its own from here.
-    val pulse = if (phase == ConnPhase.CONNECTING && !reduce) {
-        val transition = rememberInfiniteTransition(label = "eyebrowPulse")
-        val breath by transition.animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(900, easing = LinearOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "eyebrowBreath",
-        )
-        breath
-    } else {
-        1f
-    }
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(PhaseDotSize).alpha(pulse).background(dot, CircleShape))
-        Spacer(Modifier.width(8.dp))
-        // Crossfaded with the container sizing between the three words, so the row does
-        // not jump width mid-transition.
-        AnimatedContent(
-            targetState = phase,
-            transitionSpec = {
-                (
-                    fadeIn(motionSpec(reduce, 220)) togetherWith fadeOut(motionSpec(reduce, 140))
-                    ).using(SizeTransform(clip = false))
-            },
-            label = "phaseEyebrow",
-        ) { value ->
-            Text(
-                phaseLabel(value),
-                fontSize = 11.sp,
-                lineHeight = 13.sp,
-                fontWeight = FontWeight.Bold,
-                // Wide tracking is what turns 11sp of uppercase into a label rather than
-                // into small text. 1.6sp at this size is about 0.15em, the same ratio the
-                // section headings in Settings use.
-                letterSpacing = 1.6.sp,
-                color = RefTextMid,
-                maxLines = 1,
-            )
-        }
     }
 }
 
@@ -2394,9 +2110,9 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
 // The connect control: a disc with a ring around it, and between them the one thing on
 // this screen that reports progress rather than a result.
 //
-// It is centred on the screen's own axis, at [PowerSize], with nothing beside it, and it
-// hangs [PowerOverlap] over the browse card below so it reads as embedded in the list panel
-// rather than parked above it. It used to be half-swallowed by a connect pill — the pill
+// It is centred on the screen's own axis, at [PowerSize], with nothing beside it. It used to
+// hang over the browse card's top edge; what sits on that edge now is the [ModePill], and the
+// disc has the hero's own space to itself. It used to be half-swallowed by a connect pill — the pill
 // stopped short of the right edge and the circle was pulled back over the gap, so the two
 // read as one fused control and neither was quite the primary thing. That pill's job (which
 // server) is now the list itself and its headline (which country) moved to
@@ -2681,7 +2397,7 @@ private val PowerFace = Brush.linearGradient(
 
 /** The connecting tint: [RefWorking] laid over the white face, light enough that the
  *  disc still reads as the same brushed surface holding a colour. Amber rather than the
- *  old blue accent so the face, the ring arc, the eyebrow dot and the room's own light are
+ *  old blue accent so the face, the ring arc and the room's own light are
  *  all saying the same thing while an attempt is in flight. */
 private val PowerWorkingFace = Brush.linearGradient(
     0.00f to RefWorking.copy(alpha = 0.10f),
@@ -2736,9 +2452,7 @@ private fun BrowseCard(
     tab: HomeTab,
     query: String,
     searchOpen: Boolean,
-    onSelectTab: (HomeTab) -> Unit,
     onQueryChange: (String) -> Unit,
-    onToggleSearch: () -> Unit,
     onSelectConfig: (SavedConfig) -> Unit,
     onAddServer: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
@@ -2772,8 +2486,8 @@ private fun BrowseCard(
             // top edge and opaque by [PanelFade] down. That is what merges it with the
             // hero. The backdrop above is drawn [HeroBleed] taller than the hero's rows, so
             // what is behind that first [PanelFade] is the flag and its horizon light — and
-            // because the fill lets them through, the tab row sits *in* the artwork instead
-            // of on a panel that starts below it. There is no gap and no visible join: the
+            // because the fill lets them through, the card's edge sits *in* the artwork
+            // instead of starting below it. There is no gap and no visible join: the
             // brightest part of the transition is the light itself.
             .background(fade)
             // ...and the frost sits *over* that fill rather than replacing it, so the flag is
@@ -2785,20 +2499,13 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The power stack — the disc and the [ModePill] under it — is drawn [PowerOverlap]
-        // past the bottom of the hero's measured height (see the `offset` at its call
-        // site), so the top [PowerOverlap] of this card is painted under the pill. This
-        // spacer is what keeps the tab pills out from underneath: without it the stack
-        // lands on the row and covers the middle of "All / Custom". It is the same token
-        // as the offset, so the two cannot drift.
-        Spacer(Modifier.height(PowerOverlap))
-        TabPillRow(
-            selected = tab,
-            searchOpen = searchOpen,
-            onSelect = onSelectTab,
-            onToggleSearch = onToggleSearch,
-            onAdd = onAddServer,
-        )
+        // The card's own head clearance, and the only chrome left in it. Two things used to
+        // be here: a [PowerOverlap] spacer holding the tab pills out from under the docked
+        // power disc, and the tab row itself. Both are gone — the disc no longer docks and
+        // the row is in the hero (see [Header]) — so this card begins with the list. What
+        // this spacer is for is the [ModePill] that overhangs the edge: it is docked half in
+        // and half out, and without room under it the first server row would be under it.
+        Spacer(Modifier.height(CardTopRoom))
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         Box(
             Modifier
@@ -2820,9 +2527,9 @@ private fun BrowseCard(
             LazyColumn(
                 Modifier.fillMaxSize(),
                 // Enough room at the foot that the last row clears the floating usage
-                // card, and as little as possible at the head: the tab row above already
-                // carries its own margin, so anything here is a second one.
-                contentPadding = PaddingValues(top = 2.dp, bottom = 88.dp),
+                // card, and none at all at the head: [CardTopRoom] above is the card's own
+                // clearance, and anything here would be a second one.
+                contentPadding = PaddingValues(top = 0.dp, bottom = 88.dp),
             ) {
                 if (servers.isEmpty()) {
                     item(key = "empty") {
@@ -2842,9 +2549,6 @@ private fun BrowseCard(
                         countryCode = state.countryCodeFor(cfg),
                         pingMs = cfg.pingMs,
                         isActive = isActive,
-                        // The active server's dot in the same teal as the status pill,
-                        // so "this is the one that's up" is one colour, not two.
-                        dotColor = if (state.connected && isActive) RefTeal else RefTextMid,
                         showDivider = index < servers.lastIndex,
                         onClick = { onSelectConfig(cfg) },
                     )
@@ -2871,11 +2575,22 @@ private fun BrowseCard(
  * the first server rows would be set over artwork; shorter and the fade would land inside
  * the tab pills, which is a seam in a worse place than the one it replaced.
  *
- * 112dp, down from 132: the tab row and the search field above the list both lost height when
- * the card was compacted, so the old value now reaches past them and into the first server
- * row. This token has to follow that chrome down, or the merge lands in the wrong place.
+ * 84dp, down from 112 and 132 before that. The card's chrome has been leaving it in stages —
+ * first the tab row and the search field got shorter, then the tab row moved out of the card
+ * altogether (see [Header]) — and each time, a fade tuned for the old contents reached further
+ * into the list than intended. What the first 84dp holds now is the card's head clearance, the
+ * docked [ModePill] that overhangs it and the search field when it is open: exactly the things
+ * that should be standing in the flag's light, and no server rows.
  */
-private val PanelFade = 112.dp
+private val PanelFade = 84.dp
+
+/**
+ * The clear air at the top of the browse card, under the docked [ModePill].
+ *
+ * The pill is drawn [ModePillDock] past the hero's foot, so about half of it is inside this
+ * card. This is what the other half of it has to sit in front of instead of a server name.
+ */
+private val CardTopRoom = 22.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
@@ -3026,6 +2741,11 @@ private fun DrawScope.drawPanelTopEdge() {
 }
 
 // ── Tabs + search ─────────────────────────────────────────────────────────────
+// The list's controls, and they no longer live with the list: this row is the second-to-last
+// thing in [Header], floating in the hero just above the browse card's top edge. It is still
+// padded on [ListPad] so the pills line up with the rows they filter, and it is still the
+// card's chrome in every sense except position — what moved is only which side of the seam
+// it is drawn on, so the card can open with a server instead of with a control.
 @Composable
 private fun TabPillRow(
     selected: HomeTab,
@@ -3037,8 +2757,9 @@ private fun TabPillRow(
     Row(
         Modifier
             .fillMaxWidth()
-            // 9dp rather than 14: the tab row is the card's chrome, and on a screen where
-            // the ask is "show me more servers" the chrome is what pays first.
+            // 9dp rather than 14: this is chrome on a screen whose whole ask is "show me
+            // more servers", so it is what pays first. It now buys hero height rather than
+            // card height, which is the same argument one row higher.
             .padding(horizontal = ListPad, vertical = 9.dp),    // .tab-row
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3200,15 +2921,16 @@ private fun ServerRow(
     countryCode: String,
     pingMs: Int,
     isActive: Boolean,
-    dotColor: Color,
     showDivider: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            // The mockup has no selected state; the active server gets the
-            // faintest tint and a dot so it can still be told apart.
+            // The mockup has no selected state; the active server gets the faintest tint,
+            // and its title goes bold. There used to be a teal dot beside the name as well;
+            // it is gone, along with the row's `dotColor` parameter — with a tint and a
+            // weight already saying "this is the one", a third marker was just a speck.
             .background(if (isActive) Color.White.copy(alpha = 0.03f) else Color.Transparent)
             // The row is a full-width tap target and it keeps the platform's 48dp floor,
             // which is the one dimension on this screen that is not a style decision. The
@@ -3236,21 +2958,14 @@ private fun ServerRow(
         CountryFlagBadge(countryCode, RowFlagSize)
         Spacer(Modifier.width(11.dp))              // .server-row gap
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    fontSize = 14.5.sp,
-                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
-                    color = RefTextHi,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (isActive) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(dotColor))
-                }
-            }
+            Text(
+                title,
+                fontSize = 14.5.sp,
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
+                color = RefTextHi,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 subtitle,
                 fontSize = 11.5.sp,
