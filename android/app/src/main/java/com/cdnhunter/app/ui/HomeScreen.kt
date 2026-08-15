@@ -103,10 +103,12 @@ package com.cdnhunter.app.ui
 // in over a 260ms fade out, the incoming flag settling from 1.04 and the outgoing one
 // easing back to 0.99, so the change reads as one image replacing another.
 //
-// Everything on the hero that carries text carries it on glass — one material, three
-// sizes: the mode pill, the IP chip, the server row. The [GlassChip] section is the
-// primitive; the mode pill has since been given its own deeper fill and lit edge, because
-// it is the one chip that sits on the seam over the browse card rather than on flag. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
+// Almost nothing on the hero carries a surface any more. The address is bare text on the
+// artwork, held legible by its own shadow and by [HeroDepthScrim]; the only framed objects
+// left up here are the two navigation glyph chips and the mode pill on the seam. That is a
+// reversal of where this started — every hero label used to sit on glass — and the reason is
+// the flag: each opaque rectangle drawn on it is a hole in the only artwork the app has, and
+// a scrim shaped to where text actually lands buys the same legibility without one. The reason is the flag: the hero's dim inks ([RefTextMid], [RefTextLow]) land
 // on artwork whose brightest band the app can draw is a white flag, where they read at
 // 3:1 and below with nothing under them. Glass is the fix rather than a heavier scrim
 // because these are all controls — every one of them opens something or copies something
@@ -162,15 +164,20 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -209,6 +216,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -224,7 +232,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -240,6 +248,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -288,12 +298,61 @@ private val RefFrost = Color(0xFFA6DCFF)
  * declared before the first of them.
  */
 private val PanelEdgeInk = Color(0xFFE8F6FF)
+
+/**
+ * The one hairline every small framed surface on this screen carries: brightest at the top,
+ * nothing across the middle, faintly dark at the foot.
+ *
+ * It replaces three separate flat borders — a 0.09 white on the glyph chips, the same again
+ * on the search field, and a variant on the mode pill — and the reason to unify them is not
+ * tidiness. A flat border is light arriving from everywhere at once, which is the one thing
+ * light never does; put four of them on a screen with a single overhead source
+ * ([drawHeroAtmosphere], [PowerFaceSheen], [drawPanelTopEdge] all agree the light is above)
+ * and every framed object quietly contradicts the room it is in. Graded top-to-bottom, the
+ * same 1dp stroke reads as a physical edge catching that light.
+ *
+ * The peak is 0.16 rather than 0.09 because a gradient's average is what the eye takes as the
+ * border's weight; the old flat value, graded, would have read as a fainter frame than before
+ * rather than a better one. Deliberately white and not [PanelEdgeInk]: the icy tint is the
+ * browse card's own signature, and spending it on every chip would make it mean nothing.
+ *
+ * Declared here, up in the palette, for the reason in the note above [PanelEdgeInk] — Kotlin
+ * initialises file-level properties in source order, and this is used a thousand lines further
+ * down.
+ */
+private val heroEdge = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.16f),
+    0.30f to Color.White.copy(alpha = 0.08f),
+    0.62f to Color.White.copy(alpha = 0.03f),
+    1.00f to Color.Black.copy(alpha = 0.10f),
+)
 private val RefElev1 = Color(0xFF0F1116)       // --bg-elev-1
 private val RefElev2 = Color(0xFF15171E)       // --bg-elev-2
 private val RefBorder = Color(0xFF23262F)      // --border
 private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
 private val RefTextMid = Color(0xFF9BA0AC)     // --text-mid
 private val RefTextLow = Color(0xFF656B78)     // --text-low
+
+/**
+ * The shadow every piece of hero type carries now that most of them have no surface under
+ * them.
+ *
+ * A flag is not a background you can design against: it is an arbitrary image with an
+ * arbitrary bright band wherever the country put one, and white type on white cloth is
+ * unreadable no matter how heavy the weight. The two honest fixes are a container behind
+ * each string or a shadow attached to it; the containers are what this pass removed, so
+ * this is the one that is left.
+ *
+ * Deliberately soft and nearly black rather than tight and grey: an 8dp blur at 0.55 reads
+ * as the type sitting slightly above the artwork, while a 2dp hard shadow reads as a
+ * letterpress effect. The 2dp downward offset is the same direction as every other light
+ * on this screen — see [drawHeroAtmosphere] — so nothing looks lit from two places.
+ */
+private val HeroInkShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.55f),
+    offset = Offset(0f, 2f),
+    blurRadius = 8f,
+)
 private val RefAccent = Color(0xFF4D7FFF)      // --accent
 private val RefTeal = Color(0xFF35D6B8)        // --teal
 /**
@@ -374,8 +433,8 @@ private val ChromeBg = Color(0xFF0B0B0D)
 
 /**
  * How far the hero's *light* carries on below the last of its rows — i.e. how much of the
- * backdrop the browse card is drawn over. The flag's own reach is [FlagBleed] and is now a
- * separate, much shorter number.
+ * backdrop the browse card is drawn over. The flag's own reach is [FlagFootRise] and now runs
+ * the other way — it stops short of the rows rather than past them.
  *
  * 88dp, a little past [PanelFade], so the horizon bloom is still going where the card has
  * already turned solid: the dissolve ends inside the light rather than at the end of it,
@@ -758,31 +817,32 @@ private const val HEADER_FLAG_SATURATION = 0.80f
 private const val HEADER_FLAG_ALPHA = 0.94f
 
 /**
- * How far the flag carries *below the hero's last row* — i.e. how deep under the browse
- * card's top edge the artwork keeps going.
+ * How far the flag's box stops **short of** the hero's last row.
  *
- * 12dp, and it is measured from the hero's rows rather than from the light's band, which is
- * the whole of the change: the flag's box used to be `heroHeight + HeroBleed + FlagBleed`,
- * so at the old values the artwork ran 234dp past the last row — a third of the screen of
- * flag behind an opaque card. Now it is `heroHeight + FlagBleed` (see [HeroBackdrop]), and
- * 12dp past the card's top edge is all the transition needs: the card's own head is
- * translucent for [PanelFade], so the artwork is still visible through the glass for a good
- * way after it has technically ended, and every dp beyond that is flag drawn under paint.
+ * The sign is the point: this used to be `FlagBleed`, 12dp *past* the hero's foot, and it is
+ * now 64dp above it. The reason is zoom, and zoom on this screen is pure geometry —
+ * [ContentScale.Crop] scales the artwork to *cover* its box, so for a 3:2 flag in a box
+ * `W × H` the fraction of the flag's width you can see is about `W / (H × 1.5)`. Box height
+ * is the only lever there is. On a 390dp-wide screen:
  *
- * It came down from 28dp with the card, which was raised to sit directly under the tab row
- * (see [TabRowFootGap]); the hero got shorter at the same time, and this is measured off the
- * hero, so the artwork lost that height twice over.
+ *  - full screen (≈390 × 870) showed about 30% of the flag — an abstract field of colour;
+ *  - the band plus a 96dp bleed, about 45%;
+ *  - the hero plus 12dp, about 66% — better, but a centred emblem still filled the frame;
+ *  - the hero *minus* 64dp, which is this, about 85%: the flag's actual pattern, at roughly
+ *    1.15× rather than 1.5×.
  *
- * There is no visible edge where it stops because it never stops in the open: the flag's own
- * bottom fade ([HeaderFlagBottomFade]) takes the last 14% of the artwork to nothing, and all
- * of that happens under the card's glass.
+ * [ContentScale.Fit] would get to 100% and is the wrong tool — it letterboxes, and the
+ * alternative, `FillWidth`, leaves a hard horizontal edge, because the bottom taper
+ * ([HeaderFlagBottomFade]) masks the *layer* and not the image inside it.
  *
- * Shrinking this also un-zooms the flag, which is the other reason for the number.
- * [ContentScale.Crop] covers the box, so a box 234dp taller than this one had to be scaled
- * about 1.6× further to cover — throwing away that much more of a landscape flag's width.
- * See the call site in [HeroBackdrop].
+ * The trade, and it is a real one: the artwork now ends above the tab row rather than under
+ * the card, so the tab pills and the docked [ModePill] sit on the darkened band
+ * ([HeroDepthScrim] plus [HeroFloor]) instead of on flag. That reads as intentional — it is
+ * the same shading every other control on the hero is being helped by, and the flag's last
+ * 14% dissolves into it over ~40dp rather than stopping — and it is what makes the controls
+ * legible over an arbitrary country's arbitrary bright band.
  */
-private val FlagBleed = 12.dp
+private val FlagFootRise = 64.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -980,7 +1040,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                 // flag the plate's foot read as a second flag ending. The crop is now
                 // whatever [ContentScale.Crop] does with this box, and the box is a good
                 // deal wider than a full screen because [HeaderFlag] is only as tall as
-                // the hero band plus [FlagBleed] — see the call in [HeroBackdrop].
+                // the hero's rows less [FlagFootRise] — see the call in [HeroBackdrop].
                 FlagLayer(
                     model = flag,
                     cacheKey = key,
@@ -1059,81 +1119,17 @@ private fun FlagLayer(
 }
 
 // ── Glass ─────────────────────────────────────────────────────────────────────
-// The one surface the hero still lays over the flag — the IP chip — is made of this, and it
-// is not a card: no cast shadow over the artwork, no border heavier than a hairline, no
-// opaque fill.
+// Gone, and worth a note where it was.
 //
-// The reason is the flag. It is the whole screen, at 0.92 alpha under a scrim, and every
-// opaque rectangle drawn on it is a hole in the only piece of artwork the app has.
-// So the surface is a translucent floor plus a top-light plus a hairline — the three
-// things that make glass read as raised — and the flag carries on through all of them.
+// The hero used to lay one glass surface over the flag — a translucent floor, a top-light and
+// (until recently) a hairline — and by the end it had exactly one user: the chip around the
+// public IP. That chip is now bare text (see [MetaRow]), so the primitive and its three
+// tokens went with it. What is left up here is type, one disc, and the artwork; the only
+// framed surfaces on the screen are the top bar's glyph chips, the mode pill and the browse
+// card, and each of those is a control or a panel rather than a label in a box.
 //
-// There used to be a second, heavier weight for the server selector at the hero's foot;
-// that row is gone, and so is the status chip it was weighed against (see [Header]), so one
-// weight is all that is left.
-
-/** The lighter floor: enough to seat 14sp secondary ink on the palest flag band, little
- *  enough that the artwork's own colour still comes through it. */
-private val GlassLight = Brush.verticalGradient(
-    0.00f to RefElev1.copy(alpha = 0.62f),
-    1.00f to RefElev1.copy(alpha = 0.74f),
-)
-
-/** The top-light on a glass surface: a bright first row easing to nothing by 40%, and a
- *  dark foot so the bottom edge never reads brighter than the top. Compose has no inset
- *  box-shadow; this is both of the mockup's. */
-private val GlassSheen = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.09f),
-    0.05f to Color.White.copy(alpha = 0.03f),
-    0.14f to Color.Transparent,
-    0.86f to Color.Transparent,
-    1.00f to Color.Black.copy(alpha = 0.14f),
-)
-
-/** Corner radius on the hero's own chips — now just the IP pill. Fully
- *  rounded would read as a tag; this is the same corner-to-height relationship the top
- *  bar's glyph chips use, so every small frame on the screen agrees. */
-private val ChipCorner = 11.dp
-
-/**
- * One glass chip: floor, top-light, clipped to [shape] — the hero's only surface
- * primitive, so nothing up here can drift out of the material system by accident.
- *
- * There is no hairline. It carried a white 13% border, which was the only drawn line in the
- * hero and read as a frame around a 20dp pill rather than as an edge; [GlassSheen]'s bright
- * first row and dark foot already give the surface its lift, and with the border gone the
- * chip's fill is what separates it from the artwork. The token went with it.
- *
- * [onClick] is taken here rather than left to the call site's own modifier because the
- * order matters: applied inside, the click lands *after* the clip, so the ripple is bound
- * to the chip's rounded shape instead of washing over the flag as a rectangle.
- */
-@Composable
-private fun GlassChip(
-    shape: Shape,
-    modifier: Modifier = Modifier,
-    surface: Brush = GlassLight,
-    onClick: (() -> Unit)? = null,
-    onClickLabel: String? = null,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    Box(
-        modifier
-            .clip(shape)
-            .background(surface)
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(onClickLabel = onClickLabel, onClick = onClick)
-                } else {
-                    Modifier
-                }
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.matchParentSize().background(GlassSheen))
-        content()
-    }
-}
+// If something up here ever needs a surface again, the thing to reach for is [GlyphChip] plus
+// [heroEdge] — the same fill and the same lit hairline every other frame on this screen uses.
 
 /**
  * Everything Home draws, snapshotted from VpnTab() on each recomposition.
@@ -1380,7 +1376,7 @@ internal fun HomeScreen(
     Box(modifier.fillMaxSize().background(PageGradient)) {
         // First, behind everything: the artwork and the light. Both are sized off the hero
         // and neither fills this box — the light runs [HeroBleed] past the hero's last row,
-        // the flag only [FlagBleed]. See [HeroBackdrop] for why those differ.
+        // the flag stops [FlagFootRise] short of it. See [HeroBackdrop] for why those differ.
         HeroBackdrop(
             state = state,
             heroHeight = heroHeight,
@@ -1446,13 +1442,11 @@ internal fun HomeScreen(
 // distinction is the point:
 //
 //   the flag        — edge to edge horizontally, and vertically from under the status bar
-//                     down to only [FlagBleed] past the hero's last row: a 12dp overlap
-//                     with the browse card's translucent head, enough for the transition and
-//                     no more. It is measured from the rows, not from the band, so it is far
-//                     the shorter of the two heights — the light reaches three times deeper.
-//                     Height is zoom here (see the call site), which is the second reason it
-//                     is short; the part of the screen a taller box would gain is behind an
-//                     opaque card anyway.
+//                     down to [FlagFootRise] *short of* the hero's last row: it ends above
+//                     the tab pills, not under the card. Height is zoom here (see
+//                     [FlagFootRise]), and that is the whole reason for the number — a
+//                     shorter box is a less cropped flag. Its last 14% dissolves into the
+//                     shading rather than stopping, so ending in the open costs nothing.
 //   the light + floor — a band [bandHeight] tall at the top, i.e. the hero's rows plus
 //                     [HeroBleed]. The atmosphere's geometry is written in fractions of its
 //                     own size (the horizon bloom sits at `size.height`, on the hero's foot,
@@ -1476,11 +1470,11 @@ internal fun HomeScreen(
 // report, and with the hero compacted there is no longer a left margin for it to live in.
 @Composable
 private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier = Modifier) {
-    // The two heights this composable is made of, and they are deliberately different — see
-    // the section comment. The light's band reaches [HeroBleed] past the hero's rows; the
-    // flag only [FlagBleed], which is a quarter of that.
+    // The two heights this composable is made of, and they now run in opposite directions —
+    // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
+    // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    val flagHeight = heroHeight + FlagBleed
+    val flagHeight = (heroHeight - FlagFootRise).coerceAtLeast(0.dp)
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1505,14 +1499,11 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
         // crossfading at 40% alpha would show the page gradient through itself.
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
-            // The flag's box is the hero's rows plus [FlagBleed] — not the light's band, and
-            // certainly not the screen. [ContentScale.Crop] scales to *cover* this box, so
-            // the box's shape is the flag's zoom: every dp of height added here is width
-            // thrown off the sides of the artwork. Full screen is about 0.45:1 and keeps
-            // roughly half of a 5:3 flag; the band plus a 96dp bleed, which is what this was,
-            // came to about 0.6:1; the hero plus 12dp is nearer 0.9:1, which is a little over
-            // 1.5× zoom instead of 2.5× — so most of the flag's actual pattern is on screen,
-            // and an emblem in the middle of one is no longer filling the frame.
+            // The flag's box is the hero's rows *minus* [FlagFootRise] — not the light's
+            // band, and certainly not the screen. [ContentScale.Crop] scales to *cover* this
+            // box, so the box's shape is the flag's zoom: every dp of height taken off here
+            // is width handed back to the artwork. See [FlagFootRise] for the arithmetic and
+            // for the trade it makes at the hero's foot.
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
@@ -1522,6 +1513,18 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .alpha(flagAlpha),
             )
         }
+        // Shade, then light, in that order — see [HeroDepthScrim]. Both cover the whole
+        // band rather than the flag's box, so the shading does not stop where the artwork
+        // does and leave the tab row on a differently-lit patch.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(bandHeight)
+                .drawBehind {
+                    drawRect(HeroDepthScrim)
+                    drawRect(HeroDepthEdge)
+                }
+        )
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1546,6 +1549,63 @@ private val HeroFloor = Brush.verticalGradient(
     0.62f to ChromeBg,
     0.82f to ChromeBg.copy(alpha = 0.55f),
     1.00f to Color.Transparent,
+)
+
+/**
+ * A soft shade laid over the artwork, under the light: the layer that lets everything on the
+ * hero be read on top of an arbitrary flag.
+ *
+ * Deliberately *not* the same job as [HeaderFlagScrim], and the two do not double up by
+ * accident. That one lives inside the flag's own masked layer and is about the artwork —
+ * keeping a saturated field from shouting, and tapering its head and foot. This one covers the
+ * whole band, flag or no flag, and is shaped to where **type** lands:
+ *
+ *  - 0.30 at the status bar, behind the top bar's glyphs and the 34sp headline, where a flag's
+ *    top stripe is at its brightest and least negotiable;
+ *  - down to 0.05 through the middle, which is where the power disc is — the disc is a white
+ *    object with its own shadow and needs the artwork *behind* it left alone, or the button
+ *    stops looking like it is sitting on something;
+ *  - back to 0.26 at the foot, under the tab pills and the docked [ModePill], and running on
+ *    past where the flag now ends ([FlagFootRise]) so the artwork's last 14% dissolves into
+ *    shade rather than into nothing.
+ *
+ * Seven stops for two ramps, and the count is the point: a three-stop version of this banded
+ * visibly on a dark flag, because 8-bit alpha over near-black has very little room between
+ * steps. The fix for banding on this screen is always more eased stops rather than different
+ * colours — the same reason [HeroFloor] and [PanelFade] are shaped the way they are.
+ *
+ * Black rather than a tinted navy, and it matters: any hue here would sit on top of the flag's
+ * own and turn every country slightly the same colour, which is exactly what the removed
+ * `--green` did.
+ */
+private val HeroDepthScrim = Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.30f),
+    0.10f to Color.Black.copy(alpha = 0.20f),
+    0.22f to Color.Black.copy(alpha = 0.10f),
+    0.42f to Color.Black.copy(alpha = 0.05f),
+    0.62f to Color.Black.copy(alpha = 0.09f),
+    0.82f to Color.Black.copy(alpha = 0.19f),
+    1.00f to Color.Black.copy(alpha = 0.26f),
+)
+
+/**
+ * The other half of the shade: a vignette at the two vertical edges.
+ *
+ * A purely vertical scrim flattens the hero — every pixel on a row is shaded identically, so
+ * the band reads as a photo with a filter on it. Pulling the corners down a little gives the
+ * artwork a centre, which is where the headline, the address and the button all are, and it
+ * quietly holds the top bar's outermost glyphs off a bright edge of cloth.
+ *
+ * Very shallow on purpose: 0.22 at the extreme edge, nothing at all across the middle 44%.
+ * Anything stronger and it stops being depth and starts being a frame.
+ */
+private val HeroDepthEdge = Brush.horizontalGradient(
+    0.00f to Color.Black.copy(alpha = 0.22f),
+    0.12f to Color.Black.copy(alpha = 0.08f),
+    0.28f to Color.Transparent,
+    0.72f to Color.Transparent,
+    0.88f to Color.Black.copy(alpha = 0.08f),
+    1.00f to Color.Black.copy(alpha = 0.22f),
 )
 
 // ── Header ────────────────────────────────────────────────────────────────────
@@ -1619,22 +1679,28 @@ private val HeroFloor = Brush.verticalGradient(
 
 /** Between the top bar and the country headline — the column's own head clearance.
  *
- *  6dp, down from 12 and from 20 before that. The status caption this used to hold off is
+ *  2dp, down from 6, 12, and 20 before that. The status caption this used to hold off is
  *  deleted, so what is under it now is 34sp of headline, which needs no help being seen as
- *  a new thing; every dp here is a dp the whole hero sits lower by. */
-private val HeroTopSpace = 6.dp
+ *  a new thing; every dp here is a dp the whole hero sits lower by. At 2 it is a hair rather
+ *  than a gap — the headline hangs off the top bar, and the top bar's own 48dp touch targets
+ *  are what actually keep the two apart. */
+private val HeroTopSpace = 2.dp
 
-/** Between the headline block and the address. */
-private val HeadlineFootGap = 6.dp
+/** Between the headline block and the address.
+ *
+ *  4dp. The address lost its chip in the same pass ([MetaRow]), and a bare line of type wants
+ *  to sit closer to what it belongs to than a floating container did — a chip reads as its own
+ *  object at 6dp, but 13.5sp of ink reads as the headline's second line. */
+private val HeadlineFootGap = 4.dp
 
 /** Between the address and the power circle: the hero's breathing room, and what makes the
  *  artwork around the button a place rather than a gap.
  *
- *  4dp, down from 8 by way of 26. The disc's own box is [PowerSize] against a
+ *  2dp, down from 4 by way of 8 and 26. The disc's own box is [PowerSize] against a
  *  [PowerDiscSize] mark, so it already carries an 11dp band of its own on every side — a
  *  gap here is added to that band, not to the disc, which is why it can go this low without
  *  the address touching anything. */
-private val HeroOpenSpace = 4.dp
+private val HeroOpenSpace = 2.dp
 
 /** Between the power disc's foot and the [TabPillRow] under it.
  *
@@ -1648,16 +1714,18 @@ private val PowerFootGap = 10.dp
  * height of its own (see [dockOnSeam]), this is now the *whole* distance from the bottom of
  * the tab pills to the top edge of the browse card.
  *
- * 14dp, up from 2 — but the gap it sits in went from about 34dp to 14dp, because what used to
- * be under the tab row was this 2dp plus a 33dp pill slot. The card starts directly under its
- * own controls now, with just enough flag showing between them to read as a boundary.
+ * 8dp. The gap it sits in was about 34dp before the pill stopped taking a slot, then 14dp, and
+ * is now this: the tab row and the card read as one group with a hairline of artwork between
+ * them, which is what the brief asked for — controls belonging to the list they sit on rather
+ * than floating in their own band of flag.
  *
- * It cannot go much below this. The pill straddles the seam, so its top half — about 17dp —
- * rises back into this gap; at 14dp that puts it a couple of dp inside the tab row's own 9dp
- * of bottom padding, which is empty. Any tighter and the pill would start climbing over the
- * Main / Custom pills themselves.
+ * 8 is the floor, and the pill is why. It straddles the seam, so whatever fraction of it is
+ * placed above the line rises back into this gap; [dockOnSeam] now places it at 38% rather than
+ * 50% for exactly this reason, which puts about 13dp of pill into an 8dp gap plus the tab row's
+ * own 9dp of empty bottom padding. Any tighter, or any deeper a dock, and the pill starts
+ * climbing over the Main / Custom pills themselves.
  */
-private val TabRowFootGap = 14.dp
+private val TabRowFootGap = 8.dp
 
 /**
  * Docks a child on the hero's foot: **measured as no height at all**, drawn centred on the
@@ -1667,17 +1735,26 @@ private val TabRowFootGap = 14.dp
  * downwards, and an offset moves drawing only — the 33dp slot it was measured into stayed
  * behind, and [Header]'s measured height is what [BrowseCard] is laid out under, so the card
  * began a pill's height below the tab row with nothing but flag in between. Reporting a height
- * of zero and placing the pill at minus half its own height gets the identical dock — centre
- * line exactly on the card's top edge, top half over the artwork, bottom half over the frosted
- * glass — out of a slot that no longer exists.
+ * of zero and placing the pill at a negative offset gets the identical dock — out of a slot
+ * that no longer exists.
+ *
+ * The fraction is 38%, not 50%. A true half-and-half straddle is the cleanest way to draw a
+ * badge *on* a seam, but it also spends half a pill height climbing back up into
+ * [TabRowFootGap], and that gap is now 8dp; biasing the pill downwards keeps the same "sitting
+ * on the edge" read — a third of it over the artwork, the rest over the frosted glass, the
+ * card's top edge still crossing it — while giving back the ~4dp that lets the gap close.
  *
  * Nothing clips it: the column has no [Modifier.clip], and [Header] carries a z-index at its
  * call site, so the half that hangs over the card is painted after the card and survives.
  * [CardTopRoom] is what keeps that half off the first server row.
  */
+private const val DOCK_RISE_FRACTION = 0.38f
+
 private fun Modifier.dockOnSeam(): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    layout(placeable.width, 0) { placeable.place(0, -placeable.height / 2) }
+    layout(placeable.width, 0) {
+        placeable.place(0, -(placeable.height * DOCK_RISE_FRACTION).toInt())
+    }
 }
 
 @Composable
@@ -1698,7 +1775,9 @@ private fun Header(
         modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = ScreenPad, end = ScreenPad, top = 4.dp),
+            // No top padding of its own: [HeroTopSpace] is the head clearance, and the top
+            // bar's rows carry 48dp touch targets that already hold the status bar off.
+            .padding(start = ScreenPad, end = ScreenPad),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         TopBar(onOpenSettings = onOpenSettings, onOpenProfile = onOpenProfile)
@@ -1903,8 +1982,8 @@ private val GlyphChip = Brush.verticalGradient(
     1.00f to RefElev1.copy(alpha = 0.82f),
 )
 
-/** Its hairline — the same white edge every framed surface up here carries. */
-private val GlyphChipBorder = Color.White.copy(alpha = 0.09f)
+/** Its hairline — [heroEdge], the same lit edge every framed surface up here carries. */
+private val GlyphChipBorder = heroEdge
 
 /** How far each chip is lifted off the panel. Small: it is a chip, not a card, and the
  *  same 12dp the status chip uses so the two sit on one plane. */
@@ -2076,11 +2155,12 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboardManager.current
     val reduce = rememberReduceMotion()
     val ip = state.displayIp
-    // A floor height whether or not either chip is in it, so the hero does not grow a few
-    // dp on connect and shrink again on cancel — a header that changes height while the
-    // user waits on it is the one motion nobody asked for.
+    // A floor height whether or not the address is in it yet, so the hero does not grow a
+    // few dp on connect and shrink again on cancel — a header that changes height while the
+    // user waits on it is the one motion nobody asked for. 22dp rather than 34: the chip
+    // that used to set this is gone, and the bare line it left needs only its own type.
     Row(
-        modifier.heightIn(min = 34.dp),
+        modifier.heightIn(min = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -2100,47 +2180,57 @@ private fun MetaRow(state: HomeUiState, modifier: Modifier = Modifier) {
             if (value.isBlank()) {
                 Spacer(Modifier.width(0.dp))
             } else {
-                GlassChip(
-                    shape = RoundedCornerShape(ChipCorner),
-                    onClickLabel = "Copy IP address",
-                    onClick = {
-                        clipboard.setText(AnnotatedString(value))
-                        android.widget.Toast
-                            .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
-                            .show()
-                    },
+                Row(
+                    // No container: a clip and a click, so the copy affordance keeps a
+                    // rounded ripple and a real hit target, and nothing is painted over the
+                    // flag. The padding is what the chip's used to be, minus its frame — the
+                    // ink needs the same room to be tappable whether or not it is in a box.
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(
+                            onClickLabel = "Copy IP address",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(value))
+                                android.widget.Toast
+                                    .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
+                                    .show()
+                            },
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "IP",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.2.sp,
-                            color = RefTextLow,
-                            maxLines = 1,
-                        )
-                        Spacer(Modifier.width(7.dp))
-                        Text(
-                            value,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = RefTextHi,
-                            maxLines = 1,
-                            // maxLines alone truncates by clipping, which leaves a
-                            // half-drawn glyph at the end of a long address; with softWrap
-                            // off and ellipsis on, anything that still doesn't fit ends in
-                            // "…" instead of mid-stroke. An IPv4 address is 15 characters
-                            // at most — see [GeoService.lookupCurrentIp], now v4-only — so
-                            // in practice neither applies, but the chip can no longer
-                            // render a cut-off value whatever it is handed.
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(fontFeatureSettings = "tnum"),  // tabular-nums
-                        )
-                    }
+                    Text(
+                        "IP",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        // A step up from [RefTextLow], which was tuned to sit on glass. On
+                        // bare artwork the label is the first thing a bright flag band eats.
+                        color = RefTextMid,
+                        maxLines = 1,
+                        style = TextStyle(shadow = HeroInkShadow),
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        value,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = RefTextHi,
+                        maxLines = 1,
+                        // maxLines alone truncates by clipping, which leaves a half-drawn
+                        // glyph at the end of a long address; with softWrap off and ellipsis
+                        // on, anything that still doesn't fit ends in "…" instead of
+                        // mid-stroke. An IPv4 address is 15 characters at most — see
+                        // [GeoService.lookupCurrentIp], now v4-only — so in practice neither
+                        // applies, but the value can no longer render cut off whatever it is
+                        // handed.
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        style = TextStyle(
+                            fontFeatureSettings = "tnum",   // tabular-nums
+                            shadow = HeroInkShadow,
+                        ),
+                    )
                 }
             }
         }
@@ -2216,8 +2306,61 @@ private val PowerRingGap = 3.dp
 /** How long one turn of the connecting arc takes. */
 private const val POWER_ARC_SPIN_MS = 1000
 
-/** How much of the ring the connecting arc covers. */
+/** The widest the connecting arc opens. */
 private const val POWER_ARC_SWEEP_DEG = 240f
+
+/** The narrowest it closes to.
+ *
+ *  The arc used to be a fixed 240° sweep turning at a constant rate, which is what a
+ *  progress spinner from a widget set looks like. Breathing between 96° and 240° over
+ *  [POWER_ARC_BREATH_MS] while it turns gives the same "working, no idea how long" message
+ *  with a pulse in it — the ring reads as drawing breath rather than as a part rotating. */
+private const val POWER_ARC_SWEEP_MIN = 96f
+
+/** How long the connecting arc takes to open and close once. Deliberately not a multiple of
+ *  [POWER_ARC_SPIN_MS], so the sweep and the rotation drift against each other instead of
+ *  landing on the same beat every second. */
+private const val POWER_ARC_BREATH_MS = 1450
+
+/** How long the live ring takes to breathe once, out or back.
+ *
+ *  Slow on purpose. This runs for as long as the tunnel is up, and anything quicker than a
+ *  couple of seconds stops being ambient and starts being something in the corner of the eye
+ *  asking to be looked at. Only the bloom's width and alpha move; the ring itself is a
+ *  constant, because a primary state indicator that fades in and out is one you have to wait
+ *  for to read. */
+private const val POWER_BREATH_MS = 2600
+
+/** How far the disc travels down on a press, and how far the light travels with it.
+ *
+ *  A press is two things happening together: the disc gets slightly smaller and its shadow
+ *  gets much shallower. Scale alone is the cheap version — the disc shrinks but keeps casting
+ *  a 22dp shadow, so it reads as a picture of a button being scaled rather than as a physical
+ *  thing being pushed towards the surface it sits on. Dropping the elevation to 9dp at the
+ *  same time is what makes it land. */
+private const val POWER_PRESS_SCALE = 0.955f
+private val PowerRestElevation = 22.dp
+private val PowerPressElevation = 9.dp
+
+/** The hairline on the disc's own edge. See [PowerDiscRim]. */
+private val PowerRimStroke = 1.dp
+
+/** The one-shot ring that fires the moment the tunnel comes up, and how far past the ring
+ *  band it travels.
+ *
+ *  This is the only celebratory motion in the app and it is deliberately small: a single
+ *  expanding hairline of [RefLive] that leaves the band, fades on an eased square, and is
+ *  gone in under three quarters of a second. It exists because the connected state is
+ *  otherwise reported by a colour change on a ring, which is easy to miss on a phone held at
+ *  arm's length — a moving edge is not. It does not loop, it cannot be triggered by anything
+ *  but the phase actually changing, and it is off entirely when the system's animations are.
+ *
+ *  The reach is why the halo needs its own canvas: [PowerSize] has 11dp of band around the
+ *  disc, and this needs 34dp more than that, so the [Canvas] is sized with a
+ *  [Modifier.requiredSize] that ignores the parent's constraints rather than being clipped
+ *  to them. */
+private const val POWER_IGNITION_MS = 720
+private val PowerIgnitionReach = 34.dp
 
 @Composable
 private fun PowerCircle(
@@ -2231,12 +2374,51 @@ private fun PowerCircle(
 ) {
     val connected = phase == ConnPhase.CONNECTED
     val reduce = rememberReduceMotion()
+    val haptics = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    // Springs rather than tweens, and two different ones: going down is fast and dead —
+    // stiff, no bounce — because a press has to feel like it arrived the instant the finger
+    // did; coming back up is softer and slightly under-damped, so the disc overshoots by
+    // about a percent and settles. That asymmetry is the whole difference between a button
+    // that feels mechanical and one that feels sprung, and it is two numbers.
     val scale by animateFloatAsState(
-        if (pressed) 0.96f else 1f,               // .power-btn:active
+        targetValue = if (pressed) POWER_PRESS_SCALE else 1f,
+        animationSpec = if (reduce) {
+            snap()
+        } else if (pressed) {
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
+        } else {
+            spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow)
+        },
         label = "powerPress",
     )
+    // The shadow travels with the scale — see [POWER_PRESS_SCALE].
+    val elevation by animateDpAsState(
+        targetValue = if (pressed) PowerPressElevation else PowerRestElevation,
+        animationSpec = if (reduce) snap() else spring(stiffness = Spring.StiffnessMediumLow),
+        label = "powerPressLift",
+    )
+    // And so does the light on the face: pressing it takes the specular down and brings a
+    // little shade up from the foot, which is what a convex white object does when it is
+    // pushed towards the surface under it.
+    val pressShade by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = motionSpec(reduce, 140),
+        label = "powerPressShade",
+    )
+    // The ignition ring — see [POWER_IGNITION_MS]. Keyed on the phase, so it fires once per
+    // actual connection and not on recomposition, and snapped back to zero in every other
+    // state so a disconnect cannot leave a half-drawn ring behind.
+    val ignition = remember { Animatable(0f) }
+    LaunchedEffect(phase, reduce) {
+        if (phase == ConnPhase.CONNECTED && !reduce) {
+            ignition.snapTo(0f)
+            ignition.animateTo(1f, tween(POWER_IGNITION_MS, easing = FastOutSlowInEasing))
+        } else {
+            ignition.snapTo(0f)
+        }
+    }
     // The one coloured face left, over the white disc that is always there, so no value
     // of it can leave the button transparent mid-crossfade. There is deliberately no
     // second one for CONNECTED — see the section comment: the connected state is
@@ -2269,6 +2451,33 @@ private fun PowerCircle(
         else -> "Connect"
     }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // The ignition halo, behind everything and outside the box: [Modifier.requiredSize]
+        // is what lets it be bigger than its parent instead of clipped to it.
+        if (ignition.value > 0f && ignition.value < 1f) {
+            Canvas(Modifier.requiredSize(PowerSize + PowerIgnitionReach * 2)) {
+                val t = ignition.value
+                val band = (PowerDiscSize.toPx() / 2f) +
+                    PowerRingGap.toPx() +
+                    (PowerRingStroke.toPx() / 2f)
+                val reach = PowerIgnitionReach.toPx()
+                // Squared, so the ring is already faint by the time it is halfway out: the
+                // eye catches the departure, not the arrival, and a linear fade reads as a
+                // ripple loitering.
+                val fade = (1f - t) * (1f - t)
+                // The soft body of it first, travelling slower than the edge.
+                drawCircle(
+                    color = RefLive.copy(alpha = 0.14f * fade),
+                    radius = band + reach * t * 0.62f,
+                    style = Stroke(width = PowerRingStroke.toPx() * (1f + 5f * t)),
+                )
+                // Then the edge itself, thinning as it goes.
+                drawCircle(
+                    color = RefLive.copy(alpha = 0.55f * fade),
+                    radius = band + reach * t,
+                    style = Stroke(width = PowerRingStroke.toPx() * (1f - 0.45f * t)),
+                )
+            }
+        }
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
@@ -2279,8 +2488,9 @@ private fun PowerCircle(
                     // 0 16px 34px rgba(0,0,0,.45) + 0 4px 10px rgba(0,0,0,.25). Both
                     // colours named, like the panel's: the platform's own default put a
                     // grey halo around a white disc on a near-black panel, which is the
-                    // single most visible place on the screen for it.
-                    elevation = 22.dp,
+                    // single most visible place on the screen for it. The elevation is
+                    // animated — a press drops it to [PowerPressElevation].
+                    elevation = elevation,
                     shape = CircleShape,
                     ambientColor = PowerShadowAmbient,
                     spotColor = PowerShadowSpot,
@@ -2311,7 +2521,17 @@ private fun PowerCircle(
                     interactionSource = interaction,
                     indication = null,
                     onClickLabel = label,
-                    onClick = onClick,
+                    // A haptic on the primary action, and only on this one: the tunnel going
+                    // up or down is the single thing on this screen with a consequence outside
+                    // the app, and the confirmation should not depend on the user watching the
+                    // ring. LongPress rather than a tick — it is the firmest of the standard
+                    // constants, which is what a switch this size should feel like. The
+                    // platform routes it through the system's own haptics setting, so a user
+                    // who has turned touch feedback off gets nothing.
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClick()
+                    },
                 )
                 // A swipe is invisible to a screen reader, so the same two outcomes
                 // are offered as named actions on the button — which is also the only
@@ -2331,7 +2551,34 @@ private fun PowerCircle(
             if (workingFace > 0.01f) {
                 Box(Modifier.matchParentSize().alpha(workingFace).background(PowerWorkingFace))
             }
+            // The specular: a soft off-centre highlight, built from the disc's measured size
+            // rather than as a fixed brush, which is why it is [Modifier.drawWithCache] and
+            // not a top-level val — a radial gradient needs a centre and a radius in pixels,
+            // and caching it means that arithmetic happens on resize instead of per frame.
+            // Placed up and left of centre because every other light on this screen comes
+            // from there; it is what turns a flat vertical ramp into something domed.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawWithCache {
+                        val glow = Brush.radialGradient(
+                            0.00f to Color.White.copy(alpha = 0.92f),
+                            0.42f to Color.White.copy(alpha = 0.22f),
+                            0.78f to Color.White.copy(alpha = 0.04f),
+                            1.00f to Color.Transparent,
+                            center = Offset(size.width * 0.32f, size.height * 0.20f),
+                            radius = size.minDimension * 0.68f,
+                        )
+                        onDrawBehind { drawCircle(glow) }
+                    }
+            )
             Box(Modifier.matchParentSize().background(PowerFaceSheen))
+            if (pressShade > 0.01f) {
+                Box(Modifier.matchParentSize().alpha(pressShade).background(PowerPressShade))
+            }
+            // The rim, last of the surfaces and over all of them, so it stays a crisp edge
+            // instead of being washed out by the sheen's own dark foot.
+            Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
             Icon(
                 Icons.Rounded.PowerSettingsNew,
                 contentDescription = label,
@@ -2386,7 +2633,36 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "powerArcLive",
     )
+    // Two breaths, deliberately at different rates and both eased rather than linear: a
+    // linear reverse-repeat has a visible corner at each end, which on a slow pulse is the
+    // one thing that gives it away as an animation.
+    val breath by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(POWER_BREATH_MS, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "powerLiveBreath",
+    )
+    val sweepBreath by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(POWER_ARC_BREATH_MS, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "powerArcBreath",
+    )
     val rotation = if (reduce) 0f else spin
+    // With animations off both breaths park mid-way, which is the state the numbers below
+    // were tuned around — so a still ring looks like the ring, not like one extreme of it.
+    val pulse = if (reduce) 0.5f else breath
+    val sweep = if (reduce) {
+        POWER_ARC_SWEEP_DEG
+    } else {
+        POWER_ARC_SWEEP_MIN + (POWER_ARC_SWEEP_DEG - POWER_ARC_SWEEP_MIN) * sweepBreath
+    }
     Canvas(modifier) {
         val stroke = PowerRingStroke.toPx()
         val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
@@ -2394,18 +2670,22 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         val arcSize = Size(radius * 2f, radius * 2f)
 
         // The track. Always there, so the band never looks empty and the arc has
-        // something to travel along.
+        // something to travel along — and lit from the top rather than flat, so it reads
+        // as a machined groove around the disc instead of a drawn circle. A flat 10% white
+        // hairline is the giveaway detail on a lot of otherwise careful dark UI: real edges
+        // are brightest where the light is.
         drawCircle(
-            color = Color.White.copy(alpha = 0.10f),
+            brush = PowerRingTrack,
             radius = radius,
             style = Stroke(width = stroke),
         )
         if (live > 0.01f) {
-            // Lit: a soft wide bloom under the ring itself.
+            // Lit: a soft wide bloom under the ring itself, breathing — see
+            // [POWER_BREATH_MS]. The ring proper does not move; only the glow around it.
             drawCircle(
-                color = RefLive.copy(alpha = 0.16f * live),
+                color = RefLive.copy(alpha = (0.11f + 0.10f * pulse) * live),
                 radius = radius,
-                style = Stroke(width = stroke * 3.2f),
+                style = Stroke(width = stroke * (2.4f + 1.6f * pulse)),
             )
             drawCircle(
                 color = RefLive.copy(alpha = 0.92f * live),
@@ -2418,7 +2698,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             drawArc(
                 color = RefWorking.copy(alpha = 0.95f * working),
                 startAngle = rotation - 90f,
-                sweepAngle = POWER_ARC_SWEEP_DEG,
+                sweepAngle = sweep,
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
@@ -2443,6 +2723,39 @@ private val PowerFace = Brush.linearGradient(
 private val PowerWorkingFace = Brush.linearGradient(
     0.00f to RefWorking.copy(alpha = 0.10f),
     1.00f to RefWorking.copy(alpha = 0.26f),
+)
+
+/**
+ * The disc's edge: white where the light is, and nothing at all at the foot.
+ *
+ * A white object on near-black does not need a light border to be separated from the page —
+ * it needs the opposite, an edge that reads as the curve of the object turning away. So this
+ * runs from a bright hairline at the crown to transparent by the middle and back to a faint
+ * dark at the foot, which is the same story [PowerFaceSheen] tells across the face. A single
+ * flat border colour here, at any alpha, put a visible ring around the disc.
+ */
+private val PowerDiscRim = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.95f),
+    0.22f to Color.White.copy(alpha = 0.38f),
+    0.52f to Color.Transparent,
+    0.86f to Color.Black.copy(alpha = 0.06f),
+    1.00f to Color.Black.copy(alpha = 0.13f),
+)
+
+/** The shade that comes up over the face on a press. Weighted to the foot: the disc is being
+ *  pushed towards the surface, so what it loses is the room under it. */
+private val PowerPressShade = Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.03f),
+    0.45f to Color.Black.copy(alpha = 0.07f),
+    1.00f to Color.Black.copy(alpha = 0.16f),
+)
+
+/** The ring's unlit groove — see the draw call in [PowerRing]. */
+private val PowerRingTrack = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.19f),
+    0.34f to Color.White.copy(alpha = 0.10f),
+    0.68f to Color.White.copy(alpha = 0.06f),
+    1.00f to Color.White.copy(alpha = 0.12f),
 )
 
 /** The disc's own cast shadow, as two colours — see the [Modifier.shadow] call. Deeper
@@ -2628,11 +2941,13 @@ private val PanelFade = 84.dp
 /**
  * The clear air at the top of the browse card, under the docked [ModePill].
  *
- * The pill is drawn straddling the hero's foot ([dockOnSeam]), so about half of it — 17dp or
- * so, plus its shadow — is inside this card. This is what that half has to sit in front of
- * instead of a server name.
+ * The pill is drawn straddling the hero's foot ([dockOnSeam]), biased downwards, so about 62%
+ * of it — 21dp or so, plus its shadow — is inside this card. This is what that part has to sit
+ * in front of instead of a server name. 26dp, up from 22: the pill sits deeper into the card
+ * than it used to, so the clearance under it grew by what the dock gave back to
+ * [TabRowFootGap].
  */
-private val CardTopRoom = 22.dp
+private val CardTopRoom = 26.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
@@ -2905,7 +3220,9 @@ private fun SearchField(visible: Boolean, query: String, onQueryChange: (String)
                 .padding(bottom = 9.dp)            // .search-bar margin
                 .clip(RoundedCornerShape(50))
                 .background(Color.White.copy(alpha = 0.045f))
-                .border(1.dp, Color.White.copy(alpha = 0.09f), RoundedCornerShape(50))
+                // [heroEdge], the same graded hairline as the glyph chips beside it — the
+                // field opens in that row and the two should not disagree about the light.
+                .border(1.dp, heroEdge, RoundedCornerShape(50))
                 .padding(horizontal = 15.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
