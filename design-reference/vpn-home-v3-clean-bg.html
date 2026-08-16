@@ -73,9 +73,9 @@
     content:"";
     position:absolute; inset:0;
     background: linear-gradient(180deg,
-        rgba(0,0,0,0.45) 0%,
-        rgba(0,0,0,0.28) 24%,
-        rgba(0,0,0,0.12) 48%,
+        rgba(0,0,0,0.0) 0%,
+        rgba(0,0,0,0.0) 24%,
+        rgba(0,0,0,0.0) 48%,
         transparent 75%);
     z-index:0;
   }
@@ -92,7 +92,14 @@
   .topbar{
     display:flex; align-items:center; justify-content:space-between;
     margin-top: 0px;
-    position:relative; z-index:1;
+    position:relative; z-index:2;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    padding: 6px 14px;
+    margin-bottom: 14px;
   }
   .topbar-left{ display:flex; align-items:center; gap:14px; }
 
@@ -161,9 +168,7 @@
     border-radius: var(--radius-full);
     padding: 0 20px;
     box-shadow:
-      var(--shadow-card),
-      inset 0 1px 0 rgba(255,255,255,0.06),
-      inset 0 0 0 1px rgba(255,255,255,0.02);
+      0 10px 20px rgba(0,0,0,0.20);
     /* Cut a small circular gap out of the bar's right edge, centered
        exactly on the connect button's center, so the bar's rounded
        corners wrap around the top/bottom of the button up to its
@@ -202,11 +207,9 @@
     position:absolute;
     inset: 0;
     background: linear-gradient(90deg,
-      var(--bg-elev-1) 0%,
-      rgba(20,22,29,0.92) 20%,
-      rgba(20,22,29,0.55) 42%,
-      rgba(20,22,29,0.12) 62%,
-      transparent 80%);
+      rgba(0,0,0,0.55) 0%,
+      rgba(0,0,0,0.15) 35%,
+      transparent 55%);
   }
 
   /* Glass sheen removed per request — flag stays flat, no glare. */
@@ -245,7 +248,7 @@
     border: none;
     cursor:pointer;
     box-shadow:
-      0 16px 34px rgba(0,0,0,0.45),
+      0 16px 34px rgba(0,0,0,0.0),
       0 4px 10px rgba(0,0,0,0.25),
       inset 0 3px 4px rgba(255,255,255,0.95),
       inset 0 -10px 14px rgba(0,0,0,0.14);
