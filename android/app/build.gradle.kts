@@ -44,9 +44,10 @@ android {
     // Signing credentials must come from the environment in CI or a developer's
     // local secret store. Do NOT keep a keystore or plain-text passwords in git.
     // If the environment variables are not present, generate a temporary
-    // keystore at android/keystore.jks so local builds and CI runs without
-    // configured secrets still succeed. This keeps builds working while we
-    // migrate CI to restore a production signing key from secrets.
+    // keystore at ../keystore.jks (relative to android/app) so local builds and CI
+    // runs without configured secrets still succeed. Ensure parent directories
+    // exist before running keytool. This keeps builds working while we migrate CI
+    // to restore a production signing key from secrets.
     signingConfigs {
         create("release") {
             // Read env vars if present
@@ -55,13 +56,17 @@ android {
             val keyAliasEnv = System.getenv("CDNHUNTER_KEY_ALIAS")
             val keyPwdEnv = System.getenv("CDNHUNTER_KEY_PASSWORD")
 
-            val keystorePath = keystoreFileEnv ?: "android/keystore.jks"
+            // Default path is one level up from this module: android/keystore.jks
+            val keystorePath = keystoreFileEnv ?: "../keystore.jks"
             val alias = keyAliasEnv ?: "cdnhunter"
 
             // If no env-provided keystore/password, generate a temporary keystore
             if (keystoreFileEnv == null || storePwdEnv == null || keyAliasEnv == null || keyPwdEnv == null) {
                 // Only generate if the file doesn't already exist
                 val ksFile = file(keystorePath)
+                // Ensure parent directory exists (fixes CI FileNotFound when parent missing)
+                ksFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+
                 if (!ksFile.exists()) {
                     val genStorePwd = UUID.randomUUID().toString().replace("-", "").take(16)
                     val genKeyPwd = genStorePwd
