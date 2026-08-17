@@ -2328,9 +2328,8 @@ private fun SectionLabel(text: String, top: Dp = 26.dp) {
  *  Borderless; what separates it from the page is [Modifier.sheetSurface]. */
 @Composable
 private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = remember { RoundedCornerShape(SheetCardCorner) }
     Column(
-        modifier.fillMaxWidth().sheetSurface(shape),
+        modifier.fillMaxWidth(),
         content = content,
     )
 }
@@ -2339,7 +2338,7 @@ private fun CardGroup(modifier: Modifier = Modifier, content: @Composable Column
  *  icons read as one column. 62dp = [SheetPad] shy of the card edge, plus the tile and its gap. */
 @Composable
 private fun RowDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasDivider))
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp).height(0.5.dp).background(Color.White.copy(alpha = 0.06f)))
 }
 
 /** A row's icon: the glyph on its own tinted rounded square rather than loose on the card, which
@@ -2347,9 +2346,9 @@ private fun RowDivider() {
 @Composable
 private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
     Box(
-        modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(tint.copy(alpha = 0.14f)),
+        modifier.size(34.dp),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp)) }
+    ) { Icon(icon, null, tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(20.dp)) }
 }
 
 /**
