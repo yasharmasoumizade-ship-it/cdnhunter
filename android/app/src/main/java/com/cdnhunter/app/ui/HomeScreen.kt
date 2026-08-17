@@ -181,6 +181,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -980,7 +982,14 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             }
         }
         // Inside the masked layer, so it darkens the flag and tapers away with it.
-        Box(Modifier.matchParentSize().background(HeaderFlagScrim))
+        Box(Modifier.matchParentSize().background(
+            Brush.horizontalGradient(
+                0.0f to Color.Black.copy(alpha = 0.75f),
+                0.4f to Color.Black.copy(alpha = 0.35f),
+                0.7f to Color.Black.copy(alpha = 0.1f),
+                1.0f to Color.Transparent
+            )
+        ))
     }
 }
 
