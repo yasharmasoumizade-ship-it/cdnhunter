@@ -1,3 +1,5 @@
+import java.util.UUID
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -61,7 +63,7 @@ android {
                 // Only generate if the file doesn't already exist
                 val ksFile = file(keystorePath)
                 if (!ksFile.exists()) {
-                    val genStorePwd = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                    val genStorePwd = UUID.randomUUID().toString().replace("-", "").take(16)
                     val genKeyPwd = genStorePwd
                     println("[build] Generating temporary keystore at ${ksFile.path}")
                     project.exec {
