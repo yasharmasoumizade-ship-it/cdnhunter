@@ -2207,8 +2207,8 @@ private val SheetHeaderTint = Brush.verticalGradient(
  *  that is meant to be seen. Drawn inside the clip, so it follows the corner curve. */
 private val SheetHeaderRim = Brush.verticalGradient(
     0.00f to Color.Transparent,
-    0.62f to Color.White.copy(alpha = 0.035f),
-    1.00f to Color.White.copy(alpha = 0.10f),
+    0.62f to Color.White.copy(alpha = 0.01f),
+    1.00f to Color.White.copy(alpha = 0.04f),
 )
 
 /** How deep that rim runs. */
@@ -2218,7 +2218,7 @@ private val SheetHeaderRimDepth = 6.dp
 private val SheetHeaderFootRoom = 22.dp
 
 /** How far the panel's shadow reaches on to the page below it. */
-private val SheetHeaderLift = 22.dp
+private val SheetHeaderLift = 6.dp
 
 /** Page wash: the accent at 5% for 260dp. Flat #0B0B0D edge to edge is what makes a dark
  *  screen look unfinished; this is barely visible and gives the top of the page a light
