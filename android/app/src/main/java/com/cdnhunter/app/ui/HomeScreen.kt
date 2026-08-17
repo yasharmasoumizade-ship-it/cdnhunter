@@ -348,7 +348,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 40.dp
+private val HeroBleed = 120.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -696,7 +696,7 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 12.dp
+private val FlagFootRise = 60.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -742,12 +742,12 @@ private const val FLAG_SETTLE_MS = 620
  * a fraction of however tall the flag happens to be.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.26f),
+    0.00f to Color.Black.copy(alpha = 0.10f),
     0.10f to Color.Black.copy(alpha = 0.20f),
     0.30f to Color.Black.copy(alpha = 0.16f),
     0.58f to Color.Black.copy(alpha = 0.18f),
-    0.80f to Color.Black.copy(alpha = 0.30f),
-    1.00f to Color.Black.copy(alpha = 0.40f),
+    0.80f to Color.Black.copy(alpha = 0.12f),
+    1.00f to Color.Black.copy(alpha = 0.18f),
 )
 
 /**
@@ -767,7 +767,7 @@ private val HeaderFlagScrim = Brush.verticalGradient(
 private val HeaderFlagFadeX = Brush.horizontalGradient(
     0.00f to Color.Black,
     0.72f to Color.Black,
-    1.00f to Color.Black.copy(alpha = 0.86f),
+    1.00f to Color.Black,
 )
 
 /**
@@ -795,7 +795,7 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
 private val HeaderFlagFadeY = Brush.verticalGradient(
     0.00f to Color.Black,
     0.60f to Color.Black,
-    1.00f to Color.Black.copy(alpha = 0.88f),
+    1.00f to Color.Black,
 )
 
 /**
@@ -1574,7 +1574,7 @@ private val HeadlineFootGap = 4.dp
  *  [PowerDiscSize] mark, so it already carries an 11dp band of its own on every side — a
  *  gap here is added to that band, not to the disc, which is why it can go this low without
  *  the address touching anything. */
-private val HeroOpenSpace = 2.dp
+private val HeroOpenSpace = 18.dp
 
 /**
  * From the power disc's foot to the browse card's top edge — the hero's last measurement.
@@ -1588,7 +1588,7 @@ private val HeroOpenSpace = 2.dp
  * card's beginning wherever the paint finally turned solid. What fixed it was making the edge
  * legible: see [PanelFade] and [drawPanelTopEdge].
  */
-private val HeroFootGap = 8.dp
+private val HeroFootGap = 32.dp
 
 @Composable
 private fun Header(
@@ -1802,13 +1802,6 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
             )
         }
         Spacer(Modifier.weight(1f))
-        GlyphButton(
-            onClick = onOpenProfile,
-            label = "Account",
-            modifier = Modifier.offset(x = 5.dp),
-        ) {
-            AccountGlyph(color = Color.White, modifier = Modifier.size(NavGlyph))
-        }
     }
 }
 
@@ -3209,12 +3202,17 @@ private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
  */
 @Composable
 private fun AddServerButton(onClick: () -> Unit) {
-    GlyphButton(onClick = onClick, label = "Add server") {
+    Box(
+        Modifier
+            .size(TapTarget)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(
             Icons.Rounded.Add,
-            contentDescription = null,
+            contentDescription = "Add server",
             tint = RefTextMid,
-            modifier = Modifier.size(ActionGlyph),
+            modifier = Modifier.size(26.dp),
         )
     }
 }
@@ -3223,15 +3221,17 @@ private fun AddServerButton(onClick: () -> Unit) {
 @Composable
 private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
     val ink by animateColorAsState(if (open) RefAccent else RefTextMid, tween(180), label = "searchInk")
-    GlyphButton(
-        onClick = onClick,
-        label = if (open) "Close search" else "Search servers",
+    Box(
+        Modifier
+            .size(TapTarget)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             Icons.Rounded.Search,
-            contentDescription = null,
+            contentDescription = if (open) "Close search" else "Search servers",
             tint = ink,
-            modifier = Modifier.size(ActionGlyph),
+            modifier = Modifier.size(26.dp),
         )
     }
 }
