@@ -39,20 +39,24 @@ android {
         }
     }
 
-    // Signing credentials come from the environment when it provides them, and fall
-    // back to the values committed here otherwise. The fallback is deliberate: the
-    // keystore itself is in the repo, so removing the passwords alone would break
-    // local and CI builds without actually protecting anything. Setting
-    // CDNHUNTER_KEYSTORE_PASSWORD / CDNHUNTER_KEY_PASSWORD (e.g. from GitHub
-    // Actions secrets) is what makes the real credentials stop living in git — and
-    // that only becomes meaningful once the key is rotated, which breaks in-place
-    // updates for anyone who already installed a build signed with the old key.
+    // Signing credentials must come from the environment in CI or a developer's
+    // local secret store. Do NOT keep a keystore or plain-text passwords in git.
+    // Fail fast with a clear error message if the required variables are not set.
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("CDNHUNTER_KEYSTORE_FILE") ?: "../keystore.jks")
-            storePassword = System.getenv("CDNHUNTER_KEYSTORE_PASSWORD") ?: "cdnhunter123"
-            keyAlias = System.getenv("CDNHUNTER_KEY_ALIAS") ?: "cdnhunter"
-            keyPassword = System.getenv("CDNHUNTER_KEY_PASSWORD") ?: "cdnhunter123"
+            val keystoreFile = System.getenv("CDNHUNTER_KEYSTORE_FILE")
+                ?: throw IllegalStateException("CDNHUNTER_KEYSTORE_FILE must be set in environment and must not point at a file in git.")
+            val storePwd = System.getenv("CDNHUNTER_KEYSTORE_PASSWORD")
+                ?: throw IllegalStateException("CDNHUNTER_KEYSTORE_PASSWORD must be set in environment.")
+            val keyAliasVal = System.getenv("CDNHUNTER_KEY_ALIAS")
+                ?: throw IllegalStateException("CDNHUNTER_KEY_ALIAS must be set in environment.")
+            val keyPwd = System.getenv("CDNHUNTER_KEY_PASSWORD")
+                ?: throw IllegalStateException("CDNHUNTER_KEY_PASSWORD must be set in environment.")
+
+            storeFile = file(keystoreFile)
+            storePassword = storePwd
+            keyAlias = keyAliasVal
+            keyPassword = keyPwd
         }
     }
 
@@ -71,6 +75,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
+            // Forcing debug builds to use the release signing config prevents
+            // accidental mismatches between debug and release when testing
+            // upgrade paths in CI. Local developers can set the same env vars or
+            // run a local debug signing flow.
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
         }
