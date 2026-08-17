@@ -904,7 +904,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             }
         }
         // Inside the masked layer, so it darkens the flag and tapers away with it.
-        Box(Modifier.matchParentSize().background(HeaderFlagScrim))
+        Box(Modifier.matchParentSize().background(Color.Transparent))
     }
 }
 
@@ -1512,8 +1512,8 @@ private val HeroTopVeil = Brush.verticalGradient(
 private val HeroVignetteStops = listOf(
     Color.Transparent,
     Color.Transparent,
-    Color.Black.copy(alpha = 0.10f),
-    Color.Black.copy(alpha = 0.30f),
+    Color.Black.copy(alpha = 0.02f),
+    Color.Black.copy(alpha = 0.05f),
 )
 
 /**
@@ -1530,9 +1530,9 @@ private val HeroCardShadowDepth = 40.dp
 /** The cast shadow's ramp — nothing at its top, heaviest on the card's own edge line. */
 private val HeroCardCastShadow = Brush.verticalGradient(
     0.00f to Color.Transparent,
-    0.42f to Color.Black.copy(alpha = 0.12f),
-    0.76f to Color.Black.copy(alpha = 0.28f),
-    1.00f to Color.Black.copy(alpha = 0.42f),
+    0.42f to Color.Black.copy(alpha = 0.02f),
+    0.76f to Color.Black.copy(alpha = 0.05f),
+    1.00f to Color.Black.copy(alpha = 0.08f),
 )
 
 // ── Header ────────────────────────────────────────────────────────────────────
@@ -1784,7 +1784,9 @@ private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
             // Outside the height: a size modifier reports whatever it was asked for, so the
             // trim has to sit above it in the chain to be the thing the column sees.
             .reportHeight(TopBarInk)
-            .height(TapTarget),
+            .height(TapTarget)
+            .background(Color.Black.copy(alpha = 0.15f))
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The mockup's tap boxes are 40px; these are 48dp for reach and nudged
