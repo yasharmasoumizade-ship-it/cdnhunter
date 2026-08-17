@@ -1881,27 +1881,25 @@ private val GlyphChipElevation = 12.dp
 @Composable
 private fun TopBar(onOpenSettings: () -> Unit, onOpenProfile: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-        // The mockup's tap boxes are 40px; these are 48dp for reach and nudged
-        // back out by 5dp so the chips still sit on the mockup's margins.
-        GlyphButton(
-            onClick = onOpenSettings,
-            label = "Settings",
-            modifier = Modifier.offset(x = (-5).dp),
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier
+                .size(TapTarget)
+                .padding(end = 8.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = "Settings",
+                    onClick = onOpenSettings,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Rounded.Menu,
+                Icons.Rounded.Settings,
                 contentDescription = "Settings",
                 tint = Color.White,
-                modifier = Modifier.size(NavGlyph),
+                modifier = Modifier.size(28.dp),
             )
-        }
-        Spacer(Modifier.weight(1f))
-        GlyphButton(
-            onClick = onOpenProfile,
-            label = "Account",
-            modifier = Modifier.offset(x = 5.dp),
-        ) {
-            AccountGlyph(color = Color.White, modifier = Modifier.size(NavGlyph))
         }
     }
 }
