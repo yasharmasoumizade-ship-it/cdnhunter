@@ -177,7 +177,7 @@ private val RefBg = Color(0xFF060709)          // --bg
  * over the whole of its height — and at this distance from [RefBg] nothing about it is
  * nameable as a colour, which is the point.
  */
-private val RefPanelBg = Color(0xFF06080D)
+private val RefPanelBg = Color(0xFF020305)
 
 /**
  * The frost's colour: a pale icy blue, used only in [panelFrost] and never at any real
@@ -348,7 +348,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 120.dp
+private val HeroBleed = 180.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -696,7 +696,7 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 60.dp
+private val FlagFootRise = 20.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
