@@ -2127,51 +2127,23 @@ private fun MetaRow(
             },
             label = "publicIp",
         ) { value ->
-            val label = when {
-                value.ready -> value.value
-                value.checking -> "Checking…"
-                else -> "Unavailable"
-            }
-            val click: (() -> Unit)? = when {
-                value.ready -> {
-                    {
-                        clipboard.setText(AnnotatedString(value.value))
-                        android.widget.Toast
-                            .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
-                            .show()
-                    }
-                }
-                value.checking -> null
-                else -> onRetryIp
+            if (!value.ready) return@AnimatedContent
+            val click: (() -> Unit) = {
+                clipboard.setText(AnnotatedString(value.value))
+                android.widget.Toast
+                    .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
+                    .show()
             }
             Row(
                 Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .then(
-                        if (click == null) {
-                            Modifier
-                        } else {
-                            Modifier.clickable(
-                                onClickLabel = if (value.ready) "Copy IP address" else "Retry IP lookup",
-                                onClick = click,
-                            )
-                        },
+                    .clickable(
+                        onClickLabel = "Copy IP address",
+                        onClick = click,
                     )
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "IP",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    // [RefTextMid] in every state. [RefTextLow] was tuned to sit on glass; on
-                    // bare artwork it is the first thing a bright flag band eats.
-                    color = RefTextMid,
-                    maxLines = 1,
-                    style = TextStyle(shadow = HeroInkShadow),
-                )
-                Spacer(Modifier.width(7.dp))
                 Text(
                     label,
                     fontSize = if (value.ready) 13.5.sp else 12.5.sp,
