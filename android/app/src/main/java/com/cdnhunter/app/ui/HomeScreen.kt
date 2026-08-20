@@ -3013,11 +3013,8 @@ private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
  * different on every device.
  */
 private fun panelFrost(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefFrost.copy(alpha = 0.155f),
-    0.16f to RefFrost.copy(alpha = 0.125f),
-    0.42f to RefFrost.copy(alpha = 0.072f),
-    0.68f to RefFrost.copy(alpha = 0.034f),
-    0.86f to RefFrost.copy(alpha = 0.013f),
+    0.00f to RefFrost.copy(alpha = 0.04f),
+    0.30f to RefFrost.copy(alpha = 0.02f),
     1.00f to Color.Transparent,
     startY = 0f,
     endY = heightPx,
@@ -3074,10 +3071,11 @@ private fun DrawScope.drawPanelTopEdge() {
     clipRect(top = 0f, bottom = radius + hairline) {
         drawRoundRect(
             brush = Brush.horizontalGradient(
-                0.00f to PanelEdgeInk.copy(alpha = 0.04f),
-                0.28f to PanelEdgeInk.copy(alpha = 0.13f),
-                0.72f to PanelEdgeInk.copy(alpha = 0.13f),
-                1.00f to PanelEdgeInk.copy(alpha = 0.04f),
+                0.00f to Color.White.copy(alpha = 0.08f),
+                0.20f to Color.White.copy(alpha = 0.22f),
+                0.50f to Color.White.copy(alpha = 0.28f),
+                0.80f to Color.White.copy(alpha = 0.22f),
+                1.00f to Color.White.copy(alpha = 0.08f),
             ),
             topLeft = Offset(hairline / 2f, hairline / 2f),
             size = Size(size.width - hairline, size.height - hairline),
