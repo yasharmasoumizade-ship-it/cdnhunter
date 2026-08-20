@@ -659,7 +659,7 @@ private val PageGradient = Brush.verticalGradient(
  * done with a colour matrix on the image rather than by fading it toward black, which
  * would take the brightness with it and leave the flag looking dirty rather than calm.
  */
-private const val HEADER_FLAG_SATURATION = 0.80f
+private const val HEADER_FLAG_SATURATION = 1.0f
 
 /**
  * How much the artwork itself gives up before [HeaderFlagScrim] is even applied.
@@ -679,7 +679,7 @@ private const val HEADER_FLAG_SATURATION = 0.80f
  * the scrim can be shaped — heavy exactly where text lands, light where the flag is just
  * flag. See [HeaderFlagScrim].
  */
-private const val HEADER_FLAG_ALPHA = 0.94f
+private const val HEADER_FLAG_ALPHA = 1.0f
 
 /**
  * How far the flag's box stops **short of** the hero's last row.
