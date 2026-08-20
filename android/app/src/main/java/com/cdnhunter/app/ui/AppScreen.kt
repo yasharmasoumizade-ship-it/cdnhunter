@@ -2062,6 +2062,12 @@ private fun Modifier.sheetSurface(
     fill: Brush = SheetCardFill,
     elevation: Dp = 10.dp,
 ): Modifier = this
+    // The drop shadow the section comment promises: cast *before* the clip (a shadow drawn
+    // after a clip is clipped away to nothing, which is why the elevation used to do nothing
+    // at all), with clip = false so the shadow itself is not cropped to the shape. Pure-black
+    // ambient and spot — see [SheetShadow] — so an elevated surface on this near-black page
+    // reads as lifted rather than sitting in grey fog. This is what makes [elevation] real.
+    .shadow(elevation, shape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
     .clip(shape)
     .background(fill)
     .drawBehind {
@@ -3227,39 +3233,6 @@ private fun ProfileScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(9.dp))
             Text("21 of 30 days remaining", fontSize = 11.5.sp, color = AnanasMuted)
-        }
-
-        SectionLabel("ACTIVITY")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf("6" to "Configs", "142 GB" to "Used total", "98" to "Sessions").forEach { (v, l) ->
-                Column(
-                    Modifier.weight(1f)
-                        .sheetSurface(RoundedCornerShape(14.dp), SheetGlassTileFill, elevation = 6.dp)
-                        .padding(vertical = 14.dp, horizontal = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        v,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.3).sp,
-                        color = AnanasTextHi,
-                        maxLines = 1,
-                        // Tabular figures so three tiles of different numbers keep the
-                        // same optical rhythm across the row.
-                        style = TextStyle(fontFeatureSettings = "tnum"),
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        l,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 0.2.sp,
-                        color = AnanasMuted,
-                        maxLines = 1,
-                    )
-                }
-            }
         }
 
         SectionLabel("ACCOUNT")
