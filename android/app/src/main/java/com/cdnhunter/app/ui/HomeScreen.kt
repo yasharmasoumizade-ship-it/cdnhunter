@@ -2145,7 +2145,7 @@ private fun MetaRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    label,
+                    value.value,
                     fontSize = if (value.ready) 13.5.sp else 12.5.sp,
                     fontWeight = if (value.ready) FontWeight.Bold else FontWeight.SemiBold,
                     // The placeholders are a step down from the number, never below the label:
