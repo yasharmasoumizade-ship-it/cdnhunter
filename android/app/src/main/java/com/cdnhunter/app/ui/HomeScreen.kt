@@ -742,11 +742,11 @@ private const val FLAG_SETTLE_MS = 620
  * a fraction of however tall the flag happens to be.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.38f),
-    0.25f to Color.Black.copy(alpha = 0.28f),
-    0.50f to Color.Black.copy(alpha = 0.22f),
-    0.75f to Color.Black.copy(alpha = 0.30f),
-    1.00f to Color.Black.copy(alpha = 0.55f),
+    0.00f to Color.Black.copy(alpha = 0.18f),
+    0.20f to Color.Black.copy(alpha = 0.08f),
+    0.50f to Color.Black.copy(alpha = 0.04f),
+    0.80f to Color.Black.copy(alpha = 0.08f),
+    1.00f to Color.Black.copy(alpha = 0.20f),
 )
 
 /**
@@ -2575,13 +2575,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             radius = radius,
             style = Stroke(width = stroke),
         )
-        if (live > 0.01f) {
-            drawCircle(
-                color = RefLive.copy(alpha = live),
-                radius = radius,
-                style = Stroke(width = stroke),
-            )
-        }
+
         if (working > 0.01f) {
             rotate(
                 degrees = if (reduce) 0f else spin.value,
