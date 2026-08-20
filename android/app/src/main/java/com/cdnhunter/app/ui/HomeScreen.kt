@@ -2371,11 +2371,7 @@ private fun PowerCircle(
     // of it can leave the button transparent mid-crossfade. There is deliberately no
     // second one for CONNECTED — see the section comment: the connected state is
     // reported by the ring, and the face stays white.
-    val workingFace by animateFloatAsState(
-        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerWorkingFace",
-    )
+
     // The mark: dark on the idle disc, accent while working, teal once up — on the same
     // crossfade as the rest of the header's ink. Connected is [RefLiveInk] rather than
     // [RefLive]: the face is white now, and the ring's own teal is tuned to glow on
@@ -2401,31 +2397,7 @@ private fun PowerCircle(
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
         // The ignition halo, behind everything and outside the box: [Modifier.requiredSize]
         // is what lets it be bigger than its parent instead of clipped to it.
-        if (ignition.value > 0f && ignition.value < 1f) {
-            Canvas(Modifier.requiredSize(PowerSize + PowerIgnitionReach * 2)) {
-                val t = ignition.value
-                val band = (PowerDiscSize.toPx() / 2f) +
-                    PowerRingGap.toPx() +
-                    (PowerRingStroke.toPx() / 2f)
-                val reach = PowerIgnitionReach.toPx()
-                // Squared, so the ring is already faint by the time it is halfway out: the
-                // eye catches the departure, not the arrival, and a linear fade reads as a
-                // ripple loitering.
-                val fade = (1f - t) * (1f - t)
-                // The soft body of it first, travelling slower than the edge.
-                drawCircle(
-                    color = RefLive.copy(alpha = 0.14f * fade),
-                    radius = band + reach * t * 0.62f,
-                    style = Stroke(width = PowerRingStroke.toPx() * (1f + 5f * t)),
-                )
-                // Then the edge itself, thinning as it goes.
-                drawCircle(
-                    color = RefLive.copy(alpha = 0.55f * fade),
-                    radius = band + reach * t,
-                    style = Stroke(width = PowerRingStroke.toPx() * (1f - 0.45f * t)),
-                )
-            }
-        }
+
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
@@ -2496,9 +2468,7 @@ private fun PowerCircle(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            if (workingFace > 0.01f) {
-                Box(Modifier.matchParentSize().alpha(workingFace).background(PowerWorkingFace))
-            }
+
             // The specular: a soft off-centre highlight, built from the disc's measured size
             // rather than as a fixed brush, which is why it is [Modifier.drawWithCache] and
             // not a top-level val — a radial gradient needs a centre and a radius in pixels,
@@ -2606,38 +2576,21 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             style = Stroke(width = stroke),
         )
         if (live > 0.01f) {
-            // Lit, and static: a soft wide bloom under the ring, then the ring itself. Two
-            // strokes on the same circle rather than one, because a single wide stroke at
-            // this alpha is a fat soft ring, and what this wants to look like is a thin
-            // bright one with light coming off it.
             drawCircle(
-                color = RefLive.copy(alpha = 0.16f * live),
-                radius = radius,
-                style = Stroke(width = stroke * 3.2f),
-            )
-            drawCircle(
-                color = RefLive.copy(alpha = 0.92f * live),
+                color = RefLive.copy(alpha = live),
                 radius = radius,
                 style = Stroke(width = stroke),
             )
         }
         if (working > 0.01f) {
-            // The comet. Rotating the whole drawing rather than the start angle is what
-            // carries the sweep gradient round with the stroke — a brush is fixed in the
-            // layer's own coordinates, so an arc that moved while its gradient stood still
-            // would be a stroke fading in and out on the spot.
             rotate(
-                degrees = if (reduce) {
-                    POWER_ARC_HEAD_OFFSET
-                } else {
-                    spin.value + POWER_ARC_HEAD_OFFSET
-                },
+                degrees = if (reduce) 0f else spin.value,
                 pivot = center,
             ) {
                 drawArc(
-                    brush = powerComet(working, center),
-                    startAngle = 0f,
-                    sweepAngle = POWER_ARC_SWEEP_DEG,
+                    color = RefLive.copy(alpha = working * 0.90f),
+                    startAngle = -90f,
+                    sweepAngle = 90f,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
