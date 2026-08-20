@@ -2062,7 +2062,6 @@ private fun Modifier.sheetSurface(
     fill: Brush = SheetCardFill,
     elevation: Dp = 10.dp,
 ): Modifier = this
-    .shadow(elevation, shape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
     .clip(shape)
     .background(fill)
     .drawBehind {
@@ -2458,29 +2457,22 @@ private fun SegmentedControl(
     Row(
         modifier
             .clip(trackShape)
-            .background(SheetWellFill)
-            .drawBehind {
-                val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
-                drawRect(brush = SheetWellShade, size = Size(size.width, band))
-            }
+            .background(Color(0xFF111318))
+            .border(1.dp, Color(0xFF1E2028), trackShape)
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         options.forEach { (key, label) ->
             val on = key == selected
             val interaction = remember { MutableInteractionSource() }
-            val pressed by interaction.collectIsPressedAsState()
             val ink by animateColorAsState(
-                targetValue = if (on) AnanasAccentLight else AnanasMuted,
+                targetValue = if (on) AnanasAccent else AnanasMuted,
                 animationSpec = tween(160), label = "segInk",
             )
             Box(
                 (if (equalWeight) Modifier.weight(1f) else Modifier)
-                    .then(
-                        if (on) Modifier.sheetRaised(segShape, pressed, elevation = 5.dp)
-                        else Modifier.clip(segShape)
-                    )
-                    .then(if (on) Modifier.background(SheetSegmentTint) else Modifier)
+                    .clip(segShape)
+                    .background(if (on) AnanasAccent.copy(alpha = 0.12f) else Color.Transparent)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
@@ -2491,7 +2483,7 @@ private fun SegmentedControl(
                 Text(
                     label,
                     fontSize = 12.sp,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     color = ink,
                 )
             }
