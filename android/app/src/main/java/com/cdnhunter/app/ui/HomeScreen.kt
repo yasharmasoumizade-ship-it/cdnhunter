@@ -696,7 +696,7 @@ private const val HEADER_FLAG_ALPHA = 0.94f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 20.dp
+private val FlagFootRise = 0.dp
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -742,12 +742,11 @@ private const val FLAG_SETTLE_MS = 620
  * a fraction of however tall the flag happens to be.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.10f),
-    0.10f to Color.Black.copy(alpha = 0.20f),
-    0.30f to Color.Black.copy(alpha = 0.16f),
-    0.58f to Color.Black.copy(alpha = 0.18f),
-    0.80f to Color.Black.copy(alpha = 0.12f),
-    1.00f to Color.Black.copy(alpha = 0.18f),
+    0.00f to Color.Black.copy(alpha = 0.38f),
+    0.25f to Color.Black.copy(alpha = 0.28f),
+    0.50f to Color.Black.copy(alpha = 0.22f),
+    0.75f to Color.Black.copy(alpha = 0.30f),
+    1.00f to Color.Black.copy(alpha = 0.55f),
 )
 
 /**
@@ -2066,10 +2065,8 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 value,
                 fontSize = HeadlineSize,
                 lineHeight = 38.sp,
-                fontWeight = FontWeight.ExtraBold,
-                // Tight tracking on a large heavy face: at 34sp the default spacing reads
-                // loose, and pulling it in is what makes the word a single mark.
-                letterSpacing = (-0.8).sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -2080,18 +2077,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 style = TextStyle(brush = ink, shadow = HeroInkShadow),
             )
         }
-        if (city.isNotBlank() && city != headline) {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                city,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = RefTextMid,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+
     }
 }
 
