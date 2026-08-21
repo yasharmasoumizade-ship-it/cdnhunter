@@ -137,17 +137,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -166,6 +161,7 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -1633,21 +1629,20 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             CountryHeadline(state)
         }
-        // The open flag under the top row, and the public-IP chip riding its lower-left — sat on
-        // the flag itself now, opposite the country plate at top-right and clear of the centred
-        // connect disc that docks below (the disc's crown never reaches this high on the left).
-        // The chip is its own dark glass so it holds contrast over any flag band; a fixed width so
-        // the value can roll without the card breathing.
+        // The open flag under the top row, with the public-IP readout riding its top-right — sat
+        // just under the country plate at the flag's upper-right corner, above the browse card that
+        // docks below, and clear of the centred connect disc. Its own soft dark wash holds contrast
+        // over any flag band; it hugs its content up to a ceiling that clips a long IPv6.
         Box(Modifier.fillMaxWidth().height(HeroFlagSpace)) {
             IpCard(
                 state = state,
                 onRetryIp = onRetryIp,
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(bottom = 4.dp)
-                    // Hugs its content (the reels are tabular, so a roll never reflows it) up to a
-                    // ceiling that still clips a long IPv6 — a tighter, more minimal chip than a
-                    // fixed-width box padded out with empty scrim.
+                    .align(Alignment.TopEnd)
+                    // A small right inset so the readout sits in from the bezel rather than bleeding
+                    // off it the way the country plate deliberately does, and a hair of top gap to
+                    // clear the plate above it.
+                    .padding(top = 8.dp, end = ScreenPad)
                     .widthIn(max = HeroInfoMaxWidth),
             )
         }
@@ -1941,61 +1936,51 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
 //
 // Three states, not two — but none of them is a word for "loading": the address, a neutral "—"
 // placeholder while a lookup is still in flight (no status text — the value simply is not known
-// yet), or "Unavailable" with the box tappable to ask again. See [HomeUiState.ipLookupPending] for
-// the flag and [GeoService.lookupCurrentIp] for what can fail. When the address itself changes
-// (this device → the exit node on connect) the digits roll over like a mechanical counter — see
-// [RollingIp] — rather than swapping in place.
+// yet), or "Unavailable" with the readout tappable to ask again. See [HomeUiState.ipLookupPending]
+// for the flag and [GeoService.lookupCurrentIp] for what can fail. The address is drawn as a single
+// bold sans line; only a value validated by [isIpLiteral] is ever shown, so a partial or malformed
+// lookup can never render.
 
-/** What the public-IP card is showing right now — see [IpCard]. */
+/** What the public-IP readout is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
     // Ready only for a *well-formed* address. A non-blank-but-malformed value (a half-resolved
-    // string, a stale garbage pref) used to sail through as "ready" and get fed to [RollingIp]
-    // character by character — which is what rendered the ". .0 ." the bug report showed: dot
-    // cells standing while empty digit reels rolled behind them. Now anything that is not a real
-    // IPv4/IPv6 literal is treated as not-ready, so the card shows the dash or the retry instead of
-    // a broken digit string, and a background lookup replaces it with a valid one.
+    // string, a stale garbage pref) used to sail through as "ready" and render as the ". .0 ."
+    // the bug report showed. Now anything that is not a real IPv4/IPv6 literal is treated as
+    // not-ready, so the readout shows the dash or the retry instead of a broken string, and a
+    // background lookup replaces it with a valid one.
     val ready: Boolean get() = value.isNotBlank() && isIpLiteral(value)
 }
 
-/** Which of [IpCard]'s three surfaces is showing. Keyed for the crossfade so that a *value* change
- *  within [READY] rolls the digits ([RollingIp]) instead of retriggering the whole-card fade. */
+/** Which of [IpCard]'s three states is showing. Keyed for the crossfade so that a *value* change
+ *  within [READY] swaps in place instead of retriggering the whole-readout fade. */
 private enum class IpKind { READY, CHECKING, UNAVAILABLE }
-
-/** How long a digit wheel takes to roll to its new value. Long enough that the intervening digits
- *  read as a counter turning, short enough to still feel mechanical; collapses to an instant swap
- *  under reduced motion via [motionSpec]. */
-private const val IP_ROLL_MS = 520
 
 /** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
  *  smaller dim step for the two placeholders. */
-private val IpValueSize = 14.sp
+private val IpValueSize = 15.sp
 private val IpPlaceholderSize = 12.sp
 
-/** The IP chip's shape: a low, fully-rounded pill. Rounder and shorter than the old card so it
- *  reads as a quiet tag laid on the flag rather than a box parked over it. */
+/** The readout's shape: a low, fully-rounded pill so the wash has no square corners to catch the
+ *  eye — soft on every side, no framed-card look. */
 private val IpCardShape = RoundedCornerShape(50)
 
-/** The chip's backing: a frosted-glass wash rather than a flat scrim. A gentle top-lit gradient
- *  (lighter at the crown, a touch denser at the foot) lets more of the flag through than the old
- *  solid 0.34 fill did, while still floating the address clear of any band; the text's own
- *  [HeroInkShadow] carries the contrast, so the wash does not have to be opaque. */
+/** The readout's backing: a soft semi-transparent black wash, no border and no rim. Denser at the
+ *  foot than the crown so the address stays legible while the flag reads faintly through the whole
+ *  thing; the text's own [HeroInkShadow] carries the contrast, so the wash never has to be opaque
+ *  or hard-edged. */
 private val IpCardFill = Brush.verticalGradient(
-    0f to Color.Black.copy(alpha = 0.22f),
-    1f to Color.Black.copy(alpha = 0.40f),
+    0f to Color.Black.copy(alpha = 0.26f),
+    1f to Color.Black.copy(alpha = 0.44f),
 )
 
-/** A single hairline of light around the pill — the frosted-glass edge that reads as a rim without
- *  the weight of a bordered card. */
-private val IpCardEdge = Color.White.copy(alpha = 0.14f)
-
 /** A small blue status dot before the value, echoing the connect bolt's active colour — the one
- *  spot of accent on the chip, and the thing that makes it read as a live readout rather than a
+ *  spot of accent on the readout, and the thing that makes it read as a live value rather than a
  *  label. */
 private val IpDotColor = RefGlowOn
 
-/** The widest the IP pill is allowed to grow. IPv4 fits well inside it; a long IPv6 value
+/** The widest the IP readout is allowed to grow. IPv4 fits well inside it; a long IPv6 value
  *  ellipsises on screen, and a tap still copies the whole address to the clipboard. */
-private val HeroInfoMaxWidth = 196.dp
+private val HeroInfoMaxWidth = 210.dp
 
 @Composable
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
@@ -2020,20 +2005,20 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     val tapLabel = if (slot.ready) "Copy IP address" else "Retry IP lookup"
     // Crossfade only between the three *kinds* of state — not on every value change. The kind
     // (ready / checking / unavailable) is the key, so when the address changes while staying
-    // ready the outer fade does nothing and [RollingIp] rolls the digits instead.
+    // ready the value simply swaps in place without the whole readout re-fading.
     val kind = when {
         slot.ready -> IpKind.READY
         slot.checking -> IpKind.CHECKING
         else -> IpKind.UNAVAILABLE
     }
-    // One low glass pill, laid along the flag's foot: a live status dot, the label held small and
-    // wide, then the value — all on a single line so it sits flat rather than stacking into a card
-    // that blocks the flag. The frosted wash and hairline edge give it a rim without weight.
+    // One soft-washed readout, laid at the flag's top-right under the country plate: a live status
+    // dot, the label held small and wide, then the value — all on a single line so it sits flat
+    // rather than stacking into a card. A borderless semi-transparent black wash, no rim, so the
+    // flag reads faintly through it and there is no hard edge anywhere.
     Row(
         modifier
             .clip(IpCardShape)
             .background(IpCardFill)
-            .border(1.dp, IpCardEdge, IpCardShape)
             .then(
                 if (onTap != null) {
                     Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
@@ -2074,9 +2059,23 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
         ) { k ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when (k) {
-                    // The real address: rolling digits, read from the live slot (not the captured
-                    // target) so a value change inside the ready state rolls in place.
-                    IpKind.READY -> RollingIp(value = slot.value, reduce = reduce)
+                    // The real address: a single bold, modern sans line, read from the live slot
+                    // (already validated by [IpSlot.ready]/[isIpLiteral], so a partial or malformed
+                    // value can never reach here). Tabular figures keep the columns even; the whole
+                    // string is drawn as one glyph run, so there are no per-digit cells that could
+                    // measure to zero width and blank out.
+                    IpKind.READY -> Text(
+                        slot.value,
+                        fontSize = IpValueSize,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.SansSerif,
+                        letterSpacing = 0.4.sp,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                    )
                     // In flight: a neutral dash, no status word. The value simply is not known yet.
                     IpKind.CHECKING -> Text(
                         "—",
@@ -2106,111 +2105,6 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                             modifier = Modifier.size(14.dp),
                         )
                     }
-                }
-            }
-        }
-    }
-}
-
-/** The height of one odometer cell — the visible window each digit rolls through. A touch taller
- *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
-private val IpDigitCell = 22.dp
-
-/**
- * The IP value as a true mechanical odometer: one wheel per character. When the address changes,
- * each digit that differs *rolls* to its new value, sliding vertically through the intermediate
- * digits — 3→7 climbs 3,4,5,6,7; 8→2 drops 8,7,…,2 — exactly like a counter wheel, rather than a
- * fade or a one-step swap. Different columns naturally roll different distances and directions, so
- * a fresh address tumbles like a slot machine.
- *
- * Each wheel is a full 0–9 strip offset behind a single-cell [clipToBounds] window, its position
- * animated by [animateFloatAsState] through [graphicsLayer]'s translation — so what moves is the
- * strip, and only the target digit is ever framed. Non-digit characters (the dots, or an IPv6
- * colon) are fixed cells: they never roll. Cells are keyed by position, so a same-length change
- * (the common case: this device's IP → the exit node's on connect) rolls per digit; a length
- * change adds or drops trailing cells without disturbing the rest. Tabular figures ("tnum") keep
- * every column the same width so the row does not jitter mid-roll. Long IPv6 values are clipped by
- * the card's own width; the tap still copies the whole address.
- */
-@Composable
-private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
-    Row(
-        modifier.clipToBounds(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        value.forEachIndexed { index, ch ->
-            key(index) {
-                if (ch in '0'..'9') {
-                    DigitReel(digit = ch - '0', reduce = reduce, index = index)
-                } else {
-                    // Dots and colons do not roll — a fixed cell keeps the row's rhythm and gives
-                    // the wheels either side of it something to align to.
-                    Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
-                        Text(
-                            ch.toString(),
-                            fontSize = IpValueSize,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            softWrap = false,
-                            style = TextStyle(shadow = HeroInkShadow),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** How many digit cells the reel strip holds: two full 0–9 runs (20 cells). The extra run is the
- *  headroom the *first* spin needs — a wheel starts a full turn above its target and rolls down
- *  into place, so its position travels through [digit, digit+10], which a single 0–9 strip could
- *  not cover without going blank. */
-private const val IpReelCells = 20
-
-/** One odometer wheel. Unlike a plain [animateFloatAsState] (which does not animate on its first
- *  composition, so a value that only ever resolves *once* would snap in without rolling), this
- *  drives an [Animatable] from a start a full turn above the target, so the very first appearance
- *  spins down into place — and any later change rolls through the intervening digits. See
- *  [RollingIp]. */
-@Composable
-private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
-    // Start one full turn (10) above the target so the first render rolls down through a complete
-    // spin; under reduced motion it simply parks on the digit. Captured once — later changes are
-    // driven by the effect below, animating from wherever the wheel currently sits.
-    val pos = remember {
-        Animatable(if (reduce) digit.toFloat() else digit.toFloat() + 10f)
-    }
-    LaunchedEffect(digit, reduce) {
-        if (reduce) {
-            pos.snapTo(digit.toFloat())
-        } else {
-            // A short per-wheel stagger so the wheels cascade rather than snapping in lockstep,
-            // which is what makes the roll read as a mechanical counter rather than a repaint.
-            delay((index % 6) * 26L)
-            pos.animateTo(digit.toFloat(), tween(IP_ROLL_MS))
-        }
-    }
-    Box(
-        Modifier
-            .height(IpDigitCell)
-            .clipToBounds(),
-    ) {
-        Column(
-            Modifier.graphicsLayer { translationY = -pos.value * IpDigitCell.toPx() },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            for (i in 0 until IpReelCells) {
-                Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
-                    Text(
-                        (i % 10).toString(),
-                        fontSize = IpValueSize,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        softWrap = false,
-                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
-                    )
                 }
             }
         }
@@ -2386,34 +2280,21 @@ private fun PowerCircle(
     // second one for CONNECTED — see the section comment: the connected state is
     // reported by the ring, and the face stays white.
 
-    // The mark: the imported lightning bolt (see [PowerBolt] / ic_connect_bolt). Two colours, not
-    // one crossfade: a neutral [PowerInk] track that is always the empty silhouette, and a
-    // [RefGlowOn] blue that rises through it from the bottom up as the fill fraction climbs. OFF the
-    // fill sits at zero, so the bolt reads as the dark idle mark; CONNECTED it is full, so the bolt
-    // is solid blue; CONNECTING it charges — the fill sweeps 0→1 on a loop, the clip/mask reveal the
-    // brief asked for, with no glow. Disabled dims both inks the same way the old single colour did.
-    val boltTrack = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
-    val boltGlow = if (enabled) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
-    val boltFill = remember { Animatable(0f) }
-    LaunchedEffect(phase, reduce) {
-        when (phase) {
-            ConnPhase.OFF -> boltFill.animateTo(0f, motionSpec<Float>(reduce, PHASE_FADE_MS))
-            ConnPhase.CONNECTED -> boltFill.animateTo(1f, motionSpec<Float>(reduce, PHASE_FADE_MS))
-            ConnPhase.CONNECTING -> {
-                if (reduce) {
-                    boltFill.snapTo(0.5f)
-                } else {
-                    // Charging: the fill climbs the silhouette, drops back, and climbs again for as
-                    // long as the attempt is in flight. Not synced to a known duration — a connect
-                    // takes as long as it takes — so it loops rather than easing to a fixed end.
-                    while (true) {
-                        boltFill.snapTo(0f)
-                        boltFill.animateTo(1f, tween(BOLT_FILL_MS, easing = FastOutSlowInEasing))
-                    }
-                }
-            }
-        }
-    }
+    // The mark: a lightning bolt, dark on the idle disc and while working, and turning blue once
+    // the tunnel is up — on the same crossfade as the rest of the header's ink. Connecting keeps
+    // [PowerInk]: the working state is monochrome (see [PowerRing]), so the bolt stays the neutral
+    // idle ink and only the turning comet reports that an attempt is in flight. Connected is
+    // [RefGlowOn] blue — the "active" colour, read straight on the white face.
+    val mark by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> PowerInk
+            ConnPhase.CONNECTING -> PowerInk
+            ConnPhase.CONNECTED -> RefGlowOn
+        },
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerMark",
+    )
+    val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -2525,96 +2406,53 @@ private fun PowerCircle(
             // The rim, last of the surfaces and over all of them, so it stays a crisp edge
             // instead of being washed out by the sheen's own dark foot.
             Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
-            // The mark: the imported lightning bolt (ic_connect_bolt), rendered as a filled
-            // silhouette with a blue fill that rises through it by connection phase — dark idle,
-            // charging while connecting, solid blue once the tunnel is up.
+            // The mark: a lightning bolt, hand-drawn rather than a Material glyph so it can carry
+            // the same struck-metal light as the rest of the disc — a top-lit fill and a hair of a
+            // bright rim on its upper facets — instead of reading as a flat icon parked on the
+            // white face. [PowerInk] dark idle/working, [RefGlowOn] blue once the tunnel is up.
             PowerBolt(
-                trackColor = boltTrack,
-                fillColor = boltGlow,
-                fill = boltFill.value,
+                color = ink,
                 modifier = Modifier.size(64.dp),
             )
         }
     }
 }
 
-/** How long the connecting fill takes to sweep the bolt from empty to full before it loops.
- *  A hair slower than a heartbeat so it reads as charging, not flickering. */
-private const val BOLT_FILL_MS = 1100
-
-/**
- * The connect bolt's geometry, shared by [PowerBolt] and matching the ic_connect_bolt vector
- * drawable exactly. Parsed once from the same path data the drawable carries, then put through the
- * drawable's own group transform (scale 0.1, Y-flipped, translated down by 460) so it lands in a
- * 0..460 box — the SVG's original coordinate space — instead of the raw ~4600-unit one.
- */
-private val CONNECT_BOLT_PATH_DATA =
-    "M3257 3338 c-77 -50 -95 -61 -282 -171 -86 -51 -145 -92 -152 -107 -8 -15 -13 -67 -13 -133 " +
-        "0 -111 12 -158 45 -170 11 -5 372 -10 533 -7 14 0 29 12 42 33 18 30 20 50 20 280 0 302 -5 " +
-        "317 -94 317 -22 0 -56 -15 -99 -42z " +
-        "M2400 2848 c-19 -11 -51 -31 -70 -43 -19 -12 -112 -68 -206 -124 -95 -56 -180 -111 -190 " +
-        "-123 -18 -19 -19 -46 -22 -422 -1 -220 -5 -411 -7 -424 -11 -46 -119 -67 -189 -38 -51 21 " +
-        "-56 48 -56 321 0 226 -1 244 -20 267 -37 48 -92 40 -205 -30 -16 -11 -77 -48 -135 -82 -225 " +
-        "-136 -251 -153 -265 -173 -13 -18 -15 -78 -15 -357 0 -311 1 -337 19 -366 13 -21 30 -33 51 " +
-        "-38 18 -3 140 -6 271 -6 237 0 238 0 266 24 27 23 28 29 33 134 5 99 8 113 29 136 22 23 32 " +
-        "26 96 26 58 0 78 -4 99 -21 24 -19 26 -25 26 -107 0 -191 1 -192 330 -192 275 0 292 4 310 " +
-        "68 8 25 10 269 8 790 l-3 754 -30 24 c-37 30 -79 30 -125 2z " +
-        "M2839 2591 l-29 -30 2 -650 3 -650 23 -23 c22 -23 25 -23 293 -23 l271 0 24 28 24 28 0 639 " +
-        "c0 447 -3 646 -11 663 -20 43 -45 47 -315 47 l-256 0 -29 -29z"
-
-private val ConnectBoltPath: Path by lazy {
-    val p = PathParser().parsePathString(CONNECT_BOLT_PATH_DATA).toPath()
-    // Reproduces ic_connect_bolt's <group> transform: scale first, then translate (matrix T·S), so
-    // the child point ends at translate(0,460) ∘ scale(0.1,-0.1) — the SVG's meet-fit 460 box.
-    val m = Matrix()
-    m.translate(0f, 460f)
-    m.scale(0.1f, -0.1f)
-    p.transform(m)
-    p
-}
-
-private val ConnectBoltBounds by lazy { ConnectBoltPath.getBounds() }
-
-/**
- * The disc's mark: the imported lightning bolt, drawn as a filled silhouette in [trackColor] with
- * a [fillColor] layer clipped to that silhouette and rising through it from the bottom up as [fill]
- * goes 0f→1f. The clip is the mask the brief asked for — the colour only ever shows inside the bolt
- * — and there is no glow. The path is the same geometry as res/drawable/ic_connect_bolt.xml.
- */
+/** The disc's mark: a lightning bolt drawn as a filled [Path] with a top-lit vertical gradient and
+ *  a faint upper-facet rim, so it reads as a struck, dimensional mark rather than a flat glyph.
+ *  [color] is the phase ink from [PowerCircle] — dark at rest, blue when connected. */
 @Composable
-private fun PowerBolt(
-    trackColor: Color,
-    fillColor: Color,
-    fill: Float,
-    modifier: Modifier = Modifier,
-) {
+private fun PowerBolt(color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        // Fit the bolt's *own* bounds (not the empty 460 box it was authored in — the artwork
-        // only fills the middle of that) into the canvas with a small margin, centred, uniform
-        // scale. Without this the mark rendered at roughly half size, lost on the disc.
-        val b = ConnectBoltBounds
-        val avail = size.minDimension * 0.92f
-        val s = avail / maxOf(b.width, b.height)
-        val dx = (size.width - b.width * s) / 2f - b.left * s
-        val dy = (size.height - b.height * s) / 2f - b.top * s
-        translate(dx, dy) {
-            scale(s, s, pivot = Offset.Zero) {
-                // The empty bolt: the neutral silhouette the fill rises through.
-                drawPath(ConnectBoltPath, color = trackColor)
-                // The rising fill, clipped to the silhouette. Measured against the bolt's own
-                // bounds so 0f is exactly its foot and 1f exactly its tip.
-                if (fill > 0.001f) {
-                    val filled = (b.height * fill).coerceIn(0f, b.height)
-                    clipPath(ConnectBoltPath) {
-                        drawRect(
-                            color = fillColor,
-                            topLeft = Offset(b.left, b.bottom - filled),
-                            size = Size(b.width, filled),
-                        )
-                    }
-                }
-            }
+        val w = size.width
+        val h = size.height
+        // A clean bolt in a 24×24 box, scaled to the canvas: top notch, left shoulder, a waist,
+        // the bottom point, the right shoulder and the inner return — an asymmetric zig that reads
+        // instantly as a bolt at a glance.
+        fun px(x: Float, y: Float) = Offset(w * x / 24f, h * y / 24f)
+        val bolt = Path().apply {
+            val p0 = px(13.5f, 2f)
+            moveTo(p0.x, p0.y)
+            px(4.5f, 13.5f).let { lineTo(it.x, it.y) }
+            px(11f, 13.5f).let { lineTo(it.x, it.y) }
+            px(9.5f, 22f).let { lineTo(it.x, it.y) }
+            px(19.5f, 9.5f).let { lineTo(it.x, it.y) }
+            px(12.5f, 9.5f).let { lineTo(it.x, it.y) }
+            close()
         }
+        drawPath(
+            bolt,
+            brush = Brush.verticalGradient(
+                0f to lerp(color, Color.White, 0.26f),
+                0.55f to color,
+                1f to lerp(color, Color.Black, 0.10f),
+            ),
+        )
+        drawPath(
+            bolt,
+            color = Color.White.copy(alpha = 0.16f),
+            style = Stroke(width = w * 0.014f),
+        )
     }
 }
 
