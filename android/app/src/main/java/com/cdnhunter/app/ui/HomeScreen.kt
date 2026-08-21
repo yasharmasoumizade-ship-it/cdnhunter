@@ -137,12 +137,17 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -1943,7 +1948,13 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
 
 /** What the public-IP card is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
-    val ready: Boolean get() = value.isNotBlank()
+    // Ready only for a *well-formed* address. A non-blank-but-malformed value (a half-resolved
+    // string, a stale garbage pref) used to sail through as "ready" and get fed to [RollingIp]
+    // character by character — which is what rendered the ". .0 ." the bug report showed: dot
+    // cells standing while empty digit reels rolled behind them. Now anything that is not a real
+    // IPv4/IPv6 literal is treated as not-ready, so the card shows the dash or the retry instead of
+    // a broken digit string, and a background lookup replaces it with a valid one.
+    val ready: Boolean get() = value.isNotBlank() && isIpLiteral(value)
 }
 
 /** Which of [IpCard]'s three surfaces is showing. Keyed for the crossfade so that a *value* change
@@ -1957,20 +1968,34 @@ private const val IP_ROLL_MS = 520
 
 /** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
  *  smaller dim step for the two placeholders. */
-private val IpValueSize = 15.sp
-private val IpPlaceholderSize = 13.sp
+private val IpValueSize = 14.sp
+private val IpPlaceholderSize = 12.sp
 
-/** The IP chip's shape: a clean, evenly rounded pill. The address is a quiet supporting fact on
- *  the flag now, so the chip is a simple soft container rather than a bordered glass box. */
-private val IpCardShape = RoundedCornerShape(11.dp)
+/** The IP chip's shape: a low, fully-rounded pill. Rounder and shorter than the old card so it
+ *  reads as a quiet tag laid on the flag rather than a box parked over it. */
+private val IpCardShape = RoundedCornerShape(50)
 
-/** The chip's backing: a single soft dark scrim — just enough to float the address clear of any
- *  flag band, with no hairline rim, so it reads as a minimal wash rather than a raised card. */
-private val IpCardFill = SolidColor(Color.Black.copy(alpha = 0.34f))
+/** The chip's backing: a frosted-glass wash rather than a flat scrim. A gentle top-lit gradient
+ *  (lighter at the crown, a touch denser at the foot) lets more of the flag through than the old
+ *  solid 0.34 fill did, while still floating the address clear of any band; the text's own
+ *  [HeroInkShadow] carries the contrast, so the wash does not have to be opaque. */
+private val IpCardFill = Brush.verticalGradient(
+    0f to Color.Black.copy(alpha = 0.22f),
+    1f to Color.Black.copy(alpha = 0.40f),
+)
 
-/** The widest the IP card is allowed to grow. IPv4 fits well inside it; a long IPv6 value
+/** A single hairline of light around the pill — the frosted-glass edge that reads as a rim without
+ *  the weight of a bordered card. */
+private val IpCardEdge = Color.White.copy(alpha = 0.14f)
+
+/** A small blue status dot before the value, echoing the connect bolt's active colour — the one
+ *  spot of accent on the chip, and the thing that makes it read as a live readout rather than a
+ *  label. */
+private val IpDotColor = RefGlowOn
+
+/** The widest the IP pill is allowed to grow. IPv4 fits well inside it; a long IPv6 value
  *  ellipsises on screen, and a tap still copies the whole address to the clipboard. */
-private val HeroInfoMaxWidth = 210.dp
+private val HeroInfoMaxWidth = 196.dp
 
 @Composable
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
@@ -1993,10 +2018,22 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
         else -> null
     }
     val tapLabel = if (slot.ready) "Copy IP address" else "Retry IP lookup"
-    Column(
+    // Crossfade only between the three *kinds* of state — not on every value change. The kind
+    // (ready / checking / unavailable) is the key, so when the address changes while staying
+    // ready the outer fade does nothing and [RollingIp] rolls the digits instead.
+    val kind = when {
+        slot.ready -> IpKind.READY
+        slot.checking -> IpKind.CHECKING
+        else -> IpKind.UNAVAILABLE
+    }
+    // One low glass pill, laid along the flag's foot: a live status dot, the label held small and
+    // wide, then the value — all on a single line so it sits flat rather than stacking into a card
+    // that blocks the flag. The frosted wash and hairline edge give it a rim without weight.
+    Row(
         modifier
             .clip(IpCardShape)
             .background(IpCardFill)
+            .border(1.dp, IpCardEdge, IpCardShape)
             .then(
                 if (onTap != null) {
                     Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
@@ -2004,26 +2041,28 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                     Modifier
                 },
             )
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(start = 10.dp, end = 13.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The accent: blue and solid when a real address is up, a dim neutral otherwise, so the
+        // pill reads its own state before the value is even parsed.
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(if (slot.ready) IpDotColor else RefTextMid.copy(alpha = 0.55f)),
+        )
+        Spacer(Modifier.width(7.dp))
         Text(
             "PUBLIC IP",
-            fontSize = 8.5.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Medium,
-            letterSpacing = 2.sp,
+            letterSpacing = 1.6.sp,
             color = RefTextMid,
             maxLines = 1,
             style = TextStyle(shadow = HeroInkShadow),
         )
-        Spacer(Modifier.height(1.dp))
-        // Crossfade only between the three *kinds* of state — not on every value change. The kind
-        // (ready / checking / unavailable) is the key, so when the address changes while staying
-        // ready the outer fade does nothing and [RollingIp] rolls the digits instead.
-        val kind = when {
-            slot.ready -> IpKind.READY
-            slot.checking -> IpKind.CHECKING
-            else -> IpKind.UNAVAILABLE
-        }
+        Spacer(Modifier.width(9.dp))
         AnimatedContent(
             targetState = kind,
             transitionSpec = {
@@ -2347,21 +2386,34 @@ private fun PowerCircle(
     // second one for CONNECTED — see the section comment: the connected state is
     // reported by the ring, and the face stays white.
 
-    // The mark: a lightning bolt, dark on the idle disc and while working, and turning blue once
-    // the tunnel is up — on the same crossfade as the rest of the header's ink. Connecting keeps
-    // [PowerInk]: the working state is monochrome (see [PowerRing]), so the bolt stays the neutral
-    // idle ink and only the turning comet reports that an attempt is in flight. Connected is
-    // [RefGlowOn] blue — the "active" colour, read straight on the white face.
-    val mark by animateColorAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> PowerInk
-            ConnPhase.CONNECTING -> PowerInk
-            ConnPhase.CONNECTED -> RefGlowOn
-        },
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerMark",
-    )
-    val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
+    // The mark: the imported lightning bolt (see [PowerBolt] / ic_connect_bolt). Two colours, not
+    // one crossfade: a neutral [PowerInk] track that is always the empty silhouette, and a
+    // [RefGlowOn] blue that rises through it from the bottom up as the fill fraction climbs. OFF the
+    // fill sits at zero, so the bolt reads as the dark idle mark; CONNECTED it is full, so the bolt
+    // is solid blue; CONNECTING it charges — the fill sweeps 0→1 on a loop, the clip/mask reveal the
+    // brief asked for, with no glow. Disabled dims both inks the same way the old single colour did.
+    val boltTrack = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
+    val boltGlow = if (enabled) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
+    val boltFill = remember { Animatable(0f) }
+    LaunchedEffect(phase, reduce) {
+        when (phase) {
+            ConnPhase.OFF -> boltFill.animateTo(0f, motionSpec<Float>(reduce, PHASE_FADE_MS))
+            ConnPhase.CONNECTED -> boltFill.animateTo(1f, motionSpec<Float>(reduce, PHASE_FADE_MS))
+            ConnPhase.CONNECTING -> {
+                if (reduce) {
+                    boltFill.snapTo(0.5f)
+                } else {
+                    // Charging: the fill climbs the silhouette, drops back, and climbs again for as
+                    // long as the attempt is in flight. Not synced to a known duration — a connect
+                    // takes as long as it takes — so it loops rather than easing to a fixed end.
+                    while (true) {
+                        boltFill.snapTo(0f)
+                        boltFill.animateTo(1f, tween(BOLT_FILL_MS, easing = FastOutSlowInEasing))
+                    }
+                }
+            }
+        }
+    }
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -2473,53 +2525,96 @@ private fun PowerCircle(
             // The rim, last of the surfaces and over all of them, so it stays a crisp edge
             // instead of being washed out by the sheen's own dark foot.
             Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
-            // The mark: a lightning bolt, hand-drawn rather than a Material glyph so it can carry
-            // the same struck-metal light as the rest of the disc — a top-lit fill and a hair of a
-            // bright rim on its upper facets — instead of reading as a flat icon parked on the
-            // white face. [PowerInk] dark idle/working, [RefGlowOn] blue once the tunnel is up.
+            // The mark: the imported lightning bolt (ic_connect_bolt), rendered as a filled
+            // silhouette with a blue fill that rises through it by connection phase — dark idle,
+            // charging while connecting, solid blue once the tunnel is up.
             PowerBolt(
-                color = ink,
+                trackColor = boltTrack,
+                fillColor = boltGlow,
+                fill = boltFill.value,
                 modifier = Modifier.size(64.dp),
             )
         }
     }
 }
 
-/** The disc's mark: a lightning bolt drawn as a filled [Path] with a top-lit vertical gradient and
- *  a faint upper-facet rim, so it reads as a struck, dimensional mark rather than a flat glyph.
- *  [color] is the phase ink from [PowerCircle] — dark at rest, blue when connected. */
+/** How long the connecting fill takes to sweep the bolt from empty to full before it loops.
+ *  A hair slower than a heartbeat so it reads as charging, not flickering. */
+private const val BOLT_FILL_MS = 1100
+
+/**
+ * The connect bolt's geometry, shared by [PowerBolt] and matching the ic_connect_bolt vector
+ * drawable exactly. Parsed once from the same path data the drawable carries, then put through the
+ * drawable's own group transform (scale 0.1, Y-flipped, translated down by 460) so it lands in a
+ * 0..460 box — the SVG's original coordinate space — instead of the raw ~4600-unit one.
+ */
+private val CONNECT_BOLT_PATH_DATA =
+    "M3257 3338 c-77 -50 -95 -61 -282 -171 -86 -51 -145 -92 -152 -107 -8 -15 -13 -67 -13 -133 " +
+        "0 -111 12 -158 45 -170 11 -5 372 -10 533 -7 14 0 29 12 42 33 18 30 20 50 20 280 0 302 -5 " +
+        "317 -94 317 -22 0 -56 -15 -99 -42z " +
+        "M2400 2848 c-19 -11 -51 -31 -70 -43 -19 -12 -112 -68 -206 -124 -95 -56 -180 -111 -190 " +
+        "-123 -18 -19 -19 -46 -22 -422 -1 -220 -5 -411 -7 -424 -11 -46 -119 -67 -189 -38 -51 21 " +
+        "-56 48 -56 321 0 226 -1 244 -20 267 -37 48 -92 40 -205 -30 -16 -11 -77 -48 -135 -82 -225 " +
+        "-136 -251 -153 -265 -173 -13 -18 -15 -78 -15 -357 0 -311 1 -337 19 -366 13 -21 30 -33 51 " +
+        "-38 18 -3 140 -6 271 -6 237 0 238 0 266 24 27 23 28 29 33 134 5 99 8 113 29 136 22 23 32 " +
+        "26 96 26 58 0 78 -4 99 -21 24 -19 26 -25 26 -107 0 -191 1 -192 330 -192 275 0 292 4 310 " +
+        "68 8 25 10 269 8 790 l-3 754 -30 24 c-37 30 -79 30 -125 2z " +
+        "M2839 2591 l-29 -30 2 -650 3 -650 23 -23 c22 -23 25 -23 293 -23 l271 0 24 28 24 28 0 639 " +
+        "c0 447 -3 646 -11 663 -20 43 -45 47 -315 47 l-256 0 -29 -29z"
+
+private val ConnectBoltPath: Path by lazy {
+    val p = PathParser().parsePathString(CONNECT_BOLT_PATH_DATA).toPath()
+    // Reproduces ic_connect_bolt's <group> transform: scale first, then translate (matrix T·S), so
+    // the child point ends at translate(0,460) ∘ scale(0.1,-0.1) — the SVG's meet-fit 460 box.
+    val m = Matrix()
+    m.translate(0f, 460f)
+    m.scale(0.1f, -0.1f)
+    p.transform(m)
+    p
+}
+
+private val ConnectBoltBounds by lazy { ConnectBoltPath.getBounds() }
+
+/**
+ * The disc's mark: the imported lightning bolt, drawn as a filled silhouette in [trackColor] with
+ * a [fillColor] layer clipped to that silhouette and rising through it from the bottom up as [fill]
+ * goes 0f→1f. The clip is the mask the brief asked for — the colour only ever shows inside the bolt
+ * — and there is no glow. The path is the same geometry as res/drawable/ic_connect_bolt.xml.
+ */
 @Composable
-private fun PowerBolt(color: Color, modifier: Modifier = Modifier) {
+private fun PowerBolt(
+    trackColor: Color,
+    fillColor: Color,
+    fill: Float,
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        // A clean bolt in a 24×24 box, scaled to the canvas: top notch, left shoulder, a waist,
-        // the bottom point, the right shoulder and the inner return — an asymmetric zig that reads
-        // instantly as a bolt at a glance.
-        fun px(x: Float, y: Float) = Offset(w * x / 24f, h * y / 24f)
-        val bolt = Path().apply {
-            val p0 = px(13.5f, 2f)
-            moveTo(p0.x, p0.y)
-            px(4.5f, 13.5f).let { lineTo(it.x, it.y) }
-            px(11f, 13.5f).let { lineTo(it.x, it.y) }
-            px(9.5f, 22f).let { lineTo(it.x, it.y) }
-            px(19.5f, 9.5f).let { lineTo(it.x, it.y) }
-            px(12.5f, 9.5f).let { lineTo(it.x, it.y) }
-            close()
+        // Fit the bolt's *own* bounds (not the empty 460 box it was authored in — the artwork
+        // only fills the middle of that) into the canvas with a small margin, centred, uniform
+        // scale. Without this the mark rendered at roughly half size, lost on the disc.
+        val b = ConnectBoltBounds
+        val avail = size.minDimension * 0.92f
+        val s = avail / maxOf(b.width, b.height)
+        val dx = (size.width - b.width * s) / 2f - b.left * s
+        val dy = (size.height - b.height * s) / 2f - b.top * s
+        translate(dx, dy) {
+            scale(s, s, pivot = Offset.Zero) {
+                // The empty bolt: the neutral silhouette the fill rises through.
+                drawPath(ConnectBoltPath, color = trackColor)
+                // The rising fill, clipped to the silhouette. Measured against the bolt's own
+                // bounds so 0f is exactly its foot and 1f exactly its tip.
+                if (fill > 0.001f) {
+                    val filled = (b.height * fill).coerceIn(0f, b.height)
+                    clipPath(ConnectBoltPath) {
+                        drawRect(
+                            color = fillColor,
+                            topLeft = Offset(b.left, b.bottom - filled),
+                            size = Size(b.width, filled),
+                        )
+                    }
+                }
+            }
         }
-        drawPath(
-            bolt,
-            brush = Brush.verticalGradient(
-                0f to lerp(color, Color.White, 0.26f),
-                0.55f to color,
-                1f to lerp(color, Color.Black, 0.10f),
-            ),
-        )
-        drawPath(
-            bolt,
-            color = Color.White.copy(alpha = 0.16f),
-            style = Stroke(width = w * 0.014f),
-        )
     }
 }
 

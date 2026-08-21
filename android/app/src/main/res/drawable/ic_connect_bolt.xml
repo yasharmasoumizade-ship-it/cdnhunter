@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lightning-bolt connect mark. Imported from the source SVG (129010482.svg), which
+  emits its geometry in a 4600-unit space and flips Y via a group transform:
+      transform="translate(0,460) scale(0.1,-0.1)"
+  Rather than bake that into every cubic control point by hand, the same transform is
+  reproduced as a VectorDrawable <group> (scale then translate, Y negated), so the raw
+  path data is carried over verbatim and the shape stays a pixel-for-pixel match of the
+  original. Rendered white so it can be tinted per connection phase by the caller.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="460"
+    android:viewportHeight="460">
+    <group
+        android:translateX="0"
+        android:translateY="460"
+        android:scaleX="0.1"
+        android:scaleY="-0.1">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M3257 3338 c-77 -50 -95 -61 -282 -171 -86 -51 -145 -92 -152 -107 -8 -15 -13 -67 -13 -133 0 -111 12 -158 45 -170 11 -5 372 -10 533 -7 14 0 29 12 42 33 18 30 20 50 20 280 0 302 -5 317 -94 317 -22 0 -56 -15 -99 -42z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M2400 2848 c-19 -11 -51 -31 -70 -43 -19 -12 -112 -68 -206 -124 -95 -56 -180 -111 -190 -123 -18 -19 -19 -46 -22 -422 -1 -220 -5 -411 -7 -424 -11 -46 -119 -67 -189 -38 -51 21 -56 48 -56 321 0 226 -1 244 -20 267 -37 48 -92 40 -205 -30 -16 -11 -77 -48 -135 -82 -225 -136 -251 -153 -265 -173 -13 -18 -15 -78 -15 -357 0 -311 1 -337 19 -366 13 -21 30 -33 51 -38 18 -3 140 -6 271 -6 237 0 238 0 266 24 27 23 28 29 33 134 5 99 8 113 29 136 22 23 32 26 96 26 58 0 78 -4 99 -21 24 -19 26 -25 26 -107 0 -191 1 -192 330 -192 275 0 292 4 310 68 8 25 10 269 8 790 l-3 754 -30 24 c-37 30 -79 30 -125 2z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M2839 2591 l-29 -30 2 -650 3 -650 23 -23 c22 -23 25 -23 293 -23 l271 0 24 28 24 28 0 639 c0 447 -3 646 -11 663 -20 43 -45 47 -315 47 l-256 0 -29 -29z" />
+    </group>
+</vector>
