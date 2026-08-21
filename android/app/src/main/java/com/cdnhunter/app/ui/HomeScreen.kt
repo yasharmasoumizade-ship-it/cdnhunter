@@ -2015,9 +2015,15 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
 
 /**
  * The IP value as an odometer: one animated cell per character, so when the address changes the
- * digits that differ roll over — new glyph sliding up from the floor as the old one slides out the
- * top — while unchanged positions hold still. Each cell is [clipToBounds]-clipped to a single-line
- * window, so a rolling glyph is only ever visible inside its own slot, like a mechanical counter.
+ * digits that differ roll over — the new glyph sliding in as the old one slides out — while
+ * unchanged positions hold still. Each cell is [clipToBounds]-clipped to a single-line window, so a
+ * rolling glyph is only ever visible inside its own slot, like a mechanical counter.
+ *
+ * The roll direction is *mixed*, not uniform: each position rolls up or down independently, picked
+ * by [ipRollDown] from the position and the incoming glyph, so a fresh address tumbles like a slot
+ * machine — some columns climbing, others dropping — rather than every digit marching the same way.
+ * The old glyph always exits opposite to the new one's entrance, so each cell reads as one wheel
+ * turning.
  *
  * Cells are keyed by position, so a same-length change (the common case: this device's IP → the
  * exit node's on connect) rolls per digit; a length change adds or drops trailing cells without
@@ -2036,12 +2042,17 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
                 AnimatedContent(
                     targetState = ch,
                     transitionSpec = {
+                        // Down = new glyph drops in from the top, old falls out the bottom.
+                        // Up   = new glyph climbs in from the floor, old lifts out the top.
+                        val down = ipRollDown(index, targetState)
+                        val enter = if (down) -1 else 1
+                        val exit = if (down) 1 else -1
                         (
                             (
-                                slideInVertically(motionSpec(reduce, IP_ROLL_MS)) { it } +
+                                slideInVertically(motionSpec(reduce, IP_ROLL_MS)) { h -> enter * h } +
                                     fadeIn(motionSpec(reduce, IP_ROLL_MS))
                                 ) togetherWith (
-                                slideOutVertically(motionSpec(reduce, IP_ROLL_MS)) { -it } +
+                                slideOutVertically(motionSpec(reduce, IP_ROLL_MS)) { h -> exit * h } +
                                     fadeOut(motionSpec(reduce, IP_ROLL_MS))
                                 )
                             ).using(SizeTransform(clip = false))
@@ -2062,6 +2073,17 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
             }
         }
     }
+}
+
+/**
+ * Which way a single odometer cell rolls — true = downward (new glyph in from the top), false =
+ * upward. Deterministic in the position and the incoming glyph, so the direction is stable for the
+ * whole of one roll (no mid-animation flip) yet varies across columns and across successive
+ * addresses, giving the mixed up/down "slot machine" spread rather than a uniform scroll.
+ */
+private fun ipRollDown(index: Int, ch: Char): Boolean {
+    val h = (index * 0x9E3779B1.toInt()) xor (ch.code * 0x85EBCA77.toInt())
+    return ((h ushr 3) and 1) == 0
 }
 
 // ── Power circle ──────────────────────────────────────────────────────────────
@@ -2651,25 +2673,33 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's own header row: the public IP on the left, the add-server "+" and the
-        // search magnifier grouped on the right. All three used to float on the flag as overlays;
-        // they live inside the card now (see [HomeScreen]), so this row is the card's masthead.
-        // [CardTopRoom] is the dock well above it — the connect disc's lower half rests over that
-        // clear glass, and this row sits below the disc's foot.
+        // The card's masthead, stacked so the address reads first and the controls hang just under
+        // it, both held to the top of the card. Row one: the public-IP chip at the very top, on the
+        // left, a fixed size so it never grows or shrinks as the value rolls or an IPv6 lands. Row
+        // two, tight beneath it: the add-server "+" and the search magnifier, grouped to the right
+        // but kept up near the IP rather than drifting down the card. [CardTopRoom] is the dock well
+        // above both — the connect disc's lower half rests over that clear glass.
         Spacer(Modifier.height(CardTopRoom))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = ScreenPad, end = ScreenPad),
+        ) {
+            IpCard(
+                state = state,
+                onRetryIp = onRetryIp,
+                modifier = Modifier.width(HeroInfoMaxWidth),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(start = ScreenPad, end = ScreenPad - 12.dp)
                 .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IpCard(
-                state = state,
-                onRetryIp = onRetryIp,
-                modifier = Modifier.widthIn(max = HeroInfoMaxWidth),
-            )
-            Spacer(Modifier.weight(1f))
             AddServerButton(onClick = onAddServer)
             SearchToggle(open = searchOpen, onClick = onToggleSearch)
         }
