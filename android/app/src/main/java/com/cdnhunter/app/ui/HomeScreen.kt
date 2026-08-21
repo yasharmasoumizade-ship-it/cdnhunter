@@ -79,9 +79,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
@@ -96,13 +94,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -135,6 +133,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -154,6 +153,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -168,6 +168,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -1275,6 +1276,7 @@ internal fun HomeScreen(
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
+                onRetryIp = onRetryIp,
                 modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             BrowseCard(
@@ -1287,14 +1289,13 @@ internal fun HomeScreen(
                 onSelectConfig = onSelectConfig,
                 onAddServer = onAddServer,
                 onToggleSearch = toggleSearch,
-                onRetryIp = onRetryIp,
                 onRefreshPings = onRefreshPings,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        // The list's controls and the public IP now live inside the card's own header row (see
-        // [BrowseCard]); they are no longer overlays on the flag.
+        // The public IP rides the flag now (in [Header]); the list's add/search controls live in
+        // the card's own top row (see [BrowseCard]).
 
         // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
         // foot, which is the browse card's top edge — so its lower half rests on the card's head
@@ -1367,7 +1368,9 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // White idle, white while connecting, blue connected — the light's own colour, animated so
     // changing state reads as the room changing colour rather than as a repaint.
     val ambient = phaseLight(phase)
-    val lit = phase != ConnPhase.OFF
+    // Only the *connected* room is lit. Connecting no longer raises the wash — the turning comet
+    // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
+    val lit = phase == ConnPhase.CONNECTED
 
     Box(modifier) {
         // The floor under the artwork, over the band only: it fades out across the bleed so
@@ -1587,6 +1590,7 @@ private val HeroDockWell = PowerSize / 2
 private fun Header(
     state: HomeUiState,
     onOpenSettings: () -> Unit,
+    onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1613,11 +1617,23 @@ private fun Header(
                 modifier = Modifier.offset(x = (-2).dp),
             )
             Spacer(Modifier.weight(1f))
-            CountryHeadline(state, modifier = Modifier.width(HeadlinePlateMaxWidth))
+            CountryHeadline(state)
         }
-        // Open flag under the top row: bare artwork, with the public-IP card overlaid on its
-        // lower-left by [HomeScreen] and the connect disc docked below.
-        Spacer(Modifier.height(HeroFlagSpace))
+        // The open flag under the top row, and the public-IP chip riding its lower-left — sat on
+        // the flag itself now, opposite the country plate at top-right and clear of the centred
+        // connect disc that docks below (the disc's crown never reaches this high on the left).
+        // The chip is its own dark glass so it holds contrast over any flag band; a fixed width so
+        // the value can roll without the card breathing.
+        Box(Modifier.fillMaxWidth().height(HeroFlagSpace)) {
+            IpCard(
+                state = state,
+                onRetryIp = onRetryIp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = 4.dp)
+                    .width(HeroInfoMaxWidth),
+            )
+        }
         // Reserve the docked disc's upper half over the flag. The disc itself is drawn by
         // [HomeScreen] as an overlay, centred on this column's measured foot — which is the
         // browse card's top edge — so its lower half rests on the card.
@@ -1764,14 +1780,41 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 // at the screen's right edge, under the heaviest ink, and dissolves to nothing toward the left,
 // so the name reads as ink lifting off the flag rather than a label pasted on top of it.
 
-/** The country name's own size. 22sp ExtraBold: the headline is no longer the largest ink on
- *  the screen — the connect disc is the hero now — so the country reads as a top-right label on
- *  its plate rather than a centred banner. Long names ellipsise inside [HeadlinePlateMaxWidth]. */
-private val HeadlineSize = 22.sp
+/** The plate is a *fixed* compact box — it never grows or shrinks with the name. Instead the name's
+ *  font steps down as the string lengthens ([headlineFontFor]) so long country names fit the same
+ *  frame short ones do. The disc is the hero now, so this is a top-right label, not a banner. */
+private val HeadlinePlateWidth = 200.dp
+private val HeadlinePlateHeight = 46.dp
 
-/** The widest the country plate is allowed to grow before its label ellipsises, so even
- *  "Bosnia and Herzegovina" cannot crowd the menu mark across the top row. */
-private val HeadlinePlateMaxWidth = 232.dp
+/** The country name's font, chosen by length so the fixed plate never has to resize: the text
+ *  adapts, the frame does not. */
+private fun headlineFontFor(name: String): TextUnit = when {
+    name.length <= 10 -> 21.sp
+    name.length <= 16 -> 17.sp
+    name.length <= 22 -> 14.sp
+    else -> 12.sp
+}
+
+/** The plate's silhouette: not a plain rectangle but an irregular right-anchored shape — the
+ *  top-left is sheared inward and the bottom-left corner is chamfered, so the shade reads as a
+ *  torn banner lifting off the flag rather than a pasted-on box. Right/top/bottom edges stay
+ *  straight so the right-aligned name always has a clean contrast floor under its ink. */
+private val HeadlinePlateShape = GenericShape { size, _ ->
+    val w = size.width
+    val h = size.height
+    val shear = w * 0.16f      // top-left pushed in
+    val chamfer = h * 0.42f    // bottom-left corner cut
+    moveTo(shear, 0f)
+    lineTo(w, 0f)
+    lineTo(w, h)
+    lineTo(chamfer, h)
+    lineTo(0f, h - chamfer)
+    close()
+}
+
+/** The left-to-right wipe when the name changes: the new label is revealed progressively across
+ *  its glyphs rather than swapped or crossfaded. */
+private const val REVEAL_MS = 460
 
 /** The shade behind the country name: a right-anchored horizontal fade rather than a filled box.
  *  Opaque dark at the right edge — where the right-aligned name's ink is heaviest and needs its
@@ -1803,45 +1846,52 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     // The city, when there is one and it is not already the headline: one dim caption under
     // the country, so the plate can be specific without the name having to carry two facts.
     val city = cfg?.let { state.cityFor(it) }.orEmpty()
+
+    // The wipe: one Animatable driven from 0 (nothing shown) to 1 (fully revealed), reset and
+    // replayed whenever the label changes. Under reduced motion it simply parks at 1 — no wipe.
+    val revealKey = "$headline|$city"
+    val reveal = remember { Animatable(1f) }
+    LaunchedEffect(revealKey, reduce) {
+        if (reduce) {
+            reveal.snapTo(1f)
+        } else {
+            reveal.snapTo(0f)
+            reveal.animateTo(1f, tween(REVEAL_MS))
+        }
+    }
+
+    val nameSize = headlineFontFor(headline)
     Box(
         modifier
-            .background(HeadlinePlateFill)
-            .padding(start = 32.dp, end = 14.dp, top = 8.dp, bottom = 9.dp),
+            // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
+            .width(HeadlinePlateWidth)
+            .height(HeadlinePlateHeight)
+            // The irregular right-anchored silhouette, filled with the right-heavy shade.
+            .background(HeadlinePlateFill, shape = HeadlinePlateShape)
+            .padding(start = 30.dp, end = 14.dp, top = 6.dp, bottom = 7.dp),
+        contentAlignment = Alignment.CenterEnd,
     ) {
-        Column(horizontalAlignment = Alignment.End) {
-            AnimatedContent(
-                targetState = headline,
-                // Not a jump cut: the outgoing name fades and slides a touch left while the
-                // incoming one fades in and settles from a touch right — a slight, right-anchored
-                // crossfade that reads as one name replacing another. Collapses to an instant swap
-                // under reduced motion, since [motionSpec] snaps there.
-                transitionSpec = {
-                    (
-                        (
-                            fadeIn(motionSpec(reduce, FLAG_FADE_IN_MS)) +
-                                slideInHorizontally(motionSpec(reduce, FLAG_FADE_IN_MS)) { it / 6 }
-                            ) togetherWith (
-                            fadeOut(motionSpec(reduce, FLAG_FADE_OUT_MS)) +
-                                slideOutHorizontally(motionSpec(reduce, FLAG_FADE_OUT_MS)) { -it / 8 }
-                            )
-                        ).using(SizeTransform(clip = false))
-                },
-                label = "countryHeadline",
-            ) { value ->
-                Text(
-                    value,
-                    fontSize = HeadlineSize,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = (-0.4).sp,
-                    textAlign = TextAlign.End,
-                    color = Color.White,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    // A soft cast under the white so it holds even where the plate thins at its top.
-                    style = TextStyle(shadow = HeroInkShadow),
-                )
-            }
+        // Content-sized column so the wipe crosses the actual glyphs, not the fixed frame: clipRect
+        // reveals from the left edge rightward across the right-aligned name.
+        Column(
+            modifier = Modifier.drawWithContent {
+                clipRect(right = size.width * reveal.value) { this@drawWithContent.drawContent() }
+            },
+            horizontalAlignment = Alignment.End,
+        ) {
+            Text(
+                headline,
+                fontSize = nameSize,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.4).sp,
+                textAlign = TextAlign.End,
+                color = Color.White,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                // A soft cast under the white so it holds even where the plate thins at its top.
+                style = TextStyle(shadow = HeroInkShadow),
+            )
             if (city.isNotBlank() && !city.equals(headline, ignoreCase = true)) {
                 Text(
                     city.uppercase(),
@@ -1886,9 +1936,10 @@ private data class IpSlot(val value: String, val checking: Boolean) {
  *  within [READY] rolls the digits ([RollingIp]) instead of retriggering the whole-card fade. */
 private enum class IpKind { READY, CHECKING, UNAVAILABLE }
 
-/** How long a single digit takes to roll over in the odometer. Short — a mechanical tick, not a
- *  drift — and collapses to an instant swap under reduced motion via [motionSpec]. */
-private const val IP_ROLL_MS = 300
+/** How long a digit wheel takes to roll to its new value. Long enough that the intervening digits
+ *  read as a counter turning, short enough to still feel mechanical; collapses to an instant swap
+ *  under reduced motion via [motionSpec]. */
+private const val IP_ROLL_MS = 520
 
 /** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
  *  smaller dim step for the two placeholders. */
@@ -2013,23 +2064,25 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     }
 }
 
+/** The height of one odometer cell — the visible window each digit rolls through. A touch taller
+ *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
+private val IpDigitCell = 22.dp
+
 /**
- * The IP value as an odometer: one animated cell per character, so when the address changes the
- * digits that differ roll over — the new glyph sliding in as the old one slides out — while
- * unchanged positions hold still. Each cell is [clipToBounds]-clipped to a single-line window, so a
- * rolling glyph is only ever visible inside its own slot, like a mechanical counter.
+ * The IP value as a true mechanical odometer: one wheel per character. When the address changes,
+ * each digit that differs *rolls* to its new value, sliding vertically through the intermediate
+ * digits — 3→7 climbs 3,4,5,6,7; 8→2 drops 8,7,…,2 — exactly like a counter wheel, rather than a
+ * fade or a one-step swap. Different columns naturally roll different distances and directions, so
+ * a fresh address tumbles like a slot machine.
  *
- * The roll direction is *mixed*, not uniform: each position rolls up or down independently, picked
- * by [ipRollDown] from the position and the incoming glyph, so a fresh address tumbles like a slot
- * machine — some columns climbing, others dropping — rather than every digit marching the same way.
- * The old glyph always exits opposite to the new one's entrance, so each cell reads as one wheel
- * turning.
- *
- * Cells are keyed by position, so a same-length change (the common case: this device's IP → the
- * exit node's on connect) rolls per digit; a length change adds or drops trailing cells without
- * disturbing the rest. Tabular figures ("tnum") keep every digit column the same width so the row
- * does not jitter mid-roll. Long IPv6 values are clipped by the card's own width rather than
- * ellipsised — a rare exit-node case; the tap still copies the whole address.
+ * Each wheel is a full 0–9 strip offset behind a single-cell [clipToBounds] window, its position
+ * animated by [animateFloatAsState] through [graphicsLayer]'s translation — so what moves is the
+ * strip, and only the target digit is ever framed. Non-digit characters (the dots, or an IPv6
+ * colon) are fixed cells: they never roll. Cells are keyed by position, so a same-length change
+ * (the common case: this device's IP → the exit node's on connect) rolls per digit; a length
+ * change adds or drops trailing cells without disturbing the rest. Tabular figures ("tnum") keep
+ * every column the same width so the row does not jitter mid-roll. Long IPv6 values are clipped by
+ * the card's own width; the tap still copies the whole address.
  */
 @Composable
 private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
@@ -2039,29 +2092,50 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
     ) {
         value.forEachIndexed { index, ch ->
             key(index) {
-                AnimatedContent(
-                    targetState = ch,
-                    transitionSpec = {
-                        // Down = new glyph drops in from the top, old falls out the bottom.
-                        // Up   = new glyph climbs in from the floor, old lifts out the top.
-                        val down = ipRollDown(index, targetState)
-                        val enter = if (down) -1 else 1
-                        val exit = if (down) 1 else -1
-                        (
-                            (
-                                slideInVertically(motionSpec(reduce, IP_ROLL_MS)) { h -> enter * h } +
-                                    fadeIn(motionSpec(reduce, IP_ROLL_MS))
-                                ) togetherWith (
-                                slideOutVertically(motionSpec(reduce, IP_ROLL_MS)) { h -> exit * h } +
-                                    fadeOut(motionSpec(reduce, IP_ROLL_MS))
-                                )
-                            ).using(SizeTransform(clip = false))
-                    },
-                    modifier = Modifier.clipToBounds(),
-                    label = "ipDigit",
-                ) { c ->
+                if (ch in '0'..'9') {
+                    DigitReel(digit = ch - '0', reduce = reduce)
+                } else {
+                    // Dots and colons do not roll — a fixed cell keeps the row's rhythm and gives
+                    // the wheels either side of it something to align to.
+                    Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
+                        Text(
+                            ch.toString(),
+                            fontSize = IpValueSize,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            style = TextStyle(shadow = HeroInkShadow),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One odometer wheel: a 0–9 strip translated so [digit] sits in the single-cell window, animated
+ *  so a change rolls through the intervening digits. See [RollingIp]. */
+@Composable
+private fun DigitReel(digit: Int, reduce: Boolean) {
+    val target by animateFloatAsState(
+        targetValue = digit.toFloat(),
+        animationSpec = motionSpec(reduce, IP_ROLL_MS),
+        label = "digitReel",
+    )
+    Box(
+        Modifier
+            .height(IpDigitCell)
+            .clipToBounds(),
+    ) {
+        Column(
+            Modifier.graphicsLayer { translationY = -target * IpDigitCell.toPx() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            for (d in 0..9) {
+                Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
                     Text(
-                        c.toString(),
+                        d.toString(),
                         fontSize = IpValueSize,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -2073,17 +2147,6 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
             }
         }
     }
-}
-
-/**
- * Which way a single odometer cell rolls — true = downward (new glyph in from the top), false =
- * upward. Deterministic in the position and the incoming glyph, so the direction is stable for the
- * whole of one roll (no mid-animation flip) yet varies across columns and across successive
- * addresses, giving the mixed up/down "slot machine" spread rather than a uniform scroll.
- */
-private fun ipRollDown(index: Int, ch: Char): Boolean {
-    val h = (index * 0x9E3779B1.toInt()) xor (ch.code * 0x85EBCA77.toInt())
-    return ((h ushr 3) and 1) == 0
 }
 
 // ── Power circle ──────────────────────────────────────────────────────────────
@@ -2255,18 +2318,16 @@ private fun PowerCircle(
     // second one for CONNECTED — see the section comment: the connected state is
     // reported by the ring, and the face stays white.
 
-    // The mark: dark on the idle disc, still dark while working, teal once up — on the same
-    // crossfade as the rest of the header's ink. Connecting keeps [PowerInk]: the working
-    // state is now monochrome (see [PowerRing]), so the mark stays the neutral idle ink and
-    // only the turning comet reports that an attempt is in flight. Connected is [RefLiveInk]
-    // rather than [RefLive]: the face is white now, and the ring's own teal is tuned to glow
-    // on near-black, which on white is a thin, washed-out mark. The darker teal reads at
-    // the same 50dp as the other two marks do.
+    // The mark: a lightning bolt, dark on the idle disc and while working, and turning blue once
+    // the tunnel is up — on the same crossfade as the rest of the header's ink. Connecting keeps
+    // [PowerInk]: the working state is monochrome (see [PowerRing]), so the bolt stays the neutral
+    // idle ink and only the turning comet reports that an attempt is in flight. Connected is
+    // [RefGlowOn] blue — the "active" colour, read straight on the white face.
     val mark by animateColorAsState(
         targetValue = when (phase) {
             ConnPhase.OFF -> PowerInk
             ConnPhase.CONNECTING -> PowerInk
-            ConnPhase.CONNECTED -> RefLiveInk
+            ConnPhase.CONNECTED -> RefGlowOn
         },
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "powerMark",
@@ -2342,6 +2403,7 @@ private fun PowerCircle(
                 // are offered as named actions on the button — which is also the only
                 // form the affordance takes now that the chevrons are gone.
                 .semantics {
+                    contentDescription = label
                     customActions = listOf(
                         CustomAccessibilityAction("Switch to Smart mode") {
                             onSwipeUp(); true
@@ -2382,22 +2444,53 @@ private fun PowerCircle(
             // The rim, last of the surfaces and over all of them, so it stays a crisp edge
             // instead of being washed out by the sheen's own dark foot.
             Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
-            Icon(
-                Icons.Rounded.PowerSettingsNew,
-                contentDescription = label,
-                tint = ink,
-                // 78dp on the 118dp disc — two thirds of it, up from the 54% the mockup's
-                // stroke svg used. Only the mark grew: [PowerDiscSize] and [PowerSize] are
-                // untouched, so the button, the ring band and the hero's whole vertical
-                // rhythm are exactly where they were, and what changed is how much of the
-                // white face the symbol claims. At 54% the glyph read as a small icon
-                // parked in a lot of white; at two thirds the disc reads as a power button
-                // rather than as a disc with a power icon on it. Above ~0.7 the mark starts
-                // touching the disc's dark foot in [PowerFaceSheen], which is what sets the
-                // ceiling.
-                modifier = Modifier.size(78.dp),
+            // The mark: a lightning bolt, hand-drawn rather than a Material glyph so it can carry
+            // the same struck-metal light as the rest of the disc — a top-lit fill and a hair of a
+            // bright rim on its upper facets — instead of reading as a flat icon parked on the
+            // white face. [PowerInk] dark idle/working, [RefGlowOn] blue once the tunnel is up.
+            PowerBolt(
+                color = ink,
+                modifier = Modifier.size(64.dp),
             )
         }
+    }
+}
+
+/** The disc's mark: a lightning bolt drawn as a filled [Path] with a top-lit vertical gradient and
+ *  a faint upper-facet rim, so it reads as a struck, dimensional mark rather than a flat glyph.
+ *  [color] is the phase ink from [PowerCircle] — dark at rest, blue when connected. */
+@Composable
+private fun PowerBolt(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        // A clean bolt in a 24×24 box, scaled to the canvas: top notch, left shoulder, a waist,
+        // the bottom point, the right shoulder and the inner return — an asymmetric zig that reads
+        // instantly as a bolt at a glance.
+        fun px(x: Float, y: Float) = Offset(w * x / 24f, h * y / 24f)
+        val bolt = Path().apply {
+            val p0 = px(13.5f, 2f)
+            moveTo(p0.x, p0.y)
+            px(4.5f, 13.5f).let { lineTo(it.x, it.y) }
+            px(11f, 13.5f).let { lineTo(it.x, it.y) }
+            px(9.5f, 22f).let { lineTo(it.x, it.y) }
+            px(19.5f, 9.5f).let { lineTo(it.x, it.y) }
+            px(12.5f, 9.5f).let { lineTo(it.x, it.y) }
+            close()
+        }
+        drawPath(
+            bolt,
+            brush = Brush.verticalGradient(
+                0f to lerp(color, Color.White, 0.26f),
+                0.55f to color,
+                1f to lerp(color, Color.Black, 0.10f),
+            ),
+        )
+        drawPath(
+            bolt,
+            color = Color.White.copy(alpha = 0.16f),
+            style = Stroke(width = w * 0.014f),
+        )
     }
 }
 
@@ -2613,7 +2706,6 @@ private fun BrowseCard(
     onSelectConfig: (SavedConfig) -> Unit,
     onAddServer: () -> Unit,
     onToggleSearch: () -> Unit,
-    onRetryIp: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2673,31 +2765,18 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's masthead, stacked so the address reads first and the controls hang just under
-        // it, both held to the top of the card. Row one: the public-IP chip at the very top, on the
-        // left, a fixed size so it never grows or shrinks as the value rolls or an IPv6 lands. Row
-        // two, tight beneath it: the add-server "+" and the search magnifier, grouped to the right
-        // but kept up near the IP rather than drifting down the card. [CardTopRoom] is the dock well
-        // above both — the connect disc's lower half rests over that clear glass.
+        // The card's masthead. The public IP now rides the flag up in the hero ([Header]); down here
+        // the head is just the dock well plus a single controls row pinned to the card's top edge.
+        // [CardTopRoom] is the dock well — the connect disc's lower half rests over that clear glass.
+        // The controls sit at opposite corners of the header row, right above the divider: the
+        // add-server "+" on the left, the search magnifier on the right.
         Spacer(Modifier.height(CardTopRoom))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = ScreenPad, end = ScreenPad),
-        ) {
-            IpCard(
-                state = state,
-                onRetryIp = onRetryIp,
-                modifier = Modifier.width(HeroInfoMaxWidth),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = ScreenPad, end = ScreenPad - 12.dp)
+                .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                 .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AddServerButton(onClick = onAddServer)
@@ -3381,10 +3460,9 @@ private fun UsageRing(bytes: Long, accent: Color) {
 // The mockup draws its chevron, account mark and wifi mark as inline SVG on a
 // 24-unit grid at stroke-width 2–2.4. Material's equivalents are heavier and, for
 // the account mark, filled, so these three are drawn on the same grid: `unit`
-// below is one mockup unit, so the path numbers stay recognisable. The power mark
-// is the exception — that one is Material's own Icons.Rounded.PowerSettingsNew,
-// because a hand-drawn ring is exactly where the opening ended up on the wrong
-// side of the circle once already.
+// below is one mockup unit, so the path numbers stay recognisable. The connect
+// mark is a hand-drawn lightning bolt ([PowerBolt]) on the same 24-unit grid — a
+// filled, bevelled glyph rather than Material's flat power symbol.
 
 @Composable
 private fun Chevron(size: Dp, color: Color, modifier: Modifier = Modifier) {
