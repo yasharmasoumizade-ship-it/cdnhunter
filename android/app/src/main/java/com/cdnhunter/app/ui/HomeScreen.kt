@@ -80,7 +80,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -467,10 +469,10 @@ private const val RIM_LIGHT_ON = 0.120f
 private const val CROWN_LIGHT_IDLE = 0.086f
 private const val CROWN_LIGHT_ON = 0.272f
 // The horizon bloom is off at rest and only a whisper when connected: it used to rise behind
-// the disc's foot and read as a halo ringing the connect control. The control now floats in
-// clear dark with real space under it (see [HeroDiscFloat]) and casts its own shadow, so the
-// bloom has nothing left to do at idle — a lit ring around a white disc on near-black is exactly
-// the glow that was asked to go. Connected keeps a trace so the room still shifts colour.
+// the disc's foot and read as a halo ringing the connect control. That halo is gone regardless of
+// where the disc sits, and the control casts its own shadow, so the bloom has nothing left to do at
+// idle — a lit ring around a white disc on near-black is exactly the glow that was asked to go.
+// Connected keeps a trace so the room still shifts colour.
 private const val HORIZON_LIGHT_IDLE = 0.0f
 private const val HORIZON_LIGHT_ON = 0.07f
 
@@ -1056,10 +1058,10 @@ internal data class HomeUiState(
      * A public-IP lookup is in flight.
      *
      * The hero's address line has three states, not two, and this is what separates the two
-     * that look alike: [publicIp] blank *because we are still asking* is "Checking…", blank
-     * *because every provider failed* is "Unavailable" with a tap to retry. Without this the
-     * two were the same em dash, which is how a total lookup failure came to look like a
-     * rendering bug. See [MetaRow].
+     * that look alike: [publicIp] blank *because we are still asking* shows a neutral "—"
+     * placeholder (no status word), blank *because every provider failed* is "Unavailable" with a
+     * tap to retry. Without this flag the two would be indistinguishable, which is how a total
+     * lookup failure came to look like the still-loading placeholder. See [IpCard].
      */
     val ipLookupPending: Boolean = false,
     /**
@@ -1268,20 +1270,13 @@ internal fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         )
         Column(Modifier.fillMaxSize()) {
-            // The hero: hamburger, country, address. Its measured height is where the disc docks
-            // — and, since [HeroDiscFloat] is added *after* this, the card now begins lower than
-            // the disc rather than under it.
+            // The hero: hamburger, country, address. Its measured height is where the card
+            // begins and where the connect disc docks — the card rises to meet the disc's foot.
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
-            // Clear flag between the disc and the card: the disc's whole body plus a small gap, so
-            // the connect control floats in open dark with breathing room under it and the card's
-            // top edge is a visible step below it rather than a seam the disc sits on. The disc
-            // overlay is positioned off [heroHeight] (the Header's height), which this spacer does
-            // not change, so adding it drops the card without moving the button.
-            Spacer(Modifier.height(HeroDiscFloat))
             BrowseCard(
                 state = state,
                 servers = servers,
@@ -1301,11 +1296,11 @@ internal fun HomeScreen(
         // The list's controls and the public IP now live inside the card's own header row (see
         // [BrowseCard]); they are no longer overlays on the flag.
 
-        // The connect disc, floating over the flag with clear space under it (see [HeroDiscFloat]).
-        // Its centre sits on [heroHeight] — the Header's foot — unchanged by the spacer that drops
-        // the card, so the button holds its position while the card steps down and away from it.
-        // Drawn after the card, so it is the topmost layer. The mode is still switched by a
-        // vertical drag on it (up = Smart, down = Manual), plus the two named accessibility actions.
+        // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
+        // foot, which is the browse card's top edge — so its lower half rests on the card's head
+        // (a dock well, [CardTopRoom]) and its upper half floats over the flag. Drawn after the
+        // card, so it is the topmost layer. The mode is still switched by a vertical drag on it
+        // (up = Smart, down = Manual), plus the two named accessibility actions.
         PowerCircle(
             mode = state.mode,
             phase = state.phase,
@@ -1588,17 +1583,6 @@ private val HeroFlagSpace = 104.dp
  */
 private val HeroDockWell = PowerSize / 2
 
-/**
- * The clear flag between the disc's foot and the browse card's top edge.
- *
- * Added by [HomeScreen] *after* the hero column, so it drops the card without touching
- * [heroHeight] — the disc overlay is positioned off that height, so it stays put while the card
- * steps down. Sized as the disc's whole [PowerSize] box lower half plus a small gap, so the disc
- * clears the card entirely and floats in open dark with breathing room under it, rather than
- * docking on the card's edge. The old dock-well ([CardTopRoom]) shrinks to match.
- */
-private val HeroDiscFloat = PowerSize / 2 + 14.dp
-
 @Composable
 private fun Header(
     state: HomeUiState,
@@ -1612,7 +1596,9 @@ private fun Header(
             // the system inset is gone — so it carries [statusBarsPadding] itself and the
             // hamburger sits directly on the flag under the system clock.
             .statusBarsPadding()
-            .padding(start = ScreenPad, end = ScreenPad),
+            // Left margin only. The right edge runs flush to the screen so the country plate's
+            // fade-from-right bleeds off the bezel rather than floating in an inset gutter.
+            .padding(start = ScreenPad),
     ) {
         // The top row of the flag: the menu held to the left, the country name to the right on
         // its own dark plate. Both ride the flag rather than a chrome bar. Aligned to the top so
@@ -1627,7 +1613,7 @@ private fun Header(
                 modifier = Modifier.offset(x = (-2).dp),
             )
             Spacer(Modifier.weight(1f))
-            CountryHeadline(state, modifier = Modifier.widthIn(max = HeadlinePlateMaxWidth))
+            CountryHeadline(state, modifier = Modifier.width(HeadlinePlateMaxWidth))
         }
         // Open flag under the top row: bare artwork, with the public-IP card overlaid on its
         // lower-left by [HomeScreen] and the connect disc docked below.
@@ -1696,9 +1682,10 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 // hairline, "Mode · Manual", docked half in and half out of the card's top edge — is deleted:
 // the composable, its six tokens and the `dockOnSeam` layout modifier that put it there.
 //
-// Two things go with it. The seam has nothing on it any more, so [CardTopRoom] is back to a
-// plain head clearance rather than a hole cut for an overhanging object, and [Header] no
-// longer needs a z-index to paint over the card.
+// One thing goes with it: [Header] no longer needs a z-index to paint over the card for the pill's
+// sake. The connect disc still docks half-in on the seam, so [CardTopRoom] remains a dock well —
+// clear glass for the disc's lower half to rest over — but nothing is drawn *into* that well now;
+// the card's own header row sits below it.
 //
 // The mode itself is still changeable, and by the gesture that always did it: a vertical drag
 // on the connect disc, up for Smart and down for Manual, plus the two named accessibility
@@ -1790,12 +1777,14 @@ private val HeadlinePlateMaxWidth = 232.dp
  *  Opaque dark at the right edge — where the right-aligned name's ink is heaviest and needs its
  *  contrast floor over any flag band — and eased to fully transparent toward the left, so the
  *  shade has no left edge to read as a label and the name appears to sit straight on the artwork,
- *  darkened only exactly where it must be. */
+ *  darkened only exactly where it must be. The ramp is deliberately deep and early: it starts
+ *  shading sooner and lands near-opaque at the edge so the white name reads vividly over even the
+ *  brightest flag band, without turning the fade into a hard-edged box. */
 private val HeadlinePlateFill = Brush.horizontalGradient(
     0.00f to Color.Transparent,
-    0.34f to Color.Black.copy(alpha = 0.10f),
-    0.68f to Color.Black.copy(alpha = 0.44f),
-    1.00f to Color.Black.copy(alpha = 0.72f),
+    0.28f to Color.Black.copy(alpha = 0.18f),
+    0.58f to Color.Black.copy(alpha = 0.58f),
+    1.00f to Color.Black.copy(alpha = 0.90f),
 )
 
 /** The city caption's size, a clear step under the country name. */
@@ -1881,14 +1870,30 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
 // controls. Still a card, with a "PUBLIC IP" label over a bold white value, so it holds together
 // as one object at the head of the list. Tap it and the value goes to the clipboard.
 //
-// Three states, not two: the number, or "Checking…", or "Unavailable" with the box tappable to
-// ask again. See [HomeUiState.ipLookupPending] for the flag and [GeoService.lookupCurrentIp] for
-// what can fail.
+// Three states, not two — but none of them is a word for "loading": the address, a neutral "—"
+// placeholder while a lookup is still in flight (no status text — the value simply is not known
+// yet), or "Unavailable" with the box tappable to ask again. See [HomeUiState.ipLookupPending] for
+// the flag and [GeoService.lookupCurrentIp] for what can fail. When the address itself changes
+// (this device → the exit node on connect) the digits roll over like a mechanical counter — see
+// [RollingIp] — rather than swapping in place.
 
 /** What the public-IP card is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
     val ready: Boolean get() = value.isNotBlank()
 }
+
+/** Which of [IpCard]'s three surfaces is showing. Keyed for the crossfade so that a *value* change
+ *  within [READY] rolls the digits ([RollingIp]) instead of retriggering the whole-card fade. */
+private enum class IpKind { READY, CHECKING, UNAVAILABLE }
+
+/** How long a single digit takes to roll over in the odometer. Short — a mechanical tick, not a
+ *  drift — and collapses to an instant swap under reduced motion via [motionSpec]. */
+private const val IP_ROLL_MS = 300
+
+/** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
+ *  smaller dim step for the two placeholders. */
+private val IpValueSize = 15.sp
+private val IpPlaceholderSize = 13.sp
 
 /** The card's shape: a small rounded glass box with one corner squared, a subtle asymmetry so the
  *  chip reads as a considered object rather than a plain rounded rectangle. */
@@ -1951,41 +1956,107 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
             style = TextStyle(shadow = HeroInkShadow),
         )
         Spacer(Modifier.height(2.dp))
+        // Crossfade only between the three *kinds* of state — not on every value change. The kind
+        // (ready / checking / unavailable) is the key, so when the address changes while staying
+        // ready the outer fade does nothing and [RollingIp] rolls the digits instead.
+        val kind = when {
+            slot.ready -> IpKind.READY
+            slot.checking -> IpKind.CHECKING
+            else -> IpKind.UNAVAILABLE
+        }
         AnimatedContent(
-            targetState = slot,
+            targetState = kind,
             transitionSpec = {
                 (
                     fadeIn(motionSpec(reduce, 260)) togetherWith fadeOut(motionSpec(reduce, 140))
                     ).using(SizeTransform(clip = false))
             },
             label = "publicIp",
-        ) { value ->
-            val shown = when {
-                value.ready -> value.value
-                value.checking -> "Checking…"
-                else -> "Unavailable"
-            }
+        ) { k ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    shown,
-                    fontSize = if (value.ready) 15.sp else 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    // Bold white for a real number; a dimmer step for the two placeholders, still
-                    // plainly readable over any flag.
-                    color = if (value.ready) Color.White else RefTextMid,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
-                )
-                // The retry affordance, and only in the state that has something to retry.
-                if (!value.ready && !value.checking) {
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        Icons.Rounded.Refresh,
-                        contentDescription = null,
-                        tint = RefTextMid,
-                        modifier = Modifier.size(14.dp),
+                when (k) {
+                    // The real address: rolling digits, read from the live slot (not the captured
+                    // target) so a value change inside the ready state rolls in place.
+                    IpKind.READY -> RollingIp(value = slot.value, reduce = reduce)
+                    // In flight: a neutral dash, no status word. The value simply is not known yet.
+                    IpKind.CHECKING -> Text(
+                        "—",
+                        fontSize = IpPlaceholderSize,
+                        fontWeight = FontWeight.Bold,
+                        color = RefTextMid,
+                        maxLines = 1,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                    )
+                    // Lookup finished with nothing: say so, and offer the retry the tap handler wires.
+                    IpKind.UNAVAILABLE -> {
+                        Text(
+                            "Unavailable",
+                            fontSize = IpPlaceholderSize,
+                            fontWeight = FontWeight.Bold,
+                            color = RefTextMid,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(shadow = HeroInkShadow),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = RefTextMid,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The IP value as an odometer: one animated cell per character, so when the address changes the
+ * digits that differ roll over — new glyph sliding up from the floor as the old one slides out the
+ * top — while unchanged positions hold still. Each cell is [clipToBounds]-clipped to a single-line
+ * window, so a rolling glyph is only ever visible inside its own slot, like a mechanical counter.
+ *
+ * Cells are keyed by position, so a same-length change (the common case: this device's IP → the
+ * exit node's on connect) rolls per digit; a length change adds or drops trailing cells without
+ * disturbing the rest. Tabular figures ("tnum") keep every digit column the same width so the row
+ * does not jitter mid-roll. Long IPv6 values are clipped by the card's own width rather than
+ * ellipsised — a rare exit-node case; the tap still copies the whole address.
+ */
+@Composable
+private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clipToBounds(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        value.forEachIndexed { index, ch ->
+            key(index) {
+                AnimatedContent(
+                    targetState = ch,
+                    transitionSpec = {
+                        (
+                            (
+                                slideInVertically(motionSpec(reduce, IP_ROLL_MS)) { it } +
+                                    fadeIn(motionSpec(reduce, IP_ROLL_MS))
+                                ) togetherWith (
+                                slideOutVertically(motionSpec(reduce, IP_ROLL_MS)) { -it } +
+                                    fadeOut(motionSpec(reduce, IP_ROLL_MS))
+                                )
+                            ).using(SizeTransform(clip = false))
+                    },
+                    modifier = Modifier.clipToBounds(),
+                    label = "ipDigit",
+                ) { c ->
+                    Text(
+                        c.toString(),
+                        fontSize = IpValueSize,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                     )
                 }
             }
@@ -2582,9 +2653,9 @@ private fun BrowseCard(
     ) {
         // The card's own header row: the public IP on the left, the add-server "+" and the
         // search magnifier grouped on the right. All three used to float on the flag as overlays;
-        // they live inside the card now (see [HomeScreen]), so this row is the card's masthead and
-        // the connect disc floats clear above it. [CardTopRoom] is a small pad over it, not the old
-        // dock well.
+        // they live inside the card now (see [HomeScreen]), so this row is the card's masthead.
+        // [CardTopRoom] is the dock well above it — the connect disc's lower half rests over that
+        // clear glass, and this row sits below the disc's foot.
         Spacer(Modifier.height(CardTopRoom))
         Row(
             Modifier
@@ -2721,14 +2792,16 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
 private val PanelFade = 30.dp
 
 /**
- * The clear glass at the top of the browse card, above its header row.
+ * The dock well at the top of the browse card — the band of clear glass the connect disc's lower
+ * half rests over.
  *
- * This was a *dock well* while the connect disc straddled the card's top edge. The disc floats
- * clear of the card now ([HeroDiscFloat]), so there is no half-disc resting here to make room
- * for — it is back to a small top pad, just enough air over the card's own header row (the IP on
- * the left, the add/search controls on the right) so that row does not butt the rounded top edge.
+ * The disc is docked on the card's top edge again: its centre sits on the card's head ([heroHeight])
+ * and its lower half overlaps down into the card. This well is that overlap depth plus a little air,
+ * so the disc rests over empty glass and the card's own header row (the IP on the left, the
+ * add/search controls on the right) sits *below* the disc's foot rather than colliding with it.
+ * Sized off [PowerDiscSize] (the visible disc), not the full [PowerSize] touch box.
  */
-private val CardTopRoom = 14.dp
+private val CardTopRoom = PowerDiscSize / 2 + 14.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
