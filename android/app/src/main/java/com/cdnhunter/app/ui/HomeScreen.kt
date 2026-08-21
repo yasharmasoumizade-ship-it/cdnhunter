@@ -153,16 +153,18 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cdnhunter.app.vpn.ConfigUriParser
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF060709)          // --bg
@@ -1747,12 +1749,17 @@ private val StatusBarInk = Color(0xFF000000)
 /** Gap between the hamburger chip and the status statement. */
 private val StatusBarGap = 6.dp
 
-/** The connection statement's caps word: caption-sized, tracked out a touch so it reads as
- *  a status label rather than as running text. */
-private val StatusWordSize = 12.5.sp
+/** The connection statement's caps word: the anchor of the shelf, a step larger than the meta
+ *  beside it and tracked out so it reads as a status label rather than as running text. */
+private val StatusWordSize = 13.sp
 
-/** The transport · port that trails the status word, and the expanded server line. */
-private val StatusMetaSize = 12.5.sp
+/** The protocol · port that trails the status word, and the expanded server line. A step down
+ *  from the word so the two read as headline-then-detail rather than one flat run. */
+private val StatusMetaSize = 12.sp
+
+/** The hairline that finishes the black shelf against the flag below it — the one edge on the
+ *  bar meant to be seen. White at a whisper, so it defines the foot without becoming a seam. */
+private val StatusShelfEdge = Color.White.copy(alpha = 0.05f)
 
 
 @Composable
@@ -1773,6 +1780,19 @@ private fun HomeStatusBar(
             // not just under them — which is what makes this a header rather than a strip that
             // starts below the clock.
             .background(StatusBarInk)
+            // A hairline at the very foot, full-bleed (drawn before the horizontal inset), so the
+            // shelf ends on a deliberate edge instead of dissolving into the flag. Placed a half-
+            // pixel up from size.height so the stroke sits inside the bar, not on its seam.
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                val y = size.height - stroke / 2f
+                drawLine(
+                    color = StatusShelfEdge,
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = stroke,
+                )
+            }
             .statusBarsPadding()
             .padding(horizontal = ScreenPad),
     ) {
@@ -1825,7 +1845,7 @@ private fun HomeStatusBar(
 }
 
 /**
- * The connection in one line: a phase word coloured by state, then the transport and port of
+ * The connection in one line: a phase word coloured by state, then the protocol and port of
  * the active server, then a chevron that turns as the bar opens. The whole line is the tap
  * target that toggles the detail line below it (see [HomeStatusBar]).
  */
@@ -1844,7 +1864,20 @@ private fun StatusStatement(
         ConnPhase.CONNECTING -> "CONNECTING" to Color.White
         ConnPhase.OFF -> "OFF" to RefTextMid
     }
-    val meta = cfg?.let { " · ${ConfigUriParser.transportOf(it.uri)} ${it.port}" }.orEmpty()
+    // The base protocol of the active server (VLESS / Trojan / …), not its transport. This is
+    // what Settings > Protocol names, and it is the field that says what the connection *is*;
+    // the transport (XHTTP, ws, …) is a layer beneath it and belongs in the detail line, not
+    // the headline. Read from [SavedConfig.proto], cased the way parseConfig() names it.
+    //
+    // Built as one annotated run so the separator dot and the port recede a step below the
+    // protocol name — headline hierarchy inside the meta itself, not one flat grey string.
+    val meta: AnnotatedString? = cfg?.let { c ->
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = RefTextLow)) { append("  ·  ") }
+            withStyle(SpanStyle(color = RefTextMid)) { append(protoLabel(c.proto)) }
+            withStyle(SpanStyle(color = RefTextLow)) { append(" ${c.port}") }
+        }
+    }
     val chevron by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(220),
@@ -1865,11 +1898,11 @@ private fun StatusStatement(
             word,
             fontSize = StatusWordSize,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp,
+            letterSpacing = 1.sp,
             color = wordColor,
             maxLines = 1,
         )
-        if (meta.isNotEmpty()) {
+        if (meta != null) {
             Text(
                 meta,
                 fontSize = StatusMetaSize,
@@ -1892,6 +1925,17 @@ private fun StatusStatement(
             )
         }
     }
+}
+
+/** The base protocol name, cased the way parseConfig() names it — so the status bar and
+ *  Settings > Protocol read the same word. The transport (XHTTP, ws, grpc) is deliberately
+ *  not folded in here; it lives in the expandable detail line, not the headline. */
+private fun protoLabel(proto: String): String = when (proto.lowercase()) {
+    "trojan" -> "Trojan"
+    "vless" -> "VLESS"
+    "vmess" -> "VMess"
+    "ss", "shadowsocks" -> "Shadowsocks"
+    else -> proto.uppercase()
 }
 
 /** The active server behind the status statement: where it dials, and the SNI it fronts as. */

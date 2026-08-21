@@ -2062,12 +2062,13 @@ private fun Modifier.sheetSurface(
     fill: Brush = SheetCardFill,
     elevation: Dp = 10.dp,
 ): Modifier = this
-    // The drop shadow the section comment promises: cast *before* the clip (a shadow drawn
-    // after a clip is clipped away to nothing, which is why the elevation used to do nothing
-    // at all), with clip = false so the shadow itself is not cropped to the shape. Pure-black
-    // ambient and spot — see [SheetShadow] — so an elevated surface on this near-black page
-    // reads as lifted rather than sitting in grey fog. This is what makes [elevation] real.
-    .shadow(elevation, shape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
+    // No drop shadow. An opaque-black elevation shadow is invisible on this near-black page
+    // (black on black), so it added no depth where cards actually sit — but on the brighter
+    // surfaces at the top of every sheet (the glass header, the page wash, a glass tile) that
+    // same shadow rendered as a hard rounded halo *behind* the card, reading as a stray ghost
+    // box. The visible depth here is the light model below: gradient fill, lit top edge
+    // ([SheetCrown]), shaded foot ([SheetFoot]) — [elevation] is retained only so callers that
+    // pass it stay source-compatible.
     .clip(shape)
     .background(fill)
     .drawBehind {
@@ -2242,13 +2243,10 @@ private val SheetPageWash = Brush.verticalGradient(
  */
 private fun Modifier.sheetHeaderPanel(): Modifier = this
     .fillMaxWidth()
-    .shadow(
-        elevation = SheetHeaderLift,
-        shape = SheetHeaderShape,
-        clip = false,
-        ambientColor = SheetShadow,
-        spotColor = SheetShadow,
-    )
+    // No drop shadow: on the page below, the opaque-black shadow of the panel's rounded bottom
+    // edge rendered as a stray rounded outline hovering just above the first content card. The
+    // panel already ends in a lit rim ([SheetHeaderRim]) drawn inside the clip — that curved
+    // highlight is the one edge meant to be seen, and it reads as depth without a ghost band.
     .clip(SheetHeaderShape)
     .background(SheetHeaderGlass)
     .background(SheetHeaderTint)
