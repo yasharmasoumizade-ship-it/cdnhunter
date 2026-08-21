@@ -1614,23 +1614,6 @@ private fun Header(
 
 /** Open air between the black header bar and the country headline. */
 private val HeroHeadRoom = 22.dp
-        Spacer(Modifier.height(HeadlineFootGap))
-        // The address sits above the button: the order reads as a sentence — which country,
-        // as what address, [the action].
-        MetaRow(state = state, onRetryIp = onRetryIp)
-        Spacer(Modifier.height(HeroOpenSpace))
-        PowerCircle(
-            mode = state.mode,
-            phase = state.phase,
-            enabled = state.activeConfig != null,
-            onClick = onTogglePower,
-            onSwipeUp = { onSetMode(ConnectMode.SMART) },
-            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-        )
-        // The hero's measured foot, which is exactly where the browse card's top edge is.
-        Spacer(Modifier.height(HeroFootGap))
-    }
-}
 
 // ── Mode pill ─────────────────────────────────────────────────────────────────
 // Gone. The badge that used to sit on the seam between the hero and the browse card — glass,
