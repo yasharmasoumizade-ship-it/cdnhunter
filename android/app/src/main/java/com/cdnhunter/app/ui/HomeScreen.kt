@@ -171,6 +171,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF060709)          // --bg
@@ -1575,6 +1576,10 @@ private val HeroVignetteStops = listOf(
  *  and this token is how much of it shows above the disc's dock well. */
 private val HeroFlagSpace = 104.dp
 
+/** The breathing room the hero holds under the status-bar inset, so the country plate sits a
+ *  comfortable step below the system clock/battery rather than flush against them. */
+private val HeroTopGap = 10.dp
+
 /**
  * The flag the hero reserves below the top row for the docked connect disc's *upper half*.
  *
@@ -1600,6 +1605,10 @@ private fun Header(
             // the system inset is gone — so it carries [statusBarsPadding] itself and the
             // hamburger sits directly on the flag under the system clock.
             .statusBarsPadding()
+            // A clear gap under the system icons so the country plate never rides up against the
+            // status bar clock/battery — the plate is the topmost content and, flush to the inset,
+            // its ink was crowding the system glyphs. This holds it a comfortable step below them.
+            .padding(top = HeroTopGap)
             // Left margin only. The right edge runs flush to the screen so the country plate's
             // fade-from-right bleeds off the bezel rather than floating in an inset gutter.
             .padding(start = ScreenPad),
@@ -1631,7 +1640,10 @@ private fun Header(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(bottom = 4.dp)
-                    .width(HeroInfoMaxWidth),
+                    // Hugs its content (the reels are tabular, so a roll never reflows it) up to a
+                    // ceiling that still clips a long IPv6 — a tighter, more minimal chip than a
+                    // fixed-width box padded out with empty scrim.
+                    .widthIn(max = HeroInfoMaxWidth),
             )
         }
         // Reserve the docked disc's upper half over the flag. The disc itself is drawn by
@@ -1780,35 +1792,35 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 // at the screen's right edge, under the heaviest ink, and dissolves to nothing toward the left,
 // so the name reads as ink lifting off the flag rather than a label pasted on top of it.
 
-/** The plate is a *fixed* compact box — it never grows or shrinks with the name. Instead the name's
- *  font steps down as the string lengthens ([headlineFontFor]) so long country names fit the same
- *  frame short ones do. The disc is the hero now, so this is a top-right label, not a banner. */
-private val HeadlinePlateWidth = 200.dp
-private val HeadlinePlateHeight = 46.dp
+/** The plate is a *fixed* box — it never grows or shrinks with the name. Instead the name's font
+ *  steps down as the string lengthens ([headlineFontFor]) so long country names fit the same frame
+ *  short ones do. Enlarged for presence: it is the identity of the screen, so it reads as a proper
+ *  location banner rather than a cramped tag. */
+private val HeadlinePlateWidth = 244.dp
+private val HeadlinePlateHeight = 66.dp
 
 /** The country name's font, chosen by length so the fixed plate never has to resize: the text
- *  adapts, the frame does not. */
+ *  adapts, the frame does not. Sized to leave room for the city caption on the second line. */
 private fun headlineFontFor(name: String): TextUnit = when {
-    name.length <= 10 -> 21.sp
-    name.length <= 16 -> 17.sp
-    name.length <= 22 -> 14.sp
-    else -> 12.sp
+    name.length <= 10 -> 24.sp
+    name.length <= 16 -> 20.sp
+    name.length <= 22 -> 16.sp
+    else -> 13.sp
 }
 
-/** The plate's silhouette: not a plain rectangle but an irregular right-anchored shape — the
- *  top-left is sheared inward and the bottom-left corner is chamfered, so the shade reads as a
- *  torn banner lifting off the flag rather than a pasted-on box. Right/top/bottom edges stay
- *  straight so the right-aligned name always has a clean contrast floor under its ink. */
+/** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
+ *  top-left edge, so it reads as a considered, cut plate rather than a pasted-on box — while the
+ *  right/top/bottom stay straight to give the right-aligned name a clean contrast floor. */
 private val HeadlinePlateShape = GenericShape { size, _ ->
     val w = size.width
     val h = size.height
-    val shear = w * 0.16f      // top-left pushed in
-    val chamfer = h * 0.42f    // bottom-left corner cut
+    val shear = w * 0.14f      // top-left sheared in for a clean diagonal lead edge
+    val foot = h * 0.30f       // a shorter chamfer on the bottom-left, so the shear reads as the motif
     moveTo(shear, 0f)
     lineTo(w, 0f)
     lineTo(w, h)
-    lineTo(chamfer, h)
-    lineTo(0f, h - chamfer)
+    lineTo(foot, h)
+    lineTo(0f, h - foot)
     close()
 }
 
@@ -1825,13 +1837,13 @@ private const val REVEAL_MS = 460
  *  brightest flag band, without turning the fade into a hard-edged box. */
 private val HeadlinePlateFill = Brush.horizontalGradient(
     0.00f to Color.Transparent,
-    0.28f to Color.Black.copy(alpha = 0.18f),
-    0.58f to Color.Black.copy(alpha = 0.58f),
-    1.00f to Color.Black.copy(alpha = 0.90f),
+    0.24f to Color.Black.copy(alpha = 0.22f),
+    0.54f to Color.Black.copy(alpha = 0.64f),
+    1.00f to Color.Black.copy(alpha = 0.92f),
 )
 
 /** The city caption's size, a clear step under the country name. */
-private val HeadlineCaptionSize = 10.5.sp
+private val HeadlineCaptionSize = 11.5.sp
 
 @Composable
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
@@ -1863,12 +1875,14 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val nameSize = headlineFontFor(headline)
     Box(
         modifier
-            // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
+            // Fixed frame — the plate never resizes with the text (the font adapts instead).
             .width(HeadlinePlateWidth)
             .height(HeadlinePlateHeight)
-            // The irregular right-anchored silhouette, filled with the right-heavy shade.
+            // The asymmetric right-anchored silhouette, filled with the right-heavy shade and rimmed
+            // with the hero's lit hairline so the plate reads as a raised, considered object.
             .background(HeadlinePlateFill, shape = HeadlinePlateShape)
-            .padding(start = 30.dp, end = 14.dp, top = 6.dp, bottom = 7.dp),
+            .border(1.dp, heroEdge, HeadlinePlateShape)
+            .padding(start = 34.dp, end = 16.dp, top = 8.dp, bottom = 9.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
         // Content-sized column so the wipe crosses the actual glyphs, not the fixed frame: clipRect
@@ -1946,17 +1960,13 @@ private const val IP_ROLL_MS = 520
 private val IpValueSize = 15.sp
 private val IpPlaceholderSize = 13.sp
 
-/** The card's shape: a small rounded glass box with one corner squared, a subtle asymmetry so the
- *  chip reads as a considered object rather than a plain rounded rectangle. */
-private val IpCardShape = RoundedCornerShape(
-    topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 4.dp,
-)
+/** The IP chip's shape: a clean, evenly rounded pill. The address is a quiet supporting fact on
+ *  the flag now, so the chip is a simple soft container rather than a bordered glass box. */
+private val IpCardShape = RoundedCornerShape(11.dp)
 
-/** The card's material: translucent dark glass, so the flag reads through it and the [heroEdge]
- *  hairline catches the light like every other raised thing in the hero. */
-private val IpCardFill = Brush.verticalGradient(
-    listOf(Color.Black.copy(alpha = 0.42f), Color.Black.copy(alpha = 0.30f)),
-)
+/** The chip's backing: a single soft dark scrim — just enough to float the address clear of any
+ *  flag band, with no hairline rim, so it reads as a minimal wash rather than a raised card. */
+private val IpCardFill = SolidColor(Color.Black.copy(alpha = 0.34f))
 
 /** The widest the IP card is allowed to grow. IPv4 fits well inside it; a long IPv6 value
  *  ellipsises on screen, and a tap still copies the whole address to the clipboard. */
@@ -1987,7 +1997,6 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
         modifier
             .clip(IpCardShape)
             .background(IpCardFill)
-            .border(1.dp, heroEdge, IpCardShape)
             .then(
                 if (onTap != null) {
                     Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
@@ -1995,18 +2004,18 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                     Modifier
                 },
             )
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
     ) {
         Text(
             "PUBLIC IP",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.6.sp,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 2.sp,
             color = RefTextMid,
             maxLines = 1,
             style = TextStyle(shadow = HeroInkShadow),
         )
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(1.dp))
         // Crossfade only between the three *kinds* of state — not on every value change. The kind
         // (ready / checking / unavailable) is the key, so when the address changes while staying
         // ready the outer fade does nothing and [RollingIp] rolls the digits instead.
@@ -2093,7 +2102,7 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
         value.forEachIndexed { index, ch ->
             key(index) {
                 if (ch in '0'..'9') {
-                    DigitReel(digit = ch - '0', reduce = reduce)
+                    DigitReel(digit = ch - '0', reduce = reduce, index = index)
                 } else {
                     // Dots and colons do not roll — a fixed cell keeps the row's rhythm and gives
                     // the wheels either side of it something to align to.
@@ -2114,28 +2123,48 @@ private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modif
     }
 }
 
-/** One odometer wheel: a 0–9 strip translated so [digit] sits in the single-cell window, animated
- *  so a change rolls through the intervening digits. See [RollingIp]. */
+/** How many digit cells the reel strip holds: two full 0–9 runs (20 cells). The extra run is the
+ *  headroom the *first* spin needs — a wheel starts a full turn above its target and rolls down
+ *  into place, so its position travels through [digit, digit+10], which a single 0–9 strip could
+ *  not cover without going blank. */
+private const val IpReelCells = 20
+
+/** One odometer wheel. Unlike a plain [animateFloatAsState] (which does not animate on its first
+ *  composition, so a value that only ever resolves *once* would snap in without rolling), this
+ *  drives an [Animatable] from a start a full turn above the target, so the very first appearance
+ *  spins down into place — and any later change rolls through the intervening digits. See
+ *  [RollingIp]. */
 @Composable
-private fun DigitReel(digit: Int, reduce: Boolean) {
-    val target by animateFloatAsState(
-        targetValue = digit.toFloat(),
-        animationSpec = motionSpec(reduce, IP_ROLL_MS),
-        label = "digitReel",
-    )
+private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
+    // Start one full turn (10) above the target so the first render rolls down through a complete
+    // spin; under reduced motion it simply parks on the digit. Captured once — later changes are
+    // driven by the effect below, animating from wherever the wheel currently sits.
+    val pos = remember {
+        Animatable(if (reduce) digit.toFloat() else digit.toFloat() + 10f)
+    }
+    LaunchedEffect(digit, reduce) {
+        if (reduce) {
+            pos.snapTo(digit.toFloat())
+        } else {
+            // A short per-wheel stagger so the wheels cascade rather than snapping in lockstep,
+            // which is what makes the roll read as a mechanical counter rather than a repaint.
+            delay((index % 6) * 26L)
+            pos.animateTo(digit.toFloat(), tween(IP_ROLL_MS))
+        }
+    }
     Box(
         Modifier
             .height(IpDigitCell)
             .clipToBounds(),
     ) {
         Column(
-            Modifier.graphicsLayer { translationY = -target * IpDigitCell.toPx() },
+            Modifier.graphicsLayer { translationY = -pos.value * IpDigitCell.toPx() },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            for (d in 0..9) {
+            for (i in 0 until IpReelCells) {
                 Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
                     Text(
-                        d.toString(),
+                        (i % 10).toString(),
                         fontSize = IpValueSize,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -2766,21 +2795,28 @@ private fun BrowseCard(
             }
     ) {
         // The card's masthead. The public IP now rides the flag up in the hero ([Header]); down here
-        // the head is just the dock well plus a single controls row pinned to the card's top edge.
-        // [CardTopRoom] is the dock well — the connect disc's lower half rests over that clear glass.
-        // The controls sit at opposite corners of the header row, right above the divider: the
-        // add-server "+" on the left, the search magnifier on the right.
-        Spacer(Modifier.height(CardTopRoom))
-        Row(
+        // the head is the dock well with the controls pinned to the card's very top edge, at
+        // opposite corners of it: the add-server "+" on the left, the search magnifier on the right.
+        // They sit *at the top* rather than below the well — the connect disc docks in the centre of
+        // this band, so the corners are clear and the two controls never collide with it. The band's
+        // height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
+        Box(
             Modifier
                 .fillMaxWidth()
-                .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .height(CardTopRoom),
         ) {
-            AddServerButton(onClick = onAddServer)
-            SearchToggle(open = searchOpen, onClick = onToggleSearch)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AddServerButton(onClick = onAddServer)
+                SearchToggle(open = searchOpen, onClick = onToggleSearch)
+            }
         }
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         // The divider between the card's head and the list, brightening on scroll ([listElevation]).

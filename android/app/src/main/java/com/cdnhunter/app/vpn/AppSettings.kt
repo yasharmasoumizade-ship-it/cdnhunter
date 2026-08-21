@@ -255,6 +255,18 @@ object AppSettings {
     fun setLastFlagCountry(ctx: Context, code: String) =
         prefs(ctx).edit().putString(KEY_LAST_FLAG_CC, code.trim().uppercase()).apply()
 
+    // The last public IP that resolved successfully, kept so the hero opens on the last-known
+    // address instead of a blank dash while a fresh lookup is still in flight — and so a censored
+    // or captive network that blocks every lookup this session still shows the last good value.
+    // A display cache only; nothing routes by it.
+    private const val KEY_LAST_PUBLIC_IP = "last_public_ip"
+
+    fun lastPublicIp(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_PUBLIC_IP, "") ?: ""
+
+    fun setLastPublicIp(ctx: Context, ip: String) =
+        prefs(ctx).edit().putString(KEY_LAST_PUBLIC_IP, ip.trim()).apply()
+
 
     // ============ SUBSCRIPTIONS ============
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
