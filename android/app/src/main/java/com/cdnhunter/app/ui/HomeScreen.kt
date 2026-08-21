@@ -90,7 +90,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -1201,6 +1203,12 @@ internal fun HomeScreen(
 ) {
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    // The search toggle lives on the flag now (a hero control beside the connect disc), not in
+    // the card, so its action is defined here and handed to that overlay.
+    val toggleSearch: () -> Unit = {
+        searchOpen = !searchOpen
+        if (!searchOpen) query = ""
+    }
 
     // Every server the app knows about, filtered by the search box and sorted by latency.
     // The Main/Custom tab selector is gone, so there is one list and it is all of them.
@@ -1229,7 +1237,6 @@ internal fun HomeScreen(
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
-                onRetryIp = onRetryIp,
                 modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             BrowseCard(
@@ -1239,15 +1246,40 @@ internal fun HomeScreen(
                 query = query,
                 searchOpen = searchOpen,
                 onQueryChange = { query = it },
-                onToggleSearch = {
-                    searchOpen = !searchOpen
-                    if (!searchOpen) query = ""
-                },
                 onSelectConfig = onSelectConfig,
                 onAddServer = onAddServer,
                 onRefreshPings = onRefreshPings,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // The public-IP card, floating on the lower-left of the flag, above the docked disc.
+        // Its top sits [IpCardRise] above the disc's equator, so it clears the disc's foot and
+        // stays out of the connect control's touch area.
+        IpCard(
+            state = state,
+            onRetryIp = onRetryIp,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = ScreenPad)
+                .padding(top = (heroHeight - PowerSize / 2 - IpCardRise).coerceAtLeast(0.dp))
+                .widthIn(max = HeroInfoMaxWidth),
+        )
+
+        // The list's controls, lifted onto the flag to flank the connect disc at its equator:
+        // add a server on the left, search on the right, one 48dp target each in the clear side
+        // gaps beside the 118dp disc. Drawn before [PowerCircle] so the disc stays on top.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopStart)
+                .padding(top = (heroHeight - TapTarget / 2).coerceAtLeast(0.dp))
+                .padding(horizontal = ScreenPad - 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AddServerButton(onClick = onAddServer)
+            SearchToggle(open = searchOpen, onClick = toggleSearch)
         }
 
         // The connect disc, docked on the seam: its centre sits on the card's top edge, so
@@ -1518,33 +1550,22 @@ private val HeroVignetteStops = listOf(
 // inset is gone — so it carries [statusBarsPadding] itself and the backdrop behind it runs on
 // to the top of the screen, under the system clock.
 
-// [HeroHeadRoom] is the air between the menu mark and the country headline, so the headline
-// sits on the flag rather than butting against the mark above it.
-
-/** Between the headline block and the address.
+/** The open flag between the top row (menu + country plate) and the docked connect disc.
  *
- *  4dp. The address lost its chip in the same pass ([MetaRow]), and a bare line of type wants
- *  to sit closer to what it belongs to than a floating container did — a chip reads as its own
- *  object at 6dp, but 13.5sp of ink reads as the headline's second line. */
-private val HeadlineFootGap = 4.dp
-
-/** Between the address and the power circle: the hero's breathing room, and what makes the
- *  artwork around the button a place rather than a gap.
- *
- *  2dp, down from 4 by way of 8 and 26. The disc's own box is [PowerSize] against a
- *  [PowerDiscSize] mark, so it already carries an 11dp band of its own on every side — a
- *  gap here is added to that band, not to the disc, which is why it can go this low without
- *  the address touching anything. */
-private val HeroOpenSpace = 18.dp
+ *  The address and the country name no longer stack down the centre of this column — the
+ *  country sits top-right in [CountryHeadline] and the public IP is an overlay card drawn by
+ *  [HomeScreen] over the lower-left of the flag. So this column's middle is bare artwork now,
+ *  and this token is how much of it shows above the disc's dock well. */
+private val HeroFlagSpace = 104.dp
 
 /**
- * The flag the hero reserves below the address for the docked connect disc's *upper half*.
+ * The flag the hero reserves below the top row for the docked connect disc's *upper half*.
  *
  * The disc no longer lives in this column — [HomeScreen] draws it as an overlay whose centre
  * lands on this column's measured foot, i.e. the browse card's top edge. So the disc straddles
  * the seam: its lower half sits on the card, its upper half floats over the flag. This spacer is
- * that upper half — [PowerSize] / 2 — plus [HeroOpenSpace]'s air above it, so the disc has flag
- * around its top and the card begins exactly under its equator.
+ * that upper half — [PowerSize] / 2 — so the disc has flag around its top and the card begins
+ * exactly under its equator.
  */
 private val HeroDockWell = PowerSize / 2
 
@@ -1552,7 +1573,6 @@ private val HeroDockWell = PowerSize / 2
 private fun Header(
     state: HomeUiState,
     onOpenSettings: () -> Unit,
-    onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1563,23 +1583,25 @@ private fun Header(
             // hamburger sits directly on the flag under the system clock.
             .statusBarsPadding()
             .padding(start = ScreenPad, end = ScreenPad),
-        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Top-left: the menu, on the flag. A full-width box holds it to the start while the
-        // rest of the column centres. Nudged out a hair so the glyph sits on the screen margin.
-        Box(Modifier.fillMaxWidth()) {
+        // The top row of the flag: the menu held to the left, the country name to the right on
+        // its own dark plate. Both ride the flag rather than a chrome bar. Aligned to the top so
+        // the tall country plate does not drag the short menu mark down with it.
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+        ) {
             MenuButton(
                 onClick = onOpenSettings,
-                modifier = Modifier.align(Alignment.CenterStart).offset(x = (-2).dp),
+                // Nudged out a hair so the glyph sits on the screen margin.
+                modifier = Modifier.offset(x = (-2).dp),
             )
+            Spacer(Modifier.weight(1f))
+            CountryHeadline(state, modifier = Modifier.widthIn(max = HeadlinePlateMaxWidth))
         }
-        // Open air between the menu and the country name, so the headline sits *on* the flag.
-        Spacer(Modifier.height(HeroHeadRoom))
-        CountryHeadline(state)
-        Spacer(Modifier.height(HeadlineFootGap))
-        // The address sits above the button: which country, as what address, [the action].
-        MetaRow(state = state, onRetryIp = onRetryIp)
-        Spacer(Modifier.height(HeroOpenSpace))
+        // Open flag under the top row: bare artwork, with the public-IP card overlaid on its
+        // lower-left by [HomeScreen] and the connect disc docked below.
+        Spacer(Modifier.height(HeroFlagSpace))
         // Reserve the docked disc's upper half over the flag. The disc itself is drawn by
         // [HomeScreen] as an overlay, centred on this column's measured foot — which is the
         // browse card's top edge — so its lower half rests on the card.
@@ -1638,9 +1660,6 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
         }
     }
 }
-
-/** Open air between the black header bar and the country headline. */
-private val HeroHeadRoom = 22.dp
 
 // ── Mode pill ─────────────────────────────────────────────────────────────────
 // Gone. The badge that used to sit on the seam between the hero and the browse card — glass,
@@ -1711,193 +1730,56 @@ private val UsageCardFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 
 // ── Country headline ──────────────────────────────────────────────────────────
-// The largest ink in the app: where the tunnel comes out, at 34sp ExtraBold, centred.
+// Where the tunnel comes out, top-right on the flag, white on an asymmetric dark plate.
 //
 // One fact and no others. The city used to lead this line with the country and the
 // config's own name under it; the flag behind the whole screen already says which country
-// this is, the city is not something the user chose, and the server's name is what the
-// selector at the foot and the list below are for. What is left is the answer.
+// this is, and the server's name is what the selector at the foot and the list below are for.
+// What is left is the answer — the country, with the city as one dim caption under it.
 //
 // It changes on the same crossfade as the flag behind it, because they are the same event
 // — the user picks another server, or the tunnel reports the exit node's real country —
 // and a country name that cuts while its flag dissolves reads as two things happening.
 //
-// [headlineBrush] colours it, so the headline is the phase's colour too — accent working, teal
-// up — and at rest it is the *flag's* colours rather than white. That is the third statement of
-// the phase on this screen and the one that carries furthest, because it is on the biggest text.
+// It is white now, not flag-tinted: it sits on its own dark plate rather than straight on the
+// artwork, so the plate — not a per-country ink table — is what guarantees contrast over any
+// flag. The plate is a cut, irregular shape ([HeadlinePlateShape]) rather than a rectangle, so
+// it reads as part of the artwork's geometry instead of a label pasted on top of it.
 
-/** The headline, and its subtitle's, own size. 34sp is the largest the longest country
- *  name this app can draw ("Bosnia and Herzegovina") still fits on one line of a 360dp
- *  screen at default font scale; beyond that it ellipsises, which on the screen's one
- *  headline would be worse than a smaller face. */
-private val HeadlineSize = 34.sp
+/** The country name's own size. 22sp ExtraBold: the headline is no longer the largest ink on
+ *  the screen — the connect disc is the hero now — so the country reads as a top-right label on
+ *  its plate rather than a centred banner. Long names ellipsise inside [HeadlinePlateMaxWidth]. */
+private val HeadlineSize = 22.sp
 
-// ── Flag-tinted headline ──────────────────────────────────────────────────────
-// The country's name, in the country's own colours.
-//
-// The headline used to be one fixed white ([RefTextHi]) over whatever artwork happened to be
-// behind it, which is the safe choice and also the one that makes the largest text on the
-// screen the only thing up here with no relationship to the flag it is printed on. Every other
-// layer in the hero already takes its cue from the artwork — the wash, the horizon light, the
-// scrim — and the word sat on top of all of it as chrome.
-//
-// The treatment is a two-stop vertical gradient across the glyphs, from a light tint of the
-// flag's first dominant hue to a light tint of its second: Sweden's blue into its gold, Italy's
-// green into its red, Japan's crimson into its white. Not sampled from the bitmap, and that is
-// a decision rather than a shortcut. Sampling means decoding the flag on the UI thread, or
-// carrying a palette extraction on every flag change, to arrive at an *average* — and the
-// average of a flag is mud, because flags are chosen for contrast. It also cannot be tuned: the
-// blue of the Swedish flag at full saturation fails contrast at 34sp over dark artwork, so the
-// sampled colour would need lightening by hand anyway. A curated table skips both problems and
-// is auditable, one line per country.
-//
-// Contrast is what fixes the *lightness* of every entry below. All of them sit in a narrow
-// luminance band — pastels, nothing below roughly #A8 in its brightest channel — so the
-// headline clears its contrast floor over the darkest and the brightest band of any flag the
-// app draws, with the hero's own scrim ([HeroDepthScrim]) underneath it. What varies between
-// countries is hue, never how bright the word is.
-//
-// The phase tints, it does not replace. [headlineBrush] leans both stops towards white
-// while an attempt is in flight and towards [RefLive] while the tunnel is up, but only as far as
-// [HEADLINE_PHASE_MIX] — so the state reads at a glance and the word stays the country's colour
-// underneath it.
+/** The widest the country plate is allowed to grow before its label ellipsises, so even
+ *  "Bosnia and Herzegovina" cannot crowd the menu mark across the top row. */
+private val HeadlinePlateMaxWidth = 232.dp
 
-/** Blue into gold: SE, UA, KZ. */
-private val InkBlueGold = Color(0xFFA9C9F2) to Color(0xFFF2DB99)
-
-/** Blue into near-white ice: FI, EE, GR, IL, AR. */
-private val InkBlueIce = Color(0xFFBAD6F6) to Color(0xFFECF3FC)
-
-/** The blue-white-red family, and the largest one: US, GB, FR, NL, RU and the rest. */
-private val InkTricolour = Color(0xFFB7CCF2) to Color(0xFFF0BEC1)
-
-/** Red into white — the other large family, from DK and CH to JP and SG. */
-private val InkRedWhite = Color(0xFFF5C2BD) to Color(0xFFF3EEEE)
-
-/** Gold into red: ES, VN. */
-private val InkGoldRed = Color(0xFFF5DDA0) to Color(0xFFF1B3A4)
-
-/** Gold into red over black: DE, BE. The black band is what the tints cannot state, so the
- *  gold carries the flag and the red follows it. */
-private val InkIronGold = Color(0xFFF4D68F) to Color(0xFFEDB0A0)
-
-/** Green into gold: BR, LT, ZA. */
-private val InkGreenGold = Color(0xFFAADCB6) to Color(0xFFF0DB98)
-
-/** Green into orange: IE, NG. */
-private val InkEmerald = Color(0xFFA9DEB9) to Color(0xFFF5CD9F)
-
-/** Green into red, usually across a white middle: IT, HU, IR, MX, BG. */
-private val InkGreenWhiteRed = Color(0xFFA8DDB2) to Color(0xFFF1BCB6)
-
-/** Green into crimson: PT, KE. */
-private val InkGreenCrimson = Color(0xFFA9DCB4) to Color(0xFFF1B2A5)
-
-/** The Gulf's green-white-red-black: AE, SA, KW, IQ, OM, AZ. */
-private val InkDesertGreen = Color(0xFFB4E0BD) to Color(0xFFEFC6B9)
-
-/** Blue into gold into red: RO, MD, AM. */
-private val InkBlueGoldRed = Color(0xFFB4CBF2) to Color(0xFFF3DA9E)
-
-/** Saffron into green: IN. */
-private val InkSaffron = Color(0xFFF5C79A) to Color(0xFFB6E0BA)
-
-/** Blue into red on white: KR, TW. */
-private val InkEastAsia = Color(0xFFB8D3F2) to Color(0xFFF1BBB7)
-
-/** White into copper: CY. */
-private val InkCopper = Color(0xFFF4DFC8) to Color(0xFFF2C9A4)
-
-/** Red into gold: EG. */
-private val InkRedGold = Color(0xFFF1BBB0) to Color(0xFFF3DEA6)
-
-/** Gold into blue: CO. */
-private val InkGoldBlue = Color(0xFFF3DB9E) to Color(0xFFAFCDF2)
-
-/** No flag, or one with no entry below: the white the headline always was, cooled very
- *  slightly towards its foot so the treatment is consistent even where the hues are not. */
-private val InkNeutral = RefTextHi to Color(0xFFD7DDE8)
-
-/**
- * The two tints for one ISO 3166-1 alpha-2 code, or [InkNeutral] for anything unlisted.
- *
- * Grouped by the hue pair rather than written out per country, because that is what the flags
- * themselves do — there are only so many ways to arrange red and white — and a table of 70
- * near-duplicate colour literals would be 70 things to get subtly wrong. The codes covered are
- * the ones the app fetches artwork for (`VPN_FLAG_COUNTRIES` in FlagArtwork.kt); anything
- * outside that set is drawing the bundled placeholder, which has no country colours to
- * harmonise with, so the neutral pair is the honest answer for it.
- */
-private fun flagInk(code: String): Pair<Color, Color> = when (code.uppercase()) {
-    "SE", "UA", "KZ" -> InkBlueGold
-    "FI", "EE", "GR", "IL", "AR" -> InkBlueIce
-    "US", "GB", "FR", "NL", "RU", "CZ", "SK", "SI", "HR", "RS",
-    "NO", "IS", "NZ", "AU", "CL", "LU", "TH", "PH", "MY" -> InkTricolour
-    "DK", "CH", "AT", "PL", "ID", "SG", "TR", "JP", "PE", "CA",
-    "BH", "QA", "LV", "GE", "HK" -> InkRedWhite
-    "ES", "VN" -> InkGoldRed
-    "DE", "BE" -> InkIronGold
-    "BR", "LT", "ZA" -> InkGreenGold
-    "IE", "NG" -> InkEmerald
-    "IT", "HU", "IR", "MX", "BG" -> InkGreenWhiteRed
-    "PT", "KE" -> InkGreenCrimson
-    "AE", "SA", "KW", "IQ", "OM", "AZ" -> InkDesertGreen
-    "RO", "MD", "AM" -> InkBlueGoldRed
-    "IN" -> InkSaffron
-    "KR", "TW" -> InkEastAsia
-    "CY" -> InkCopper
-    "EG" -> InkRedGold
-    "CO" -> InkGoldBlue
-    else -> InkNeutral
+/** The plate behind the country name: a rectangle with two opposite corners cut, so it reads as
+ *  a faceted tag rather than a label box. Asymmetric on purpose — the top-left and bottom-right
+ *  chamfers echo the blueprint geometry the rest of the hero is drawn in. */
+private val HeadlinePlateShape = GenericShape { size, _ ->
+    val w = size.width
+    val h = size.height
+    moveTo(w * 0.07f, 0f)     // top edge starts in from the left — the top-left corner is cut
+    lineTo(w, 0f)             // across the top to the right
+    lineTo(w, h * 0.62f)      // down the right edge...
+    lineTo(w * 0.90f, h)      // ...then a chamfer into the bottom-right corner
+    lineTo(0f, h)             // across the bottom to the left
+    lineTo(0f, h * 0.34f)     // up the left edge back towards the top-left chamfer
+    close()
 }
 
-/**
- * The headline's ink: [flagInk]'s pair as a vertical gradient across the glyphs, carried towards
- * the phase's colour as the phase takes over.
- *
- * A brush rather than a colour, which is why the deleted `headerInk` helper could not be reused
- * and why the crossfade it got from [animateColorAsState] has to be rebuilt here: nothing
- * animates a [Brush]. Two phase fractions animate instead, on the same [PHASE_FADE_MS], and each
- * stop is lerped towards the state's colour by them — the gradient stays a gradient throughout,
- * and at rest in a state it is that state's colour top and bottom, which is exactly where the old
- * fixed ink ended up too.
- *
- * The lerps are applied in sequence rather than picked between, so the CONNECTING → CONNECTED
- * handover — the white working lift falling as teal rises — passes through a blend of the two
- * instead of snapping between them.
- */
-@Composable
-private fun headlineBrush(phase: ConnPhase, countryCode: String): Brush {
-    val reduce = rememberReduceMotion()
-    val working by animateFloatAsState(
-        targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "headlineWorking",
-    )
-    val live by animateFloatAsState(
-        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "headlineLive",
-    )
-    val (top, bottom) = flagInk(countryCode)
-    // Capped, and this is the fix for a regression worth naming: the mix used to run to 1.0,
-    // so the moment the tunnel came up the headline was pure [RefLive] teal and the flag tint
-    // it was supposed to carry was gone — "Sweden" in teal over a blue-and-gold flag. At 0.34
-    // the phase is unmistakable and the hue underneath it is still the country's.
-    //
-    // Connecting mixes towards white rather than a colour of its own: the working state is
-    // monochrome everywhere now (the ring, the disc mark, the room's light), so the headline
-    // brightens a touch while an attempt is in flight instead of taking on a hue.
-    fun state(tint: Color): Color = lerp(
-        lerp(tint, Color.White, working * HEADLINE_PHASE_MIX),
-        RefLive,
-        live * HEADLINE_PHASE_MIX,
-    )
-    return Brush.verticalGradient(0f to state(top), 1f to state(bottom))
-}
+/** The plate's fill: darkest under the right, where the right-aligned name's ink is heaviest, so
+ *  the white clears its contrast floor over whatever flag band the artwork puts behind it. */
+private val HeadlinePlateFill = Brush.horizontalGradient(
+    0f to Color.Black.copy(alpha = 0.14f),
+    0.45f to Color.Black.copy(alpha = 0.46f),
+    1f to Color.Black.copy(alpha = 0.66f),
+)
 
-/** How far the headline's flag tint is allowed to travel towards the phase colour. */
-private const val HEADLINE_PHASE_MIX = 0.34f
+/** The city caption's size, a clear step under the country name. */
+private val HeadlineCaptionSize = 10.5.sp
 
 @Composable
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
@@ -1909,83 +1791,143 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val headline = country.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-    // The city, when there is one and it is not already the headline: one dim line under
-    // the country, at caption weight, so the hero can be specific without the headline
-    // having to carry two facts.
+    // The city, when there is one and it is not already the headline: one dim caption under
+    // the country, so the plate can be specific without the name having to carry two facts.
     val city = cfg?.let { state.cityFor(it) }.orEmpty()
-    // The tint follows the flag that is actually on screen ([HomeUiState.heroFlagCountry]),
-    // not the config's own country: at launch the flag is the cached one for a moment, and a
-    // headline coloured for a flag that is not up yet would be the one frame where the two
-    // disagree.
-    val ink = headlineBrush(state.phase, state.heroFlagCountry)
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        AnimatedContent(
-            targetState = headline,
-            transitionSpec = {
-                (
-                    fadeIn(motionSpec(reduce, FLAG_FADE_IN_MS)) togetherWith
-                        fadeOut(motionSpec(reduce, FLAG_FADE_OUT_MS))
-                    ).using(SizeTransform(clip = false))
-            },
-            label = "countryHeadline",
-        ) { value ->
-            Text(
-                value,
-                fontSize = HeadlineSize,
-                lineHeight = 38.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.3).sp,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                // The brush replaces `color` outright — a TextStyle carrying both would use
-                // the brush and silently drop the colour, so there is no `color` here at all.
-                // The shadow is what keeps a pastel legible where a flag's own light band
-                // comes through the scrim; white never needed it, tinted ink does.
-                style = TextStyle(brush = ink, shadow = HeroInkShadow),
-            )
+    Box(
+        modifier
+            .clip(HeadlinePlateShape)
+            .background(HeadlinePlateFill)
+            .padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 9.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.End) {
+            AnimatedContent(
+                targetState = headline,
+                transitionSpec = {
+                    (
+                        fadeIn(motionSpec(reduce, FLAG_FADE_IN_MS)) togetherWith
+                            fadeOut(motionSpec(reduce, FLAG_FADE_OUT_MS))
+                        ).using(SizeTransform(clip = false))
+                },
+                label = "countryHeadline",
+            ) { value ->
+                Text(
+                    value,
+                    fontSize = HeadlineSize,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.4).sp,
+                    textAlign = TextAlign.End,
+                    color = Color.White,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    // A soft cast under the white so it holds even where the plate thins at its top.
+                    style = TextStyle(shadow = HeroInkShadow),
+                )
+            }
+            if (city.isNotBlank() && !city.equals(headline, ignoreCase = true)) {
+                Text(
+                    city.uppercase(),
+                    fontSize = HeadlineCaptionSize,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.5.sp,
+                    textAlign = TextAlign.End,
+                    color = RefTextMid,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(shadow = HeroInkShadow),
+                )
+            }
         }
-
     }
 }
 
-// ── Meta row ──────────────────────────────────────────────────────────────────
-// One fact, on one line: the address the internet currently sees. Off, it holds this device's
-// own address; connected, the exit node's. Keeping it visible in both is the point — the number
-// the user is about to change is the number they can read now.
+// ── Public-IP card ────────────────────────────────────────────────────────────
+// One fact, in a small glass box on the lower-left of the flag: the address the internet
+// currently sees. Off, it holds this device's own address; connected, the exit node's. Keeping
+// it visible in both is the point — the number the user is about to change is readable now.
 //
-// Tap it and it goes to the clipboard. There is no container: the ink keeps the padding, clip
-// and ripple the deleted chip had, so the hit target survived losing the edge.
+// It used to be a bare tappable line under the country name. It is a card now, with a "PUBLIC IP"
+// label over a bold white value, because it moved off the centre column onto the open flag and a
+// line of bare type there had nothing to sit it apart from the artwork. Tap it and the value goes
+// to the clipboard.
 //
-// It has three states, not two, and that distinction is the whole of the bug it was carrying. A
-// blank address is either "we are still asking" or "every provider failed", and both used to
-// render as one dim em dash at [RefTextLow] on bare artwork — which was, in practice, invisible,
-// and read as a missing element rather than as a value that never arrived. Now: the number, or
-// "Checking…", or "Unavailable" with the whole line tappable to ask again. See
-// [HomeUiState.ipLookupPending] for the flag and [GeoService.lookupCurrentIp] for what can fail.
+// Three states, not two: the number, or "Checking…", or "Unavailable" with the box tappable to
+// ask again. See [HomeUiState.ipLookupPending] for the flag and [GeoService.lookupCurrentIp] for
+// what can fail.
 
-/** What the hero's address line is showing right now — see [MetaRow]. */
+/** What the public-IP card is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
     val ready: Boolean get() = value.isNotBlank()
 }
 
+/** The card's shape: a small rounded glass box with one corner squared, a subtle asymmetry that
+ *  rhymes with the country plate's cut corners across the flag from it. */
+private val IpCardShape = RoundedCornerShape(
+    topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 4.dp,
+)
+
+/** The card's material: translucent dark glass, so the flag reads through it and the [heroEdge]
+ *  hairline catches the light like every other raised thing in the hero. */
+private val IpCardFill = Brush.verticalGradient(
+    listOf(Color.Black.copy(alpha = 0.42f), Color.Black.copy(alpha = 0.30f)),
+)
+
+/** How far above the connect disc's equator the IP card's top is pinned. Sized so the card's
+ *  whole body clears the disc's ring ([PowerSize] / 2 above the seam), leaving the card and the
+ *  disc as two separate objects on the flag rather than one overlapping the other. */
+private val IpCardRise = 52.dp
+
+/** The widest the IP card is allowed to grow. IPv4 fits well inside it; a long IPv6 value
+ *  ellipsises on screen, and a tap still copies the whole address to the clipboard. */
+private val HeroInfoMaxWidth = 210.dp
+
 @Composable
-private fun MetaRow(
-    state: HomeUiState,
-    onRetryIp: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val reduce = rememberReduceMotion()
     val slot = IpSlot(state.displayIp, state.ipLookupPending)
-    // A floor height whether or not the address is in it yet, so the hero does not grow a
-    // few dp on connect and shrink again on cancel.
-    Row(
-        modifier.heightIn(min = 22.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    // Tapping copies a real value, or retries a failed lookup; while a lookup is still in flight
+    // there is nothing to do, so the card is not clickable in that one state.
+    val onTap: (() -> Unit)? = when {
+        slot.ready -> {
+            {
+                clipboard.setText(AnnotatedString(slot.value))
+                android.widget.Toast
+                    .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+        !slot.checking -> onRetryIp
+        else -> null
+    }
+    val tapLabel = if (slot.ready) "Copy IP address" else "Retry IP lookup"
+    Column(
+        modifier
+            .clip(IpCardShape)
+            .background(IpCardFill)
+            .border(1.dp, heroEdge, IpCardShape)
+            .then(
+                if (onTap != null) {
+                    Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 13.dp, vertical = 9.dp),
     ) {
+        Text(
+            "PUBLIC IP",
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.6.sp,
+            color = RefTextMid,
+            maxLines = 1,
+            style = TextStyle(shadow = HeroInkShadow),
+        )
+        Spacer(Modifier.height(2.dp))
         AnimatedContent(
             targetState = slot,
             transitionSpec = {
@@ -1995,48 +1937,32 @@ private fun MetaRow(
             },
             label = "publicIp",
         ) { value ->
-            if (!value.ready) return@AnimatedContent
-            val click: (() -> Unit) = {
-                clipboard.setText(AnnotatedString(value.value))
-                android.widget.Toast
-                    .makeText(context, "IP copied", android.widget.Toast.LENGTH_SHORT)
-                    .show()
+            val shown = when {
+                value.ready -> value.value
+                value.checking -> "Checking…"
+                else -> "Unavailable"
             }
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(
-                        onClickLabel = "Copy IP address",
-                        onClick = click,
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    value.value,
-                    fontSize = if (value.ready) 13.5.sp else 12.5.sp,
-                    fontWeight = if (value.ready) FontWeight.Bold else FontWeight.SemiBold,
-                    // The placeholders are a step down from the number, never below the label:
-                    // dimmer than a real value, still plainly readable over any flag.
-                    color = if (value.ready) RefTextHi else RefTextMid,
+                    shown,
+                    fontSize = if (value.ready) 15.sp else 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    // Bold white for a real number; a dimmer step for the two placeholders, still
+                    // plainly readable over any flag.
+                    color = if (value.ready) Color.White else RefTextMid,
                     maxLines = 1,
-                    // With softWrap off and ellipsis on, anything that doesn't fit ends in "…"
-                    // rather than mid-stroke.
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(
-                        fontFeatureSettings = "tnum",   // tabular-nums
-                        shadow = HeroInkShadow,
-                    ),
+                    style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                 )
                 // The retry affordance, and only in the state that has something to retry.
                 if (!value.ready && !value.checking) {
-                    Spacer(Modifier.width(5.dp))
+                    Spacer(Modifier.width(6.dp))
                     Icon(
                         Icons.Rounded.Refresh,
                         contentDescription = null,
                         tint = RefTextMid,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }
@@ -2568,7 +2494,6 @@ private fun BrowseCard(
     query: String,
     searchOpen: Boolean,
     onQueryChange: (String) -> Unit,
-    onToggleSearch: () -> Unit,
     onSelectConfig: (SavedConfig) -> Unit,
     onAddServer: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
@@ -2594,6 +2519,21 @@ private fun BrowseCard(
     val density = LocalDensity.current
     val fade = remember(density) { panelTopFade(with(density) { PanelFade.toPx() }) }
     val frost = remember(density) { panelFrost(with(density) { PanelFrostFade.toPx() }) }
+    val listState = rememberLazyListState()
+    val reduce = rememberReduceMotion()
+    // Scroll elevation: the divider under the card's head brightens and casts a soft shadow once
+    // the list has scrolled off its first row — the standard "there is content under this edge"
+    // cue. Read off [rememberLazyListState] and animated (honouring reduced motion).
+    val raised by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 2
+        }
+    }
+    val listElevation by animateFloatAsState(
+        targetValue = if (raised) 1f else 0f,
+        animationSpec = motionSpec(reduce, 200),
+        label = "listElevation",
+    )
     Column(
         modifier
             .fillMaxWidth()
@@ -2615,24 +2555,14 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's head clearance is a *dock well* now: the connect disc (drawn by
-        // [HomeScreen] as an overlay) sits half on this card's top edge, so its lower half
-        // needs clear glass to rest on before the list's controls begin. See [CardTopRoom].
+        // The card's head clearance is a *dock well*: the connect disc (drawn by [HomeScreen] as
+        // an overlay) sits half on this card's top edge, so its lower half needs clear glass to
+        // rest on. The list's add/search controls used to sit here; they are hero controls on the
+        // flag now (see [HomeScreen]), so the well runs straight into the search field and list.
         Spacer(Modifier.height(CardTopRoom))
-        // The list's controls, right-aligned below the docked disc: add a server, and search.
-        // The Main/Custom tab pills are gone — there is one list now, and it is every server.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ListPad, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Spacer(Modifier.weight(1f))
-            AddServerButton(onClick = onAddServer)
-            Spacer(Modifier.width(6.dp))
-            SearchToggle(open = searchOpen, onClick = onToggleSearch)
-        }
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
+        // The divider between the card's head and the list, brightening on scroll ([listElevation]).
+        ListScrollEdge(elevation = listElevation)
         Box(
             Modifier
                 .fillMaxWidth()
@@ -2652,10 +2582,10 @@ private fun BrowseCard(
         ) {
             LazyColumn(
                 Modifier.fillMaxSize(),
-                // Enough room at the foot that the last row clears the floating usage
-                // card, and none at all at the head: [CardTopRoom] above is the card's own
-                // clearance, and anything here would be a second one.
-                contentPadding = PaddingValues(top = 0.dp, bottom = 88.dp),
+                state = listState,
+                // A little air at the head so the first row does not butt the divider, and enough
+                // at the foot that the last row clears the floating usage card.
+                contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp),
             ) {
                 if (servers.isEmpty()) {
                     item(key = "empty") {
@@ -2690,6 +2620,50 @@ private fun BrowseCard(
             )
         }
     }
+}
+
+// ── List scroll edge ────────────────────────────────────────────────────────────
+// The divider between the card's head and its scrolling list, and the screen's one piece of
+// scroll elevation. At rest it is a faint hairline; once the list scrolls it brightens and a soft
+// shadow grows under it, so the list reads as sliding *under* a fixed head. Driven by an animated
+// 0→1 [elevation] from [BrowseCard] (which honours reduced motion), never by the raw scroll offset.
+
+/** The hairline's alpha at rest and fully raised, and the peak alpha of the shadow beneath it. */
+private const val LIST_EDGE_ALPHA_REST = 0.055f
+private const val LIST_EDGE_ALPHA_RAISED = 0.16f
+private const val LIST_EDGE_SHADOW_ALPHA = 0.22f
+
+/** How tall the shadow gradient below the hairline is drawn. */
+private val ListEdgeShadowHeight = 10.dp
+
+@Composable
+private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
+    val lineAlpha =
+        LIST_EDGE_ALPHA_REST + (LIST_EDGE_ALPHA_RAISED - LIST_EDGE_ALPHA_REST) * elevation
+    val shadowAlpha = LIST_EDGE_SHADOW_ALPHA * elevation
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(ListEdgeShadowHeight)
+            .drawBehind {
+                // The soft cast under the head, only once raised.
+                if (shadowAlpha > 0.001f) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = shadowAlpha),
+                            1f to Color.Transparent,
+                        ),
+                    )
+                }
+                // The hairline itself, along the top edge.
+                drawLine(
+                    color = Color.White.copy(alpha = lineAlpha),
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            },
+    )
 }
 
 /**
@@ -2865,36 +2839,38 @@ private fun DrawScope.drawPanelTopEdge() {
 }
 
 /**
- * The "+" that opens the add-server sheet: a bare icon in a [TapTarget] touch area, beside the
- * search magnifier.
+ * The "+" that opens the add-server sheet: a bare icon in a [TapTarget] touch area, flanking the
+ * connect disc on the flag (see [HomeScreen]).
  *
- * Ink is [RefTextMid], the same as the idle magnifier beside it: it was accent-blue, which read
- * as the one coloured control in a row of white ones.
+ * White ink, like the menu mark and the search glyph it shares the flag with: on the artwork
+ * rather than on the card now, so it takes the flag's own high-contrast white.
  */
 @Composable
 private fun AddServerButton(onClick: () -> Unit) {
     Box(
         Modifier
             .size(TapTarget)
-            .clickable(onClick = onClick),
+            .clip(CircleShape)
+            .clickable(onClickLabel = "Add server", onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             Icons.Rounded.Add,
             contentDescription = "Add server",
-            tint = RefTextMid,
+            tint = Color.White,
             modifier = Modifier.size(26.dp),
         )
     }
 }
 
-/** .search-btn: the magnifier, accent-blue while the field is open. */
+/** The magnifier flanking the connect disc: white on the flag, accent-blue while the field is open. */
 @Composable
 private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
-    val ink by animateColorAsState(if (open) RefAccent else RefTextMid, tween(180), label = "searchInk")
+    val ink by animateColorAsState(if (open) RefAccent else Color.White, tween(180), label = "searchInk")
     Box(
         Modifier
             .size(TapTarget)
+            .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
