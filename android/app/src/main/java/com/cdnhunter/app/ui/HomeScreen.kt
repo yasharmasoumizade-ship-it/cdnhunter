@@ -3073,7 +3073,7 @@ private val PanelFade = 30.dp
  * add/search controls on the right) sits *below* the disc's foot rather than colliding with it.
  * Sized off [PowerDiscSize] (the visible disc), not the full [PowerSize] touch box.
  */
-private val CardTopRoom = PowerDiscSize / 2 + 14.dp
+private val CardTopRoom = PowerDiscSize / 2 + 28.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
