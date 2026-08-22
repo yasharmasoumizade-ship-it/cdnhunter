@@ -1862,18 +1862,8 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val liveName = liveCountry.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-    // The city, straight from the state — the selected server's own while off/idle, the real
-    // measured exit city once connected (see [HomeUiState.cityFor]). No "Connecting…" text: that
-    // was itself a change the user asked not to see.
     val liveCity = cfg?.let { state.cityFor(it) }.orEmpty()
 
-    // ── Freeze while CONNECTING ────────────────────────────────────────────────
-    // The connect tap flips the active server immediately (see connectConfig), so without this the
-    // headline would jump to the TARGET server's name/city the instant the button is pressed —
-    // before the tunnel is up, showing a location we have not actually arrived at (and whose stored
-    // city is often just a guess). Instead the name/city are held at their last settled values for
-    // the whole CONNECTING phase and only update once the phase settles to CONNECTED (real exit
-    // location) or OFF. So the displayed location changes strictly AFTER a connection is confirmed.
     var stableName by remember { mutableStateOf(liveName) }
     var stableCity by remember { mutableStateOf(liveCity) }
     LaunchedEffect(liveName, liveCity, state.phase) {
@@ -2087,6 +2077,108 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                             modifier = Modifier.size(13.dp),
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+<<<<<<< HEAD
+=======
+/** The height of one odometer cell — the visible window each digit rolls through. A touch taller
+ *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
+private val IpDigitCell = 22.dp
+
+/** How many digit cells the reel strip holds: two full 0–9 runs (20 cells). The extra run is the
+ *  headroom the *first* spin needs — a wheel starts a full turn above its target and rolls down into
+ *  place, so its position travels through [digit, digit+10], which a single 0–9 strip could not
+ *  cover without going blank. */
+private const val IpReelCells = 20
+
+/**
+ * The IP value as a mechanical odometer: one wheel per character. When the address changes, each
+ * digit that differs rolls vertically to its new value through the intervening digits, like a
+ * counter wheel, rather than a fade or a one-step swap. Non-digit characters (the dots) are fixed
+ * cells. Cells are keyed by position, and tabular figures keep every column the same width so the
+ * row does not jitter mid-roll. Only a validated dotted address is ever passed in (see [IpSlot]).
+ */
+@Composable
+private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clipToBounds(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        value.forEachIndexed { index, ch ->
+            key(index) {
+                if (ch in '0'..'9') {
+                    DigitReel(digit = ch - '0', reduce = reduce, index = index)
+                } else {
+                    // Dots do not roll — a fixed cell keeps the row's rhythm and gives the wheels
+                    // either side of it something to align to.
+                    Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
+                        Text(
+                            ch.toString(),
+                            fontSize = IpValueSize,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            style = TextStyle(shadow = HeroInkShadow),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One odometer wheel. Drives an [Animatable] from a start a full turn above the target, so the very
+ *  first appearance spins down into place — and any later change rolls through the intervening
+ *  digits. See [RollingIp]. */
+@Composable
+private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
+    // Start one full turn (10) above the target so the first render rolls down through a complete
+    // spin; under reduced motion it simply parks on the digit.
+    val pos = remember {
+        Animatable(if (reduce) digit.toFloat() else digit.toFloat() + 10f)
+    }
+    LaunchedEffect(digit, reduce) {
+        if (reduce) {
+            pos.snapTo(digit.toFloat())
+        } else {
+            // A short per-wheel stagger so the wheels cascade rather than snapping in lockstep.
+            delay((index % 6) * 26L)
+            val current = pos.value
+            val target = digit.toFloat()
+            val next = if (target > current % 10f) {
+                (current - current % 10f) + target
+            } else {
+                (current - current % 10f) + 10f + target
+            }
+            pos.animateTo(next, tween(IP_ROLL_MS))
+            if (pos.value >= 20f) pos.snapTo(pos.value - 10f)
+        }
+    }
+    Box(
+        Modifier
+            .height(IpDigitCell)
+            .clipToBounds(),
+    ) {
+        Column(
+            Modifier.graphicsLayer { translationY = -pos.value * IpDigitCell.toPx() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            for (i in 0 until IpReelCells) {
+                Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
+                    Text(
+                        (i % 10).toString(),
+                        fontSize = IpValueSize,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                    )
                 }
             }
         }
