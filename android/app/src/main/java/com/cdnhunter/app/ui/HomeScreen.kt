@@ -124,6 +124,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -1804,35 +1805,28 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
  *  of a set width; instead of the frame resizing, the label's font steps down as the combined
  *  "Country · City" string lengthens ([headlineFontFor]) so it always fits this one frame. Compact
  *  by intent: a tidy location chip, not a stretched banner. */
-private val HeadlinePlateWidth = 216.dp
-private val HeadlinePlateHeight = 44.dp
+private val HeadlinePlateWidth = 200.dp
+private val HeadlinePlateHeight = 78.dp
 
 /** The label's font, chosen by the *combined* "Country · City" length so the fixed compact plate
  *  never has to resize: the text adapts, the frame does not. Sized up on request — the country and
  *  city both read larger now — so each step is a few sp above the old ramp; it still steps down for
  *  a long pairing so the fixed plate is never overrun (the backstop past that is ellipsis). */
 private fun headlineFontFor(label: String): TextUnit = when {
-    label.length <= 13 -> 22.sp
-    label.length <= 19 -> 18.sp
-    label.length <= 26 -> 15.sp
-    else -> 13.sp
+    label.length <= 13 -> 26.sp
+    label.length <= 19 -> 21.sp
+    label.length <= 26 -> 18.sp
+    else -> 15.sp
 }
+
+/** The city line sits under the country name at a fixed, smaller step -- it never competes with
+ *  the country for the ramp, so it stays legible even when the country name itself is long. */
+private val HeadlineCitySize = 14.sp
 
 /** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
  *  top-left edge, so it reads as a considered, cut plate rather than a pasted-on box — while the
  *  right/top/bottom stay straight to give the right-aligned name a clean contrast floor. */
-private val HeadlinePlateShape = GenericShape { size, _ ->
-    val w = size.width
-    val h = size.height
-    val shear = w * 0.14f      // top-left sheared in for a clean diagonal lead edge
-    val foot = h * 0.30f       // a shorter chamfer on the bottom-left, so the shear reads as the motif
-    moveTo(shear, 0f)
-    lineTo(w, 0f)
-    lineTo(w, h)
-    lineTo(foot, h)
-    lineTo(0f, h - foot)
-    close()
-}
+private val HeadlinePlateShape = RectangleShape
 
 /** The left-to-right wipe when the name changes: the new label is revealed progressively across
  *  its glyphs rather than swapped or crossfaded. */
@@ -1845,11 +1839,10 @@ private const val REVEAL_MS = 460
  *  darkened only exactly where it must be. The ramp is deliberately deep and early: it starts
  *  shading sooner and lands near-opaque at the edge so the white name reads vividly over even the
  *  brightest flag band, without turning the fade into a hard-edged box. */
-private val HeadlinePlateFill = Brush.horizontalGradient(
-    0.00f to Color.Transparent,
-    0.24f to Color.Black.copy(alpha = 0.22f),
-    0.54f to Color.Black.copy(alpha = 0.64f),
-    1.00f to Color.Black.copy(alpha = 0.92f),
+private val HeadlinePlateFill = Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.58f),
+    0.45f to Color.Black.copy(alpha = 0.30f),
+    1.00f to Color.Transparent,
 )
 
 @Composable
@@ -1911,37 +1904,55 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
         }
     }
 
-    val labelSize = headlineFontFor(plainLabel)
+    val labelSize = headlineFontFor(name.ifBlank { city })
     Box(
         modifier
             // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
             .width(HeadlinePlateWidth)
             .height(HeadlinePlateHeight)
-            // The asymmetric right-anchored silhouette, filled with the right-heavy shade and rimmed
-            // with the hero's lit hairline so the plate reads as a raised, considered object.
+            // A plain right-hand wash: opaque at the very top, easing to fully transparent by the
+            // bottom, so it reads as light falling off the flag rather than a pasted-on box. No
+            // border, no shear -- the fade itself is the shape.
             .background(HeadlinePlateFill, shape = HeadlinePlateShape)
-            .border(1.dp, heroEdge, HeadlinePlateShape)
-            .padding(start = 30.dp, end = 15.dp),
-        contentAlignment = Alignment.CenterEnd,
+            .padding(start = 24.dp, end = 15.dp, top = 12.dp),
+        contentAlignment = Alignment.TopEnd,
     ) {
-        // Content-sized text so the wipe crosses the actual glyphs, not the fixed frame: clipRect
-        // reveals from the left edge rightward across the right-aligned label. Ellipsis is the
-        // backstop if a font step still cannot fit an unusually long pairing.
-        Text(
-            label,
+        // Country and city stacked, not joined by a middot -- the country reads first and large,
+        // the city sits directly under it at a fixed smaller step. Same left-to-right wipe as
+        // before, now clipping the whole column instead of a single line.
+        Column(
+            horizontalAlignment = Alignment.End,
             modifier = Modifier.drawWithContent {
                 clipRect(right = size.width * reveal.value) { this@drawWithContent.drawContent() }
             },
-            fontSize = labelSize,
-            letterSpacing = (-0.4).sp,
-            textAlign = TextAlign.End,
-            color = Color.White,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            // A soft cast under the white so it holds even where the plate thins at its top.
-            style = TextStyle(shadow = HeroInkShadow),
-        )
+        ) {
+            Text(
+                name.ifBlank { city },
+                fontSize = labelSize,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.4).sp,
+                textAlign = TextAlign.End,
+                color = Color.White,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(shadow = HeroInkShadow),
+            )
+            if (hasCity) {
+                Text(
+                    city,
+                    fontSize = HeadlineCitySize,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = (-0.2).sp,
+                    textAlign = TextAlign.End,
+                    color = Color.White.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(shadow = HeroInkShadow),
+                )
+            }
+        }
     }
 }
 
