@@ -1481,7 +1481,7 @@ private fun VpnTab() {
                         exitCity = exitCity,
                         exitGeoConfigId = exitGeoConfigId,
                         networkName = networkName,
-                        publicIp = if (connected) publicIp else userIp,
+                        publicIp = publicIp,
                         ipLookupPending = ipLookupPending,
                         lastFlagCountry = lastFlagCountry,
                         refreshingPings = refreshingPings,
