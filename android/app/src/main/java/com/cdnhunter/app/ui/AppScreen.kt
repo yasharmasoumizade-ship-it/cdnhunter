@@ -964,7 +964,15 @@ private fun VpnTab() {
     // HomeUiState.ipLookupPending and MetaRow).
     LaunchedEffect(connected, ipRetryTick) {
         networkName = describeActiveNetwork(context)
-        ipLookupPending = true
+        // Only drop to the neutral "-" placeholder when there is no address already on
+        // screen. If a valid IP is already showing (from before this connect/disconnect),
+        // keep it there while the new one resolves in the background -- RollingIp then
+        // animates straight from the old value to the new one instead of the readout
+        // blanking out and refilling, which is what made every transition look like an
+        // instant snap rather than a roll.
+        if (publicIp.isBlank()) {
+            ipLookupPending = true
+        }
         try {
             if (connected) delay(2500)
             for ((attempt, backoffMs) in IP_LOOKUP_BACKOFF_MS.withIndex()) {
