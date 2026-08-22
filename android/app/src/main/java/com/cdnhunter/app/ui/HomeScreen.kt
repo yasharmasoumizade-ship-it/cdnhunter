@@ -1140,9 +1140,7 @@ internal data class HomeUiState(
      * answer depends on [ipLookupPending].
      */
     val displayIp: String
-        get() = publicIp.ifBlank {
-            if (connected) activeConfig?.address?.takeIf(::isIpLiteral).orEmpty() else ""
-        }
+        get() = publicIp
 
     val sessionBytes: Long get() = totalDownloadBytes + totalUploadBytes
 
