@@ -136,3 +136,18 @@
 -keepclassmembers class **$WhenMappings { <fields>; }
 -dontwarn kotlin.**
 -dontwarn kotlinx.coroutines.**
+
+# ---------------------------------------------------------------------------
+# Strip chatty logging from the release build
+# ---------------------------------------------------------------------------
+# Any Log.v/d/i left in the source is dead weight — and worse, a place a config
+# URL, a resolved IP or a parse error could reach logcat on a shipped build. R8
+# treats these as side-effect-free and removes the calls (and folds away the
+# string concatenation that fed them) in release. Log.w/Log.e are deliberately
+# NOT listed: warnings and errors stay, so a real fault is still diagnosable from
+# the crash-log row. Debug builds keep everything (they are not minified).
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}

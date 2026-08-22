@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (targetSdk 34) backup/transfer policy. allowBackup="false" already
+  disables the legacy auto-backup path, but on 12+ two newer channels exist and are
+  governed here instead:
+
+    cloud-backup    — Google cloud / adb backup
+    device-transfer — direct device-to-device migration on a new phone
+
+  Both are fully excluded. The app's SharedPreferences hold subscription URLs and
+  full server configs (address + UUID/password) — VPN server credentials that must
+  not leave the device by any automatic channel, cloud OR local transfer. An empty
+  <exclude/> under each disables that channel wholesale.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

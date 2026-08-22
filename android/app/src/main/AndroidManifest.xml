@@ -26,10 +26,12 @@
          URLs and full server configs (address + UUID/password) in plaintext, and
          Android's auto-backup would copy them off the device into the user's Google
          account. A VPN client's server credentials are the one thing that should not
-         travel that way. -->
+         travel that way. dataExtractionRules extends the same exclusion to the two
+         Android 12+ channels (cloud backup and device-to-device transfer). -->
     <application
         android:name=".CdnHunterApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher"
         android:label="CDN Hunter"

@@ -175,7 +175,7 @@ class GeoService {
         }
     }
 
-    // A client identical to the normal trust-all client, except every request
+    // A client identical to the normal (platform-validated) client, except every request
     // goes through the local SOCKS/HTTP mixed-port proxy mihomo exposes on
     // 127.0.0.1 instead of the device's normal network path.
     private fun buildProxiedClient(mixedPort: Int, timeout: Float): OkHttpClient {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Connect-button lightning bolt. Converted from the source SVG at /root/1787350414800.svg:
+  that file draws the bolt as a *cutout* in a full-bleed rectangle under a flipped
+  scale(0.1,-0.1) transform, so the bolt itself is the inner subpath. The transform was baked
+  into absolute coordinates and only the bolt subpath kept, giving this upright, self-contained
+  vector (viewport 371.7 x 600.5). HomeScreen mirrors this same pathData in CONNECT_BOLT_PATH_DATA
+  to drive the animated bottom-to-top fill; keep the two in sync if the asset changes.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="49dp"
+    android:height="79dp"
+    android:viewportWidth="371.7"
+    android:viewportHeight="600.5">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M315.1,9.4 C322.2,12.3 326.7,21.2 324.9,28.8 C324.1,32.5 311.9,54.8 293.8,85.5 C289.6,92.6 281.1,107 275.1,117.5 C269,127.9 259.4,144.4 253.7,154 C225.5,201.9 224.8,203.3 224.8,207.5 C224.8,209.7 225.5,212.6 226.4,213.9 C230,218.9 230.6,219 290.5,219 C342.7,219 346.6,219.2 350.4,220.9 C360.6,225.5 363.7,238.4 357.1,248.5 C355.6,250.7 329,286.5 298,328 C266.9,369.5 236.4,410.2 230.3,418.5 C143.6,534.9 104.2,587.3 101.8,589.5 C98.4,592.5 92.6,592.1 88.9,588.6 C83.3,583.3 82.4,587.7 102.9,517.5 C128.8,428.8 148.8,357.2 148.8,353.3 C148.8,347.7 146.6,343.8 141.8,341.1 C138.1,339 137,339 81.7,339 C29.3,339 25,338.8 21.3,337.1 C13.2,333.5 8,324.4 9.1,315.5 C9.5,311.2 13.5,300 27.6,263 C32.5,250.1 40.5,229.1 45.3,216.5 C61.3,174.3 64.6,165.6 71.3,148 C75,138.4 80.2,124.6 82.9,117.5 C93.6,88.7 115.8,30.4 118.1,24.9 C120.4,19.4 126.7,13 132.3,10.4 L137.3,8 L224.6,8 C296.1,8 312.5,8.2 315.1,9.4 Z" />
+</vector>

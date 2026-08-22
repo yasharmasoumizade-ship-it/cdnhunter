@@ -40,7 +40,14 @@ object SubscriptionParser {
             val response = try {
                 URL(url).readText(Charsets.UTF_8)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch subscription URL", e)
+                // The throwable is attached only in debug: a fetch failure's message
+                // routinely embeds the full URL (which is itself a credential), so a
+                // release build logs the bare fact, never the exception detail.
+                if (com.cdnhunter.app.BuildConfig.DEBUG) {
+                    Log.e(TAG, "Failed to fetch subscription URL", e)
+                } else {
+                    Log.e(TAG, "Failed to fetch subscription URL")
+                }
                 return@withContext null
             }
             
@@ -93,7 +100,13 @@ object SubscriptionParser {
                 nextUpdateSchedule = System.currentTimeMillis() + 3600000 // 1 hour
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse subscription", e)
+            // As above: the parse throwable can carry raw config text (server addresses,
+            // UUIDs); only debug builds get the detail, release logs the bare fact.
+            if (com.cdnhunter.app.BuildConfig.DEBUG) {
+                Log.e(TAG, "Failed to parse subscription", e)
+            } else {
+                Log.e(TAG, "Failed to parse subscription")
+            }
             null
         }
     }

@@ -99,6 +99,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
@@ -141,8 +142,12 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -1316,6 +1321,18 @@ internal fun HomeScreen(
                 .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
         )
 
+        // The public IP: a minimal readout floating below-right of the connect disc, over the seam.
+        // No card or label — just the address (rolling on change) and a faint copy affordance. Placed
+        // as an overlay so it sits at the disc's lower-right rather than in the flag or the card head.
+        IpCard(
+            state = state,
+            onRetryIp = onRetryIp,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = heroHeight + 34.dp)
+                .offset(x = 74.dp),
+        )
+
         // .bottom-card: sticky at the foot of the scroller, over the list
         UsageCard(
             state = state,
@@ -1629,23 +1646,10 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             CountryHeadline(state)
         }
-        // The open flag under the top row, with the public-IP readout riding its top-right — sat
-        // just under the country plate at the flag's upper-right corner, above the browse card that
-        // docks below, and clear of the centred connect disc. Its own soft dark wash holds contrast
-        // over any flag band; it hugs its content up to a ceiling that clips a long IPv6.
-        Box(Modifier.fillMaxWidth().height(HeroFlagSpace)) {
-            IpCard(
-                state = state,
-                onRetryIp = onRetryIp,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    // A small right inset so the readout sits in from the bezel rather than bleeding
-                    // off it the way the country plate deliberately does, and a hair of top gap to
-                    // clear the plate above it.
-                    .padding(top = 8.dp, end = ScreenPad)
-                    .widthIn(max = HeroInfoMaxWidth),
-            )
-        }
+        // The open flag under the top row. The public-IP readout is no longer here — it now floats
+        // below-right of the connect disc (drawn as an overlay by [HomeScreen]), so this stays clear
+        // flag under the country plate.
+        Spacer(Modifier.height(HeroFlagSpace))
         // Reserve the docked disc's upper half over the flag. The disc itself is drawn by
         // [HomeScreen] as an overlay, centred on this column's measured foot — which is the
         // browse card's top edge — so its lower half rests on the card.
@@ -1792,20 +1796,21 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 // at the screen's right edge, under the heaviest ink, and dissolves to nothing toward the left,
 // so the name reads as ink lifting off the flag rather than a label pasted on top of it.
 
-/** The plate is a *fixed* box — it never grows or shrinks with the name. Instead the name's font
- *  steps down as the string lengthens ([headlineFontFor]) so long country names fit the same frame
- *  short ones do. Enlarged for presence: it is the identity of the screen, so it reads as a proper
- *  location banner rather than a cramped tag. */
-private val HeadlinePlateWidth = 244.dp
-private val HeadlinePlateHeight = 66.dp
+/** The plate is a *fixed*, compact box — it never grows or shrinks with the label. It is short and
+ *  of a set width; instead of the frame resizing, the label's font steps down as the combined
+ *  "Country · City" string lengthens ([headlineFontFor]) so it always fits this one frame. Compact
+ *  by intent: a tidy location chip, not a stretched banner. */
+private val HeadlinePlateWidth = 200.dp
+private val HeadlinePlateHeight = 44.dp
 
-/** The country name's font, chosen by length so the fixed plate never has to resize: the text
- *  adapts, the frame does not. Sized to leave room for the city caption on the second line. */
-private fun headlineFontFor(name: String): TextUnit = when {
-    name.length <= 10 -> 24.sp
-    name.length <= 16 -> 20.sp
-    name.length <= 22 -> 16.sp
-    else -> 13.sp
+/** The label's font, chosen by the *combined* "Country · City" length so the fixed compact plate
+ *  never has to resize: the text adapts, the frame does not. One line only now, so it can run a
+ *  touch larger than the old two-line ramp before it has to step down. */
+private fun headlineFontFor(label: String): TextUnit = when {
+    label.length <= 13 -> 19.sp
+    label.length <= 19 -> 16.sp
+    label.length <= 26 -> 13.sp
+    else -> 11.sp
 }
 
 /** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
@@ -1842,9 +1847,6 @@ private val HeadlinePlateFill = Brush.horizontalGradient(
     1.00f to Color.Black.copy(alpha = 0.92f),
 )
 
-/** The city caption's size, a clear step under the country name. */
-private val HeadlineCaptionSize = 11.5.sp
-
 @Composable
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
@@ -1852,18 +1854,26 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val country = countryCodeToName(state.headerCountryCode)
     // The config's name is the fallback only when the country is unknown — an empty
     // headline would be worse than a technical one.
-    val headline = country.ifBlank {
+    val name = country.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-    // The city, when there is one and it is not already the headline: one dim caption under
-    // the country, so the plate can be specific without the name having to carry two facts.
     val city = cfg?.let { state.cityFor(it) }.orEmpty()
+
+    // Country and city on ONE line, joined by a middot: "Sweden · Stockholm". The join is only
+    // added when both halves exist and differ, so a missing city can never leave a dangling "· "
+    // and a city that duplicates the name is not repeated. This single string is what the font
+    // ramp sizes against, so both facts always fit the one fixed compact plate.
+    val label = when {
+        name.isNotBlank() && city.isNotBlank() && !city.equals(name, ignoreCase = true) ->
+            "$name · $city"
+        name.isNotBlank() -> name
+        else -> city
+    }
 
     // The wipe: one Animatable driven from 0 (nothing shown) to 1 (fully revealed), reset and
     // replayed whenever the label changes. Under reduced motion it simply parks at 1 — no wipe.
-    val revealKey = "$headline|$city"
     val reveal = remember { Animatable(1f) }
-    LaunchedEffect(revealKey, reduce) {
+    LaunchedEffect(label, reduce) {
         if (reduce) {
             reveal.snapTo(1f)
         } else {
@@ -1872,74 +1882,58 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
         }
     }
 
-    val nameSize = headlineFontFor(headline)
+    val labelSize = headlineFontFor(label)
     Box(
         modifier
-            // Fixed frame — the plate never resizes with the text (the font adapts instead).
+            // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
             .width(HeadlinePlateWidth)
             .height(HeadlinePlateHeight)
             // The asymmetric right-anchored silhouette, filled with the right-heavy shade and rimmed
             // with the hero's lit hairline so the plate reads as a raised, considered object.
             .background(HeadlinePlateFill, shape = HeadlinePlateShape)
             .border(1.dp, heroEdge, HeadlinePlateShape)
-            .padding(start = 34.dp, end = 16.dp, top = 8.dp, bottom = 9.dp),
+            .padding(start = 30.dp, end = 15.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
-        // Content-sized column so the wipe crosses the actual glyphs, not the fixed frame: clipRect
-        // reveals from the left edge rightward across the right-aligned name.
-        Column(
+        // Content-sized text so the wipe crosses the actual glyphs, not the fixed frame: clipRect
+        // reveals from the left edge rightward across the right-aligned label. Ellipsis is the
+        // backstop if a font step still cannot fit an unusually long pairing.
+        Text(
+            label,
             modifier = Modifier.drawWithContent {
                 clipRect(right = size.width * reveal.value) { this@drawWithContent.drawContent() }
             },
-            horizontalAlignment = Alignment.End,
-        ) {
-            Text(
-                headline,
-                fontSize = nameSize,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.4).sp,
-                textAlign = TextAlign.End,
-                color = Color.White,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-                // A soft cast under the white so it holds even where the plate thins at its top.
-                style = TextStyle(shadow = HeroInkShadow),
-            )
-            if (city.isNotBlank() && !city.equals(headline, ignoreCase = true)) {
-                Text(
-                    city.uppercase(),
-                    fontSize = HeadlineCaptionSize,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.5.sp,
-                    textAlign = TextAlign.End,
-                    color = RefTextMid,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(shadow = HeroInkShadow),
-                )
-            }
-        }
+            fontSize = labelSize,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = (-0.4).sp,
+            textAlign = TextAlign.End,
+            color = Color.White,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            // A soft cast under the white so it holds even where the plate thins at its top.
+            style = TextStyle(shadow = HeroInkShadow),
+        )
     }
 }
 
-// ── Public-IP card ────────────────────────────────────────────────────────────
-// One fact, in a small glass chip on the left of the browse card's header row: the address the
-// internet currently sees. Off, it holds this device's own address; connected, the exit node's.
-// Keeping it visible in both is the point — the number the user is about to change is readable now.
+// ── Public-IP readout ─────────────────────────────────────────────────────────
+// One fact, floated at the connect disc's lower-right: the address the internet currently sees.
+// Off, it holds this device's own address; connected, the exit node's. Keeping it visible in both
+// is the point — the number the user is about to change is readable now.
 //
-// It used to be a bare tappable line under the country name, then a floating card on the flag; it
-// is the left half of the card's own masthead now (see [BrowseCard]), across from the add/search
-// controls. Still a card, with a "PUBLIC IP" label over a bold white value, so it holds together
-// as one object at the head of the list. Tap it and the value goes to the clipboard.
+// It used to be a bare tappable line under the country name, then a floating card on the flag, then
+// a labelled chip in the browse card's masthead. It is stripped to its essence now: no card, no
+// border, no background wash, no "PUBLIC IP" label — just the address itself with a small,
+// low-opacity copy glyph beside it, drawn straight on the artwork (its own [HeroInkShadow] carries
+// contrast). Tap the line to copy. When the address changes, its digits roll like an odometer
+// ([RollingIp]) rather than swapping.
 //
 // Three states, not two — but none of them is a word for "loading": the address, a neutral "—"
 // placeholder while a lookup is still in flight (no status text — the value simply is not known
-// yet), or "Unavailable" with the readout tappable to ask again. See [HomeUiState.ipLookupPending]
-// for the flag and [GeoService.lookupCurrentIp] for what can fail. The address is drawn as a single
-// bold sans line; only a value validated by [isIpLiteral] is ever shown, so a partial or malformed
-// lookup can never render.
+// yet), or the same dash with a retry glyph, tappable to ask again. See [HomeUiState.ipLookupPending]
+// for the flag and [GeoService.lookupCurrentIp] for what can fail. Only a value validated by
+// [isIpLiteral] is ever fed to the reel, so a partial or malformed lookup can never render.
 
 /** What the public-IP readout is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
@@ -1952,35 +1946,18 @@ private data class IpSlot(val value: String, val checking: Boolean) {
 }
 
 /** Which of [IpCard]'s three states is showing. Keyed for the crossfade so that a *value* change
- *  within [READY] swaps in place instead of retriggering the whole-readout fade. */
+ *  within [READY] rolls the digits ([RollingIp]) instead of retriggering the whole-readout fade. */
 private enum class IpKind { READY, CHECKING, UNAVAILABLE }
+
+/** How long a digit wheel takes to roll to its new value — long enough that the intervening digits
+ *  read as a counter turning, short enough to still feel mechanical; collapses to an instant swap
+ *  under reduced motion. */
+private const val IP_ROLL_MS = 520
 
 /** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
  *  smaller dim step for the two placeholders. */
 private val IpValueSize = 15.sp
-private val IpPlaceholderSize = 12.sp
-
-/** The readout's shape: a low, fully-rounded pill so the wash has no square corners to catch the
- *  eye — soft on every side, no framed-card look. */
-private val IpCardShape = RoundedCornerShape(50)
-
-/** The readout's backing: a soft semi-transparent black wash, no border and no rim. Denser at the
- *  foot than the crown so the address stays legible while the flag reads faintly through the whole
- *  thing; the text's own [HeroInkShadow] carries the contrast, so the wash never has to be opaque
- *  or hard-edged. */
-private val IpCardFill = Brush.verticalGradient(
-    0f to Color.Black.copy(alpha = 0.26f),
-    1f to Color.Black.copy(alpha = 0.44f),
-)
-
-/** A small blue status dot before the value, echoing the connect bolt's active colour — the one
- *  spot of accent on the readout, and the thing that makes it read as a live value rather than a
- *  label. */
-private val IpDotColor = RefGlowOn
-
-/** The widest the IP readout is allowed to grow. IPv4 fits well inside it; a long IPv6 value
- *  ellipsises on screen, and a tap still copies the whole address to the clipboard. */
-private val HeroInfoMaxWidth = 210.dp
+private val IpPlaceholderSize = 13.sp
 
 @Composable
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
@@ -1989,7 +1966,7 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     val reduce = rememberReduceMotion()
     val slot = IpSlot(state.displayIp, state.ipLookupPending)
     // Tapping copies a real value, or retries a failed lookup; while a lookup is still in flight
-    // there is nothing to do, so the card is not clickable in that one state.
+    // there is nothing to do, so the readout is not tappable in that one state.
     val onTap: (() -> Unit)? = when {
         slot.ready -> {
             {
@@ -2004,50 +1981,27 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     }
     val tapLabel = if (slot.ready) "Copy IP address" else "Retry IP lookup"
     // Crossfade only between the three *kinds* of state — not on every value change. The kind
-    // (ready / checking / unavailable) is the key, so when the address changes while staying
-    // ready the value simply swaps in place without the whole readout re-fading.
+    // (ready / checking / unavailable) is the key, so when the address changes while staying ready
+    // the outer fade does nothing and [RollingIp] rolls the digits instead.
     val kind = when {
         slot.ready -> IpKind.READY
         slot.checking -> IpKind.CHECKING
         else -> IpKind.UNAVAILABLE
     }
-    // One soft-washed readout, laid at the flag's top-right under the country plate: a live status
-    // dot, the label held small and wide, then the value — all on a single line so it sits flat
-    // rather than stacking into a card. A borderless semi-transparent black wash, no rim, so the
-    // flag reads faintly through it and there is no hard edge anywhere.
+    // Minimal: no card, no border, no background, no "PUBLIC IP" label — just the address (rolling
+    // on change) with a small, low-opacity copy glyph beside it. The whole line is tappable to copy
+    // (or to retry a failed lookup); the text carries its own [HeroInkShadow] so it holds over the
+    // seam between flag and card without any plate under it.
     Row(
-        modifier
-            .clip(IpCardShape)
-            .background(IpCardFill)
-            .then(
-                if (onTap != null) {
-                    Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
-                } else {
-                    Modifier
-                },
-            )
-            .padding(start = 10.dp, end = 13.dp, top = 6.dp, bottom = 6.dp),
+        modifier.then(
+            if (onTap != null) {
+                Modifier.clickable(onClickLabel = tapLabel, onClick = onTap)
+            } else {
+                Modifier
+            },
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The accent: blue and solid when a real address is up, a dim neutral otherwise, so the
-        // pill reads its own state before the value is even parsed.
-        Box(
-            Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(if (slot.ready) IpDotColor else RefTextMid.copy(alpha = 0.55f)),
-        )
-        Spacer(Modifier.width(7.dp))
-        Text(
-            "PUBLIC IP",
-            fontSize = 8.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.6.sp,
-            color = RefTextMid,
-            maxLines = 1,
-            style = TextStyle(shadow = HeroInkShadow),
-        )
-        Spacer(Modifier.width(9.dp))
         AnimatedContent(
             targetState = kind,
             transitionSpec = {
@@ -2059,23 +2013,21 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
         ) { k ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when (k) {
-                    // The real address: a single bold, modern sans line, read from the live slot
-                    // (already validated by [IpSlot.ready]/[isIpLiteral], so a partial or malformed
-                    // value can never reach here). Tabular figures keep the columns even; the whole
-                    // string is drawn as one glyph run, so there are no per-digit cells that could
-                    // measure to zero width and blank out.
-                    IpKind.READY -> Text(
-                        slot.value,
-                        fontSize = IpValueSize,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif,
-                        letterSpacing = 0.4.sp,
-                        color = Color.White,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
-                    )
+                    // The real address: rolling digits (see [RollingIp]), read from the live slot so
+                    // a value change inside the ready state rolls in place. Only an isIpLiteral value
+                    // reaches here, so the reel is always fed a clean dotted address.
+                    IpKind.READY -> {
+                        RollingIp(value = slot.value, reduce = reduce)
+                        Spacer(Modifier.width(7.dp))
+                        // The affordance: a faint copy glyph, low-opacity so it reads as a hint, not
+                        // a button. The whole row is the tap target.
+                        Icon(
+                            Icons.Rounded.ContentCopy,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
                     // In flight: a neutral dash, no status word. The value simply is not known yet.
                     IpKind.CHECKING -> Text(
                         "—",
@@ -2085,26 +2037,116 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                         maxLines = 1,
                         style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                     )
-                    // Lookup finished with nothing: say so, and offer the retry the tap handler wires.
+                    // Lookup finished with nothing: a dash and a retry glyph the tap handler wires.
                     IpKind.UNAVAILABLE -> {
                         Text(
-                            "Unavailable",
+                            "—",
                             fontSize = IpPlaceholderSize,
                             fontWeight = FontWeight.Bold,
                             color = RefTextMid,
                             maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(shadow = HeroInkShadow),
+                            style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                         )
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             Icons.Rounded.Refresh,
                             contentDescription = null,
-                            tint = RefTextMid,
-                            modifier = Modifier.size(14.dp),
+                            tint = Color.White.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp),
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/** The height of one odometer cell — the visible window each digit rolls through. A touch taller
+ *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
+private val IpDigitCell = 22.dp
+
+/** How many digit cells the reel strip holds: two full 0–9 runs (20 cells). The extra run is the
+ *  headroom the *first* spin needs — a wheel starts a full turn above its target and rolls down into
+ *  place, so its position travels through [digit, digit+10], which a single 0–9 strip could not
+ *  cover without going blank. */
+private const val IpReelCells = 20
+
+/**
+ * The IP value as a mechanical odometer: one wheel per character. When the address changes, each
+ * digit that differs rolls vertically to its new value through the intervening digits, like a
+ * counter wheel, rather than a fade or a one-step swap. Non-digit characters (the dots) are fixed
+ * cells. Cells are keyed by position, and tabular figures keep every column the same width so the
+ * row does not jitter mid-roll. Only a validated dotted address is ever passed in (see [IpSlot]).
+ */
+@Composable
+private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clipToBounds(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        value.forEachIndexed { index, ch ->
+            key(index) {
+                if (ch in '0'..'9') {
+                    DigitReel(digit = ch - '0', reduce = reduce, index = index)
+                } else {
+                    // Dots do not roll — a fixed cell keeps the row's rhythm and gives the wheels
+                    // either side of it something to align to.
+                    Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
+                        Text(
+                            ch.toString(),
+                            fontSize = IpValueSize,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            style = TextStyle(shadow = HeroInkShadow),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One odometer wheel. Drives an [Animatable] from a start a full turn above the target, so the very
+ *  first appearance spins down into place — and any later change rolls through the intervening
+ *  digits. See [RollingIp]. */
+@Composable
+private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
+    // Start one full turn (10) above the target so the first render rolls down through a complete
+    // spin; under reduced motion it simply parks on the digit.
+    val pos = remember {
+        Animatable(if (reduce) digit.toFloat() else digit.toFloat() + 10f)
+    }
+    LaunchedEffect(digit, reduce) {
+        if (reduce) {
+            pos.snapTo(digit.toFloat())
+        } else {
+            // A short per-wheel stagger so the wheels cascade rather than snapping in lockstep.
+            delay((index % 6) * 26L)
+            pos.animateTo(digit.toFloat(), tween(IP_ROLL_MS))
+        }
+    }
+    Box(
+        Modifier
+            .height(IpDigitCell)
+            .clipToBounds(),
+    ) {
+        Column(
+            Modifier.graphicsLayer { translationY = -pos.value * IpDigitCell.toPx() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            for (i in 0 until IpReelCells) {
+                Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
+                    Text(
+                        (i % 10).toString(),
+                        fontSize = IpValueSize,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                    )
                 }
             }
         }
@@ -2280,21 +2322,32 @@ private fun PowerCircle(
     // second one for CONNECTED — see the section comment: the connected state is
     // reported by the ring, and the face stays white.
 
-    // The mark: a lightning bolt, dark on the idle disc and while working, and turning blue once
-    // the tunnel is up — on the same crossfade as the rest of the header's ink. Connecting keeps
-    // [PowerInk]: the working state is monochrome (see [PowerRing]), so the bolt stays the neutral
-    // idle ink and only the turning comet reports that an attempt is in flight. Connected is
-    // [RefGlowOn] blue — the "active" colour, read straight on the white face.
-    val mark by animateColorAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> PowerInk
-            ConnPhase.CONNECTING -> PowerInk
-            ConnPhase.CONNECTED -> RefGlowOn
+    // The bolt's fill level, 0 (empty) to 1 (full). At rest the mark is a dark struck bolt; as a
+    // tunnel comes up the lit fill rises slowly from its foot — a gauge charging over the whole
+    // connect rather than a quick flash — and holds full once connected. On disconnect it drains
+    // back down. The rise is deliberately long and linear so it reads as a steady, smooth climb;
+    // the drain is shorter and eased. See [PowerBolt] and [BOLT_FILL_MS].
+    val fillTarget = when (phase) {
+        ConnPhase.OFF -> 0f
+        ConnPhase.CONNECTING -> 1f
+        ConnPhase.CONNECTED -> 1f
+    }
+    val fill by animateFloatAsState(
+        targetValue = fillTarget,
+        animationSpec = if (reduce) {
+            snap()
+        } else {
+            tween(
+                durationMillis = if (fillTarget == 0f) BOLT_DRAIN_MS else BOLT_FILL_MS,
+                easing = if (fillTarget == 0f) FastOutSlowInEasing else LinearEasing,
+            )
         },
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerMark",
+        label = "powerBoltFill",
     )
-    val ink = if (enabled) mark else mark.copy(alpha = 0.30f)
+    // The struck-metal base bolt (dark idle ink) and the lit fill that rises over it (the active
+    // blue). Both dim together when the button has no server to act on.
+    val boltTrack = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
+    val boltFill = if (enabled) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -2406,53 +2459,112 @@ private fun PowerCircle(
             // The rim, last of the surfaces and over all of them, so it stays a crisp edge
             // instead of being washed out by the sheen's own dark foot.
             Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
-            // The mark: a lightning bolt, hand-drawn rather than a Material glyph so it can carry
-            // the same struck-metal light as the rest of the disc — a top-lit fill and a hair of a
-            // bright rim on its upper facets — instead of reading as a flat icon parked on the
-            // white face. [PowerInk] dark idle/working, [RefGlowOn] blue once the tunnel is up.
+            // The mark: the imported lightning bolt (see [ic_connect_bolt] / [CONNECT_BOLT_PATH_DATA]),
+            // drawn as a dark struck base with a lit fill that rises from its foot as the tunnel comes
+            // up. [boltTrack] dark idle, [boltFill] blue lit, [fill] the rising level.
             PowerBolt(
-                color = ink,
-                modifier = Modifier.size(64.dp),
+                trackColor = boltTrack,
+                fillColor = boltFill,
+                fill = fill,
+                modifier = Modifier.size(72.dp),
             )
         }
     }
 }
 
-/** The disc's mark: a lightning bolt drawn as a filled [Path] with a top-lit vertical gradient and
- *  a faint upper-facet rim, so it reads as a struck, dimensional mark rather than a flat glyph.
- *  [color] is the phase ink from [PowerCircle] — dark at rest, blue when connected. */
+// ── Connect bolt ──────────────────────────────────────────────────────────────
+/** The bolt outline as vector path data, baked to absolute coordinates in the [BOLT_VW]×[BOLT_VH]
+ *  space. Converted from the source SVG (a bolt-shaped cutout in a flipped, scaled rectangle) by
+ *  applying its transform and keeping only the bolt subpath. Mirrors `res/drawable/ic_connect_bolt`
+ *  — keep the two in sync if the asset changes. */
+private const val CONNECT_BOLT_PATH_DATA =
+    "M315.1,9.4 C322.2,12.3 326.7,21.2 324.9,28.8 C324.1,32.5 311.9,54.8 293.8,85.5 " +
+        "C289.6,92.6 281.1,107 275.1,117.5 C269,127.9 259.4,144.4 253.7,154 " +
+        "C225.5,201.9 224.8,203.3 224.8,207.5 C224.8,209.7 225.5,212.6 226.4,213.9 " +
+        "C230,218.9 230.6,219 290.5,219 C342.7,219 346.6,219.2 350.4,220.9 " +
+        "C360.6,225.5 363.7,238.4 357.1,248.5 C355.6,250.7 329,286.5 298,328 " +
+        "C266.9,369.5 236.4,410.2 230.3,418.5 C143.6,534.9 104.2,587.3 101.8,589.5 " +
+        "C98.4,592.5 92.6,592.1 88.9,588.6 C83.3,583.3 82.4,587.7 102.9,517.5 " +
+        "C128.8,428.8 148.8,357.2 148.8,353.3 C148.8,347.7 146.6,343.8 141.8,341.1 " +
+        "C138.1,339 137,339 81.7,339 C29.3,339 25,338.8 21.3,337.1 " +
+        "C13.2,333.5 8,324.4 9.1,315.5 C9.5,311.2 13.5,300 27.6,263 " +
+        "C32.5,250.1 40.5,229.1 45.3,216.5 C61.3,174.3 64.6,165.6 71.3,148 " +
+        "C75,138.4 80.2,124.6 82.9,117.5 C93.6,88.7 115.8,30.4 118.1,24.9 " +
+        "C120.4,19.4 126.7,13 132.3,10.4 L137.3,8 L224.6,8 C296.1,8 312.5,8.2 315.1,9.4 Z"
+
+/** The bolt's source viewport, from the converted vector ([ic_connect_bolt]). Path coordinates
+ *  above are in this space; [PowerBolt] scales it to fit its canvas. */
+private const val BOLT_VW = 371.7f
+private const val BOLT_VH = 600.5f
+
+/** How long the lit fill takes to climb the bolt from foot to tip. Long and linear on purpose:
+ *  the fill should read as a slow, steady charge over the whole connect, not a quick flash. If the
+ *  tunnel comes up before the climb finishes the fill simply continues to full without a jump; if
+ *  it takes longer, the fill waits full. */
+private const val BOLT_FILL_MS = 3200
+
+/** How long the fill drains back down on disconnect — shorter than the climb, and eased, so
+ *  turning off feels like a quick release rather than the slow charge reversed at the same pace. */
+private const val BOLT_DRAIN_MS = 900
+
+/** The bolt outline, baked to absolute coordinates in the [BOLT_VW]×[BOLT_VH] space and parsed once
+ *  (the same data the drawable carries). Kept as a [Path] so [PowerBolt] can both fill it and clip a
+ *  rising window against it. */
+private val ConnectBoltPath: Path =
+    PathParser().parsePathString(CONNECT_BOLT_PATH_DATA).toPath()
+
+/** The disc's mark: the imported lightning bolt, drawn as a dark struck base ([trackColor]) with a
+ *  lit fill ([fillColor]) revealed from the foot up to [fill] (0 = empty, 1 = full). The base is
+ *  always fully drawn so the mark reads as a bolt even at rest; the fill is clipped to a rectangle
+ *  rising from the bottom, so the colour climbs the bolt like a charging gauge. A faint white rim
+ *  over both keeps the upper facets lit. See [PowerCircle] for how [fill] is animated. */
 @Composable
-private fun PowerBolt(color: Color, modifier: Modifier = Modifier) {
+private fun PowerBolt(
+    trackColor: Color,
+    fillColor: Color,
+    fill: Float,
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        // A clean bolt in a 24×24 box, scaled to the canvas: top notch, left shoulder, a waist,
-        // the bottom point, the right shoulder and the inner return — an asymmetric zig that reads
-        // instantly as a bolt at a glance.
-        fun px(x: Float, y: Float) = Offset(w * x / 24f, h * y / 24f)
-        val bolt = Path().apply {
-            val p0 = px(13.5f, 2f)
-            moveTo(p0.x, p0.y)
-            px(4.5f, 13.5f).let { lineTo(it.x, it.y) }
-            px(11f, 13.5f).let { lineTo(it.x, it.y) }
-            px(9.5f, 22f).let { lineTo(it.x, it.y) }
-            px(19.5f, 9.5f).let { lineTo(it.x, it.y) }
-            px(12.5f, 9.5f).let { lineTo(it.x, it.y) }
-            close()
+        // Fit the bolt into the canvas, centred, preserving aspect. All drawing below is then in the
+        // bolt's own path space, so the clip window can be expressed directly in path coordinates.
+        val s = minOf(size.width / BOLT_VW, size.height / BOLT_VH)
+        val dx = (size.width - BOLT_VW * s) / 2f
+        val dy = (size.height - BOLT_VH * s) / 2f
+        val trackBrush = Brush.verticalGradient(
+            0f to lerp(trackColor, Color.White, 0.22f),
+            0.55f to trackColor,
+            1f to lerp(trackColor, Color.Black, 0.12f),
+            startY = 0f,
+            endY = BOLT_VH,
+        )
+        val fillBrush = Brush.verticalGradient(
+            0f to lerp(fillColor, Color.White, 0.30f),
+            0.60f to fillColor,
+            1f to lerp(fillColor, Color.Black, 0.06f),
+            startY = 0f,
+            endY = BOLT_VH,
+        )
+        withTransform({
+            translate(dx, dy)
+            scale(s, s, pivot = Offset.Zero)
+        }) {
+            // The dark base bolt, always whole.
+            drawPath(ConnectBoltPath, brush = trackBrush)
+            // The lit fill, clipped to a window rising from the foot. At fill = 0 nothing is drawn;
+            // at fill = 1 the whole bolt is covered.
+            if (fill > 0.001f) {
+                clipRect(left = 0f, top = BOLT_VH * (1f - fill), right = BOLT_VW, bottom = BOLT_VH) {
+                    drawPath(ConnectBoltPath, brush = fillBrush)
+                }
+            }
+            // A hair of bright rim over both, on the upper facets.
+            drawPath(
+                ConnectBoltPath,
+                color = Color.White.copy(alpha = 0.14f),
+                style = Stroke(width = BOLT_VW * 0.012f),
+            )
         }
-        drawPath(
-            bolt,
-            brush = Brush.verticalGradient(
-                0f to lerp(color, Color.White, 0.26f),
-                0.55f to color,
-                1f to lerp(color, Color.Black, 0.10f),
-            ),
-        )
-        drawPath(
-            bolt,
-            color = Color.White.copy(alpha = 0.16f),
-            style = Stroke(width = w * 0.014f),
-        )
     }
 }
 
