@@ -224,14 +224,36 @@ class CdnVpnService : VpnService() {
 
                 val mihomoHomeDir = File(filesDir, "mihomo").apply { mkdirs() }
 
+                // Copy the bundled geo databases (geoip.metadb / geosite.dat) out of the APK
+                // assets into mihomo's home on first run — and RE-copy them whenever the app has
+                // been upgraded. The old guard was `if (!target.exists())`, which never refreshed
+                // the cached copies: an APK update ships newer geo data, but the stale files from
+                // the previous install survived, so routing (GEOSITE,category-ir / GEOIP,ir) kept
+                // resolving against out-of-date lists. We stamp the installed version code into a
+                // marker and re-extract when it changes (or when a file is missing).
+                val geoVersionMarker = File(mihomoHomeDir, ".geo-version")
+                val installedVersion = try {
+                    val pi = packageManager.getPackageInfo(packageName, 0)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        pi.longVersionCode
+                    } else {
+                        @Suppress("DEPRECATION") pi.versionCode.toLong()
+                    }
+                } catch (_: Exception) { -1L }
+                val cachedVersion = try {
+                    geoVersionMarker.readText().trim().toLongOrNull()
+                } catch (_: Exception) { null }
+                val geoStale = cachedVersion == null || cachedVersion != installedVersion
+
                 listOf("geoip.metadb", "geosite.dat").forEach { name ->
                     val target = File(mihomoHomeDir, name)
-                    if (!target.exists()) {
+                    if (geoStale || !target.exists()) {
                         try {
                             assets.open(name).use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
                         } catch (_: Exception) {}
                     }
                 }
+                try { geoVersionMarker.writeText(installedVersion.toString()) } catch (_: Exception) {}
 
                 // TUN must be established BEFORE building the config: mihomo needs
                 // the live file descriptor embedded directly in its YAML (tun.file-

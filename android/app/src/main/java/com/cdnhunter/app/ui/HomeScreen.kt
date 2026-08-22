@@ -98,7 +98,6 @@ import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
@@ -773,11 +772,15 @@ private const val FLAG_SETTLE_MS = 620
  * the system status-bar glyphs their field now that the opaque black bar is gone.
  */
 private val HeaderFlagScrim = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.18f),
-    0.20f to Color.Black.copy(alpha = 0.08f),
-    0.50f to Color.Black.copy(alpha = 0.04f),
-    0.80f to Color.Black.copy(alpha = 0.08f),
-    1.00f to Color.Black.copy(alpha = 0.20f),
+    // Darkened on request: the flag now reads as a deeper, more tinted backdrop. Every stop
+    // carries more black than before (was 0.18/0.08/0.04/0.08/0.20) so the artwork sits further
+    // back under glass while still legibly a flag — the middle is where it breathes, the top and
+    // foot (where the clock and the browse-card head land) are heaviest.
+    0.00f to Color.Black.copy(alpha = 0.44f),
+    0.20f to Color.Black.copy(alpha = 0.32f),
+    0.50f to Color.Black.copy(alpha = 0.26f),
+    0.80f to Color.Black.copy(alpha = 0.34f),
+    1.00f to Color.Black.copy(alpha = 0.50f),
 )
 
 /**
@@ -1246,8 +1249,8 @@ internal fun HomeScreen(
 ) {
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    // The search toggle lives in the card's own header row now (beside the add-server "+"), so its
-    // action is defined here and handed down to [BrowseCard].
+    // The search toggle lives in the card's own header row now (opposite the public-IP readout),
+    // so its action is defined here and handed down to [BrowseCard].
     val toggleSearch: () -> Unit = {
         searchOpen = !searchOpen
         if (!searchOpen) query = ""
@@ -1294,7 +1297,6 @@ internal fun HomeScreen(
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
-                onRetryIp = onRetryIp,
                 modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             BrowseCard(
@@ -1308,12 +1310,13 @@ internal fun HomeScreen(
                 onAddServer = onAddServer,
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
+                onRetryIp = onRetryIp,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        // The public IP rides the flag now (in [Header]); the list's add/search controls live in
-        // the card's own top row (see [BrowseCard]).
+        // The public IP and the list's add/search controls all live in the card's own top row now
+        // (see [BrowseCard]) — the IP on the left where the "+" button used to be, search on the right.
 
         // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
         // foot, which is the browse card's top edge — so its lower half rests on the card's head
@@ -1332,22 +1335,8 @@ internal fun HomeScreen(
                 .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
         )
 
-        // The public IP: a minimal readout that now sits ON THE FLAG, just ABOVE the browse
-        // (server-list) card's top edge — no longer floating at the disc's lower-right where it
-        // rode the seam and overlapped the card head. No card/border/label, just the address
-        // (rolling on change) and a faint copy affordance, carried by its own [HeroInkShadow].
-        // Anchored bottom-left of the hero flag so it clears both the centred connect disc and the
-        // top-right country plate.
-        IpCard(
-            state = state,
-            onRetryIp = onRetryIp,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(
-                    start = ScreenPad + 2.dp,
-                    top = (heroHeight - 50.dp).coerceAtLeast(0.dp),
-                ),
-        )
+        // The public IP no longer rides the flag. It now lives in the browse card's own top row,
+        // on the left where the "+" add-server button used to be (see [BrowseCard]).
 
         // .bottom-card: sticky at the foot of the scroller, over the list
         UsageCard(
@@ -1629,7 +1618,6 @@ private val HeroDockWell = PowerSize / 2
 private fun Header(
     state: HomeUiState,
     onOpenSettings: () -> Unit,
-    onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1816,17 +1804,18 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
  *  of a set width; instead of the frame resizing, the label's font steps down as the combined
  *  "Country · City" string lengthens ([headlineFontFor]) so it always fits this one frame. Compact
  *  by intent: a tidy location chip, not a stretched banner. */
-private val HeadlinePlateWidth = 200.dp
+private val HeadlinePlateWidth = 216.dp
 private val HeadlinePlateHeight = 44.dp
 
 /** The label's font, chosen by the *combined* "Country · City" length so the fixed compact plate
- *  never has to resize: the text adapts, the frame does not. One line only now, so it can run a
- *  touch larger than the old two-line ramp before it has to step down. */
+ *  never has to resize: the text adapts, the frame does not. Sized up on request — the country and
+ *  city both read larger now — so each step is a few sp above the old ramp; it still steps down for
+ *  a long pairing so the fixed plate is never overrun (the backstop past that is ellipsis). */
 private fun headlineFontFor(label: String): TextUnit = when {
-    label.length <= 13 -> 19.sp
-    label.length <= 19 -> 16.sp
-    label.length <= 26 -> 13.sp
-    else -> 11.sp
+    label.length <= 13 -> 22.sp
+    label.length <= 19 -> 18.sp
+    label.length <= 26 -> 15.sp
+    else -> 13.sp
 }
 
 /** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
@@ -1867,38 +1856,63 @@ private val HeadlinePlateFill = Brush.horizontalGradient(
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
     val cfg = state.activeConfig
-    val country = countryCodeToName(state.headerCountryCode)
+    val liveCountry = countryCodeToName(state.headerCountryCode)
     // The config's name is the fallback only when the country is unknown — an empty
     // headline would be worse than a technical one.
-    val name = country.ifBlank {
+    val liveName = liveCountry.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-    // The city only becomes the NEW server's once the connection is actually up. While the tunnel
-    // is still coming up we must not flash the target server's stored city as if we were already
-    // there (it is often wrong, and it read as "arrived" before we had): during CONNECTING the
-    // caption is a neutral "Connecting…" instead. Off/idle it is the selected server's own city
-    // (purely informational, no connection implied); connected it is the real exit city via
-    // [cityFor] → exitCity. So the city updates to the new place strictly after success.
-    val city = when {
-        state.phase == ConnPhase.CONNECTING -> "Connecting…"
-        else -> cfg?.let { state.cityFor(it) }.orEmpty()
+    // The city, straight from the state — the selected server's own while off/idle, the real
+    // measured exit city once connected (see [HomeUiState.cityFor]). No "Connecting…" text: that
+    // was itself a change the user asked not to see.
+    val liveCity = cfg?.let { state.cityFor(it) }.orEmpty()
+
+    // ── Freeze while CONNECTING ────────────────────────────────────────────────
+    // The connect tap flips the active server immediately (see connectConfig), so without this the
+    // headline would jump to the TARGET server's name/city the instant the button is pressed —
+    // before the tunnel is up, showing a location we have not actually arrived at (and whose stored
+    // city is often just a guess). Instead the name/city are held at their last settled values for
+    // the whole CONNECTING phase and only update once the phase settles to CONNECTED (real exit
+    // location) or OFF. So the displayed location changes strictly AFTER a connection is confirmed.
+    var stableName by remember { mutableStateOf(liveName) }
+    var stableCity by remember { mutableStateOf(liveCity) }
+    LaunchedEffect(liveName, liveCity, state.phase) {
+        if (state.phase != ConnPhase.CONNECTING) {
+            stableName = liveName
+            stableCity = liveCity
+        }
     }
+    val connecting = state.phase == ConnPhase.CONNECTING
+    val name = if (connecting) stableName else liveName
+    val city = if (connecting) stableCity else liveCity
 
     // Country and city on ONE line, joined by a middot: "Sweden · Stockholm". The join is only
     // added when both halves exist and differ, so a missing city can never leave a dangling "· "
-    // and a city that duplicates the name is not repeated. This single string is what the font
-    // ramp sizes against, so both facts always fit the one fixed compact plate.
-    val label = when {
-        name.isNotBlank() && city.isNotBlank() && !city.equals(name, ignoreCase = true) ->
-            "$name · $city"
+    // and a city that duplicates the name is not repeated. The plain string is what the font ramp
+    // sizes against and what keys the reveal; the two halves are drawn with different weights.
+    val hasCity = name.isNotBlank() && city.isNotBlank() && !city.equals(name, ignoreCase = true)
+    val plainLabel = when {
+        hasCity -> "$name · $city"
         name.isNotBlank() -> name
         else -> city
+    }
+    // Country BOLD, city REGULAR weight — the two are differentiated by weight, not size, so both
+    // read at the (now larger) ramp size while the eye still separates the place from its city.
+    val label = buildAnnotatedString {
+        withStyle(SpanStyle(fontWeight = FontWeight.ExtraBold)) { append(name.ifBlank { city }) }
+        if (hasCity) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.62f))) {
+                append(" · ")
+            }
+            withStyle(SpanStyle(fontWeight = FontWeight.Normal)) { append(city) }
+        }
     }
 
     // The wipe: one Animatable driven from 0 (nothing shown) to 1 (fully revealed), reset and
     // replayed whenever the label changes. Under reduced motion it simply parks at 1 — no wipe.
+    // Keyed on the plain string, so the held value during CONNECTING does not re-trigger it.
     val reveal = remember { Animatable(1f) }
-    LaunchedEffect(label, reduce) {
+    LaunchedEffect(plainLabel, reduce) {
         if (reduce) {
             reveal.snapTo(1f)
         } else {
@@ -1907,7 +1921,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
         }
     }
 
-    val labelSize = headlineFontFor(label)
+    val labelSize = headlineFontFor(plainLabel)
     Box(
         modifier
             // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
@@ -1929,7 +1943,6 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 clipRect(right = size.width * reveal.value) { this@drawWithContent.drawContent() }
             },
             fontSize = labelSize,
-            fontWeight = FontWeight.ExtraBold,
             letterSpacing = (-0.4).sp,
             textAlign = TextAlign.End,
             color = Color.White,
@@ -1943,22 +1956,22 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
 }
 
 // ── Public-IP readout ─────────────────────────────────────────────────────────
-// One fact, floated at the connect disc's lower-right: the address the internet currently sees.
-// Off, it holds this device's own address; connected, the exit node's. Keeping it visible in both
-// is the point — the number the user is about to change is readable now.
+// One fact: the address the internet currently sees. Off, it holds this device's own address;
+// connected, the exit node's. Keeping it visible in both is the point — the number the user is
+// about to change is readable now.
 //
-// It used to be a bare tappable line under the country name, then a floating card on the flag, then
-// a labelled chip in the browse card's masthead. It is stripped to its essence now: no card, no
-// border, no background wash, no "PUBLIC IP" label — just the address itself with a small,
-// low-opacity copy glyph beside it, drawn straight on the artwork (its own [HeroInkShadow] carries
-// contrast). Tap the line to copy. When the address changes, its digits roll like an odometer
-// ([RollingIp]) rather than swapping.
+// It has moved around — a bare line under the country name, a floating card on the flag, a labelled
+// chip — and now lives in the browse card's masthead, on the LEFT where the "+" add-server button
+// used to be (see [BrowseCard]). It is stripped to its essence: no card, no border, no background
+// wash, no "PUBLIC IP" label, and no copy glyph — just the address itself, drawn straight on the
+// glass (its own [HeroInkShadow] carries contrast). Tap the line to copy.
 //
-// Three states, not two — but none of them is a word for "loading": the address, a neutral "—"
-// placeholder while a lookup is still in flight (no status text — the value simply is not known
-// yet), or the same dash with a retry glyph, tappable to ask again. See [HomeUiState.ipLookupPending]
-// for the flag and [GeoService.lookupCurrentIp] for what can fail. Only a value validated by
-// [isIpLiteral] is ever fed to the reel, so a partial or malformed lookup can never render.
+// Three states, not two — but none of them is a word for "loading" a value: the address itself, a
+// quiet "Checking…" while a lookup is still in flight (the value is simply not known yet, so nothing
+// that could look like a malformed address is drawn), or a "—" dash with a retry glyph, tappable to
+// ask again. See [HomeUiState.ipLookupPending] for the flag and [GeoService.lookupCurrentIp] for
+// what can fail. Only a value validated by [isIpLiteral] is ever shown, so a partial or malformed
+// lookup can never render — the address is drawn as ONE complete static string, never per-digit.
 
 /** What the public-IP readout is showing right now — see [IpCard]. */
 private data class IpSlot(val value: String, val checking: Boolean) {
@@ -1970,14 +1983,9 @@ private data class IpSlot(val value: String, val checking: Boolean) {
     val ready: Boolean get() = value.isNotBlank() && isIpLiteral(value)
 }
 
-/** Which of [IpCard]'s three states is showing. Keyed for the crossfade so that a *value* change
- *  within [READY] rolls the digits ([RollingIp]) instead of retriggering the whole-readout fade. */
+/** Which of [IpCard]'s three states is showing. Keyed for the crossfade so the readout fades only
+ *  between the three *kinds* of state, not on every value change within [READY]. */
 private enum class IpKind { READY, CHECKING, UNAVAILABLE }
-
-/** How long a digit wheel takes to roll to its new value — long enough that the intervening digits
- *  read as a counter turning, short enough to still feel mechanical; collapses to an instant swap
- *  under reduced motion. */
-private const val IP_ROLL_MS = 520
 
 /** The IP value's own type size, and the neutral placeholder's. Bold white for a real address; the
  *  smaller dim step for the two placeholders. */
@@ -2007,16 +2015,15 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     val tapLabel = if (slot.ready) "Copy IP address" else "Retry IP lookup"
     // Crossfade only between the three *kinds* of state — not on every value change. The kind
     // (ready / checking / unavailable) is the key, so when the address changes while staying ready
-    // the outer fade does nothing and [RollingIp] rolls the digits instead.
+    // the outer fade does nothing and the new address simply replaces the old one.
     val kind = when {
         slot.ready -> IpKind.READY
         slot.checking -> IpKind.CHECKING
         else -> IpKind.UNAVAILABLE
     }
-    // Minimal: no card, no border, no background, no "PUBLIC IP" label — just the address (rolling
-    // on change) with a small, low-opacity copy glyph beside it. The whole line is tappable to copy
-    // (or to retry a failed lookup); the text carries its own [HeroInkShadow] so it holds over the
-    // seam between flag and card without any plate under it.
+    // Minimal: no card, no border, no background, no "PUBLIC IP" label, no copy glyph — just the
+    // address itself. The whole line is tappable to copy (or to retry a failed lookup); the text
+    // carries its own [HeroInkShadow] so it holds over the card's translucent glass head.
     Row(
         modifier.then(
             if (onTap != null) {
@@ -2038,22 +2045,29 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
         ) { k ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when (k) {
-                    // The real address: rolling digits (see [RollingIp]), read from the live slot so
-                    // a value change inside the ready state rolls in place. Only an isIpLiteral value
-                    // reaches here, so the reel is always fed a clean dotted address. No trailing copy
-                    // glyph — the whole row is still tappable to copy, but the icon read as clutter and
-                    // was removed on request.
-                    IpKind.READY -> {
-                        RollingIp(value = slot.value, reduce = reduce)
-                    }
-                    // In flight: a neutral dash, no status word. The value simply is not known yet.
-                    IpKind.CHECKING -> Text(
-                        "—",
-                        fontSize = IpPlaceholderSize,
+                    // The real address, drawn as ONE complete static string. It is only ever shown
+                    // once [IpSlot.ready] confirms a well-formed literal (see below), so a partial or
+                    // mid-lookup value can never reach the screen. No per-digit odometer any more —
+                    // that rolling animation was what rendered the ". 0 . 0 ." the bug report showed
+                    // (wheels caught mid-spin between the fixed dots). Tabular figures keep it steady.
+                    IpKind.READY -> Text(
+                        slot.value,
+                        fontSize = IpValueSize,
                         fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                    )
+                    // In flight: a simple, quiet loading word — never digits. The value is not known
+                    // yet, so nothing that could look like a malformed address is drawn.
+                    IpKind.CHECKING -> Text(
+                        "Checking…",
+                        fontSize = IpPlaceholderSize,
+                        fontWeight = FontWeight.Medium,
                         color = RefTextMid,
                         maxLines = 1,
-                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
+                        style = TextStyle(shadow = HeroInkShadow),
                     )
                     // Lookup finished with nothing: a dash and a retry glyph the tap handler wires.
                     IpKind.UNAVAILABLE -> {
@@ -2073,98 +2087,6 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                             modifier = Modifier.size(13.dp),
                         )
                     }
-                }
-            }
-        }
-    }
-}
-
-/** The height of one odometer cell — the visible window each digit rolls through. A touch taller
- *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
-private val IpDigitCell = 22.dp
-
-/** How many digit cells the reel strip holds: two full 0–9 runs (20 cells). The extra run is the
- *  headroom the *first* spin needs — a wheel starts a full turn above its target and rolls down into
- *  place, so its position travels through [digit, digit+10], which a single 0–9 strip could not
- *  cover without going blank. */
-private const val IpReelCells = 20
-
-/**
- * The IP value as a mechanical odometer: one wheel per character. When the address changes, each
- * digit that differs rolls vertically to its new value through the intervening digits, like a
- * counter wheel, rather than a fade or a one-step swap. Non-digit characters (the dots) are fixed
- * cells. Cells are keyed by position, and tabular figures keep every column the same width so the
- * row does not jitter mid-roll. Only a validated dotted address is ever passed in (see [IpSlot]).
- */
-@Composable
-private fun RollingIp(value: String, reduce: Boolean, modifier: Modifier = Modifier) {
-    Row(
-        modifier.clipToBounds(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        value.forEachIndexed { index, ch ->
-            key(index) {
-                if (ch in '0'..'9') {
-                    DigitReel(digit = ch - '0', reduce = reduce, index = index)
-                } else {
-                    // Dots do not roll — a fixed cell keeps the row's rhythm and gives the wheels
-                    // either side of it something to align to.
-                    Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
-                        Text(
-                            ch.toString(),
-                            fontSize = IpValueSize,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            softWrap = false,
-                            style = TextStyle(shadow = HeroInkShadow),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** One odometer wheel. Drives an [Animatable] from a start a full turn above the target, so the very
- *  first appearance spins down into place — and any later change rolls through the intervening
- *  digits. See [RollingIp]. */
-@Composable
-private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
-    // Start one full turn (10) above the target so the first render rolls down through a complete
-    // spin; under reduced motion it simply parks on the digit.
-    val pos = remember {
-        Animatable(if (reduce) digit.toFloat() else digit.toFloat() + 10f)
-    }
-    LaunchedEffect(digit, reduce) {
-        if (reduce) {
-            pos.snapTo(digit.toFloat())
-        } else {
-            // A short per-wheel stagger so the wheels cascade rather than snapping in lockstep.
-            delay((index % 6) * 26L)
-            pos.animateTo(digit.toFloat(), tween(IP_ROLL_MS))
-        }
-    }
-    Box(
-        Modifier
-            .height(IpDigitCell)
-            .clipToBounds(),
-    ) {
-        Column(
-            Modifier.graphicsLayer { translationY = -pos.value * IpDigitCell.toPx() },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            for (i in 0 until IpReelCells) {
-                Box(Modifier.height(IpDigitCell), contentAlignment = Alignment.Center) {
-                    Text(
-                        (i % 10).toString(),
-                        fontSize = IpValueSize,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        softWrap = false,
-                        style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
-                    )
                 }
             }
         }
@@ -2804,6 +2726,7 @@ private fun BrowseCard(
     onAddServer: () -> Unit,
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
+    onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -2862,12 +2785,12 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's masthead. The public IP now rides the flag up in the hero ([Header]); down here
-        // the head is the dock well with the controls pinned to the card's very top edge, at
-        // opposite corners of it: the add-server "+" on the left, the search magnifier on the right.
-        // They sit *at the top* rather than below the well — the connect disc docks in the centre of
-        // this band, so the corners are clear and the two controls never collide with it. The band's
-        // height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
+        // The card's masthead. The public IP now lives HERE, on the left, where the add-server "+"
+        // used to sit — the "+" button is gone entirely (first-run onboarding still offers an add
+        // affordance via [EmptyHint] when the list is empty). The search magnifier stays on the
+        // right. They sit *at the top* rather than below the well — the connect disc docks in the
+        // centre of this band, so the corners are clear and the two controls never collide with it.
+        // The band's height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
         Box(
             Modifier
                 .fillMaxWidth()
@@ -2882,7 +2805,11 @@ private fun BrowseCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AddServerButton(onClick = onAddServer)
+                IpCard(
+                    state = state,
+                    onRetryIp = onRetryIp,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
@@ -3162,31 +3089,6 @@ private fun DrawScope.drawPanelTopEdge() {
             size = Size(size.width - hairline, size.height - hairline),
             cornerRadius = CornerRadius(radius),
             style = Stroke(width = hairline),
-        )
-    }
-}
-
-/**
- * The "+" that opens the add-server sheet: a bare icon in a [TapTarget] touch area, in the browse
- * card's header row beside the search magnifier (see [BrowseCard]).
- *
- * White ink, like the menu mark and the search glyph it shares the row with: the card's top is
- * translucent glass over the flag, so a high-contrast white still reads cleanly here.
- */
-@Composable
-private fun AddServerButton(onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(TapTarget)
-            .clip(CircleShape)
-            .clickable(onClickLabel = "Add server", onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Rounded.Add,
-            contentDescription = "Add server",
-            tint = Color.White,
-            modifier = Modifier.size(26.dp),
         )
     }
 }
