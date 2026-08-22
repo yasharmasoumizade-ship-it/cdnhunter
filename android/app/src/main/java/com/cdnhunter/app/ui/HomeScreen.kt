@@ -1094,7 +1094,7 @@ internal data class HomeUiState(
         if (hasExitGeo(cfg)) exitCountryCode else cfg.countryCode
 
     fun cityFor(cfg: SavedConfig): String =
-        if (hasExitGeo(cfg)) exitCity else 
+        if (hasExitGeo(cfg)) exitCity else ""
 
     /** The country behind the whole header: the active server's, or none. */
     val headerCountryCode: String
