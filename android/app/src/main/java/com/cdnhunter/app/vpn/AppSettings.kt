@@ -264,8 +264,35 @@ object AppSettings {
     fun lastPublicIp(ctx: Context): String =
         prefs(ctx).getString(KEY_LAST_PUBLIC_IP, "") ?: ""
 
-    fun setLastPublicIp(ctx: Context, ip: String) =
-        prefs(ctx).edit().putString(KEY_LAST_PUBLIC_IP, ip.trim()).apply()
+    // Only a well-formed IPv4 literal is ever persisted here. A malformed/partial value
+    // (from a stale bug, a truncated lookup, etc.) used to be written through unchecked,
+    // then read back on every future launch as `userIp` -- so a single bad write could
+    // "stick" forever and show a broken address indefinitely, even after the code that
+    // produced it was fixed. Anything that fails this check is simply not persisted, and
+    // the field keeps whatever value it already had.
+    fun setLastPublicIp(ctx: Context, ip: String) {
+        val trimmed = ip.trim()
+        if (!isValidIpv4(trimmed)) return
+        prefs(ctx).edit().putString(KEY_LAST_PUBLIC_IP, trimmed).apply()
+    }
+
+    private fun isValidIpv4(value: String): Boolean {
+        val parts = value.split(".")
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() }
+        if (octets.any { it == null || it !in 0..255 } ) return false
+        val o = octets.map { it!! }
+        return when {
+            o[0] == 0 -> false
+            o[0] == 127 -> false
+            o[0] == 10 -> false
+            o[0] == 172 && o[1] in 16..31 -> false
+            o[0] == 192 && o[1] == 168 -> false
+            o[0] == 169 && o[1] == 254 -> false
+            o[0] == 255 -> false
+            else -> true
+        }
+    }
 
 
     // ============ SUBSCRIPTIONS ============
