@@ -1140,11 +1140,7 @@ internal data class HomeUiState(
      * answer depends on [ipLookupPending].
      */
     val displayIp: String
-        get() = when {
-            connecting -> ""
-            ipLookupPending -> ""
-            else -> publicIp
-        }
+        get() = if (connecting) "" else publicIp
 
     val sessionBytes: Long get() = totalDownloadBytes + totalUploadBytes
 

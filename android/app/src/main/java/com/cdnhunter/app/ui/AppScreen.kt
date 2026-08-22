@@ -964,8 +964,6 @@ private fun VpnTab() {
     // HomeUiState.ipLookupPending and MetaRow).
     LaunchedEffect(connected, ipRetryTick) {
         networkName = describeActiveNetwork(context)
-        // Blank on state change so the old IP (server or user) never shows for the new state.
-        publicIp = ""
         ipLookupPending = true
         try {
             if (connected) delay(2500)
