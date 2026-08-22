@@ -845,7 +845,8 @@ private fun VpnTab() {
     // Home's network row: which transport the device is on, and the public IP the
     // outside world sees for it (resolved through the tunnel while it's up).
     var networkName by remember { mutableStateOf(describeActiveNetwork(context)) }
-    var publicIp by remember { mutableStateOf(AppSettings.lastPublicIp(context)) }
+    var publicIp by remember { mutableStateOf("") }
+    var userIp by remember { mutableStateOf(AppSettings.lastPublicIp(context)) }
     // A lookup is in flight. Home distinguishes "still asking" from "every provider failed",
     // because the second one is a tap target that retries and the first one must not be.
     var ipLookupPending by remember { mutableStateOf(true) }
@@ -978,9 +979,10 @@ private fun VpnTab() {
                 }
                 if (resolved.isNotBlank()) {
                     publicIp = resolved
-                    // Persist so a cold start — or a session where every lookup is blocked — still
-                    // opens on the last-known address instead of a blank dash.
-                    AppSettings.setLastPublicIp(context, resolved)
+                    if (!connected) {
+                        userIp = resolved
+                        AppSettings.setLastPublicIp(context, resolved)
+                    }
                     return@LaunchedEffect
                 }
                 if (attempt < IP_LOOKUP_BACKOFF_MS.lastIndex) delay(backoffMs)
@@ -1009,7 +1011,10 @@ private fun VpnTab() {
             }
             if (resolved.isNotBlank()) {
                 publicIp = resolved
-                AppSettings.setLastPublicIp(context, resolved)
+                if (!connected) {
+                    userIp = resolved
+                    AppSettings.setLastPublicIp(context, resolved)
+                }
                 return@LaunchedEffect
             }
         }
@@ -1478,7 +1483,7 @@ private fun VpnTab() {
                         exitCity = exitCity,
                         exitGeoConfigId = exitGeoConfigId,
                         networkName = networkName,
-                        publicIp = publicIp,
+                        publicIp = if (connected) publicIp else userIp,
                         ipLookupPending = ipLookupPending,
                         lastFlagCountry = lastFlagCountry,
                         refreshingPings = refreshingPings,

@@ -1142,7 +1142,7 @@ internal data class HomeUiState(
     val displayIp: String
         get() = when {
             connecting -> ""
-            connected && ipLookupPending -> ""
+            ipLookupPending -> ""
             else -> publicIp
         }
 
