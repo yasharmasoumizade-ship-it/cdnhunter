@@ -2083,6 +2083,11 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     }
 }
 
+/** How long a digit wheel takes to roll to its new value — long enough that the intervening digits
+ *  read as a counter turning, short enough to still feel mechanical; collapses to an instant swap
+ *  under reduced motion. */
+private const val IP_ROLL_MS = 520
+
 /** The height of one odometer cell — the visible window each digit rolls through. A touch taller
  *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
 private val IpDigitCell = 22.dp
