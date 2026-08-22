@@ -1258,8 +1258,22 @@ internal fun HomeScreen(
 
     // Every server the app knows about, filtered by the search box and sorted by latency.
     // The Main/Custom tab selector is gone, so there is one list and it is all of them.
-    val servers = remember(state.allConfigs, query) {
-        state.allConfigs.matching(query).byLatency()
+    //
+    // The ORDER is frozen per (set of servers, query) rather than recomputed on every
+    // change to `allConfigs`. The live ping monitor replaces the whole configs list
+    // every few seconds (a new list identity even though only pingMs changed); sorting
+    // on that identity re-sorted the rows on each sample, so a server whose ping ticked
+    // up would jump position under the user's finger. Here the latency sort runs once
+    // for a given id-set + query, yielding a fixed id order; each recomposition then
+    // just re-projects the latest config objects (with fresh ping values) onto that
+    // frozen order. Adding/removing a server or changing the query recomputes it.
+    val serverIds = state.allConfigs.map { it.id }.toSet()
+    val orderedIds = remember(serverIds, query) {
+        state.allConfigs.matching(query).byLatency().map { it.id }
+    }
+    val configById = state.allConfigs.associateBy { it.id }
+    val servers = remember(orderedIds, state.allConfigs) {
+        orderedIds.mapNotNull { configById[it] }
     }
     val activeId = state.activeConfig?.id
 
@@ -1321,16 +1335,21 @@ internal fun HomeScreen(
                 .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
         )
 
-        // The public IP: a minimal readout floating below-right of the connect disc, over the seam.
-        // No card or label — just the address (rolling on change) and a faint copy affordance. Placed
-        // as an overlay so it sits at the disc's lower-right rather than in the flag or the card head.
+        // The public IP: a minimal readout that now sits ON THE FLAG, just ABOVE the browse
+        // (server-list) card's top edge — no longer floating at the disc's lower-right where it
+        // rode the seam and overlapped the card head. No card/border/label, just the address
+        // (rolling on change) and a faint copy affordance, carried by its own [HeroInkShadow].
+        // Anchored bottom-left of the hero flag so it clears both the centred connect disc and the
+        // top-right country plate.
         IpCard(
             state = state,
             onRetryIp = onRetryIp,
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = heroHeight + 34.dp)
-                .offset(x = 74.dp),
+                .align(Alignment.TopStart)
+                .padding(
+                    start = ScreenPad + 2.dp,
+                    top = (heroHeight - 50.dp).coerceAtLeast(0.dp),
+                ),
         )
 
         // .bottom-card: sticky at the foot of the scroller, over the list

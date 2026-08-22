@@ -95,6 +95,12 @@ val AnanasAmber    = Color(0xFFD97706)   // Warm amber
 val AnanasRed      = Color(0xFFEF4444)   // Modern red
 val AnanasBlue     = Color(0xFF3B82F6)   // Modern blue
 val AnanasPurple   = Color(0xFF8B5CF6)   // Modern purple
+// The "on / active / selected" indicator color for controls (MinimalToggle track,
+// SegmentedControl selected segment, SelectDot). Deliberately NOT the green accent:
+// a green "on" state on a VPN app reads as a status/connection light, which these
+// controls are not. Blue keeps the active state legible and on-theme without that
+// false connotation.
+val AnanasToggleOn = AnanasBlue
 val AnanasTextHi   = Color(0xFFFAFAFA)   // Primary text
 val AnanasText     = Color(0xFFF0F0F2)   // Secondary text
 val AnanasMuted    = Color(0xFF6E7078)   // Muted text
@@ -175,7 +181,26 @@ private const val PING_SWEEP_TIMEOUT_MS = 12_000L
 // (see CdnVpnService's post-connect check) as the authoritative correction.
 private suspend fun enrichConfigGeo(cfg: SavedConfig): SavedConfig =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        cfg.copy(pingMs = measurePingMs(cfg.address, cfg.port), geoResolved = true)
+        val ping = measurePingMs(cfg.address, cfg.port)
+        // Best-effort on-device geo so a server's row and the header plate can show a
+        // country AND city before that server has ever been connected. This resolves
+        // the config's own host directly, so for a CDN-fronted address it reports the
+        // edge node's location rather than the true backend — it is a GUESS, and the
+        // accurate through-the-tunnel check (probeAccurateGeoViaLiveTunnel) overwrites
+        // both fields once the server is actually connected. Only still-blank fields
+        // are filled so a prior accurate result is never clobbered, and a failed
+        // lookup just leaves them as they were.
+        val geo = try {
+            com.cdnhunter.app.engine.GeoService().lookupGeoInfo(cfg.address)
+        } catch (e: Exception) {
+            null
+        }
+        cfg.copy(
+            pingMs = ping,
+            countryCode = if (cfg.countryCode.isBlank() && geo != null) geo.cc else cfg.countryCode,
+            city = if (cfg.city.isBlank() && geo != null) geo.city else cfg.city,
+            geoResolved = true,
+        )
     }
 
 // Periodic ping monitor — continuously measures latency every 3 seconds
@@ -733,6 +758,13 @@ private const val CONNECT_REQUEST_GRACE_MS = 12_000L
  */
 private val IP_LOOKUP_BACKOFF_MS = longArrayOf(1_200L, 2_500L, 0L)
 
+// After the fast ladder above gives up, keep trying quietly at this slower cadence
+// so a tunnel whose proxy was still warming up (or a briefly flaky path) fills the
+// address in on its own instead of forcing a manual retry tap. Bounded so it can't
+// poll forever on a genuinely blocked network.
+private const val IP_LOOKUP_SLOW_RETRIES = 5
+private const val IP_LOOKUP_SLOW_INTERVAL_MS = 8_000L
+
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -959,6 +991,29 @@ private fun VpnTab() {
             // Also runs when the effect is cancelled by a connect/disconnect or a retry, so the
             // hero never keeps saying "Checking…" for a lookup that no longer exists.
             ipLookupPending = false
+        }
+        // The fast ladder above is exhausted and nothing resolved — but on a freshly
+        // established tunnel the mixed-port proxy can still be warming up, and on a
+        // flaky path the providers may just need another moment. Rather than leaving
+        // the address blank until the user manually taps retry, keep trying quietly
+        // in the background at a slower cadence. ipLookupPending stays false so the
+        // retry affordance is still shown, but in practice the IP now fills itself in.
+        // This loop is cancelled automatically the moment connect state flips or the
+        // user taps retry (both re-key this effect).
+        for (i in 0 until IP_LOOKUP_SLOW_RETRIES) {
+            delay(IP_LOOKUP_SLOW_INTERVAL_MS)
+            val resolved = withContext(Dispatchers.IO) {
+                try {
+                    com.cdnhunter.app.engine.GeoService().lookupCurrentIp(proxied = connected)
+                } catch (e: Exception) {
+                    ""
+                }
+            }
+            if (resolved.isNotBlank()) {
+                publicIp = resolved
+                AppSettings.setLastPublicIp(context, resolved)
+                return@LaunchedEffect
+            }
         }
     }
 
@@ -2232,13 +2287,6 @@ private val SheetHeaderFootRoom = 22.dp
 /** How far the panel's shadow reaches on to the page below it. */
 private val SheetHeaderLift = 6.dp
 
-/** Page wash: the accent at 5% for 260dp. Flat #0B0B0D edge to edge is what makes a dark
- *  screen look unfinished; this is barely visible and gives the top of the page a light
- *  source, the way the flag does on Home. */
-private val SheetPageWash = Brush.verticalGradient(
-    listOf(AnanasAccent.copy(alpha = 0.05f), Color.Transparent),
-)
-
 /**
  * The glass panel every secondary screen opens with: full-bleed, rounded only at the bottom, its
  * top running off the screen behind the status bar — so the one edge the eye can read is the lit
@@ -2286,21 +2334,30 @@ private fun SheetScreen(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        Box(Modifier.fillMaxWidth().height(260.dp).background(SheetPageWash))
+        // (The old full-width SheetPageWash box that used to sit here is gone: being a
+        // square-cornered rectangle behind the round-bottomed header, its corners poked
+        // out below the header curve and read as a faint ghost band above the first card.
+        // The header panel already carries its own top light via SheetHeaderGlass +
+        // SheetHeaderRim inside its clip, so nothing is lost by dropping the stray box.)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(Modifier.sheetHeaderPanel()) {
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+                // Title on the SAME row as the back chevron. The chevron is a plain icon
+                // (no disc/border) so the two read as one line: "‹ Settings".
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = if (headerContent == null) 4.dp else 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlainBackButton(onClick = onBack)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        title,
+                        fontSize = 26.sp,
+                        lineHeight = 30.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.6).sp,
+                        color = AnanasTextHi,
+                    )
                 }
-                Text(
-                    title,
-                    fontSize = 30.sp,
-                    lineHeight = 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = (-0.7).sp,
-                    color = AnanasTextHi,
-                    modifier = Modifier.padding(top = 14.dp, bottom = if (headerContent == null) 4.dp else 18.dp),
-                )
                 headerContent?.invoke(this)
                 Spacer(Modifier.height(SheetHeaderFootRoom))
             }
@@ -2476,13 +2533,13 @@ private fun SegmentedControl(
             val on = key == selected
             val interaction = remember { MutableInteractionSource() }
             val ink by animateColorAsState(
-                targetValue = if (on) AnanasAccent else AnanasMuted,
+                targetValue = if (on) AnanasToggleOn else AnanasMuted,
                 animationSpec = tween(160), label = "segInk",
             )
             Box(
                 (if (equalWeight) Modifier.weight(1f) else Modifier)
                     .clip(segShape)
-                    .background(if (on) AnanasAccent.copy(alpha = 0.12f) else Color.Transparent)
+                    .background(if (on) AnanasToggleOn.copy(alpha = 0.14f) else Color.Transparent)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
@@ -3140,7 +3197,7 @@ private fun SettingsToggleRow(
 @Composable
 private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val trackColor by animateColorAsState(
-        targetValue = if (checked) AnanasAccent else AnanasCard2,
+        targetValue = if (checked) AnanasToggleOn else AnanasCard2,
         animationSpec = tween(180), label = "toggleTrack"
     )
     val thumbOffset by animateDpAsState(
@@ -3313,7 +3370,9 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
     // header is laid out fixed and the list takes weight(1f) — but the panel itself is
     // the shared [Modifier.sheetHeaderPanel], so it is the same glass as the other screens.
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        Box(Modifier.fillMaxWidth().height(260.dp).background(SheetPageWash))
+        // (No stray SheetPageWash box here either — see the note in SheetScreen. The
+        // header panel's own glass + rim provide the top light without a square-cornered
+        // rectangle poking out behind the rounded header.)
         // The status-bar inset lives inside the glass panel, so only the bottom inset is
         // taken here — the list must end above the navigation bar, not under it.
         Column(Modifier.fillMaxSize().navigationBarsPadding()) {
@@ -3322,17 +3381,17 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     Modifier.fillMaxWidth().padding(top = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+                    PlainBackButton(onClick = onBack)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Split tunneling",
+                        fontSize = 26.sp,
+                        lineHeight = 30.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.6).sp,
+                        color = AnanasTextHi,
+                    )
                 }
-                Text(
-                    "Split tunneling",
-                    fontSize = 30.sp,
-                    lineHeight = 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = (-0.7).sp,
-                    color = AnanasTextHi,
-                    modifier = Modifier.padding(top = 14.dp),
-                )
                 // The two modes are easy to invert in your head, so the screen says which
                 // one is live in a sentence instead of leaving it to the labels.
                 Text(
@@ -3452,11 +3511,11 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
 @Composable
 private fun SelectDot(selected: Boolean) {
     val fill by animateColorAsState(
-        targetValue = if (selected) AnanasAccent else Color.Transparent,
+        targetValue = if (selected) AnanasToggleOn else Color.Transparent,
         animationSpec = tween(140), label = "dotFill",
     )
     val edge by animateColorAsState(
-        targetValue = if (selected) AnanasAccent else AnanasBorder2,
+        targetValue = if (selected) AnanasToggleOn else AnanasBorder2,
         animationSpec = tween(140), label = "dotEdge",
     )
     Box(
@@ -3481,6 +3540,33 @@ private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, o
             .clickable(interactionSource = interaction, indication = null) { onClick() },
         contentAlignment = Alignment.Center
     ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
+}
+
+// A back affordance with no chip/disc/border around it — just the chevron itself, so the
+// screen title can sit flush beside it. Keeps a full 40dp touch target (via the Box size)
+// even though nothing is drawn behind the glyph, and dims briefly on press for feedback.
+@Composable
+private fun PlainBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val alpha by animateFloatAsState(if (pressed) 0.55f else 1f, tween(120), label = "backPress")
+    Box(
+        modifier
+            .size(40.dp)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = "Back",
+            ) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Rounded.ChevronLeft,
+            contentDescription = "Back",
+            tint = AnanasText.copy(alpha = alpha),
+            modifier = Modifier.size(30.dp).offset(x = (-4).dp),
+        )
+    }
 }
 
 // Home's own composables — power circle, connect bar, server list, usage card —

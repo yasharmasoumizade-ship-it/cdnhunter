@@ -39,20 +39,26 @@ android {
         }
     }
 
-    // Signing credentials come from the environment when it provides them, and fall
-    // back to the values committed here otherwise. The fallback is deliberate: the
-    // keystore itself is in the repo, so removing the passwords alone would break
-    // local and CI builds without actually protecting anything. Setting
-    // CDNHUNTER_KEYSTORE_PASSWORD / CDNHUNTER_KEY_PASSWORD (e.g. from GitHub
-    // Actions secrets) is what makes the real credentials stop living in git — and
-    // that only becomes meaningful once the key is rotated, which breaks in-place
-    // updates for anyone who already installed a build signed with the old key.
+    // Signing credentials come exclusively from the environment. There is NO
+    // hardcoded password fallback: if the CDNHUNTER_* env vars are not set the
+    // release signing config resolves to empty strings and the signing step fails
+    // loudly, rather than silently signing with a password that lives in git
+    // history. Set these as GitHub Actions repository secrets (Settings →
+    // Secrets and variables → Actions → New repository secret):
+    //   CDNHUNTER_KEYSTORE_FILE      path to keystore.jks (defaults to ../keystore.jks)
+    //   CDNHUNTER_KEYSTORE_PASSWORD  keystore (store) password        [required]
+    //   CDNHUNTER_KEY_ALIAS          key alias (defaults to "cdnhunter")
+    //   CDNHUNTER_KEY_PASSWORD       key password                    [required]
+    // and expose them to the build step in build-unified.yml via `env:`. Rotating
+    // the key that was previously committed is what makes this actually protect
+    // anything — note that a rotated key breaks in-place updates for anyone who
+    // installed a build signed with the old key.
     signingConfigs {
         create("release") {
             storeFile = file(System.getenv("CDNHUNTER_KEYSTORE_FILE") ?: "../keystore.jks")
-            storePassword = System.getenv("CDNHUNTER_KEYSTORE_PASSWORD") ?: "cdnhunter123"
+            storePassword = System.getenv("CDNHUNTER_KEYSTORE_PASSWORD") ?: ""
             keyAlias = System.getenv("CDNHUNTER_KEY_ALIAS") ?: "cdnhunter"
-            keyPassword = System.getenv("CDNHUNTER_KEY_PASSWORD") ?: "cdnhunter123"
+            keyPassword = System.getenv("CDNHUNTER_KEY_PASSWORD") ?: ""
         }
     }
 

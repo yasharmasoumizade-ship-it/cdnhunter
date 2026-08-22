@@ -24,9 +24,20 @@ object VpnConfigBuilder {
         val blockMalware = AppSettings.blockMalware(ctx)
         val customDnsEnabled = AppSettings.customDnsEnabled(ctx)
         val customDnsServers = AppSettings.customDnsServers(ctx)
+        // Whether the bundled geo databases are actually present in mihomo's home
+        // dir (CdnVpnService copies them from assets before this runs). The
+        // GEOSITE,ir / GEOIP,ir DIRECT rules are only emitted when both exist:
+        // referencing a geo db that isn't there makes mihomo fail to start, which
+        // would break the connection entirely. If they're missing we fall back to
+        // the RULE-SET,ir-* providers alone — exactly the pre-change behavior — so
+        // this can never regress connectivity.
+        val geoDir = java.io.File(ctx.filesDir, "mihomo")
+        val geoDbPresent = java.io.File(geoDir, "geosite.dat").let { it.exists() && it.length() > 0 } &&
+            java.io.File(geoDir, "geoip.metadb").let { it.exists() && it.length() > 0 }
         return buildConfigFromUri(
             userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh,
-            adBlocker, blockAds, blockTrackers, blockMalware, customDnsEnabled, customDnsServers
+            adBlocker, blockAds, blockTrackers, blockMalware, customDnsEnabled, customDnsServers,
+            geoDbPresent
         )
     }
 
@@ -36,14 +47,15 @@ object VpnConfigBuilder {
         mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
         adBlocker: Boolean = false, blockAds: Boolean = true,
         blockTrackers: Boolean = true, blockMalware: Boolean = true,
-        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
+        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList(),
+        geoDbPresent: Boolean = false
     ): String {
         val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
         proxy["name"] = "proxy"
         return renderYaml(
             proxy, tunFd, mtu, allowLan, ipv6, useDoh,
             adBlocker, blockAds, blockTrackers, blockMalware,
-            customDnsEnabled, customDnsServers
+            customDnsEnabled, customDnsServers, geoDbPresent
         )
     }
 
@@ -56,7 +68,8 @@ object VpnConfigBuilder {
         allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
         adBlocker: Boolean = false, blockAds: Boolean = true,
         blockTrackers: Boolean = true, blockMalware: Boolean = true,
-        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList()
+        customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList(),
+        geoDbPresent: Boolean = false
     ): String {
         // DNS nameservers: either user-provided custom servers, or default Google
         // (8.8.8.8 / 8.8.4.4). When using custom DNS, respect the DoH setting:
@@ -102,6 +115,17 @@ object VpnConfigBuilder {
             "mode" to "rule",
             "log-level" to "error",
             "ipv6" to ipv6,
+            // Geo databases for the GEOSITE,ir / GEOIP,ir DIRECT rules below. These
+            // are loaded from the bundled files CdnVpnService copies into mihomo's
+            // home dir (geosite.dat + geoip.metadb) — NOT downloaded. geodata-mode
+            // false is what makes GEOIP read the shipped .metadb (geodata-mode true
+            // would look for geoip.dat, which we do not ship); GEOSITE always uses
+            // geosite.dat regardless. geo-auto-update off so mihomo never tries to
+            // fetch a newer copy over the network (pointless in Iran, where the
+            // download host is itself often blocked — the whole reason the Iran
+            // routing must not depend on a live fetch).
+            "geodata-mode" to false,
+            "geo-auto-update" to false,
             "dns" to linkedMapOf(
                 "enable" to true,
                 "listen" to "0.0.0.0:1053",
@@ -350,6 +374,37 @@ object VpnConfigBuilder {
                 // ever launch), these RULE-SET lines just never match anything and
                 // everything falls through to MATCH,PROXY same as before --
                 // non-fatal either way.
+                // ===== Iran direct routing (always on) =====
+                // Two layers, in order, both pointing DIRECT:
+                //
+                // 1. GEOSITE,ir / GEOIP,ir — matched against the BUNDLED geosite.dat
+                //    and geoip.metadb (shipped in assets, copied to mihomo's home dir
+                //    by CdnVpnService). This is the primary, reliable layer: it needs
+                //    no network fetch (so it works on the very first connect and in
+                //    Iran where the ruleset download host is itself blocked), and
+                //    critically GEOSITE matches on the DOMAIN — which fake-ip always
+                //    makes available by recovering it from the synthetic IP — so Iran
+                //    domains route DIRECT even though their connections carry a
+                //    198.18.x fake IP that an ip-only rule could never match. GEOIP,ir
+                //    carries no-resolve so it only matches connections that already
+                //    have a real Iran IP (direct-to-IP), never forcing a resolve that
+                //    would loop back through the rule engine under respect-rules.
+                //
+                // 2. RULE-SET,ir-domain / ir-ip — the HTTP rule-providers (Chocolate4U
+                //    lists). Kept as a secondary layer for anything the bundled geo
+                //    data misses, but no longer the ONLY thing standing between Iran
+                //    traffic and MATCH,PROXY: if their GitHub fetch fails (common in
+                //    Iran / on first launch), the GEOSITE/GEOIP layer above still
+                //    routes Iran DIRECT. Previously these were the sole Iran rules, so
+                //    a failed fetch silently sent all Iran traffic through the proxy.
+                //
+                // GEOSITE/GEOIP are only emitted when the geo db files are actually
+                // present (geoDbPresent) — referencing a missing db makes mihomo fail
+                // to start; without them we degrade to the RULE-SET layer alone.
+                if (geoDbPresent) {
+                    add("GEOSITE,ir,DIRECT")
+                    add("GEOIP,ir,DIRECT,no-resolve")
+                }
                 add("RULE-SET,ir-domain,DIRECT")
                 add("RULE-SET,ir-ip,DIRECT")
                 add("MATCH,PROXY")

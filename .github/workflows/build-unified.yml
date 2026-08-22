@@ -89,19 +89,30 @@ jobs:
           ls -la android/app/src/main/assets/
 
       - name: Generate signing keystore
-        # build.gradle.kts's release signingConfig points at ../keystore.jks
-        # with these exact hardcoded credentials, but no step ever created
-        # that file -- validateSigningRelease failed looking for it. This is
-        # a self-signed key for producing an installable APK (not a Play
-        # Store production key), so generating it fresh each run with the
-        # same already-public password/alias is fine and keeps every build
-        # signed consistently.
+        # build.gradle.kts's release signingConfig reads the store/key passwords
+        # ONLY from the CDNHUNTER_* env vars (no hardcoded fallback anymore), so
+        # both this generation step and the build step below source them from the
+        # same GitHub Actions repository secrets. Set these under
+        # Settings -> Secrets and variables -> Actions:
+        #   CDNHUNTER_KEYSTORE_PASSWORD   (required)
+        #   CDNHUNTER_KEY_PASSWORD        (required)
+        #   CDNHUNTER_KEY_ALIAS           (optional, defaults to "cdnhunter")
+        # This is a self-signed key for producing an installable (non-Play-Store)
+        # APK, regenerated each run; keeping the credentials in secrets keeps them
+        # out of git. If a required secret is unset, the passwords resolve empty
+        # and the build fails loudly at signing rather than shipping a key whose
+        # password lives in source.
+        env:
+          CDNHUNTER_KEYSTORE_PASSWORD: ${{ secrets.CDNHUNTER_KEYSTORE_PASSWORD }}
+          CDNHUNTER_KEY_PASSWORD: ${{ secrets.CDNHUNTER_KEY_PASSWORD }}
+          CDNHUNTER_KEY_ALIAS: ${{ secrets.CDNHUNTER_KEY_ALIAS }}
         run: |
+          ALIAS="${CDNHUNTER_KEY_ALIAS:-cdnhunter}"
           keytool -genkeypair -v \
             -keystore android/keystore.jks \
-            -storepass cdnhunter123 \
-            -alias cdnhunter \
-            -keypass cdnhunter123 \
+            -storepass "$CDNHUNTER_KEYSTORE_PASSWORD" \
+            -alias "$ALIAS" \
+            -keypass "$CDNHUNTER_KEY_PASSWORD" \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CDN Hunter, OU=Dev, O=CDN Hunter, L=Unknown, S=Unknown, C=US"
           ls -la android/keystore.jks
@@ -118,6 +129,9 @@ jobs:
         working-directory: android
         env:
           CI_VERSION_CODE: ${{ github.run_number }}
+          CDNHUNTER_KEYSTORE_PASSWORD: ${{ secrets.CDNHUNTER_KEYSTORE_PASSWORD }}
+          CDNHUNTER_KEY_PASSWORD: ${{ secrets.CDNHUNTER_KEY_PASSWORD }}
+          CDNHUNTER_KEY_ALIAS: ${{ secrets.CDNHUNTER_KEY_ALIAS }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Collect APK
