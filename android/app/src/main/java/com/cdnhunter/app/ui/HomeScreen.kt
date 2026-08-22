@@ -1805,8 +1805,8 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
  *  of a set width; instead of the frame resizing, the label's font steps down as the combined
  *  "Country · City" string lengthens ([headlineFontFor]) so it always fits this one frame. Compact
  *  by intent: a tidy location chip, not a stretched banner. */
-private val HeadlinePlateWidth = 200.dp
-private val HeadlinePlateHeight = 78.dp
+private val HeadlinePlateWidth = 224.dp
+private val HeadlinePlateHeight = 84.dp
 
 /** The label's font, chosen by the *combined* "Country · City" length so the fixed compact plate
  *  never has to resize: the text adapts, the frame does not. Sized up on request — the country and
@@ -1826,7 +1826,10 @@ private val HeadlineCitySize = 14.sp
 /** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
  *  top-left edge, so it reads as a considered, cut plate rather than a pasted-on box — while the
  *  right/top/bottom stay straight to give the right-aligned name a clean contrast floor. */
-private val HeadlinePlateShape = RectangleShape
+/** Rounded, not sharp -- the inset-glass card reads as a soft-edged pane sitting into the
+ *  flag rather than a hard-cut box. Only the bottom-left corner is rounded to any real degree;
+ *  the plate is anchored to the screen's top-right so its own top/right edges sit off-canvas. */
+private val HeadlinePlateShape = RoundedCornerShape(bottomStart = 22.dp)
 
 /** The left-to-right wipe when the name changes: the new label is revealed progressively across
  *  its glyphs rather than swapped or crossfaded. */
@@ -1839,10 +1842,31 @@ private const val REVEAL_MS = 460
  *  darkened only exactly where it must be. The ramp is deliberately deep and early: it starts
  *  shading sooner and lands near-opaque at the edge so the white name reads vividly over even the
  *  brightest flag band, without turning the fade into a hard-edged box. */
+// Starts short of fully opaque so a hint of the flag shows through even at the very top edge,
+// and eases out well before the card's own bottom so the fade never reads as a hard line.
 private val HeadlinePlateFill = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.58f),
-    0.45f to Color.Black.copy(alpha = 0.30f),
+    0.00f to Color.Black.copy(alpha = 0.44f),
+    0.50f to Color.Black.copy(alpha = 0.24f),
     1.00f to Color.Transparent,
+)
+
+/** The inset-glass edge: a soft light catch along the top, as if the pane were pressed into the
+ *  flag and lit from above -- paired with [HeadlinePlateInnerShadow] below to sell the recess. */
+private val HeadlinePlateRim = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.16f),
+    0.12f to Color.White.copy(alpha = 0.0f),
+)
+
+/** A dark inward wash along the bottom/left of the pane -- where an inset surface would catch
+ *  its own shadow -- so the card reads as sunken into the flag rather than sitting flush on it. */
+private val HeadlinePlateInnerShadow = Brush.linearGradient(
+    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+    end = androidx.compose.ui.geometry.Offset.Infinite,
+    colorStops = arrayOf(
+        0.0f to Color.Transparent,
+        0.78f to Color.Transparent,
+        1.0f to Color.Black.copy(alpha = 0.28f),
+    ),
 )
 
 @Composable
@@ -1910,11 +1934,13 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
             // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
             .width(HeadlinePlateWidth)
             .height(HeadlinePlateHeight)
-            // A plain right-hand wash: opaque at the very top, easing to fully transparent by the
-            // bottom, so it reads as light falling off the flag rather than a pasted-on box. No
-            // border, no shear -- the fade itself is the shape.
+            // Layered to read as inset glass rather than a pasted-on box: the dark wash first,
+            // then a bottom/left inner shadow for depth, then a thin top light-catch rim -- all
+            // clipped to the same rounded shape so nothing bleeds past the card's own edge.
             .background(HeadlinePlateFill, shape = HeadlinePlateShape)
-            .padding(start = 24.dp, end = 15.dp, top = 12.dp),
+            .background(HeadlinePlateInnerShadow, shape = HeadlinePlateShape)
+            .background(HeadlinePlateRim, shape = HeadlinePlateShape)
+            .padding(start = 24.dp, end = 18.dp, top = 14.dp),
         contentAlignment = Alignment.TopEnd,
     ) {
         // Country and city stacked, not joined by a middot -- the country reads first and large,
