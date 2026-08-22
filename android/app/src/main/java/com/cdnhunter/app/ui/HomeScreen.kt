@@ -2083,8 +2083,6 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
     }
 }
 
-<<<<<<< HEAD
-=======
 /** The height of one odometer cell — the visible window each digit rolls through. A touch taller
  *  than [IpValueSize] so glyphs have head- and foot-room inside the clipped slot. */
 private val IpDigitCell = 22.dp
