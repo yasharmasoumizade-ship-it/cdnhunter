@@ -1128,23 +1128,23 @@ internal data class HomeUiState(
     /**
      * The one address the network row states, or "" when there isn't one yet.
      *
-     * Disconnected that is this device's own public IP, and nothing else — no city, no
-     * country, no separator: [publicIp] is resolved unproxied while the tunnel is
-     * down, so it is already the address the outside world sees for this phone.
+     * Always just [publicIp] -- deliberately NOT gated on [connecting]. It used to blank
+     * to "" for the whole connecting phase, which forced the readout through UNAVAILABLE/
+     * CHECKING on every single connect and disconnect, even when a perfectly valid address
+     * was already on screen. That meant IpCard never stayed in READY across a transition,
+     * so RollingIp's digit-by-digit roll never had a continuous value to animate between --
+     * every transition looked like an instant blank-then-refill instead of a roll. Now the
+     * previous address (disconnected: this device's own; connected: the prior exit IP) stays
+     * up the whole time a fresh lookup is in flight, and is simply replaced in place once
+     * [publicIp] resolves to the new one -- which is what lets IpCard stay in IpKind.READY
+     * and RollingIp actually animate the digits.
      *
-     * Connected it is the tunnel's exit IP. VpnTab re-resolves [publicIp] through the
-     * live tunnel the moment the state flips, but that request is deliberately given a
-     * couple of seconds to let a fresh tunnel settle, and the row would otherwise sit
-     * empty for exactly as long as the user is looking at it. [SavedConfig.address] is
-     * the server that was dialled, so when it is a literal address it is the exit IP —
-     * shown until the measured one lands and replaces it. A hostname is not an IP and
-     * is never shown here.
-     *
-     * Blank means "no address to state"; [MetaRow] decides what to say about that, and the
-     * answer depends on [ipLookupPending].
+     * Blank means "no address to state" (e.g. first launch, before any lookup has ever
+     * resolved); [MetaRow] decides what to say about that, and the answer depends on
+     * [ipLookupPending].
      */
     val displayIp: String
-        get() = if (connecting) "" else publicIp
+        get() = publicIp
 
     val sessionBytes: Long get() = totalDownloadBytes + totalUploadBytes
 
