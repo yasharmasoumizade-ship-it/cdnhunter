@@ -963,10 +963,8 @@ private fun VpnTab() {
     // HomeUiState.ipLookupPending and MetaRow).
     LaunchedEffect(connected, ipRetryTick) {
         networkName = describeActiveNetwork(context)
-        // Do NOT blank the address here: the last good value keeps showing while this fresh lookup
-        // runs, so the hero never flashes an empty dash on launch or on a reconnect. A new value
-        // replaces it only once one actually resolves (and rolls in on the odometer). The pending
-        // flag is still raised so a genuinely never-resolved address can fall through to a retry.
+        // Blank on state change so the old IP (server or user) never shows for the new state.
+        publicIp = ""
         ipLookupPending = true
         try {
             if (connected) delay(2500)
