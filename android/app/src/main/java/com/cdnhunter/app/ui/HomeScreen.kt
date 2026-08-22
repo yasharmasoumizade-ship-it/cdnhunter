@@ -99,7 +99,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
@@ -1876,7 +1875,16 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
     val name = country.ifBlank {
         cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
     }
-    val city = cfg?.let { state.cityFor(it) }.orEmpty()
+    // The city only becomes the NEW server's once the connection is actually up. While the tunnel
+    // is still coming up we must not flash the target server's stored city as if we were already
+    // there (it is often wrong, and it read as "arrived" before we had): during CONNECTING the
+    // caption is a neutral "Connecting…" instead. Off/idle it is the selected server's own city
+    // (purely informational, no connection implied); connected it is the real exit city via
+    // [cityFor] → exitCity. So the city updates to the new place strictly after success.
+    val city = when {
+        state.phase == ConnPhase.CONNECTING -> "Connecting…"
+        else -> cfg?.let { state.cityFor(it) }.orEmpty()
+    }
 
     // Country and city on ONE line, joined by a middot: "Sweden · Stockholm". The join is only
     // added when both halves exist and differ, so a missing city can never leave a dangling "· "
@@ -2034,18 +2042,11 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                 when (k) {
                     // The real address: rolling digits (see [RollingIp]), read from the live slot so
                     // a value change inside the ready state rolls in place. Only an isIpLiteral value
-                    // reaches here, so the reel is always fed a clean dotted address.
+                    // reaches here, so the reel is always fed a clean dotted address. No trailing copy
+                    // glyph — the whole row is still tappable to copy, but the icon read as clutter and
+                    // was removed on request.
                     IpKind.READY -> {
                         RollingIp(value = slot.value, reduce = reduce)
-                        Spacer(Modifier.width(7.dp))
-                        // The affordance: a faint copy glyph, low-opacity so it reads as a hint, not
-                        // a button. The whole row is the tap target.
-                        Icon(
-                            Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.45f),
-                            modifier = Modifier.size(13.dp),
-                        )
                     }
                     // In flight: a neutral dash, no status word. The value simply is not known yet.
                     IpKind.CHECKING -> Text(
@@ -2364,9 +2365,14 @@ private fun PowerCircle(
         label = "powerBoltFill",
     )
     // The struck-metal base bolt (dark idle ink) and the lit fill that rises over it (the active
-    // blue). Both dim together when the button has no server to act on.
-    val boltTrack = if (enabled) PowerInk else PowerInk.copy(alpha = 0.30f)
-    val boltFill = if (enabled) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
+    // blue). The mark dims to a ghost only in the true idle state with no server to act on — but
+    // NEVER while connecting or connected, even if activeConfig momentarily reads null during the
+    // handshake (which used to fade the bolt to ~invisible on the white disc mid-connect: the
+    // "bolt goes blank while connecting" bug). Whenever the phase is not OFF the bolt is drawn at
+    // full strength so its shape always shows with the fill animating inside it.
+    val markStrong = enabled || phase != ConnPhase.OFF
+    val boltTrack = if (markStrong) PowerInk else PowerInk.copy(alpha = 0.30f)
+    val boltFill = if (markStrong) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {

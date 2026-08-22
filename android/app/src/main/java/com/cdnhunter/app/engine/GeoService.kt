@@ -158,13 +158,46 @@ class GeoService {
                     if (proxyClient != null) proxyGet(proxyClient, url, timeout)
                     else httpGet(url, timeout)
                 if (body.isNullOrBlank()) continue
-                val ip = IPV4.find(body)?.value.orEmpty()
+                // Scan EVERY v4 literal in the body and take the first that is a real,
+                // routable public address. A single find() used to accept whatever came
+                // first — including the "0.0.0.0" a captive-portal/error page or a
+                // proxy-local reply can carry — which is exactly what rendered the bogus
+                // "0.0.0.0" (the ".0.0." the readout showed). Sentinel / loopback /
+                // private / link-local ranges are never this device's public IP, so they
+                // are skipped and the next provider is tried instead.
+                val ip = IPV4.findAll(body)
+                    .map { it.value }
+                    .firstOrNull { isUsablePublicIpv4(it) }
+                    .orEmpty()
                 if (ip.isNotBlank()) return ip
             } catch (e: Exception) {
                 // try the next provider
             }
         }
         return ""
+    }
+
+    /**
+     * True only for a genuinely routable public IPv4. A public-IP probe must never
+     * surface 0.0.0.0 (unspecified), 255.x (broadcast), 127.x (loopback), 169.254.x
+     * (link-local) or the RFC1918 private ranges (10/8, 172.16/12, 192.168/16): a body
+     * carrying one of those is an error/captive page or the proxy's own local reply,
+     * not this phone's real address. Letting them through is what produced the broken
+     * "0.0.0.0" readout, so they are rejected at the parse step.
+     */
+    private fun isUsablePublicIpv4(ip: String): Boolean {
+        val o = ip.split(".").mapNotNull { it.toIntOrNull() }
+        if (o.size != 4 || o.any { it !in 0..255 }) return false
+        return when {
+            o[0] == 0 -> false                        // 0.0.0.0/8 (includes 0.0.0.0)
+            o[0] == 127 -> false                      // loopback
+            o[0] == 10 -> false                       // private
+            o[0] == 172 && o[1] in 16..31 -> false    // private
+            o[0] == 192 && o[1] == 168 -> false       // private
+            o[0] == 169 && o[1] == 254 -> false       // link-local
+            o[0] == 255 -> false                      // broadcast
+            else -> true
+        }
     }
 
     private fun proxyGet(client: OkHttpClient, url: String, timeout: Float): String? {
@@ -199,7 +232,11 @@ class GeoService {
             .build()
         val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
         val response = c.newCall(request).execute()
-        val body = response.body?.string() ?: ""
+        // Only a 2xx body is real data. A 4xx/5xx error page can carry stray
+        // number strings (a version, a timestamp, a 0.0.0.0) that the caller would
+        // otherwise try to parse as an address; drop it so the caller falls through
+        // to the next provider instead.
+        val body = if (response.isSuccessful) response.body?.string() ?: "" else ""
         response.close()
         return body
     }

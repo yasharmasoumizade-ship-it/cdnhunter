@@ -289,6 +289,7 @@ class CdnVpnService : VpnService() {
                 }
 
                 var forceX25519 = false
+                var disableGeo = false
                 val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519)
 
                 debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
@@ -314,7 +315,35 @@ class CdnVpnService : VpnService() {
                     android.util.Log.d("CdnVpn", "Full mihomo config: $config")
                 }
 
-                val started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
+                var started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
+                if (!started) {
+                    val startErr = MihomoBridge.lastError
+                    // Safety net for bad/wrong/corrupt bundled geo databases. The
+                    // GEOSITE,category-ir / GEOIP,ir DIRECT rules reference the shipped
+                    // geosite.dat / geoip.metadb; if that data is missing a category or
+                    // is otherwise unreadable, mihomo rejects the WHOLE config at parse
+                    // time (e.g. "list ir not found in geosite.dat") and nothing
+                    // connects. Rather than leave the user offline, rebuild the config
+                    // with those two geo rules stripped (disableGeoRules=true) — falling
+                    // back to the RULE-SET,ir-* HTTP providers alone, exactly the
+                    // pre-geo behavior — and try once more. A total connection failure is
+                    // strictly worse than losing the offline Iran-direct layer.
+                    val looksLikeGeoError = startErr.contains("geodata", true) ||
+                        startErr.contains("geosite", true) ||
+                        startErr.contains("geoip", true) ||
+                        startErr.contains("GeoSite", true) ||
+                        startErr.contains("GeoIP", true)
+                    if (looksLikeGeoError) {
+                        debugLog += "\nmihomo rejected config on geo data ($startErr) — retrying without GEOSITE/GEOIP rules (RULE-SET fallback)."
+                        MihomoBridge.stop()
+                        val noGeoConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519, disableGeoRules = true)
+                        started = MihomoBridge.start(noGeoConfig, mihomoHomeDir.absolutePath)
+                        if (started) {
+                            disableGeo = true
+                            debugLog += "\nmihomo started OK on RULE-SET fallback (offline Iran-direct geo layer disabled)."
+                        }
+                    }
+                }
                 if (!started) {
                     lastError = "mihomo failed to start: ${MihomoBridge.lastError}"
                     debugLog += "\nFAILED: mihomo rejected the config.\nmihomo error:\n${MihomoBridge.lastError}"
@@ -341,7 +370,7 @@ class CdnVpnService : VpnService() {
                         debugLog += "\nREALITY handshake failed without support-x25519mlkem768 — retrying with it enabled."
                         forceX25519 = true
                         MihomoBridge.stop()
-                        val retryConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519)
+                        val retryConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519, disableGeoRules = disableGeo)
                         val retryStarted = MihomoBridge.start(retryConfig, mihomoHomeDir.absolutePath)
                         if (!retryStarted) {
                             lastError = "mihomo failed to start (retry): ${MihomoBridge.lastError}"

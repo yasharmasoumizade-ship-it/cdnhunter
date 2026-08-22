@@ -11,7 +11,7 @@ object VpnConfigBuilder {
 
     const val ERROR_LOG_NAME = "mihomo_error.log"
 
-    fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false): String {
+    fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false, disableGeoRules: Boolean = false): String {
         val prefs = SecurePrefs.vpn(ctx)
         val userConfig = prefs.getString("user_config", "") ?: ""
         val mtu = AppSettings.mtu(ctx)
@@ -26,13 +26,14 @@ object VpnConfigBuilder {
         val customDnsServers = AppSettings.customDnsServers(ctx)
         // Whether the bundled geo databases are actually present in mihomo's home
         // dir (CdnVpnService copies them from assets before this runs). The
-        // GEOSITE,ir / GEOIP,ir DIRECT rules are only emitted when both exist:
+        // GEOSITE,category-ir / GEOIP,ir DIRECT rules are only emitted when both exist:
         // referencing a geo db that isn't there makes mihomo fail to start, which
         // would break the connection entirely. If they're missing we fall back to
         // the RULE-SET,ir-* providers alone — exactly the pre-change behavior — so
         // this can never regress connectivity.
         val geoDir = java.io.File(ctx.filesDir, "mihomo")
-        val geoDbPresent = java.io.File(geoDir, "geosite.dat").let { it.exists() && it.length() > 0 } &&
+        val geoDbPresent = !disableGeoRules &&
+            java.io.File(geoDir, "geosite.dat").let { it.exists() && it.length() > 0 } &&
             java.io.File(geoDir, "geoip.metadb").let { it.exists() && it.length() > 0 }
         return buildConfigFromUri(
             userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh,
@@ -115,7 +116,7 @@ object VpnConfigBuilder {
             "mode" to "rule",
             "log-level" to "error",
             "ipv6" to ipv6,
-            // Geo databases for the GEOSITE,ir / GEOIP,ir DIRECT rules below. These
+            // Geo databases for the GEOSITE,category-ir / GEOIP,ir DIRECT rules below. These
             // are loaded from the bundled files CdnVpnService copies into mihomo's
             // home dir (geosite.dat + geoip.metadb) — NOT downloaded. geodata-mode
             // false is what makes GEOIP read the shipped .metadb (geodata-mode true
@@ -377,7 +378,7 @@ object VpnConfigBuilder {
                 // ===== Iran direct routing (always on) =====
                 // Two layers, in order, both pointing DIRECT:
                 //
-                // 1. GEOSITE,ir / GEOIP,ir — matched against the BUNDLED geosite.dat
+                // 1. GEOSITE,category-ir / GEOIP,ir — matched against the BUNDLED geosite.dat
                 //    and geoip.metadb (shipped in assets, copied to mihomo's home dir
                 //    by CdnVpnService). This is the primary, reliable layer: it needs
                 //    no network fetch (so it works on the very first connect and in
@@ -401,8 +402,20 @@ object VpnConfigBuilder {
                 // GEOSITE/GEOIP are only emitted when the geo db files are actually
                 // present (geoDbPresent) — referencing a missing db makes mihomo fail
                 // to start; without them we degrade to the RULE-SET layer alone.
+                //
+                // IMPORTANT — the geosite list name is "category-ir", NOT "ir".
+                // Verified by parsing the actual bundled databases from
+                // MetaCubeX/meta-rules-dat: geosite.dat has NO list named "ir" (that
+                // made mihomo reject the whole config with "list ir not found in
+                // geosite.dat" — a total connection failure). Its Iran aggregate list
+                // is "CATEGORY-IR" (mihomo lowercases → category-ir), alongside the
+                // granular CATEGORY-*-IR lists. geoip.metadb DOES carry the ISO code
+                // "ir", so GEOIP,ir is correct as-is. As a belt-and-braces safety net,
+                // CdnVpnService retries WITHOUT these two rules if mihomo ever fails to
+                // start with a geodata error, so a wrong/corrupt bundled db can never
+                // leave the user unable to connect.
                 if (geoDbPresent) {
-                    add("GEOSITE,ir,DIRECT")
+                    add("GEOSITE,category-ir,DIRECT")
                     add("GEOIP,ir,DIRECT,no-resolve")
                 }
                 add("RULE-SET,ir-domain,DIRECT")
