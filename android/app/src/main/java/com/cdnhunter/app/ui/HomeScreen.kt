@@ -2898,11 +2898,6 @@ private fun BrowseCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IpCard(
-                    state = state,
-                    onRetryIp = onRetryIp,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
