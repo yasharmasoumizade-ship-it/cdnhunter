@@ -106,15 +106,9 @@ jobs:
           CDNHUNTER_KEYSTORE_PASSWORD: ${{ secrets.CDNHUNTER_KEYSTORE_PASSWORD }}
           CDNHUNTER_KEY_PASSWORD: ${{ secrets.CDNHUNTER_KEY_PASSWORD }}
           CDNHUNTER_KEY_ALIAS: ${{ secrets.CDNHUNTER_KEY_ALIAS }}
+          CDNHUNTER_KEYSTORE_BASE64: ${{ secrets.CDNHUNTER_KEYSTORE_BASE64 }}
         run: |
-          ALIAS="${CDNHUNTER_KEY_ALIAS:-cdnhunter}"
-          keytool -genkeypair -v \
-            -keystore android/keystore.jks \
-            -storepass "$CDNHUNTER_KEYSTORE_PASSWORD" \
-            -alias "$ALIAS" \
-            -keypass "$CDNHUNTER_KEY_PASSWORD" \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=CDN Hunter, OU=Dev, O=CDN Hunter, L=Unknown, S=Unknown, C=US"
+          echo "$CDNHUNTER_KEYSTORE_BASE64" | base64 -d > android/keystore.jks
           ls -la android/keystore.jks
 
       - name: Generate Gradle Wrapper
