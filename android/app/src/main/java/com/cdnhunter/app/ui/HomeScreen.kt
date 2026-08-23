@@ -269,6 +269,15 @@ private val HeroInkShadow = Shadow(
     offset = Offset(0f, 2f),
     blurRadius = 8f,
 )
+
+/** A heavier cast for text meant to sit directly on the flag with nothing behind it -- no
+ *  card, no wash. Deeper offset and wider blur than [HeroInkShadow] so the country/city
+ *  headline stays legible over even a bright band of the flag artwork. */
+private val HeadlineInkShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.75f),
+    offset = Offset(0f, 3f),
+    blurRadius = 14f,
+)
 private val RefAccent = Color(0xFF4D7FFF)      // --accent
 private val RefTeal = Color(0xFF35D6B8)        // --teal
 /**
@@ -1795,11 +1804,9 @@ private val EmptyDiscFill = Brush.verticalGradient(listOf(RefElev2, RefElev1))
 // — the user picks another server, or the tunnel reports the exit node's real country —
 // and a country name that cuts while its flag dissolves reads as two things happening.
 //
-// It is white now, not flag-tinted: it sits on its own shade rather than straight on the
-// artwork, so the shade — not a per-country ink table — is what guarantees contrast over any
-// flag. That shade is not a box: it is a right-anchored fade ([HeadlinePlateFill]) that is solid
-// at the screen's right edge, under the heaviest ink, and dissolves to nothing toward the left,
-// so the name reads as ink lifting off the flag rather than a label pasted on top of it.
+// It is white now, not flag-tinted: it sits straight on the flag artwork with no card or
+// wash behind it at all -- [HeadlineInkShadow] alone is what guarantees contrast over any
+// flag band, so the name reads as ink sitting directly on the artwork.
 
 /** The plate is a *fixed*, compact box — it never grows or shrinks with the label. It is short and
  *  of a set width; instead of the frame resizing, the label's font steps down as the combined
@@ -1823,51 +1830,9 @@ private fun headlineFontFor(label: String): TextUnit = when {
  *  the country for the ramp, so it stays legible even when the country name itself is long. */
 private val HeadlineCitySize = 14.sp
 
-/** The plate's silhouette: not a plain rectangle but a right-anchored banner with a single sheared
- *  top-left edge, so it reads as a considered, cut plate rather than a pasted-on box — while the
- *  right/top/bottom stay straight to give the right-aligned name a clean contrast floor. */
-/** Rounded, not sharp -- the inset-glass card reads as a soft-edged pane sitting into the
- *  flag rather than a hard-cut box. Only the bottom-left corner is rounded to any real degree;
- *  the plate is anchored to the screen's top-right so its own top/right edges sit off-canvas. */
-private val HeadlinePlateShape = RoundedCornerShape(bottomStart = 22.dp)
-
 /** The left-to-right wipe when the name changes: the new label is revealed progressively across
  *  its glyphs rather than swapped or crossfaded. */
 private const val REVEAL_MS = 460
-
-/** The shade behind the country name: a right-anchored horizontal fade rather than a filled box.
- *  Opaque dark at the right edge — where the right-aligned name's ink is heaviest and needs its
- *  contrast floor over any flag band — and eased to fully transparent toward the left, so the
- *  shade has no left edge to read as a label and the name appears to sit straight on the artwork,
- *  darkened only exactly where it must be. The ramp is deliberately deep and early: it starts
- *  shading sooner and lands near-opaque at the edge so the white name reads vividly over even the
- *  brightest flag band, without turning the fade into a hard-edged box. */
-// Starts short of fully opaque so a hint of the flag shows through even at the very top edge,
-// and eases out well before the card's own bottom so the fade never reads as a hard line.
-private val HeadlinePlateFill = Brush.verticalGradient(
-    0.00f to Color.Black.copy(alpha = 0.44f),
-    0.50f to Color.Black.copy(alpha = 0.24f),
-    1.00f to Color.Transparent,
-)
-
-/** The inset-glass edge: a soft light catch along the top, as if the pane were pressed into the
- *  flag and lit from above -- paired with [HeadlinePlateInnerShadow] below to sell the recess. */
-private val HeadlinePlateRim = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.16f),
-    0.12f to Color.White.copy(alpha = 0.0f),
-)
-
-/** A dark inward wash along the bottom/left of the pane -- where an inset surface would catch
- *  its own shadow -- so the card reads as sunken into the flag rather than sitting flush on it. */
-private val HeadlinePlateInnerShadow = Brush.linearGradient(
-    start = androidx.compose.ui.geometry.Offset(0f, 0f),
-    end = androidx.compose.ui.geometry.Offset.Infinite,
-    colorStops = arrayOf(
-        0.0f to Color.Transparent,
-        0.78f to Color.Transparent,
-        1.0f to Color.Black.copy(alpha = 0.28f),
-    ),
-)
 
 @Composable
 private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
@@ -1934,12 +1899,8 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
             // Fixed compact frame — the plate never resizes with the text (the font adapts instead).
             .width(HeadlinePlateWidth)
             .height(HeadlinePlateHeight)
-            // Layered to read as inset glass rather than a pasted-on box: the dark wash first,
-            // then a bottom/left inner shadow for depth, then a thin top light-catch rim -- all
-            // clipped to the same rounded shape so nothing bleeds past the card's own edge.
-            .background(HeadlinePlateFill, shape = HeadlinePlateShape)
-            .background(HeadlinePlateInnerShadow, shape = HeadlinePlateShape)
-            .background(HeadlinePlateRim, shape = HeadlinePlateShape)
+            // No card, no wash -- just the text sitting straight on the flag. Legibility comes
+            // entirely from [HeadlineInkShadow] now, not from a plate behind it.
             .padding(start = 24.dp, end = 18.dp, top = 14.dp),
         contentAlignment = Alignment.TopEnd,
     ) {
@@ -1962,7 +1923,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
-                style = TextStyle(shadow = HeroInkShadow),
+                style = TextStyle(shadow = HeadlineInkShadow),
             )
             if (hasCity) {
                 Text(
@@ -1975,7 +1936,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(shadow = HeroInkShadow),
+                    style = TextStyle(shadow = HeadlineInkShadow),
                 )
             }
         }
