@@ -366,7 +366,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 180.dp
+private val HeroBleed = 80.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
