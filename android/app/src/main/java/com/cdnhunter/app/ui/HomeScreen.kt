@@ -109,6 +109,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -926,19 +927,43 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
             label = "headerFlag",
             modifier = Modifier.fillMaxSize(),
         ) { code ->
-            // Two models for one country: flagcdn's true-aspect SVG for a well-known
-            // exit country, the bundled circle-flags asset for everything else and for
-            // every failure of the first. Only the bundled one needs unmasking and
-            // de-bowing — see [rectangularFlag] and FlagArtwork.kt's header.
+            // Three models for one country, in priority order: a LOCAL bundled hero illustration
+            // for the few countries we ship our own artwork for (currently only Sweden — see
+            // [localHeroFlagRes]); flagcdn's true-aspect SVG for a well-known exit country; the
+            // bundled circle-flags asset for everything else and for every failure of the fetch.
+            // Only the bundled circle-flags one needs unmasking and de-bowing — see
+            // [rectangularFlag] and FlagArtwork.kt's header. The local override does not fall back
+            // to the network: it is always present in the APK.
+            val local = remember(code) { localHeroFlagRes(code) }
             val remote = remember(code) { remoteFlagUrl(code) }
             var remoteFailed by remember(code) { mutableStateOf(false) }
             val bundled = remember(code) { rectangularFlag(context, code) }
-            val flag = if (remote != null && !remoteFailed) remote else bundled
+            val flag = when {
+                local != null -> local
+                remote != null && !remoteFailed -> remote
+                else -> bundled
+            }
             if (flag == null) {
                 Box(Modifier.fillMaxSize().background(HeaderFlagFallback))
             } else {
                 val cc = canonicalCountryCode(code)?.lowercase() ?: code
-                val key = if (flag === remote) "flag-cdn-$cc" else "flag-rect-$cc"
+                val key = when {
+                    local != null -> "flag-local-$cc"
+                    flag === remote -> "flag-cdn-$cc"
+                    else -> "flag-rect-$cc"
+                }
+                // The bundled/flagcdn flags crop centred. Sweden's local artwork is a 2:1 landscape
+                // illustration whose subject — the Stockholm skyline and ship — sits on the RIGHT
+                // half, so a plain centre-crop into this ~1.3:1 landscape box would trim the far
+                // buildings off the right. A gentle right bias keeps the whole skyline (and the
+                // ship) in frame while still leaving the yellow cross's vertical bar visible; the
+                // only thing given up is a sliver of the left blue field. Still uniform Crop —
+                // nothing is stretched. See [FlagLayer].
+                val flagAlignment = if (local != null) {
+                    BiasAlignment(horizontalBias = 0.15f, verticalBias = 0f)
+                } else {
+                    Alignment.Center
+                }
                 // ONE layer, and only one. There used to be two — a full-bleed wash with a
                 // sharper, wider plate pinned over its top — which bought a less severe
                 // crop at the cost of the same artwork being visibly drawn twice at two
@@ -952,6 +977,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                     cacheKey = key,
                     alpha = HEADER_FLAG_ALPHA,
                     chroma = chroma,
+                    alignment = flagAlignment,
                     onError = { remoteFailed = true },
                     modifier = Modifier
                         .matchParentSize()
@@ -994,6 +1020,7 @@ private fun FlagLayer(
     cacheKey: String,
     alpha: Float,
     chroma: ColorFilter,
+    alignment: Alignment = Alignment.Center,
     onError: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1012,6 +1039,7 @@ private fun FlagLayer(
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
         contentScale = ContentScale.Crop,
+        alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
         filterQuality = FilterQuality.High,

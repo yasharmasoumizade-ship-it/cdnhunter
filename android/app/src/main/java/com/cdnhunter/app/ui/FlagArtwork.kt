@@ -102,6 +102,24 @@ internal fun remoteFlagUrl(countryCode: String): String? {
 }
 
 /**
+ * A LOCAL, bundled hero background for a country whose artwork this app ships itself rather than
+ * fetching from flagcdn — currently only Sweden, a landscape wood-texture + Stockholm-skyline
+ * illustration in `res/drawable-xxxhdpi/hero_flag_sweden.webp`. Returns its drawable resource id
+ * (a Coil-loadable model) for that country, or null for every other code — which keeps the
+ * flagcdn fetch ([remoteFlagUrl]) as the primary source for everyone else, Germany included, and
+ * the bundled circle-flags asset as the offline fallback.
+ *
+ * HEADER-only: [HeaderFlag] is the sole caller. The small circular badge ([CountryFlagBadge])
+ * deliberately does not consult this — the Sweden artwork is a wide illustration, not a flag
+ * cropped to a circle, so the badge stays on the flag sources.
+ */
+internal fun localHeroFlagRes(countryCode: String): Int? =
+    when (canonicalCountryCode(countryCode)) {
+        "SE" -> com.cdnhunter.app.R.drawable.hero_flag_sweden
+        else -> null
+    }
+
+/**
  * Side length, in px, the flag SVG is rasterised at for the header panel.
  *
  * Coil sizes an SVG request to *fit* the target, which for a landscape document means the
