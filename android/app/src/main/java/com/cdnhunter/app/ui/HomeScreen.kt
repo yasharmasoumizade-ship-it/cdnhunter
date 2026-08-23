@@ -1038,7 +1038,7 @@ private fun FlagLayer(
             .build(),
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
-        contentScale = ContentScale.Crop,
+        contentScale = ContentScale.FillWidth,
         alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
@@ -2923,7 +2923,7 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
