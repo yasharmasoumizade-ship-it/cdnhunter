@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import com.cdnhunter.app.ui.AppScreen
+import com.cdnhunter.app.ui.AuthScreen
+import com.google.firebase.auth.FirebaseAuth
 import com.cdnhunter.app.ui.LocalThemeMode
 import com.cdnhunter.app.ui.ThemeMode
 import com.cdnhunter.app.vpn.AppSettings
@@ -72,7 +74,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainContent(activity: MainActivity) {
-    AppScreen()
+    val auth = remember { FirebaseAuth.getInstance() }
+    var signedIn by remember { mutableStateOf(auth.currentUser != null) }
+
+    if (signedIn) {
+        AppScreen()
+    } else {
+        AuthScreen(onSignedIn = { signedIn = true })
+    }
 }
 
 @Composable
