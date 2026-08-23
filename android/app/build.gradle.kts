@@ -14,7 +14,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.cdnhunter.scanner"
+        applicationId = "com.cdnhunter.app"
         minSdk = 24
         targetSdk = 34
         // versionCode is overridden by CI (see build-unified.yml) using the GitHub
