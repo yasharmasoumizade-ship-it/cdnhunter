@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "721098389424",
+    "project_id": "juda-vpn",
+    "storage_bucket": "juda-vpn.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:721098389424:android:3ac2b4108b6c9645ad0875",
+        "android_client_info": {
+          "package_name": "com.qq.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJqftsAEvUjDRapRG9X2b9M9W1ppd4Uo8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
