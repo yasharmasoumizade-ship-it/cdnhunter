@@ -68,20 +68,7 @@ import kotlin.math.roundToInt
  * pays off, and the bundled asset already draws it.
  */
 private val VPN_FLAG_COUNTRIES = setOf(
-    // North America
-    "US", "CA", "MX",
-    // Western + Northern Europe
-    "GB", "IE", "FR", "DE", "NL", "BE", "LU", "CH", "AT", "IT", "ES", "PT",
-    "SE", "NO", "DK", "FI", "IS",
-    // Central + Eastern Europe
-    "PL", "CZ", "SK", "HU", "RO", "BG", "GR", "HR", "SI", "RS", "EE", "LV",
-    "LT", "UA", "MD", "RU", "TR", "CY",
-    // Middle East + Caucasus + Central Asia
-    "AE", "SA", "QA", "IL", "IR", "IQ", "OM", "KW", "BH", "GE", "AM", "AZ", "KZ",
-    // Asia-Pacific
-    "JP", "SG", "HK", "KR", "TW", "IN", "MY", "TH", "VN", "ID", "PH", "AU", "NZ",
-    // Africa + South America
-    "ZA", "EG", "NG", "KE", "BR", "AR", "CL", "CO", "PE",
+    "US", "GB", "FR", "DE", "SG", "SE",
 )
 
 /**
@@ -115,7 +102,12 @@ internal fun remoteFlagUrl(countryCode: String): String? {
  */
 internal fun localHeroFlagRes(countryCode: String): Int? =
     when (canonicalCountryCode(countryCode)) {
-        "SE" -> com.cdnhunter.app.R.drawable.hero_flag_sweden
+        "US" -> com.cdnhunter.app.R.drawable.hero_flag_us
+        "GB" -> com.cdnhunter.app.R.drawable.hero_flag_gb
+        "FR" -> com.cdnhunter.app.R.drawable.hero_flag_fr
+        "DE" -> com.cdnhunter.app.R.drawable.hero_flag_de
+        "SG" -> com.cdnhunter.app.R.drawable.hero_flag_sg
+        "SE" -> com.cdnhunter.app.R.drawable.hero_flag_se
         else -> null
     }
 
