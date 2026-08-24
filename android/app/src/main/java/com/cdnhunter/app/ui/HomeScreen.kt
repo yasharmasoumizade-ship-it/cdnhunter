@@ -112,6 +112,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -2912,6 +2914,18 @@ private fun BrowseCard(
         // right. They sit *at the top* rather than below the well — the connect disc docks in the
         // centre of this band, so the corners are clear and the two controls never collide with it.
         // The band's height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
+        //
+        // A real GPU blur sits behind just this band -- not the whole scrolling card, which would
+        // repay its cost every single frame. This band never moves with the list (it is the card's
+        // fixed masthead), so the blur is computed once and left alone: a real frosted-glass look,
+        // at a cost only ever paid for a static region.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(CardTopRoom)
+                .blur(radius = 18.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(Color.Black.copy(alpha = 0.10f)),
+        )
         Box(
             Modifier
                 .fillMaxWidth()
@@ -2931,7 +2945,10 @@ private fun BrowseCard(
         }
         SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         // The divider between the card's head and the list, brightening on scroll ([listElevation]).
-        ListScrollEdge(elevation = listElevation)
+        // Pulled up independently of CardTopRoom -- that spacer grew to clear the connect
+        // disc, and this divider does not need the same room, so it is nudged back up on
+        // its own rather than inheriting the disc's larger gap.
+        ListScrollEdge(elevation = listElevation, modifier = Modifier.offset(y = (-14).dp))
         Box(
             Modifier
                 .fillMaxWidth()
@@ -3105,10 +3122,10 @@ private val PanelSheenDepth = 48.dp
  * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to Color(0xFF1A1040).copy(alpha = 0.45f),
-    0.25f to Color(0xFF0F1830).copy(alpha = 0.65f),
-    0.60f to RefPanelBg.copy(alpha = 0.88f),
-    1.00f to RefPanelBg.copy(alpha = 0.96f),
+    0.00f to Color(0xFF0A0A0C).copy(alpha = 0.55f),
+    0.25f to Color(0xFF0A0A0C).copy(alpha = 0.80f),
+    0.60f to Color(0xFF0A0A0C).copy(alpha = 0.94f),
+    1.00f to Color(0xFF0A0A0C).copy(alpha = 0.98f),
     startY = 0f,
     endY = heightPx,
     tileMode = TileMode.Clamp,
@@ -3137,9 +3154,9 @@ private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
  * different on every device.
  */
 private fun panelFrost(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to Color(0xFF7C6FE0).copy(alpha = 0.18f),
-    0.15f to Color(0xFF4F8EF7).copy(alpha = 0.10f),
-    0.40f to RefFrost.copy(alpha = 0.04f),
+    0.00f to Color.White.copy(alpha = 0.06f),
+    0.15f to Color.White.copy(alpha = 0.03f),
+    0.40f to Color.White.copy(alpha = 0.01f),
     1.00f to Color.Transparent,
     startY = 0f,
     endY = heightPx,
