@@ -366,7 +366,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 80.dp
+private val HeroBleed = 20.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -3105,10 +3105,10 @@ private val PanelSheenDepth = 48.dp
  * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefPanelBg.copy(alpha = 0.78f),
-    0.35f to RefPanelBg.copy(alpha = 0.88f),
-    0.70f to RefPanelBg.copy(alpha = 0.92f),
-    1.00f to RefPanelBg.copy(alpha = 0.94f),
+    0.00f to Color(0xFF1A1040).copy(alpha = 0.45f),
+    0.25f to Color(0xFF0F1830).copy(alpha = 0.65f),
+    0.60f to RefPanelBg.copy(alpha = 0.88f),
+    1.00f to RefPanelBg.copy(alpha = 0.96f),
     startY = 0f,
     endY = heightPx,
     tileMode = TileMode.Clamp,
@@ -3137,8 +3137,9 @@ private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
  * different on every device.
  */
 private fun panelFrost(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefFrost.copy(alpha = 0.04f),
-    0.30f to RefFrost.copy(alpha = 0.02f),
+    0.00f to Color(0xFF7C6FE0).copy(alpha = 0.18f),
+    0.15f to Color(0xFF4F8EF7).copy(alpha = 0.10f),
+    0.40f to RefFrost.copy(alpha = 0.04f),
     1.00f to Color.Transparent,
     startY = 0f,
     endY = heightPx,
