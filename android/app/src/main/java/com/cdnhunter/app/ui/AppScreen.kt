@@ -2419,17 +2419,33 @@ private fun CardGroup(modifier: Modifier = Modifier, content: @Composable Column
  *  icons read as one column. 62dp = [SheetPad] shy of the card edge, plus the tile and its gap. */
 @Composable
 private fun RowDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp).height(1.dp).background(AnanasBorder))
+    // Inset to where the row's text begins (row pad 14 + tile 34 + gap 14 = 62), so the icon
+    // column reads as one continuous edge and the hairline never cuts through a tile. Runs to
+    // the card's inner right edge — the Windscribe/iOS "aligned-under-text" divider.
+    Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasBorder))
 }
 
 /** A row's icon: the glyph on its own tinted rounded square rather than loose on the card, which
- *  is what makes the icon column unmistakable and matches Profile's menu. */
+ *  is what makes the icon column unmistakable and matches Profile's menu. Neutral tints get a
+ *  faint tile + bright glyph (calm); semantic tints (accent/amber/red) get a colour-coded tile +
+ *  matching glyph so a group of rows can be scanned, not read. */
 @Composable
 private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
+    val neutral = tint == AnanasSettingsIcon || tint == AnanasMuted
     Box(
-        modifier.size(34.dp),
+        modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = if (neutral) 0.10f else 0.15f)),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(20.dp)) }
+    ) {
+        Icon(
+            icon,
+            null,
+            tint = if (neutral) AnanasText else tint,
+            modifier = Modifier.size(18.dp),
+        )
+    }
 }
 
 /**
@@ -2551,10 +2567,17 @@ private fun SegmentedControl(
                 targetValue = if (on) AnanasToggleOn else AnanasMuted,
                 animationSpec = tween(160), label = "segInk",
             )
+            // Crossfade the lit segment's fill instead of snapping it, so the selection glides
+            // across the track. Colour-only animation — the segment box never changes size, so
+            // its siblings never reflow.
+            val segBg by animateColorAsState(
+                targetValue = if (on) AnanasToggleOn.copy(alpha = 0.16f) else Color.Transparent,
+                animationSpec = tween(160), label = "segBg",
+            )
             Box(
                 (if (equalWeight) Modifier.weight(1f) else Modifier)
                     .clip(segShape)
-                    .background(if (on) AnanasToggleOn.copy(alpha = 0.14f) else Color.Transparent)
+                    .background(segBg)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
