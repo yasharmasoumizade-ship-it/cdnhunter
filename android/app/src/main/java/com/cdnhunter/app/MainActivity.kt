@@ -78,7 +78,10 @@ fun MainContent(activity: MainActivity) {
     var signedIn by remember { mutableStateOf(auth.currentUser != null) }
 
     if (signedIn) {
-        AppScreen()
+        AppScreen(onSignOut = {
+            auth.signOut()
+            signedIn = false
+        })
     } else {
         AuthScreen(onSignedIn = { signedIn = true })
     }

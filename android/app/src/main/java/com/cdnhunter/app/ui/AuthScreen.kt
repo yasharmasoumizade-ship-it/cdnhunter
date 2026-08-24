@@ -38,12 +38,17 @@ import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 
-private val Purple = Color(0xFF8B5CF6)
-private val Blue = Color(0xFF3B82F6)
-private val Pink = Color(0xFFEC4899)
-private val BgDark = Color(0xFF080B14)
-private val GlassBg = Color(0xFF0F1320)
-private val GlassBorder = Color(0xFF1E2640)
+private val BgDark = Color(0xFF060709)
+private val CardBg = Color(0xFF131316)
+private val FieldBg = Color(0xFF0F1116)
+private val HairBorder = Color(0xFF23262F)
+private val Accent = Color(0xFF4D7FFF)
+private val AccentLight = Color(0xFF6E97FF)
+private val AccentGlow = Color(0xFF2F6BFF)
+private val TextHi = Color(0xFFF6F7F9)
+private val TextMid = Color(0xFF9BA0AC)
+private val TextLow = Color(0xFF656B78)
+private val ErrorRed = Color(0xFFEF4444)
 
 enum class AuthMode { LOGIN, SIGNUP }
 
@@ -89,11 +94,10 @@ fun AuthScreen(onSignedIn: () -> Unit) {
         }
     }
 
-    // Orb float animation
+    // Subtle glow + logo breathing animation
     val inf = rememberInfiniteTransition(label = "bg")
-    val orbY by inf.animateFloat(0f, 24f, infiniteRepeatable(tween(4000, easing = EaseInOutSine), RepeatMode.Reverse), label = "y")
-    val orbY2 by inf.animateFloat(0f, -18f, infiniteRepeatable(tween(5500, easing = EaseInOutSine), RepeatMode.Reverse), label = "y2")
-    val pulse by inf.animateFloat(0.95f, 1.05f, infiniteRepeatable(tween(3000, easing = EaseInOutSine), RepeatMode.Reverse), label = "p")
+    val glow by inf.animateFloat(0.10f, 0.16f, infiniteRepeatable(tween(4500, easing = EaseInOutSine), RepeatMode.Reverse), label = "g")
+    val pulse by inf.animateFloat(0.97f, 1.03f, infiniteRepeatable(tween(3000, easing = EaseInOutSine), RepeatMode.Reverse), label = "p")
 
     // Entry animation
     var visible by remember { mutableStateOf(false) }
@@ -101,21 +105,17 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(BgDark)) {
 
-        // Cosmic background orbs
-        Box(Modifier.size(400.dp).offset((-80).dp, (-100).dp + orbY.dp).blur(100.dp)
-            .background(Brush.radialGradient(listOf(Purple.copy(.4f), Color.Transparent)), CircleShape))
-        Box(Modifier.size(350.dp).offset(120.dp, 300.dp + orbY2.dp).blur(100.dp)
-            .background(Brush.radialGradient(listOf(Blue.copy(.3f), Color.Transparent)), CircleShape))
-        Box(Modifier.size(250.dp).offset(200.dp, (-50).dp + orbY.dp).blur(80.dp)
-            .background(Brush.radialGradient(listOf(Pink.copy(.2f), Color.Transparent)), CircleShape))
+        // Single subtle blue radial glow, top-center
+        Box(Modifier.size(360.dp).align(Alignment.TopCenter).offset(y = (-120).dp).blur(120.dp)
+            .background(Brush.radialGradient(listOf(AccentGlow.copy(alpha = glow), Color.Transparent)), CircleShape))
 
-        // Stars (static dots)
-        repeat(30) { i ->
-            val x = (i * 37 % 350).dp
-            val y = (i * 53 % 700).dp
-            val size = if (i % 3 == 0) 2.dp else 1.dp
+        // Faint starfield (toned to near-invisible white)
+        repeat(24) { i ->
+            val x = (i * 37 % 340).dp
+            val y = (i * 53 % 720).dp
+            val size = if (i % 4 == 0) 2.dp else 1.dp
             Box(Modifier.size(size).offset(x, y)
-                .background(Color.White.copy(alpha = 0.3f + (i % 4) * 0.1f), CircleShape))
+                .background(Color.White.copy(alpha = 0.04f + (i % 3) * 0.02f), CircleShape))
         }
 
         AnimatedVisibility(
@@ -123,31 +123,31 @@ fun AuthScreen(onSignedIn: () -> Unit) {
             enter = fadeIn(tween(600)) + slideInVertically(tween(700, easing = EaseOutCubic)) { it / 4 }
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // Glass card
+                // Flat card
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(GlassBg.copy(alpha = 0.85f))
-                        .border(1.dp, GlassBorder, RoundedCornerShape(28.dp))
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CardBg)
+                        .border(1.dp, HairBorder, RoundedCornerShape(20.dp))
                         .padding(28.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-                        // Logo pulse
+                        // Monogram badge
                         Box(
                             Modifier.size(64.dp).scale(pulse)
-                                .background(Brush.radialGradient(listOf(Purple, Blue)), CircleShape),
+                                .background(Brush.linearGradient(listOf(Accent, AccentGlow)), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🍍", fontSize = 28.sp)
+                            Text("A", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
 
                         Spacer(Modifier.height(16.dp))
-                        Text("Ananas VPN", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Ananas VPN", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextHi)
                         Text(
                             if (mode == AuthMode.LOGIN) "Welcome back" else "Create your account",
-                            fontSize = 13.sp, color = Color.White.copy(.45f)
+                            fontSize = 13.sp, color = TextMid
                         )
 
                         Spacer(Modifier.height(24.dp))
@@ -155,18 +155,18 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                         // Tab toggle
                         Row(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF0A0D16)).padding(4.dp)
+                                .background(FieldBg).padding(4.dp)
                         ) {
                             listOf(AuthMode.LOGIN to "Sign In", AuthMode.SIGNUP to "Sign Up").forEach { (m, label) ->
                                 Box(
                                     Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                                        .background(if (mode == m) Purple.copy(.2f) else Color.Transparent)
+                                        .background(if (mode == m) Accent.copy(.15f) else Color.Transparent)
                                         .clickable { mode = m; error = null }
                                         .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                        color = if (mode == m) Purple else Color.White.copy(.4f))
+                                        color = if (mode == m) Accent else TextMid)
                                 }
                             }
                         }
@@ -188,7 +188,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                                         IconButton({ passwordVisible = !passwordVisible }) {
                                             Icon(
                                                 if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                null, tint = Color.White.copy(.4f)
+                                                null, tint = TextMid
                                             )
                                         }
                                     }
@@ -198,7 +198,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
                         error?.let {
                             Spacer(Modifier.height(10.dp))
-                            Text(it, color = Color(0xFFFF6B6B), fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text(it, color = ErrorRed, fontSize = 11.sp, textAlign = TextAlign.Center)
                         }
 
                         Spacer(Modifier.height(20.dp))
@@ -219,14 +219,14 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                             contentPadding = PaddingValues(0.dp),
                             enabled = !loading
                         ) {
                             Box(
                                 Modifier.fillMaxSize()
-                                    .background(Brush.horizontalGradient(listOf(Purple, Blue)), RoundedCornerShape(14.dp)),
+                                    .background(Brush.horizontalGradient(listOf(Accent, AccentGlow)), RoundedCornerShape(12.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (loading) {
@@ -242,9 +242,9 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
                         // Divider
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Divider(Modifier.weight(1f), color = Color.White.copy(.1f))
-                            Text("  or  ", fontSize = 11.sp, color = Color.White.copy(.3f))
-                            Divider(Modifier.weight(1f), color = Color.White.copy(.1f))
+                            Divider(Modifier.weight(1f), color = HairBorder)
+                            Text("  or  ", fontSize = 11.sp, color = TextLow)
+                            Divider(Modifier.weight(1f), color = HairBorder)
                         }
 
                         Spacer(Modifier.height(16.dp))
@@ -253,18 +253,18 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                         OutlinedButton(
                             onClick = { launcher.launch(googleClient.signInIntent) },
                             modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF0A0D16))
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, HairBorder),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg)
                         ) {
-                            Text("G ", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Blue)
-                            Text("Continue with Google", color = Color.White.copy(.85f), fontSize = 14.sp)
+                            Text("G ", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Accent)
+                            Text("Continue with Google", color = TextHi, fontSize = 14.sp)
                         }
 
                         Spacer(Modifier.height(20.dp))
                         Text(
                             "By continuing you agree to our Terms & Privacy Policy",
-                            fontSize = 10.sp, color = Color.White.copy(.2f), textAlign = TextAlign.Center
+                            fontSize = 10.sp, color = TextLow, textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -293,15 +293,15 @@ fun AuthField(
         visualTransformation = visualTransformation,
         trailingIcon = trailingIcon,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Purple.copy(.6f),
-            unfocusedBorderColor = GlassBorder,
-            focusedLabelColor = Purple.copy(.8f),
-            unfocusedLabelColor = Color.White.copy(.3f),
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White.copy(.8f),
-            cursorColor = Purple,
-            focusedContainerColor = Color(0xFF0A0D16),
-            unfocusedContainerColor = Color(0xFF0A0D16)
+            focusedBorderColor = Accent,
+            unfocusedBorderColor = HairBorder,
+            focusedLabelColor = AccentLight,
+            unfocusedLabelColor = TextMid,
+            focusedTextColor = TextHi,
+            unfocusedTextColor = TextHi.copy(.85f),
+            cursorColor = Accent,
+            focusedContainerColor = FieldBg,
+            unfocusedContainerColor = FieldBg
         )
     )
 }

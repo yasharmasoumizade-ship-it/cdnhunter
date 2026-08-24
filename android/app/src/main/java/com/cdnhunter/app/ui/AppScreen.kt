@@ -81,30 +81,33 @@ import androidx.core.graphics.drawable.toBitmap
 // LightBg/LightCardBg/LightBorder…) used to sit above this block from before the
 // app settled on a single dark treatment; nothing read any of it, so it is gone
 // rather than sitting here looking like a theme someone could switch to.
-val AnanasBg       = Color(0xFF050505)   // Near black background
-val AnanasScreenBg = Color(0xFF0B0B0D)   // Slightly lighter
+// Retargeted to the canonical flat "Windscribe-style" spec: near-black bg, hairline
+// borders, single BLUE accent (no glass, no green). Symbol names are kept so the
+// retint propagates through Settings/Profile/Locations/AccountCard/SheetScreen in place.
+val AnanasBg       = Color(0xFF060709)   // App background
+val AnanasScreenBg = Color(0xFF0A0B0F)   // Slightly lighter page wash
 val AnanasCard     = Color(0xFF131316)   // Card surface
-val AnanasCard2    = Color(0xFF151519)   // Secondary card
-val AnanasBorder   = Color(0xFF1E1F24)   // Border colors
-val AnanasBorder2  = Color(0xFF232328)   // Alternative border
-val AnanasDivider  = Color(0xFF17171B)   // Divider
-val AnanasAccent   = Color(0xFF10B981)   // Modern green (improved from 0xFF4ADE9C)
-val AnanasAccentLight = Color(0xFF34D399)
-val AnanasSettingsIcon = Color(0xFFAEB0B8)   // Soft muted gray for settings row icons (was near-white)
-val AnanasAmber    = Color(0xFFD97706)   // Warm amber
-val AnanasRed      = Color(0xFFEF4444)   // Modern red
-val AnanasBlue     = Color(0xFF3B82F6)   // Modern blue
-val AnanasPurple   = Color(0xFF8B5CF6)   // Modern purple
+val AnanasCard2    = Color(0xFF1A1B22)   // Raised element
+val AnanasBorder   = Color(0xFF23262F)   // Hairline border
+val AnanasBorder2  = Color(0xFF2A2E38)   // Alternative (raised) border
+val AnanasDivider  = Color(0xFF1C1F27)   // Divider
+val AnanasAccent   = Color(0xFF4D7FFF)   // Blue accent
+val AnanasAccentLight = Color(0xFF6E97FF)
+val AnanasSettingsIcon = Color(0xFF9BA0AC)   // text-mid, soft gray for settings row icons
+val AnanasAmber    = Color(0xFFE0B23B)   // Warm amber (premium/warn)
+val AnanasRed      = Color(0xFFEF4444)   // Error red
+val AnanasBlue     = Color(0xFF4D7FFF)   // Unified to the blue accent
+val AnanasPurple   = Color(0xFF4D7FFF)   // Unified to the blue accent (no off-palette purple)
 // The "on / active / selected" indicator color for controls (MinimalToggle track,
 // SegmentedControl selected segment, SelectDot). Deliberately NOT the green accent:
 // a green "on" state on a VPN app reads as a status/connection light, which these
 // controls are not. Blue keeps the active state legible and on-theme without that
 // false connotation.
 val AnanasToggleOn = AnanasBlue
-val AnanasTextHi   = Color(0xFFFAFAFA)   // Primary text
-val AnanasText     = Color(0xFFF0F0F2)   // Secondary text
-val AnanasMuted    = Color(0xFF6E7078)   // Muted text
-val AnanasFaint    = Color(0xFF3A3C44)   // Faint text
+val AnanasTextHi   = Color(0xFFF6F7F9)   // Primary text
+val AnanasText     = Color(0xFFE3E6EC)   // Secondary text
+val AnanasMuted    = Color(0xFF9BA0AC)   // Muted / caption text (text-mid)
+val AnanasFaint    = Color(0xFF656B78)   // Faint text (text-low)
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 val LocalThemeMode = androidx.compose.runtime.compositionLocalOf { ThemeMode.SYSTEM }
@@ -707,7 +710,7 @@ private fun describeActiveNetwork(context: Context): String {
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun AppScreen() {
+fun AppScreen(onSignOut: () -> Unit = {}) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Read theme from AppSettings and recompose when it changes
     var themeSetting by remember { mutableStateOf(AppSettings.theme(context)) }
@@ -802,6 +805,11 @@ private fun VpnTab() {
     // Smart mode's current pick, published only when the chosen server changes.
     var smartPickId by remember { mutableStateOf("") }
     var showAddMenu by remember { mutableStateOf(false) }
+
+    // Single source of truth for account/subscription display data (see AppUiState.kt).
+    // Settings' AccountCard and ProfileScreen both read this one value rather than each
+    // hard-coding their own copy of the name/email/plan.
+    val account = remember { currentAccountUiState() }
     
     // Navigation stack for proper back button handling
     val navigationStack = remember { mutableStateListOf(AnanasScreen.HOME) }
@@ -1539,9 +1547,10 @@ private fun VpnTab() {
                 onBack = { navigateBack() },
                 mode = connectMode,
                 onSetMode = { m -> setConnectMode(m) },
+                account = account,
             )
 
-            AnanasScreen.PROFILE -> ProfileScreen(onBack = { navigateBack() })
+            AnanasScreen.PROFILE -> ProfileScreen(onBack = { navigateBack() }, account = account, onSignOut = onSignOut)
             AnanasScreen.SPLIT_TUNNEL -> SplitTunnelScreen(onBack = { navigateBack() })
         }
     }
@@ -1557,7 +1566,7 @@ private fun AddConfigSheet(
     if (expanded) {
         ModalBottomSheet(
             onDismissRequest = onToggle,
-            containerColor = Color(0xFF101012),
+            containerColor = AnanasCard,
             contentColor = AnanasText,
             dragHandle = {
                 Box(Modifier.padding(top = 10.dp, bottom = 6.dp)) {
@@ -1604,12 +1613,12 @@ private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, h
     ) {
         Box(
             Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
-                .background(if (highlight) Color.Black.copy(0.12f) else AnanasCard),
+                .background(if (highlight) Color.White.copy(0.18f) else AnanasCard),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = if (highlight) AnanasBg else AnanasTextHi, modifier = Modifier.size(19.dp)) }
+        ) { Icon(icon, null, tint = if (highlight) Color.White else AnanasTextHi, modifier = Modifier.size(19.dp)) }
         Column {
-            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AnanasBg else AnanasTextHi)
-            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) AnanasBg.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) Color.White else AnanasTextHi)
+            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) Color.White.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
         }
     }
 }
@@ -1764,9 +1773,9 @@ private fun ServerListItem(
 @Composable
 private fun SignalBars(pingMs: Int) {
     val (filled, color) = when {
-        pingMs < 150 -> 3 to Color(0xFF4ADE9C)
-        pingMs < 350 -> 2 to Color(0xFFFFD60A)
-        else         -> 1 to Color(0xFFEF4444)
+        pingMs < 150 -> 3 to AnanasAccent
+        pingMs < 350 -> 2 to AnanasAmber
+        else         -> 1 to AnanasRed
     }
     val barHeights = listOf(6.dp, 9.dp, 12.dp)
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1888,9 +1897,9 @@ private fun LocationsScreen(
     // window — it is applied before the padding — while this screen's own rows stay
     // clear of the clock at the top and the gesture bar at the foot.
     Box(Modifier.fillMaxSize().background(AnanasScreenBg).systemBarsPadding()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             Row(
-                Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp),
+                Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -1915,7 +1924,7 @@ private fun LocationsScreen(
                 // is taller than its glyphs, so without both the caret sat high of the text.
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (query.isEmpty()) {
-                        Text("Search", style = SheetSearchStyle, color = Color(0xFF54565E), maxLines = 1)
+                        Text("Search", style = SheetSearchStyle, color = AnanasFaint, maxLines = 1)
                     }
                     BasicTextField(
                         value = query,
@@ -2026,7 +2035,7 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             containerColor = AnanasCard,
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(20.dp),
             icon = {
                 Box(
                     Modifier.size(44.dp).clip(CircleShape).background(AnanasRed.copy(alpha = 0.14f)),
@@ -2072,11 +2081,11 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
 // own language because it draws over a flag; these screens are a flat near-black page, so the
 // grid carries them: one gutter, one card corner, one row height, one tinted icon tile.
 
-/** Page gutter, so a row's ink lines up from Home's hero through Settings to Profile. */
-private val SheetPad = 20.dp
+/** Page gutter (spec: screen horizontal padding 16.dp). */
+private val SheetPad = 16.dp
 
-/** Card corner. 18dp against the 12dp of the tiles inside, so the nesting stays legible. */
-private val SheetCardCorner = 18.dp
+/** Card corner (spec: card/row 14.dp). */
+private val SheetCardCorner = 14.dp
 
 /** Row floor: fits a two-line row, and keeps one-line rows in a group the same height. */
 private val SheetRowHeight = 58.dp
@@ -2093,29 +2102,28 @@ private val SheetShadow = Color(0xFF000000)
  *  card are lit by the same size of highlight. */
 private val SheetCrownDepth = 9.dp
 
-/** The band of light along a surface's top edge. */
+/** The band of light along a surface's top edge. Flattened out per the spec (no glass). */
 private val SheetCrown = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.075f),
-    0.30f to Color.White.copy(alpha = 0.026f),
+    0.00f to Color.Transparent,
     1.00f to Color.Transparent,
 )
 
-/** The shade at a surface's foot. */
+/** The shade at a surface's foot. Flattened out per the spec (no glass). */
 private val SheetFoot = Brush.verticalGradient(
     0.00f to Color.Transparent,
-    1.00f to Color.Black.copy(alpha = 0.24f),
+    1.00f to Color.Transparent,
 )
 
-/** A card's material: [AnanasCard2] over [AnanasCard], top-lit. */
-private val SheetCardFill = Brush.verticalGradient(listOf(AnanasCard2, AnanasCard))
+/** A card's material: flat [AnanasCard] per the spec CARD recipe. */
+private val SheetCardFill = Brush.verticalGradient(listOf(AnanasCard, AnanasCard))
 
-/** A control's material — a step brighter than a card's, since controls sit *on* cards. */
+/** A control's material — flat raised surface ([AnanasCard2]). */
 private val SheetControlFill = Brush.verticalGradient(
-    listOf(Color(0xFF1B1C22), Color(0xFF141519)),
+    listOf(AnanasCard2, AnanasCard2),
 )
 
 private val SheetControlPressedFill = Brush.verticalGradient(
-    listOf(Color(0xFF111216), Color(0xFF16171C)),
+    listOf(AnanasCard, AnanasCard),
 )
 
 /** Shallower than Home's 0.955: a big scale on a 34dp target reads as a glitch. */
@@ -2141,6 +2149,9 @@ private fun Modifier.sheetSurface(
     // pass it stay source-compatible.
     .clip(shape)
     .background(fill)
+    // Hairline border per the spec CARD recipe — the flat surfaces read by their edge now
+    // that the glass light model (crown/foot) is gone.
+    .border(1.dp, AnanasBorder, shape)
     .drawBehind {
         val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
         drawRect(brush = SheetCrown, size = Size(size.width, band))
@@ -2167,9 +2178,9 @@ private fun Modifier.sheetRaised(
         elevation = if (pressed) elevation / 3 else elevation,
     )
 
-/** A well's material — the inverse of a control's: darker than the card it is cut into. */
+/** A well's material — flat, darker than the card it is cut into. */
 private val SheetWellFill = Brush.verticalGradient(
-    listOf(Color(0xFF0C0D11), Color(0xFF121317)),
+    listOf(Color(0xFF0D0E12), Color(0xFF0D0E12)),
 )
 
 /** The shade cast *into* a well by its own top edge, which is what makes it read as a hole. */
@@ -2190,15 +2201,13 @@ private val SheetSegmentTint = Brush.verticalGradient(
     listOf(AnanasAccent.copy(alpha = 0.20f), AnanasAccent.copy(alpha = 0.11f)),
 )
 
-/** An accent [PillButton]'s material, and the same pressed. Lighter at the top for the same
- *  reason everything else here is: one light source, above the screen. */
-private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasAccentLight, AnanasAccent))
-private val SheetAccentPressedFill = Brush.verticalGradient(listOf(AnanasAccent, AnanasAccentLight))
+/** An accent [PillButton]'s material — flat accent fill, pressed a shade darker. */
+private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasAccent, AnanasAccent))
+private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF3D6BE6), Color(0xFF3D6BE6)))
 
-/** A tile riding inside [SheetScreen]'s glass header. Brighter than a card on the page,
- *  because the glass it sits on is brighter than the page. */
+/** A tile riding inside [SheetScreen]'s header — flat raised surface. */
 private val SheetGlassTileFill = Brush.verticalGradient(
-    listOf(Color(0xFF23252E), Color(0xFF191B22)),
+    listOf(AnanasCard2, AnanasCard2),
 )
 
 /** The avatar's ring, and the disc it sits behind — see [AvatarRing]. The ring is brightest
@@ -2207,12 +2216,12 @@ private val SheetAvatarRing = Brush.linearGradient(
     listOf(AnanasAccent.copy(alpha = 0.55f), AnanasAccent.copy(alpha = 0.10f)),
 )
 private val SheetAvatarWell = Brush.verticalGradient(
-    listOf(Color(0xFF15161C), Color(0xFF1B1D24)),
+    listOf(Color(0xFF14151B), Color(0xFF14151B)),
 )
 
-/** Profile's plan card: the one warm surface in a green-and-grey app, lit like the cold ones. */
+/** Profile's plan card: the one warm surface in the app, flat per the spec. */
 private val SheetPlanFill = Brush.verticalGradient(
-    listOf(Color(0xFF1E1911), Color(0xFF15120E)),
+    listOf(Color(0xFF1B1712), Color(0xFF1B1712)),
 )
 
 /** [MinimalToggle]'s thumb, lit from above so it reads as a bead in a groove, not a flat dot. */
@@ -2259,23 +2268,17 @@ private val SheetSearchStyle = TextStyle(
     ),
 )
 
-/** Rounded at the bottom only — see [Modifier.sheetHeaderPanel] for why the panel has no
- *  other visible edge. */
-private val SheetHeaderShape = RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp)
+/** Rounded at the bottom only — see [Modifier.sheetHeaderPanel]. */
+private val SheetHeaderShape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
 
-/** The glass itself: brighter at the top where the light comes from, settling to nearly the
- *  page's own value at the bottom so the join is a curve, not a step. */
+/** The header sits flat on the app background per the spec HEADER recipe (no glass). */
 private val SheetHeaderGlass = Brush.verticalGradient(
-    0.00f to Color(0xFF1C1E26),
-    0.34f to Color(0xFF16181F),
-    0.72f to Color(0xFF111318),
-    1.00f to Color(0xFF0D0E13),
+    listOf(AnanasScreenBg, AnanasScreenBg),
 )
 
-/** A whisper of the accent across the glass, from the same light source as the page wash. */
+/** No accent wash over the header any more — flat. */
 private val SheetHeaderTint = Brush.verticalGradient(
-    0.00f to AnanasAccent.copy(alpha = 0.055f),
-    0.60f to AnanasAccent.copy(alpha = 0.012f),
+    0.00f to Color.Transparent,
     1.00f to Color.Transparent,
 )
 
@@ -2357,13 +2360,12 @@ private fun SheetScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlainBackButton(onClick = onBack)
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text(
                         title,
-                        fontSize = 26.sp,
-                        lineHeight = 30.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.6).sp,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.3).sp,
                         color = AnanasTextHi,
                     )
                 }
@@ -2403,8 +2405,12 @@ private fun SectionLabel(text: String, top: Dp = 26.dp) {
  *  Borderless; what separates it from the page is [Modifier.sheetSurface]. */
 @Composable
 private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(SheetCardCorner)
     Column(
-        modifier.fillMaxWidth(),
+        modifier.fillMaxWidth()
+            .clip(shape)
+            .background(AnanasCard)
+            .border(1.dp, AnanasBorder, shape),
         content = content,
     )
 }
@@ -2413,7 +2419,7 @@ private fun CardGroup(modifier: Modifier = Modifier, content: @Composable Column
  *  icons read as one column. 62dp = [SheetPad] shy of the card edge, plus the tile and its gap. */
 @Composable
 private fun RowDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp).height(0.5.dp).background(Color.White.copy(alpha = 0.06f)))
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp).height(1.dp).background(AnanasBorder))
 }
 
 /** A row's icon: the glyph on its own tinted rounded square rather than loose on the card, which
@@ -2529,12 +2535,12 @@ private fun SegmentedControl(
     equalWeight: Boolean = false,
 ) {
     val trackShape = remember { RoundedCornerShape(12.dp) }
-    val segShape = remember { RoundedCornerShape(9.dp) }
+    val segShape = remember { RoundedCornerShape(10.dp) }
     Row(
         modifier
             .clip(trackShape)
-            .background(Color(0xFF111318))
-            .border(1.dp, Color(0xFF1E2028), trackShape)
+            .background(Color(0xFF0F1116))
+            .border(1.dp, AnanasBorder, trackShape)
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -2593,7 +2599,7 @@ private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = fals
             text,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = if (accent) AnanasBg else AnanasText,
+            color = if (accent) Color.White else AnanasText,
         )
     }
 }
@@ -2604,7 +2610,7 @@ private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = fals
  * separated by a lift rather than an outline.
  */
 @Composable
-private fun AccountCard(onClick: () -> Unit) {
+private fun AccountCard(account: AccountUiState, onClick: () -> Unit) {
     val shape = remember { RoundedCornerShape(SheetCardCorner) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -2615,10 +2621,10 @@ private fun AccountCard(onClick: () -> Unit) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AvatarRing(size = 46.dp, initials = "YM", initialsSize = 15.sp)
+        AvatarRing(size = 46.dp, initials = account.initials, initialsSize = 15.sp)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
-            Text("Yashar M.", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi)
+            Text(account.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 Box(
@@ -2627,7 +2633,7 @@ private fun AccountCard(onClick: () -> Unit) {
                 ) {
                     Text("PRO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = AnanasAmber, letterSpacing = 0.6.sp)
                 }
-                Text("Expires in 21 days", fontSize = 11.5.sp, color = AnanasMuted)
+                Text(account.expiresLabel, fontSize = 11.5.sp, color = AnanasMuted)
             }
         }
         Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
@@ -2711,6 +2717,7 @@ private fun SettingsScreen(
     // the same state Home's gesture does, with no second copy to keep in sync.
     mode: ConnectMode = ConnectMode.MANUAL,
     onSetMode: (ConnectMode) -> Unit = {},
+    account: AccountUiState,
 ) {
     val context = LocalContext.current
     var autoReconnect by remember { mutableStateOf(AppSettings.autoReconnectEnabled(context)) }
@@ -2723,7 +2730,7 @@ private fun SettingsScreen(
     SheetScreen(
         title = "Settings",
         onBack = onBack,
-        headerContent = { AccountCard(onClick = onProfileClick) },
+        headerContent = { AccountCard(account = account, onClick = onProfileClick) },
     ) {
         SectionLabel("CONNECTION", top = 8.dp)
         CardGroup {
@@ -3245,7 +3252,7 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 // the same gutter, card corner and section labels. Contents are still placeholder; wiring
 // this to a real account is separate work.
 @Composable
-private fun ProfileScreen(onBack: () -> Unit) {
+private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit) {
     SheetScreen(
         title = "Profile",
         onBack = onBack,
@@ -3255,10 +3262,10 @@ private fun ProfileScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                AvatarRing(size = 62.dp, initials = "YM", initialsSize = 20.sp, ringWidth = 2.dp)
+                AvatarRing(size = 62.dp, initials = account.initials, initialsSize = 20.sp, ringWidth = 2.dp)
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Yashar M.",
+                        account.displayName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.4).sp,
@@ -3266,7 +3273,7 @@ private fun ProfileScreen(onBack: () -> Unit) {
                         maxLines = 1,
                     )
                     Spacer(Modifier.height(3.dp))
-                    Text("yashar@ananasvpn.com", fontSize = 12.5.sp, color = AnanasMuted, maxLines = 1)
+                    Text(account.email, fontSize = 12.5.sp, color = AnanasMuted, maxLines = 1)
                 }
             }
         },
@@ -3285,7 +3292,7 @@ private fun ProfileScreen(onBack: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
                     Text(
-                        "Pro plan",
+                        account.planName,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.1).sp,
@@ -3297,12 +3304,12 @@ private fun ProfileScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
                 Box(
-                    Modifier.fillMaxHeight().fillMaxWidth(0.7f).clip(RoundedCornerShape(8.dp))
+                    Modifier.fillMaxHeight().fillMaxWidth(account.periodProgress).clip(RoundedCornerShape(8.dp))
                         .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.75f), AnanasAmber))),
                 )
             }
             Spacer(Modifier.height(9.dp))
-            Text("21 of 30 days remaining", fontSize = 11.5.sp, color = AnanasMuted)
+            Text(account.daysRemainingLabel, fontSize = 11.5.sp, color = AnanasMuted)
         }
 
         SectionLabel("ACCOUNT")
@@ -3313,8 +3320,11 @@ private fun ProfileScreen(onBack: () -> Unit) {
             RowDivider()
             // The one destructive row in the app, so it is the one row whose label is not
             // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
+            // Sign-out is wired through an onSignOut lambda from AppScreen → MainActivity,
+            // which calls FirebaseAuth.signOut() and flips `signedIn` back to false so the
+            // app returns to AuthScreen.
             Row(
-                Modifier.fillMaxWidth().clickable { }.heightIn(min = SheetRowHeight)
+                Modifier.fillMaxWidth().clickable { onSignOut() }.heightIn(min = SheetRowHeight)
                     .padding(horizontal = 14.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -3391,13 +3401,12 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlainBackButton(onClick = onBack)
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text(
                         "Split tunneling",
-                        fontSize = 26.sp,
-                        lineHeight = 30.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.6).sp,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.3).sp,
                         color = AnanasTextHi,
                     )
                 }
@@ -3532,7 +3541,7 @@ private fun SelectDot(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Icon(Icons.Rounded.Check, null, tint = AnanasScreenBg, modifier = Modifier.size(14.dp))
+            Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -3561,7 +3570,7 @@ private fun PlainBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) 
     val alpha by animateFloatAsState(if (pressed) 0.55f else 1f, tween(120), label = "backPress")
     Box(
         modifier
-            .size(40.dp)
+            .size(44.dp)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -3573,7 +3582,7 @@ private fun PlainBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) 
             Icons.Rounded.ChevronLeft,
             contentDescription = "Back",
             tint = AnanasText.copy(alpha = alpha),
-            modifier = Modifier.size(30.dp).offset(x = (-4).dp),
+            modifier = Modifier.size(28.dp),
         )
     }
 }

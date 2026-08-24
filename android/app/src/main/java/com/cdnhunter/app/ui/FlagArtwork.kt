@@ -89,16 +89,16 @@ internal fun remoteFlagUrl(countryCode: String): String? {
 }
 
 /**
- * A LOCAL, bundled hero background for a country whose artwork this app ships itself rather than
- * fetching from flagcdn — currently only Sweden, a landscape wood-texture + Stockholm-skyline
- * illustration in `res/drawable-xxxhdpi/hero_flag_sweden.webp`. Returns its drawable resource id
- * (a Coil-loadable model) for that country, or null for every other code — which keeps the
- * flagcdn fetch ([remoteFlagUrl]) as the primary source for everyone else, Germany included, and
- * the bundled circle-flags asset as the offline fallback.
+ * A LOCAL, bundled hero background for a well-known exit country whose landscape artwork this app
+ * ships itself rather than deriving it from a flag SVG — the six countries in [localHeroFlagRes]'s
+ * `when` (US, GB, FR, DE, SG, SE), each a wide illustration in
+ * `res/drawable-xxxhdpi/hero_flag_<cc>.webp`. Returns that drawable's resource id (a Coil-loadable
+ * model) for those countries, or null for every other code — where [HeaderFlag] falls back to
+ * [remoteFlagUrl] and then to the bundled circle-flags asset.
  *
  * HEADER-only: [HeaderFlag] is the sole caller. The small circular badge ([CountryFlagBadge])
- * deliberately does not consult this — the Sweden artwork is a wide illustration, not a flag
- * cropped to a circle, so the badge stays on the flag sources.
+ * deliberately does not consult this — these are wide illustrations, not a flag cropped to a
+ * circle, so the badge stays on the flag sources.
  */
 internal fun localHeroFlagRes(countryCode: String): Int? =
     when (canonicalCountryCode(countryCode)) {
