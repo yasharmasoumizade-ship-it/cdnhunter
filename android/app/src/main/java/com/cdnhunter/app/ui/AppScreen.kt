@@ -730,7 +730,7 @@ fun AppScreen(onSignOut: () -> Unit = {}) {
         CompositionLocalProvider(
             LocalThemeMode provides themeMode
         ) {
-            VpnTab() // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
+            VpnTab(onSignOut = onSignOut) // full-bleed root screen; owns internal navigation (Home/Locations/My Configs/Settings/Profile)
         }
     }
 }
@@ -771,7 +771,7 @@ private const val IP_LOOKUP_SLOW_INTERVAL_MS = 8_000L
 // ── VPN TAB (Home / Connected — ANANAS reference) ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun VpnTab() {
+private fun VpnTab(onSignOut: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val haptic  = LocalHapticFeedback.current
