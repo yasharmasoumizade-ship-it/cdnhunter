@@ -1748,8 +1748,10 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             CountryHeadline(state)
         }
-        Spacer(Modifier.height(28.dp))
-        StatusFeatureIcons(modifier = Modifier.offset(x = (-2).dp))
+        // The Kill Switch / Ad Blocker status glyphs used to ride the flag here. They now live in
+        // the browse card's masthead (see [BrowseCard]) so nothing crowds the flag or the connect
+        // disc that docks on the hero's foot — and, with that block gone, the hero measures shorter,
+        // so the disc and the card it docks on both sit higher up the screen.
         // The open flag under the top row. The public-IP readout is no longer here — it now floats
         // below-right of the connect disc (drawn as an overlay by [HomeScreen]), so this stays clear
         // flag under the country plate.
@@ -2968,11 +2970,10 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's masthead. The public IP now lives HERE, on the left, where the add-server "+"
-        // used to sit — the "+" button is gone entirely (first-run onboarding still offers an add
-        // affordance via [EmptyHint] when the list is empty). The search magnifier stays on the
-        // right. They sit *at the top* rather than below the well — the connect disc docks in the
-        // centre of this band, so the corners are clear and the two controls never collide with it.
+        // The card's masthead. The Kill Switch / Ad Blocker status glyphs sit on the LEFT (moved
+        // off the hero flag, where they used to overlap the connect disc), and the search magnifier
+        // on the RIGHT. They sit *at the top* rather than below the well — the connect disc docks in
+        // the centre of this band, so the two corners are clear and neither control collides with it.
         // The band's height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
         Box(
             Modifier
@@ -2985,12 +2986,13 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                // The magnifier is the row's only control, so it is pinned flush to the
-                // trailing (right) edge — [Arrangement.End] places a lone child at the end,
-                // where [Arrangement.SpaceBetween] would leave it parked at the start.
-                horizontalArrangement = Arrangement.End,
+                // Status glyphs pinned to the leading (left) edge, search to the trailing (right)
+                // edge — [Arrangement.SpaceBetween] pushes the two groups to opposite corners, both
+                // clear of the disc that docks in the centre.
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                StatusFeatureIcons()
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
