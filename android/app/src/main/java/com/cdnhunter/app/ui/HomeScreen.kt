@@ -1797,16 +1797,45 @@ private val MenuShadow = Color.Black.copy(alpha = 0.30f)
 /** The three line widths as fractions of the mark's width: full, then shorter, then shortest. */
 private val MenuLineRatios = listOf(1.0f, 0.72f, 0.48f)
 
+/** How far the mark sinks while held — a touch deeper than a plate button since it has no
+ *  fill or shadow of its own to lose, so the scale carries the whole press on its own. */
+private const val MenuPressScale = 0.88f
+
 @Composable
 private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // The old bug: a default bounded ripple on a 48dp CircleShape tap target whose glyph is
+    // CenterStart. The ripple filled the whole circle, so its centre sat ~10dp to the RIGHT of
+    // the left-aligned hamburger — the press "shifted right". Fix: drop the ripple (indication =
+    // null) and feed back with a scale on the glyph itself, which pivots about the glyph's own
+    // centre, so the press reads exactly under the finger. Same down-fast / up-sprung asymmetry
+    // as the power disc, so the one navigation mark presses like every other button on Home.
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) MenuPressScale else 1f,
+        animationSpec = if (reduce) {
+            snap()
+        } else if (pressed) {
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
+        } else {
+            spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow)
+        },
+        label = "menuPress",
+    )
     Box(
         modifier
             .size(TapTarget)
             .clip(CircleShape)
-            .clickable(onClickLabel = "Menu", onClick = onClick),
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = "Menu",
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Canvas(Modifier.size(MenuGlyphSize)) {
+        Canvas(Modifier.size(MenuGlyphSize).scale(scale)) {
             val stroke = MenuStroke.toPx()
             val gap = MenuLineGap.toPx()
             val drop = MenuShadowDrop.toPx()
