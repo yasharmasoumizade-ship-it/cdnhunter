@@ -79,7 +79,7 @@ object AppSettings {
     fun useDoh(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_USE_DOH, true)
     fun setUseDoh(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_USE_DOH, value).apply()
 
-    fun killSwitchEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_KILL_SWITCH, false)
+    fun killSwitchEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_KILL_SWITCH, true)
     fun setKillSwitchEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_KILL_SWITCH, value).apply()
 
     fun allowLan(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_ALLOW_LAN, false)
@@ -120,7 +120,7 @@ object AppSettings {
     fun setMtuPreset(ctx: Context, preset: String) = prefs(ctx).edit().putString(KEY_MTU_PRESET, preset).apply()
 
     // ============ Ad Blocker Settings ============
-    fun adBlockerEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AD_BLOCKER_ENABLED, false)
+    fun adBlockerEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AD_BLOCKER_ENABLED, true)
     fun setAdBlockerEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_AD_BLOCKER_ENABLED, value).apply()
 
     fun blockAds(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_BLOCK_ADS, true)
