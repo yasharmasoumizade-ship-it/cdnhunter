@@ -2453,24 +2453,16 @@ private fun SheetScreen(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        // Soft, slow-breathing ambient glow along the hero's bottom edge. Held static when the
-        // system "remove animations" setting is on.
-        val reduceMotion = rememberReduceMotion()
-        val glowTransition = rememberInfiniteTransition(label = "heroGlow")
-        val glowAnim by glowTransition.animateFloat(
-            initialValue = 0.45f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(3800, easing = EaseInOutSine), RepeatMode.Reverse),
-            label = "heroGlowAlpha",
-        )
-        val glow = if (reduceMotion) 0.6f else glowAnim
-        // (The old full-width SheetPageWash box that used to sit here is gone: being a
-        // square-cornered rectangle behind the round-bottomed header, its corners poked
-        // out below the header curve and read as a faint ghost band above the first card.
-        // The header panel already carries its own top light via SheetHeaderGlass +
-        // SheetHeaderRim inside its clip, so nothing is lost by dropping the stray box.)
+        // No ambient blue glow band on this header. The sheet header's background is the SAME
+        // color as the page (flat spec), so unlike Home's hero — where the glow pools against a
+        // distinct solid panel — here the rounded-bottom blue band had nothing to sit on and
+        // floated free below the header, reading as a stray shadow / ghost card border above the
+        // first section. SplitTunnelScreen already calls sheetHeaderPanel() with no glow and shows
+        // no such artifact; Settings/Profile now match it. The lit rim inside the clip is the one
+        // edge meant to be seen. (The old full-width SheetPageWash box was removed for the same
+        // reason — a square rectangle behind a round-bottomed header poked its corners out.)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(Modifier.sheetHeaderPanel(glow = glow)) {
+            Column(Modifier.sheetHeaderPanel()) {
                 // Title on the SAME row as the back chevron. The chevron is a plain icon
                 // (no disc/border) so the two read as one line: "‹ Settings".
                 Row(
