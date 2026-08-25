@@ -2297,6 +2297,10 @@ private val SheetHeaderRim = Brush.verticalGradient(
 /** How deep that rim runs. */
 private val SheetHeaderRimDepth = 6.dp
 
+/** How tall the soft ambient glow pooling along the hero's bottom edge is (see
+ *  [Modifier.sheetHeaderPanel]'s `glow` parameter). */
+private val SheetHeaderGlowDepth = 44.dp
+
 /** How much air is left between the panel's last row and its bottom edge. */
 private val SheetHeaderFootRoom = 22.dp
 
@@ -2311,7 +2315,7 @@ private val SheetHeaderLift = 6.dp
  * The status-bar inset is applied *inside* the fill, which is what lets the glass reach under the
  * clock while its content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
  */
-private fun Modifier.sheetHeaderPanel(): Modifier = this
+private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     .fillMaxWidth()
     // No drop shadow: on the page below, the opaque-black shadow of the panel's rounded bottom
     // edge rendered as a stray rounded outline hovering just above the first content card. The
@@ -2321,6 +2325,21 @@ private fun Modifier.sheetHeaderPanel(): Modifier = this
     .background(SheetHeaderGlass)
     .background(SheetHeaderTint)
     .drawBehind {
+        // Soft ambient blue light pooling along the hero's bottom edge. Drawn inside the clip so
+        // it follows the 20dp bottom corners. Alpha is driven by [glow] (animated by the caller);
+        // at glow == 0f nothing is drawn, so screens that don't opt in are visually unchanged.
+        if (glow > 0f) {
+            val band = SheetHeaderGlowDepth.toPx()
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, AnanasAccent.copy(alpha = 0.18f * glow)),
+                    startY = size.height - band,
+                    endY = size.height,
+                ),
+                topLeft = Offset(0f, size.height - band),
+                size = Size(size.width, band),
+            )
+        }
         val rim = SheetHeaderRimDepth.toPx()
         drawRect(
             brush = SheetHeaderRim,
@@ -2330,6 +2349,19 @@ private fun Modifier.sheetHeaderPanel(): Modifier = this
     }
     .statusBarsPadding()
     .padding(horizontal = SheetPad)
+
+/** True when the system "remove animations" setting is on, so ambient motion can be held static. */
+@Composable
+private fun rememberReduceMotion(): Boolean {
+    val context = LocalContext.current
+    return remember {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
+    }
+}
 
 /**
  * The frame every secondary screen sits in: the page wash, the glass header panel, and a scroll.
@@ -2350,13 +2382,24 @@ private fun SheetScreen(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+        // Soft, slow-breathing ambient glow along the hero's bottom edge. Held static when the
+        // system "remove animations" setting is on.
+        val reduceMotion = rememberReduceMotion()
+        val glowTransition = rememberInfiniteTransition(label = "heroGlow")
+        val glowAnim by glowTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(3800, easing = EaseInOutSine), RepeatMode.Reverse),
+            label = "heroGlowAlpha",
+        )
+        val glow = if (reduceMotion) 0.6f else glowAnim
         // (The old full-width SheetPageWash box that used to sit here is gone: being a
         // square-cornered rectangle behind the round-bottomed header, its corners poked
         // out below the header curve and read as a faint ghost band above the first card.
         // The header panel already carries its own top light via SheetHeaderGlass +
         // SheetHeaderRim inside its clip, so nothing is lost by dropping the stray box.)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(Modifier.sheetHeaderPanel()) {
+            Column(Modifier.sheetHeaderPanel(glow = glow)) {
                 // Title on the SAME row as the back chevron. The chevron is a plain icon
                 // (no disc/border) so the two read as one line: "‹ Settings".
                 Row(
