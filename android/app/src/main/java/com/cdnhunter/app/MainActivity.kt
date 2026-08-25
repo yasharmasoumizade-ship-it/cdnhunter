@@ -77,8 +77,10 @@ fun MainContent(activity: MainActivity) {
     val auth = remember { FirebaseAuth.getInstance() }
     var signedIn by remember { mutableStateOf(auth.currentUser != null) }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     if (signedIn) {
         AppScreen(onSignOut = {
+            com.cdnhunter.app.vpn.CdnVpnService.stop(context)
             auth.signOut()
             signedIn = false
         })

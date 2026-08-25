@@ -3328,6 +3328,23 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 // this to a real account is separate work.
 @Composable
 private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit) {
+    var showSignOutDialog by remember { mutableStateOf(false) }
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSignOutDialog = false },
+            title = { Text("Sign out?") },
+            text = { Text("You'll be disconnected from VPN and need to sign in again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignOutDialog = false
+                    onSignOut()
+                }) { Text("Sign out", color = AnanasRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
     SheetScreen(
         title = "Profile",
         onBack = onBack,
@@ -3399,7 +3416,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             // which calls FirebaseAuth.signOut() and flips `signedIn` back to false so the
             // app returns to AuthScreen.
             Row(
-                Modifier.fillMaxWidth().clickable { onSignOut() }.heightIn(min = SheetRowHeight)
+                Modifier.fillMaxWidth().clickable { showSignOutDialog = true }.heightIn(min = SheetRowHeight)
                     .padding(horizontal = 14.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
