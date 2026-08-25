@@ -657,10 +657,11 @@ private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
 
 
 /**
- * The mockup's ring is 24% filled and labelled 2.4 GB, i.e. a 10 GB full sweep.
- * Here it measures the current session's traffic against that same scale.
+ * Daily data-usage cap the Home ring measures against: 5 GB per local day.
+ * The ring is driven by [HomeUiState.dailyUsageBytes] (a real, persisted local
+ * daily total), not the per-session counter, so the fill reflects the whole day.
  */
-private const val USAGE_RING_SCALE_BYTES = 10L * 1024 * 1024 * 1024
+private const val USAGE_DAILY_CAP_BYTES = 5L * 1024 * 1024 * 1024
 
 // .device background — more stops than the mockup's four so the ramp has no
 // visible banding on an OLED panel at these near-black values.
@@ -1097,6 +1098,15 @@ internal data class HomeUiState(
     val uploadKBps: Double = 0.0,
     val totalDownloadBytes: Long = 0L,
     val totalUploadBytes: Long = 0L,
+    /**
+     * Bytes moved through the tunnel *today* (local time), as accumulated by
+     * [com.cdnhunter.app.vpn.AppSettings.addUsageBytes] and read back on each tick.
+     * Unlike [sessionBytes] this survives connect/disconnect and app relaunch, so
+     * Home's usage ring shows a real daily figure against [USAGE_DAILY_CAP_BYTES].
+     * Best-effort local estimate — it cannot count traffic that flowed while the app
+     * process was dead. See the poll loop in AppScreen.kt.
+     */
+    val dailyUsageBytes: Long = 0L,
     // Geo of the live tunnel's exit node, measured through the tunnel itself
     // after connecting — only trusted for the config it was measured on.
     val exitCountryCode: String = "",
@@ -3544,7 +3554,7 @@ private fun UsageCard(
     // No elapsed time here: the session duration is deliberately not shown anywhere on
     // this screen any more (the hero's timer chip went with it), so the title stays the
     // same string in both phases and only [subtext] changes with the connection.
-    val title = "Data used this session"
+    val title = "Data used today"
     val shape = remember { RoundedCornerShape(CardCorner) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -3565,10 +3575,10 @@ private fun UsageCard(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         UsageRing(
-            bytes = state.sessionBytes,
-            // The mockup's ring is `conic-gradient(var(--teal) …)`, so teal while the
-            // tunnel is up; a plain grey the rest of the time, so the card never
-            // announces a state of its own.
+            bytes = state.dailyUsageBytes,
+            // Teal while the tunnel is up; a plain grey the rest of the time, so the card
+            // never announces a state of its own. The ring measures today's running total
+            // against [USAGE_DAILY_CAP_BYTES], not the current session.
             accent = if (state.connected) RefTeal else RefTextMid,
         )
         Spacer(Modifier.width(14.dp))              // .bottom-card gap
@@ -3597,30 +3607,63 @@ private fun UsageCard(
     }
 }
 
-/** .usage-ring — a 5dp arc over a track, with the session total in the middle. */
+/**
+ * .usage-ring — a 5dp arc over a machined track, with today's total in the middle.
+ *
+ * Apple-Health-grade rather than a flat conic: the track is lit from the top (a
+ * subtle white vertical gradient, brightest where light would fall) so it reads as a
+ * groove rather than a drawn line; the fill is a forward sweep gradient that runs from
+ * a dim tail to a bright, rounded head; and a wider, fainter underglow sits beneath the
+ * head so the arc looks lit, not painted. The sweep animates to [USAGE_DAILY_CAP_BYTES].
+ */
 @Composable
 private fun UsageRing(bytes: Long, accent: Color) {
     val (value, unit) = ringLabel(bytes)
-    val fraction = (bytes.toFloat() / USAGE_RING_SCALE_BYTES.toFloat()).coerceIn(0f, 1f)
-    val sweep by animateFloatAsState(fraction, tween(600), label = "usageSweep")
+    val reduce = rememberReduceMotion()
+    val fraction = (bytes.toFloat() / USAGE_DAILY_CAP_BYTES.toFloat()).coerceIn(0f, 1f)
+    val sweep by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = motionSpec(reduce, 600),
+        label = "usageSweep",
+    )
     Box(Modifier.size(RingSize), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = RingStroke.toPx()
+            val inset = stroke / 2f
+            val topLeft = Offset(inset, inset)
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+
+            // Machined groove: lit from the top, not a flat hairline.
             drawCircle(
-                color = RefBorder,
+                brush = UsageRingTrack,
                 radius = (size.minDimension - stroke) / 2f,
                 style = Stroke(width = stroke),
             )
-            if (sweep > 0f) {
-                drawArc(
-                    color = accent,
-                    startAngle = -90f,
-                    sweepAngle = 360f * sweep,
-                    useCenter = false,
-                    topLeft = Offset(stroke / 2f, stroke / 2f),
-                    size = Size(size.width - stroke, size.height - stroke),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round),
-                )
+
+            if (sweep > 0.001f) {
+                // Draw from twelve o'clock: rotate the frame so the sweep gradient's start
+                // (three o'clock in its own axis) lands at the top, matching the arc.
+                rotate(degrees = -90f, pivot = center) {
+                    // Underglow — a wider, translucent pass so the head reads as lit.
+                    drawArc(
+                        color = accent.copy(alpha = 0.18f),
+                        startAngle = 0f,
+                        sweepAngle = 360f * sweep,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = stroke * 2.1f, cap = StrokeCap.Round),
+                    )
+                    drawArc(
+                        brush = usageSweepBrush(accent, sweep, center),
+                        startAngle = 0f,
+                        sweepAngle = 360f * sweep,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    )
+                }
             }
         }
         // Numeral over unit, not "1.8 MB" on one line: at this diameter the one-line form either
@@ -3647,6 +3690,35 @@ private fun UsageRing(bytes: Long, accent: Color) {
             )
         }
     }
+}
+
+/** Lit-from-top track for the usage ring — a groove, not a drawn circle. Mirrors
+ *  [PowerRingTrack] so the two rings on Home read as the same machined family. */
+private val UsageRingTrack = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.16f),
+    0.38f to Color.White.copy(alpha = 0.08f),
+    0.70f to Color.White.copy(alpha = 0.05f),
+    1.00f to Color.White.copy(alpha = 0.10f),
+)
+
+/**
+ * The usage arc's colour along its length: a dim tail climbing to a bright, opaque head.
+ * A [Brush.sweepGradient] is the only brush whose axis matches the arc; its fractions run
+ * once round from three o'clock (which the caller has rotated to the top), so the drawn
+ * arc — from 0° for [sweep] of the circle — occupies the first `sweep` of them, and the
+ * stops are placed as fractions of that. The transparent stop just past the head is never
+ * drawn but stops the head's colour bleeding back round the gap into the tail (sweep
+ * gradients wrap). See [powerComet] for the same technique on the power ring.
+ */
+private fun usageSweepBrush(accent: Color, sweep: Float, center: Offset): Brush {
+    val end = sweep.coerceIn(0.001f, 1f)
+    return Brush.sweepGradient(
+        0f to accent.copy(alpha = 0.38f),
+        end * 0.55f to accent.copy(alpha = 0.85f),
+        end to accent,
+        (end + 0.0015f).coerceAtMost(1f) to Color.Transparent,
+        center = center,
+    )
 }
 
 // ── Glyphs ────────────────────────────────────────────────────────────────────

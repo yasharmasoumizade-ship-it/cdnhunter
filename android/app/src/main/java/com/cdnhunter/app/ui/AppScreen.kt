@@ -852,6 +852,13 @@ private fun VpnTab(onSignOut: () -> Unit) {
     // these track exactly one connection's lifetime, not an all-time total.
     var totalDownloadBytes by remember { mutableStateOf(0L) }
     var totalUploadBytes   by remember { mutableStateOf(0L) }
+    // Real, persisted daily total (local time) surfaced by Home's usage ring. Seeded
+    // from disk so the ring shows the day's accumulated figure on cold start, then kept
+    // current by the poll loop below (adds each tick's positive byte delta while
+    // connected). Best-effort local estimate — see AppSettings.addUsageBytes.
+    var dailyUsageBytes by remember {
+        mutableStateOf(com.cdnhunter.app.vpn.AppSettings.usageBytesToday(context))
+    }
     var exitCountryCode by remember { mutableStateOf("") }
     var exitCity by remember { mutableStateOf("") }
     var exitGeoConfigId by remember { mutableStateOf("") }
@@ -945,11 +952,18 @@ private fun VpnTab(onSignOut: () -> Unit) {
 
                 val curDown = CdnVpnService.downloadBytes
                 val curUp   = CdnVpnService.uploadBytes
-                downloadKBps = (curDown - lastDown).coerceAtLeast(0L) / 1024.0
-                uploadKBps   = (curUp - lastUp).coerceAtLeast(0L) / 1024.0
+                val deltaDown = (curDown - lastDown).coerceAtLeast(0L)
+                val deltaUp   = (curUp - lastUp).coerceAtLeast(0L)
+                downloadKBps = deltaDown / 1024.0
+                uploadKBps   = deltaUp / 1024.0
                 totalDownloadBytes = curDown
                 totalUploadBytes   = curUp
                 lastDown = curDown; lastUp = curUp
+                // Fold this tick's traffic into the persisted daily total. addUsageBytes
+                // ignores non-positive deltas and rolls the day over at local midnight, so
+                // a session/counter reset can never subtract from the day.
+                dailyUsageBytes = com.cdnhunter.app.vpn.AppSettings
+                    .addUsageBytes(context, deltaDown + deltaUp)
 
                 exitCountryCode = CdnVpnService.exitCountryCode
                 exitCity = CdnVpnService.exitCity
@@ -959,6 +973,9 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 totalDownloadBytes = 0L; totalUploadBytes = 0L
                 lastDown = CdnVpnService.downloadBytes; lastUp = CdnVpnService.uploadBytes
                 exitCountryCode = ""; exitCity = ""; exitGeoConfigId = ""
+                // Keep the daily figure live even while disconnected: re-read so the ring
+                // reflects a midnight rollover to 0 without needing a reconnect.
+                dailyUsageBytes = com.cdnhunter.app.vpn.AppSettings.usageBytesToday(context)
             }
 
             delay(1000)
@@ -1498,6 +1515,7 @@ private fun VpnTab(onSignOut: () -> Unit) {
                         uploadKBps = uploadKBps,
                         totalDownloadBytes = totalDownloadBytes,
                         totalUploadBytes = totalUploadBytes,
+                        dailyUsageBytes = dailyUsageBytes,
                         exitCountryCode = exitCountryCode,
                         exitCity = exitCity,
                         exitGeoConfigId = exitGeoConfigId,

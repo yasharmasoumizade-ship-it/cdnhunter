@@ -295,6 +295,43 @@ object AppSettings {
     }
 
 
+    // ============ Daily data usage (local, best-effort) ============
+    // A client-side running total of bytes moved through the tunnel *today*, kept so
+    // Home's usage ring can show a real daily figure rather than only the current
+    // session (which resets on every connect/disconnect). This is a UI indicator, not
+    // billing: it accumulates positive per-tick deltas the UI observes while connected,
+    // persisted here so it survives the app being backgrounded/relaunched. It cannot
+    // count traffic that flowed while the app process was dead, so treat it as a
+    // best-effort local estimate. Rolls over to 0 at local midnight (day string change).
+    private const val KEY_USAGE_DAY = "usage_day"       // "yyyy-MM-dd" in local time
+    private const val KEY_USAGE_BYTES = "usage_bytes_today"
+
+    private fun todayKey(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    /** Bytes used today so far. Returns 0 (and does not rewrite) once the stored day is stale. */
+    fun usageBytesToday(ctx: Context): Long {
+        val p = prefs(ctx)
+        val storedDay = p.getString(KEY_USAGE_DAY, "") ?: ""
+        return if (storedDay == todayKey()) p.getLong(KEY_USAGE_BYTES, 0L) else 0L
+    }
+
+    /**
+     * Add [delta] bytes to today's running total and return the new total. Rolls the
+     * counter over to [delta] when the stored day is not today. Non-positive deltas are
+     * ignored (never decrement) so a session/counter reset can't subtract from the day.
+     */
+    fun addUsageBytes(ctx: Context, delta: Long): Long {
+        if (delta <= 0L) return usageBytesToday(ctx)
+        val p = prefs(ctx)
+        val today = todayKey()
+        val storedDay = p.getString(KEY_USAGE_DAY, "") ?: ""
+        val base = if (storedDay == today) p.getLong(KEY_USAGE_BYTES, 0L) else 0L
+        val total = base + delta
+        p.edit().putString(KEY_USAGE_DAY, today).putLong(KEY_USAGE_BYTES, total).apply()
+        return total
+    }
+
     // ============ SUBSCRIPTIONS ============
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
     
