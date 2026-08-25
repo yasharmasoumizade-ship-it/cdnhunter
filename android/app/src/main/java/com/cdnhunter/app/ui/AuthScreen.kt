@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +53,32 @@ private val ErrorRed = Color(0xFFEF4444)
 
 enum class AuthMode { LOGIN, SIGNUP }
 
+/** Turns Firebase's raw exception messages (often full HTML error pages from network
+ * failures, or verbose internal error codes) into a short, human-readable string. */
+private fun friendlyAuthError(raw: String?): String {
+    if (raw == null) return "Something went wrong. Please try again."
+    val r = raw.lowercase()
+    return when {
+        "network" in r || "timeout" in r || "unable to resolve" in r ->
+            "Network error. Check your connection and try again."
+        "password is invalid" in r || "wrong-password" in r || "invalid-credential" in r ->
+            "Incorrect email or password."
+        "no user record" in r || "user-not-found" in r ->
+            "No account found with that email."
+        "email address is already in use" in r || "email-already-in-use" in r ->
+            "An account already exists with that email."
+        "badly formatted" in r || "invalid-email" in r ->
+            "Please enter a valid email address."
+        "password should be at least" in r || "weak-password" in r ->
+            "Password should be at least 6 characters."
+        "too many" in r ->
+            "Too many attempts. Please wait and try again."
+        "internal error" in r || "<html" in r || "<!doctype" in r || raw.length > 120 ->
+            "Something went wrong. Please try again."
+        else -> raw
+    }
+}
+
 @Composable
 fun AuthScreen(onSignedIn: () -> Unit) {
     val context = LocalContext.current
@@ -86,7 +113,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                 loading = true
                 auth.signInWithCredential(credential)
                     .addOnSuccessListener { onSignedIn() }
-                    .addOnFailureListener { e -> error = e.message; loading = false }
+                    .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
             } catch (e: ApiException) {
                 error = "Google sign-in failed (${e.statusCode})"
                 loading = false
@@ -151,21 +178,41 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
                         Spacer(Modifier.height(32.dp))
 
-                        // Tab toggle
-                        Row(
+                        // Tab toggle: a sliding thumb behind the two labels, animated on mode change.
+                        BoxWithConstraints(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                                 .background(FieldBg).padding(4.dp)
                         ) {
-                            listOf(AuthMode.LOGIN to "Sign In", AuthMode.SIGNUP to "Sign Up").forEach { (m, label) ->
-                                Box(
-                                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                                        .background(if (mode == m) Accent.copy(.15f) else Color.Transparent)
-                                        .clickable { mode = m; error = null }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                        color = if (mode == m) Accent else TextMid)
+                            val tabWidth = maxWidth / 2
+                            val thumbOffset by animateDpAsState(
+                                targetValue = if (mode == AuthMode.LOGIN) 0.dp else tabWidth,
+                                animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                label = "tabThumb"
+                            )
+                            Box(
+                                Modifier
+                                    .offset(x = thumbOffset)
+                                    .width(tabWidth)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Accent.copy(.15f))
+                            )
+                            Row(Modifier.fillMaxWidth()) {
+                                listOf(AuthMode.LOGIN to "Sign In", AuthMode.SIGNUP to "Sign Up").forEach { (m, label) ->
+                                    val textColor by animateColorAsState(
+                                        targetValue = if (mode == m) Accent else TextMid,
+                                        animationSpec = tween(260),
+                                        label = "tabText"
+                                    )
+                                    Box(
+                                        Modifier.weight(1f)
+                                            .clickable { mode = m; error = null }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                            color = textColor)
+                                    }
                                 }
                             }
                         }
@@ -210,11 +257,11 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                                 if (mode == AuthMode.LOGIN) {
                                     auth.signInWithEmailAndPassword(email, password)
                                         .addOnSuccessListener { onSignedIn() }
-                                        .addOnFailureListener { e -> error = e.message; loading = false }
+                                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                                 } else {
                                     auth.createUserWithEmailAndPassword(email, password)
                                         .addOnSuccessListener { onSignedIn() }
-                                        .addOnFailureListener { e -> error = e.message; loading = false }
+                                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(50.dp),
