@@ -128,7 +128,9 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     }
 
     // Submit handler shared by the primary button (email/password auth).
-    val submit = {
+    // Explicit () -> Unit so the trailing `when` is treated as statements (no
+    // experimental unit-coercion when passed to Button's onClick).
+    val submit: () -> Unit = {
         error = null; notice = null
         when {
             email.isBlank() || password.isBlank() ->
