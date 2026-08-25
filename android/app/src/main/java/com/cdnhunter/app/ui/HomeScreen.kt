@@ -101,7 +101,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import com.cdnhunter.app.vpn.AppSettings
 import androidx.compose.material.icons.rounded.WifiOff
-import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.FrontHand
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
@@ -1677,7 +1677,7 @@ private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
             active = killSwitchOn,
         )
         StatusFeatureIcon(
-            icon = Icons.Rounded.Block,
+            icon = Icons.Rounded.FrontHand,
             label = "Ad Blocker",
             active = adBlockerOn,
         )
