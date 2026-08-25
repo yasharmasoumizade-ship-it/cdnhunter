@@ -3426,12 +3426,65 @@ private fun EmailVerificationCard(account: AccountUiState) {
     }
 }
 
+/** No billing backend yet — the upgrade CTAs are honest about that rather than pretending to
+ *  start a purchase. When real billing lands, replace this with the purchase flow. */
+private fun showComingSoon(context: Context) {
+    Toast.makeText(context, "Plans & billing are coming soon.", Toast.LENGTH_SHORT).show()
+}
+
+/**
+ * Shown on Profile only when the account is on the Free tier ([AccountUiState.isPro] == false):
+ * the Pro benefits and an upgrade CTA. Benefit copy is placeholder marketing (there is no billing
+ * backend), and the CTA is wired to [showComingSoon] until one exists.
+ */
+@Composable
+private fun UpgradeCard(onUpgrade: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().sheetSurface(RoundedCornerShape(SheetCardCorner), SheetPlanFill).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
+            Column(Modifier.weight(1f)) {
+                Text("Upgrade to Pro", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi)
+                Spacer(Modifier.height(2.dp))
+                Text("Unlock everything Ananas offers", fontSize = 12.sp, color = AnanasMuted)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        listOf(
+            "Every server location, worldwide",
+            "Maximum speed — no daily data cap",
+            "Connect more devices at once",
+            "Priority support",
+        ).forEach { benefit ->
+            Row(
+                Modifier.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.CheckCircle, null, tint = AnanasAmber, modifier = Modifier.size(16.dp))
+                Text(benefit, fontSize = 12.5.sp, color = AnanasText)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.92f), AnanasAmber)))
+                .clickable(onClick = onUpgrade).padding(vertical = 13.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Upgrade to Pro", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B1712))
+        }
+    }
+}
+
 // The same frame as Settings, and for the same reason: the person lives in the glass header
 // (see [SheetScreen]'s headerContent), so both screens open with one panel and continue into
 // the same gutter, card corner and section labels. Contents are still placeholder; wiring
 // this to a real account is separate work.
 @Composable
 private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit) {
+    val context = LocalContext.current
     var showSignOutDialog by remember { mutableStateOf(false) }
     if (showSignOutDialog) {
         AlertDialog(
@@ -3529,9 +3582,14 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             }
         }
 
+        if (!account.isPro) {
+            Spacer(Modifier.height(10.dp))
+            UpgradeCard(onUpgrade = { showComingSoon(context) })
+        }
+
         SectionLabel("ACCOUNT")
         CardGroup {
-            SettingsRow(Icons.Rounded.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true)
+            SettingsRow(Icons.Rounded.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
             RowDivider()
             SettingsRow(Icons.Rounded.History, "Payment history", null, AnanasBlue, showChevron = true)
             RowDivider()
