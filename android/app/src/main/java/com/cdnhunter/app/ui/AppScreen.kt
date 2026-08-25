@@ -2497,25 +2497,23 @@ private fun RowDivider() {
     Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasBorder))
 }
 
-/** A row's icon: the glyph on its own tinted rounded square rather than loose on the card, which
- *  is what makes the icon column unmistakable and matches Profile's menu. Neutral tints get a
- *  faint tile + bright glyph (calm); semantic tints (accent/amber/red) get a colour-coded tile +
- *  matching glyph so a group of rows can be scanned, not read. */
+/** A row's icon: a flat glyph in the app's single unified blue, no tile, no card behind it —
+ *  a lighter, more modern treatment than the old colour-coded rounded squares. The `tint`
+ *  parameter is kept in the signature so every call site is unchanged, but it is intentionally
+ *  ignored: the whole point is one accent colour across Settings and Profile, not a per-row hue.
+ *  The 34dp box is retained (not the background) so the icon column keeps its exact width and the
+ *  row divider still lands under the text. */
 @Composable
 private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
-    val neutral = tint == AnanasSettingsIcon || tint == AnanasMuted
     Box(
-        modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(tint.copy(alpha = if (neutral) 0.10f else 0.15f)),
+        modifier.size(34.dp),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             icon,
             null,
-            tint = if (neutral) AnanasText else tint,
-            modifier = Modifier.size(18.dp),
+            tint = AnanasAccent,
+            modifier = Modifier.size(22.dp),
         )
     }
 }
