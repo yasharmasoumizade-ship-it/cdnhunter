@@ -70,6 +70,8 @@ import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
 import com.cdnhunter.app.vpn.AppSettings
+import com.google.firebase.auth.FirebaseAuth
+import android.widget.Toast
 import com.cdnhunter.app.vpn.SecurePrefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -2702,17 +2704,37 @@ private fun AccountCard(account: AccountUiState, onClick: () -> Unit) {
             Text(account.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Box(
-                    Modifier.clip(RoundedCornerShape(6.dp)).background(AnanasAmber.copy(alpha = 0.16f))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                ) {
-                    Text("PRO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = AnanasAmber, letterSpacing = 0.6.sp)
-                }
-                Text(account.expiresLabel, fontSize = 11.5.sp, color = AnanasMuted)
+                PlanBadge(account.plan)
+                Text(accountStatusShort(account), fontSize = 11.5.sp, color = AnanasMuted)
             }
         }
         Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
     }
+}
+
+/**
+ * The small plan pill ("FREE" / "PRO"). Colour follows the tier — amber for Pro (the premium
+ * accent used across the app), a calm neutral for Free — so the badge alone tells the tier apart.
+ * Driven by [AccountUiState.plan]; there is no hardcoded tier string anywhere anymore.
+ */
+@Composable
+private fun PlanBadge(plan: PlanTier, modifier: Modifier = Modifier) {
+    val (bg, fg) = when (plan) {
+        PlanTier.PRO -> AnanasAmber.copy(alpha = 0.16f) to AnanasAmber
+        PlanTier.FREE -> AnanasSettingsIcon.copy(alpha = 0.14f) to AnanasText
+    }
+    Box(
+        modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 7.dp, vertical = 2.dp),
+    ) {
+        Text(plan.label.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = fg, letterSpacing = 0.6.sp)
+    }
+}
+
+/** Short one-liner shown next to the plan badge on Settings' [AccountCard]. Honest about the
+ *  neutral (no-billing-backend) state instead of a fake expiry date. */
+private fun accountStatusShort(account: AccountUiState): String = when (val s = account.subscription) {
+    is SubscriptionState.Active -> "Expires in ${s.daysRemaining} days"
+    SubscriptionState.None -> if (account.isPro) "Subscription active" else "Free plan"
 }
 
 /**
@@ -3322,6 +3344,88 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 }
 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
+/**
+ * Verified / Not-verified pill for the account email. Real state: reads
+ * [AccountUiState.emailVerified], which comes from `FirebaseUser.isEmailVerified`. Uses the app's
+ * blue accent for verified (staying on the unified-blue palette rather than a stock green) and
+ * amber for the "needs attention" unverified state.
+ */
+@Composable
+private fun VerificationBadge(verified: Boolean) {
+    val icon = if (verified) Icons.Rounded.Verified else Icons.Rounded.ErrorOutline
+    val color = if (verified) AnanasAccent else AnanasAmber
+    val label = if (verified) "Verified" else "Not verified"
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
+        Text(label, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = color)
+    }
+}
+
+/**
+ * The email row on Profile: the account email, its verification badge, and — when unverified — a
+ * live "Resend verification" action wired to FirebaseAuth's real `sendEmailVerification()`. This
+ * is NOT mock: the email address and verified flag come from the signed-in Firebase user, and the
+ * resend actually dispatches Firebase's verification email.
+ *
+ * Editing the email address itself is intentionally not offered here: Firebase `updateEmail` needs
+ * recent re-authentication and its verify-before-update flow, which is a separate piece of work.
+ */
+@Composable
+private fun EmailVerificationCard(account: AccountUiState) {
+    val context = LocalContext.current
+    var sending by remember { mutableStateOf(false) }
+    var sent by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().sheetSurface(RoundedCornerShape(SheetCardCorner), SheetCardFill).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconTile(Icons.Rounded.Email, AnanasAccent)
+            Column(Modifier.weight(1f)) {
+                Text(account.email, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(3.dp))
+                VerificationBadge(account.emailVerified)
+            }
+        }
+        if (!account.emailVerified) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Verify your email to secure your account and enable password recovery.",
+                fontSize = 12.sp, color = AnanasMuted, lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier.clip(RoundedCornerShape(10.dp)).background(AnanasAccent.copy(alpha = 0.14f))
+                    .clickable(enabled = !sending) {
+                        val user = FirebaseAuth.getInstance().currentUser
+                        if (user != null && !sending) {
+                            sending = true
+                            user.sendEmailVerification().addOnCompleteListener { task ->
+                                sending = false
+                                if (task.isSuccessful) sent = true
+                                Toast.makeText(
+                                    context,
+                                    if (task.isSuccessful) "Verification email sent to ${account.email}"
+                                    else "Couldn't send verification email. Please try again.",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (sending) {
+                        CircularProgressIndicator(Modifier.size(14.dp), color = AnanasAccent, strokeWidth = 2.dp)
+                    } else {
+                        Icon(if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send, null, tint = AnanasAccent, modifier = Modifier.size(14.dp))
+                    }
+                    Text(if (sent) "Verification sent" else "Resend verification", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent)
+                }
+            }
+        }
+    }
+}
+
 // The same frame as Settings, and for the same reason: the person lives in the glass header
 // (see [SheetScreen]'s headerContent), so both screens open with one panel and continue into
 // the same gutter, card corner and section labels. Contents are still placeholder; wiring
@@ -3370,10 +3474,13 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             }
         },
     ) {
-        SectionLabel("SUBSCRIPTION", top = 8.dp)
+        SectionLabel("EMAIL", top = 8.dp)
+        EmailVerificationCard(account)
+
+        SectionLabel("SUBSCRIPTION")
         Column(
             Modifier.fillMaxWidth()
-                .sheetSurface(RoundedCornerShape(SheetCardCorner), SheetPlanFill)
+                .sheetSurface(RoundedCornerShape(SheetCardCorner), if (account.isPro) SheetPlanFill else SheetCardFill)
                 .padding(16.dp),
         ) {
             Row(
@@ -3382,26 +3489,44 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
+                    IconTile(
+                        if (account.isPro) Icons.Rounded.WorkspacePremium else Icons.Rounded.Shield,
+                        if (account.isPro) AnanasAmber else AnanasAccent,
+                    )
                     Text(
-                        account.planName,
+                        "${account.plan.label} plan",
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.1).sp,
-                        color = AnanasAmber,
+                        color = if (account.isPro) AnanasAmber else AnanasTextHi,
                     )
                 }
-                Text("Renews Aug 10", fontSize = 11.5.sp, color = AnanasMuted)
+                PlanBadge(account.plan)
             }
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
-                Box(
-                    Modifier.fillMaxHeight().fillMaxWidth(account.periodProgress).clip(RoundedCornerShape(8.dp))
-                        .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.75f), AnanasAmber))),
-                )
+            when (val s = account.subscription) {
+                is SubscriptionState.Active -> {
+                    Spacer(Modifier.height(14.dp))
+                    Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
+                        Box(
+                            Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(RoundedCornerShape(8.dp))
+                                .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.75f), AnanasAmber))),
+                        )
+                    }
+                    Spacer(Modifier.height(9.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(s.daysRemainingLabel, fontSize = 11.5.sp, color = AnanasMuted)
+                        Text(s.renewalLabel, fontSize = 11.5.sp, color = AnanasMuted)
+                    }
+                }
+                SubscriptionState.None -> {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (account.isPro) "Your subscription is active."
+                        else "You're on the free plan — no active subscription.",
+                        fontSize = 12.sp, color = AnanasMuted, lineHeight = 17.sp,
+                    )
+                }
             }
-            Spacer(Modifier.height(9.dp))
-            Text(account.daysRemainingLabel, fontSize = 11.5.sp, color = AnanasMuted)
         }
 
         SectionLabel("ACCOUNT")
