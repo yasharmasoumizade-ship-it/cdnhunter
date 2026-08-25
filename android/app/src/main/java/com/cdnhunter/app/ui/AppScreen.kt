@@ -2960,6 +2960,22 @@ private fun SettingsScreen(
                     tint = AnanasRed,
                 )
             }
+            RowDivider()
+            run {
+                // Malware blocker: its OWN independent toggle, deliberately separate from the
+                // Ad blocker above. Ads and malware are different threat models — a user may
+                // want threat protection without ad filtering (or vice-versa) — so this drives
+                // its own rule-provider in VpnConfigBuilder and is not gated behind ad blocking.
+                var malwareBlockEnabled by remember { mutableStateOf(AppSettings.malwareBlockerEnabled(context)) }
+                SettingsToggleRow(
+                    Icons.Rounded.Shield, "Malware blocker", "Block malware, phishing & scam domains",
+                    malwareBlockEnabled, {
+                        malwareBlockEnabled = it
+                        AppSettings.setMalwareBlockerEnabled(context, it)
+                    },
+                    tint = AnanasRed,
+                )
+            }
         }
 
         SectionLabel("NETWORK")

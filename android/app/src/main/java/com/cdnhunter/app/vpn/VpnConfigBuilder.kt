@@ -21,7 +21,7 @@ object VpnConfigBuilder {
         val adBlocker = AppSettings.adBlockerEnabled(ctx)
         val blockAds = AppSettings.blockAds(ctx)
         val blockTrackers = AppSettings.blockTrackers(ctx)
-        val blockMalware = AppSettings.blockMalware(ctx)
+        val blockMalware = AppSettings.malwareBlockerEnabled(ctx)
         val customDnsEnabled = AppSettings.customDnsEnabled(ctx)
         val customDnsServers = AppSettings.customDnsServers(ctx)
         // Whether the bundled geo databases are actually present in mihomo's home
@@ -295,17 +295,23 @@ object VpnConfigBuilder {
                             "interval" to 86400,
                         ))
                     }
-                    // Malware domains (Loyalsoldier's separate anti-malware list).
-                    if (blockMalware) {
-                        put("malware-block", linkedMapOf(
-                            "type" to "http",
-                            "format" to "text",
-                            "behavior" to "domain",
-                            "url" to "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/banad.txt",
-                            "path" to "./ruleset/malware-block.txt",
-                            "interval" to 86400,
-                        ))
-                    }
+                }
+                // Malware blocker — its OWN feature, gated only by its own toggle (NOT adBlocker).
+                // Source: hagezi's Threat Intelligence Feed (TIF) — a dedicated, actively
+                // maintained list of malware / phishing / scam / cryptojacking domains, shipped
+                // as one-domain-per-line text that mihomo's `behavior: domain` provider consumes
+                // directly with no conversion. This replaces the old banad.txt, which was
+                // Loyalsoldier's *ad*-ban list mislabelled as malware — the ad blocker already
+                // covers ads, so pointing "malware" at an ad list gave no real threat coverage.
+                if (blockMalware) {
+                    put("malware-block", linkedMapOf(
+                        "type" to "http",
+                        "format" to "text",
+                        "behavior" to "domain",
+                        "url" to "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/tif.txt",
+                        "path" to "./ruleset/malware-block.txt",
+                        "interval" to 86400,
+                    ))
                 }
             },
             "proxies" to listOf(proxy),
@@ -399,8 +405,8 @@ object VpnConfigBuilder {
                 // the RULE-SET would match nothing and is omitted.
                 if (adBlocker) {
                     if (blockAds || blockTrackers) add("RULE-SET,ad-block,REJECT")
-                    if (blockMalware) add("RULE-SET,malware-block,REJECT")
                 }
+                if (blockMalware) add("RULE-SET,malware-block,REJECT")
                 // If the rule-provider fetch fails (e.g. no internet yet on first
                 // ever launch), these RULE-SET lines just never match anything and
                 // everything falls through to MATCH,PROXY same as before --

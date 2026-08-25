@@ -31,6 +31,10 @@ object AppSettings {
     private const val KEY_BLOCK_TRACKERS = "block_trackers"
     private const val KEY_BLOCK_MALWARE = "block_malware"
     private const val KEY_CUSTOM_BLOCKLISTS = "custom_blocklists"
+
+    // Malware Blocker — an independent feature, NOT a sub-option of the ad blocker.
+    // Its own master toggle so threat protection can be on with ad filtering off.
+    private const val KEY_MALWARE_BLOCKER_ENABLED = "malware_blocker_enabled"
     
     // Appearance
     private const val KEY_THEME = "theme" // "light", "dark", "auto"
@@ -127,6 +131,13 @@ object AppSettings {
 
     fun blockMalware(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_BLOCK_MALWARE, true)
     fun setBlockMalware(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_BLOCK_MALWARE, value).apply()
+
+    // Independent Malware Blocker master switch. Opt-in (default off), like the ad blocker,
+    // so no unexpected rule-provider download happens for users who never enable it. Read
+    // directly by VpnConfigBuilder to gate the malware rule-provider + REJECT rule, entirely
+    // separately from adBlockerEnabled.
+    fun malwareBlockerEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_MALWARE_BLOCKER_ENABLED, false)
+    fun setMalwareBlockerEnabled(ctx: Context, value: Boolean) = prefs(ctx).edit().putBoolean(KEY_MALWARE_BLOCKER_ENABLED, value).apply()
 
     fun customBlocklists(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_CUSTOM_BLOCKLISTS, emptySet()) ?: emptySet()
     fun setCustomBlocklists(ctx: Context, urls: Set<String>) = prefs(ctx).edit().putStringSet(KEY_CUSTOM_BLOCKLISTS, HashSet(urls)).apply()
