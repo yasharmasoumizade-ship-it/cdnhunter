@@ -152,14 +152,26 @@ data class SavedConfig(
 // not "however long the whole lookup+connect took", so timing from before
 // resolution would report inflated numbers that don't match what other apps
 // show for the same server.
+//
+// Critically, the probe socket is PROTECTED against the running VPN. Without
+// this, once the tunnel is up the app's own sockets are routed INTO the tunnel,
+// so a "ping" would actually measure app -> tun -> mihomo -> (proxy or DIRECT
+// rule) -> server -- i.e. latency through whatever route the tunnel picks, which
+// for a proxied/tunneled hop reads as a falsely low or otherwise meaningless
+// number instead of the real network delay to the server. protect() pins the
+// socket to the underlying physical network so the handshake goes straight to
+// the actual server IP:port, connected or not, giving true real-world latency.
+// When no VPN service is live (instance == null) the connect is already direct,
+// so protection is simply skipped.
 private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
     return try {
         val addr = java.net.InetAddress.getByName(host)
-        val started = System.currentTimeMillis()
         java.net.Socket().use { socket ->
+            com.cdnhunter.app.vpn.CdnVpnService.instance?.protect(socket)
+            val started = System.currentTimeMillis()
             socket.connect(java.net.InetSocketAddress(addr, port), timeoutMs)
+            (System.currentTimeMillis() - started).toInt()
         }
-        (System.currentTimeMillis() - started).toInt()
     } catch (e: Exception) {
         -1
     }
