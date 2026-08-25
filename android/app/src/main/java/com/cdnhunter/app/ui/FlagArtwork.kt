@@ -119,20 +119,22 @@ internal fun localHeroFlagRes(countryCode: String): Int? =
  * header actually needs, because the panel is now taller than it is wide. Asking for a
  * large square over-samples both axes, so the only question is how large.
  *
- * 2048, up from 1440. The header flag is one layer covering the hero band plus its bleed —
+ * 2560, up from 2048. The header flag is one layer covering the hero band plus its bleed —
  * roughly 1080×1720px on a 3x 360dp phone, and more on a 1440-wide one — and
  * [androidx.compose.ui.layout.ContentScale.Crop] scales to *cover* that box, so it is the
- * source's height that gets stretched. At 1440 a 5:3 flag arrived 864px tall and was
- * upscaled about 2x vertically, which is exactly the softness a full-bleed background
- * cannot hide; at 2048 it arrives ~1229px tall and the upscale is ~1.4x, which flat-field
- * flag artwork survives cleanly at High filter quality.
+ * source's height that gets stretched. At 2048 a 5:3 flag arrived ~1229px tall and was
+ * upscaled ~1.4x vertically on a large phone — still the residual softness a full-bleed
+ * background cannot hide; at 2560 it arrives ~1536px tall and the upscale drops to ~1.12x,
+ * which reads as crisp even on a 1440-wide panel at High filter quality.
  *
- * The cost is memory: a square bundled asset at this size is ~16MB of bitmap against ~8MB
- * before, doubled for the few hundred ms a country crossfade is in flight. Acceptable
- * because the header shows exactly one flag at a time and Coil's memory cache is a
- * fraction of the app heap, so this evicts rather than accumulates.
+ * The cost is memory: a square bundled asset at this size is ~26MB of bitmap against ~16MB
+ * before, doubled for the few hundred ms a country crossfade is in flight. Still acceptable —
+ * the primary hero source is a 5:3/2:1 flagcdn SVG (~19MB, not the square worst case), the
+ * header shows exactly one flag at a time, and Coil's memory cache evicts rather than
+ * accumulates — but this is about as far as the raster should go before low-RAM 32-bit
+ * devices feel the transient during a crossfade.
  */
-internal const val FLAG_RENDER_PX = 2048
+internal const val FLAG_RENDER_PX = 2560
 
 /**
  * Side length, in px, a flag is rasterised at for the small circular badge.
