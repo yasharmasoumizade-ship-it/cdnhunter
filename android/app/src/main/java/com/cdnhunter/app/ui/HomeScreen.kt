@@ -2515,7 +2515,35 @@ private fun PowerCircle(
         phase == ConnPhase.CONNECTING -> "Cancel connecting"
         else -> "Connect"
     }
+    // Connected: a soft blue room-glow blooms behind the disc. This is the "the tunnel is up"
+    // light — RefGlowOn blue, not the ring's teal (state is teal, light is blue, per the lighting
+    // note). Faded in over PHASE_FADE_MS and then held dead still — no pulse; it is a light in the
+    // hand, not a beacon — and gone the instant the tunnel drops. Sized past the touch box with
+    // requiredSize so it reads as a glow filling the room around the control rather than a disc
+    // of colour clipped to it; it sits behind the ring and the disc, so neither is tinted.
+    val connGlow by animateFloatAsState(
+        targetValue = if (connected) 1f else 0f,
+        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        label = "powerConnGlow",
+    )
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        if (connGlow > 0.01f) {
+            Box(
+                Modifier
+                    .requiredSize(PowerSize * 2.0f)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                0.00f to RefGlowOn.copy(alpha = 0.46f * connGlow),
+                                0.20f to RefGlowOn.copy(alpha = 0.30f * connGlow),
+                                0.42f to RefGlowOn.copy(alpha = 0.13f * connGlow),
+                                0.66f to RefGlowOn.copy(alpha = 0.045f * connGlow),
+                                1.00f to Color.Transparent,
+                            ),
+                        )
+                    },
+            )
+        }
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
