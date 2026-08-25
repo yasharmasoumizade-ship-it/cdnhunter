@@ -5,10 +5,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -26,17 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -92,8 +90,9 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     var mode by remember { mutableStateOf(AuthMode.LOGIN) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(true) }
+    var agreeTerms by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -128,23 +127,43 @@ fun AuthScreen(onSignedIn: () -> Unit) {
         }
     }
 
+    // Submit handler shared by the primary button (email/password auth).
+    val submit = {
+        error = null; notice = null
+        when {
+            email.isBlank() || password.isBlank() ->
+                error = "Please enter your email and password."
+            mode == AuthMode.SIGNUP && !agreeTerms ->
+                error = "Please agree to the Terms & Privacy Policy to continue."
+            else -> {
+                loading = true
+                if (mode == AuthMode.LOGIN) {
+                    auth.signInWithEmailAndPassword(email.trim(), password)
+                        .addOnSuccessListener { onSignedIn() }
+                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
+                } else {
+                    auth.createUserWithEmailAndPassword(email.trim(), password)
+                        .addOnSuccessListener { onSignedIn() }
+                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
+                }
+            }
+        }
+    }
+
     // Cosmic backdrop: a slow-breathing blue nebula glow behind a faint starfield.
     val inf = rememberInfiniteTransition(label = "bg")
     val glow by inf.animateFloat(0.12f, 0.20f, infiniteRepeatable(tween(4500, easing = EaseInOutSine), RepeatMode.Reverse), label = "g")
-    val pulse by inf.animateFloat(0.97f, 1.03f, infiniteRepeatable(tween(3000, easing = EaseInOutSine), RepeatMode.Reverse), label = "p")
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(BgDark)) {
 
-        // Blue nebula glow, top-center
         Box(
             Modifier.size(420.dp).align(Alignment.TopCenter).offset(y = (-150).dp).blur(130.dp)
                 .background(Brush.radialGradient(listOf(AccentGlow.copy(alpha = glow), Color.Transparent)), CircleShape)
         )
 
-        // Faint starfield
         repeat(28) { i ->
             val x = (i * 37 % 360).dp
             val y = (i * 53 % 760).dp
@@ -164,131 +183,68 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 28.dp)
-                    .padding(top = 72.dp, bottom = 28.dp),
+                    .padding(top = 56.dp, bottom = 32.dp),
                 horizontalAlignment = Alignment.Start
             ) {
 
-                // Cosmic monogram hero — glowing orb, centered
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Box(
-                        Modifier.size(150.dp).drawBehind {
-                            drawCircle(
-                                Brush.radialGradient(
-                                    0f to AccentGlow.copy(alpha = 0.34f),
-                                    0.45f to AccentGlow.copy(alpha = 0.14f),
-                                    1f to Color.Transparent
-                                )
-                            )
-                        },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            Modifier.size(78.dp).scale(pulse)
-                                .background(Brush.linearGradient(listOf(AccentLight, AccentGlow)), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("A", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(28.dp))
-
-                // Large left-aligned page title (mode-aware)
-                Text(
-                    if (mode == AuthMode.LOGIN) "Sign in" else "Create account",
-                    fontSize = 34.sp, fontWeight = FontWeight.Bold, color = TextHi
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (mode == AuthMode.LOGIN) "Welcome back to Ananas VPN"
-                    else "Join Ananas VPN in a few seconds",
-                    fontSize = 14.sp, color = TextMid
-                )
-
-                Spacer(Modifier.height(26.dp))
-
-                // Sliding-thumb tab toggle
-                BoxWithConstraints(
-                    Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp))
-                        .background(FieldBg).padding(4.dp)
-                ) {
-                    val tabWidth = maxWidth / 2
-                    val thumbOffset by animateDpAsState(
-                        targetValue = if (mode == AuthMode.LOGIN) 0.dp else tabWidth,
-                        animationSpec = tween(260, easing = FastOutSlowInEasing),
-                        label = "tabThumb"
-                    )
-                    Box(
-                        Modifier.offset(x = thumbOffset).width(tabWidth).height(38.dp)
-                            .clip(RoundedCornerShape(11.dp)).background(Accent.copy(.15f))
-                    )
-                    Row(Modifier.fillMaxWidth()) {
-                        listOf(AuthMode.LOGIN to "Sign In", AuthMode.SIGNUP to "Sign Up").forEach { (m, label) ->
-                            val textColor by animateColorAsState(
-                                targetValue = if (mode == m) Accent else TextMid,
-                                animationSpec = tween(260), label = "tabText"
-                            )
-                            Box(
-                                Modifier.weight(1f).clickable { mode = m; error = null; notice = null }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                            }
-                        }
-                    }
-                }
+                // Cosmic hero — abstract, mode-aware (a portal for login, a constellation for signup)
+                CosmicHero(mode = mode, modifier = Modifier.fillMaxWidth().height(200.dp))
 
                 Spacer(Modifier.height(20.dp))
 
-                // Fields — flat, borderless, leading-icon (adapted from the Figma pill fields)
-                AnimatedContent(targetState = mode, label = "fields") { m ->
-                    Column {
-                        if (m == AuthMode.SIGNUP) {
-                            AuthField("Username", username, { username = it }, Icons.Default.Person)
-                            Spacer(Modifier.height(12.dp))
-                        }
-                        AuthField("Email", email, { email = it }, Icons.Default.Email, KeyboardType.Email)
-                        Spacer(Modifier.height(12.dp))
-                        AuthField(
-                            "Password", password, { password = it }, Icons.Default.Lock,
-                            KeyboardType.Password,
-                            if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton({ passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        if (passwordVisible) "Hide password" else "Show password",
-                                        tint = TextMid
-                                    )
-                                }
-                            }
-                        )
-                    }
-                }
+                // Large left-aligned page title (matches the Figma title placement)
+                Text(
+                    if (mode == AuthMode.LOGIN) "Login" else "Sign up",
+                    fontSize = 40.sp, fontWeight = FontWeight.Bold, color = TextHi
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (mode == AuthMode.LOGIN) "Welcome back — sign in to continue."
+                    else "Create your account to get started.",
+                    fontSize = 14.sp, color = TextMid
+                )
 
-                // Forgot-password (login only) — sends a Firebase reset email
-                if (mode == AuthMode.LOGIN) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Text(
-                            "Forgot password?",
-                            fontSize = 12.sp, color = Accent, fontWeight = FontWeight.Medium,
-                            modifier = Modifier.clickable {
-                                val target = email.trim()
-                                if (target.isEmpty()) {
-                                    error = "Enter your email first, then tap Forgot password."
-                                    notice = null
-                                } else {
-                                    error = null
-                                    auth.sendPasswordResetEmail(target)
-                                        .addOnSuccessListener { notice = "Password reset email sent to $target." }
-                                        .addOnFailureListener { e -> error = friendlyAuthError(e.message) }
-                                }
-                            }
-                        )
+                Spacer(Modifier.height(28.dp))
+
+                // Fields — flat, borderless, leading-icon inside (adapted from the Figma pills)
+                AuthField("Email", email, { email = it }, Icons.Default.Email, KeyboardType.Email)
+                Spacer(Modifier.height(14.dp))
+                AuthField(
+                    "Password", password, { password = it }, Icons.Default.Lock,
+                    KeyboardType.Password,
+                    if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton({ passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                if (passwordVisible) "Hide password" else "Show password",
+                                tint = TextMid
+                            )
+                        }
                     }
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // Checkbox row — "Remember me" (login) / agree-to-terms (signup)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val checked = if (mode == AuthMode.LOGIN) rememberMe else agreeTerms
+                    Checkbox(
+                        checked = checked,
+                        onCheckedChange = {
+                            if (mode == AuthMode.LOGIN) rememberMe = it
+                            else { agreeTerms = it; if (it) error = null }
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = Accent, uncheckedColor = TextLow, checkmarkColor = Color.White
+                        )
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (mode == AuthMode.LOGIN) "Remember me"
+                        else "I agree to the Terms & Privacy Policy",
+                        fontSize = 13.sp, color = TextMid
+                    )
                 }
 
                 error?.let {
@@ -302,21 +258,10 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
                 Spacer(Modifier.height(22.dp))
 
-                // Primary action
+                // Primary action — our blue accent gradient
                 Button(
-                    onClick = {
-                        error = null; notice = null; loading = true
-                        if (mode == AuthMode.LOGIN) {
-                            auth.signInWithEmailAndPassword(email, password)
-                                .addOnSuccessListener { onSignedIn() }
-                                .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
-                        } else {
-                            auth.createUserWithEmailAndPassword(email, password)
-                                .addOnSuccessListener { onSignedIn() }
-                                .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    onClick = submit,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                     contentPadding = PaddingValues(0.dp),
@@ -330,43 +275,153 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                         if (loading) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                         } else {
-                            Text(if (mode == AuthMode.LOGIN) "Sign In" else "Create Account",
-                                color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(if (mode == AuthMode.LOGIN) "Login" else "Sign up",
+                                color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         }
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
+                // Forget the Password? (login only) — real Firebase reset email
+                if (mode == AuthMode.LOGIN) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Forget the Password?",
+                        fontSize = 13.sp, color = TextMid,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable {
+                            val target = email.trim()
+                            if (target.isEmpty()) {
+                                error = "Enter your email first, then tap Forget the Password."
+                                notice = null
+                            } else {
+                                error = null
+                                auth.sendPasswordResetEmail(target)
+                                    .addOnSuccessListener { notice = "Password reset email sent to $target." }
+                                    .addOnFailureListener { e -> error = friendlyAuthError(e.message) }
+                            }
+                        }
+                    )
+                }
 
-                // "or" divider
+                Spacer(Modifier.height(26.dp))
+
+                // OR Continue with — divider
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Divider(Modifier.weight(1f), color = HairBorder)
-                    Text("  or continue with  ", fontSize = 11.sp, color = TextLow)
+                    Text("  OR Continue with  ", fontSize = 11.sp, color = TextLow)
                     Divider(Modifier.weight(1f), color = HairBorder)
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(20.dp))
 
-                // Google (the only wired provider)
-                OutlinedButton(
-                    onClick = { launcher.launch(googleClient.signInIntent) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, HairBorder),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg)
+                // Google — the only wired provider, a single centered tile
+                Box(
+                    Modifier.align(Alignment.CenterHorizontally)
+                        .size(width = 72.dp, height = 56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(FieldBg)
+                        .clickable(onClickLabel = "Continue with Google") { launcher.launch(googleClient.signInIntent) },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("G", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Accent)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Continue with Google", color = TextHi, fontSize = 14.sp)
+                    Text("G", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Accent)
                 }
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(24.dp))
 
-                Text(
-                    "By continuing you agree to our Terms & Privacy Policy",
-                    fontSize = 10.sp, color = TextLow, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                // Bottom text-link mode switch (replaces the top tab toggle)
+                Row(
+                    Modifier.align(Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (mode == AuthMode.LOGIN) "Don't have an account? " else "Already have an account? ",
+                        fontSize = 13.sp, color = TextMid
+                    )
+                    Text(
+                        if (mode == AuthMode.LOGIN) "Sign up" else "Login",
+                        fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable {
+                            mode = if (mode == AuthMode.LOGIN) AuthMode.SIGNUP else AuthMode.LOGIN
+                            error = null; notice = null
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Abstract, procedurally-drawn cosmic hero — no image assets required.
+ *  Login → a glowing "portal" (concentric rings + core + orbiting spark) evoking entry/return.
+ *  Signup → a "constellation" (connected twinkling stars) evoking creating/joining. */
+@Composable
+private fun CosmicHero(mode: AuthMode, modifier: Modifier = Modifier) {
+    val inf = rememberInfiniteTransition(label = "hero")
+    val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(24000, easing = LinearEasing)), label = "rot")
+    val breathe by inf.animateFloat(0.9f, 1.1f, infiniteRepeatable(tween(3200, easing = EaseInOutSine), RepeatMode.Reverse), label = "br")
+
+    Canvas(modifier) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val c = Offset(cx, cy)
+        val unit = minOf(size.width, size.height)
+
+        // Ambient core glow (shared by both motifs)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(AccentGlow.copy(alpha = 0.22f), Color.Transparent),
+                center = c, radius = unit * 0.5f
+            ),
+            radius = unit * 0.5f, center = c
+        )
+
+        if (mode == AuthMode.LOGIN) {
+            listOf(0.44f to 0.30f, 0.34f to 0.45f, 0.24f to 0.65f).forEach { (r, a) ->
+                drawCircle(
+                    color = Accent.copy(alpha = a),
+                    radius = unit * r, center = c,
+                    style = Stroke(width = 2.dp.toPx())
                 )
+            }
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color.White, AccentLight, Color.Transparent),
+                    center = c, radius = unit * 0.16f * breathe
+                ),
+                radius = unit * 0.16f * breathe, center = c
+            )
+            val rad = Math.toRadians(rot.toDouble())
+            val spark = Offset(
+                cx + (unit * 0.44f) * kotlin.math.cos(rad).toFloat(),
+                cy + (unit * 0.44f) * kotlin.math.sin(rad).toFloat()
+            )
+            drawCircle(color = AccentLight, radius = unit * 0.028f, center = spark)
+        } else {
+
+            val pts = listOf(
+                Offset(-0.34f, -0.22f), Offset(-0.10f, -0.36f), Offset(0.20f, -0.18f),
+                Offset(0.36f, 0.14f), Offset(0.06f, 0.30f), Offset(-0.26f, 0.20f)
+            )
+            val rad = Math.toRadians(rot.toDouble() * 0.15)
+            val cos = kotlin.math.cos(rad).toFloat()
+            val sin = kotlin.math.sin(rad).toFloat()
+            val world = pts.map { p ->
+                val px = p.x * unit; val py = p.y * unit
+                Offset(cx + (px * cos - py * sin), cy + (px * sin + py * cos))
+            }
+            for (i in world.indices) {
+                val a = world[i]; val b = world[(i + 1) % world.size]
+                drawLine(color = Accent.copy(alpha = 0.28f), start = a, end = b, strokeWidth = 1.5.dp.toPx())
+            }
+            world.forEachIndexed { i, p ->
+                val glowR = unit * (if (i % 2 == 0) 0.03f else 0.022f) * breathe
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(AccentLight, Color.Transparent),
+                        center = p, radius = glowR * 2.4f
+                    ),
+                    radius = glowR * 2.4f, center = p
+                )
+                drawCircle(color = Color.White, radius = glowR, center = p)
             }
         }
     }
