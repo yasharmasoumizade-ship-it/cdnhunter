@@ -1700,24 +1700,33 @@ private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean)
         Modifier.size(36.dp),
         contentAlignment = Alignment.Center,
     ) {
+        if (active) {
+            // A real bloom, not a coloured Modifier.shadow. On a bare glyph the platform shadow
+            // only smeared the icon's own alpha a few px downward in a near-black tint — it read
+            // as a smudge under the mark, never as light. A soft RefAccent radial behind the glyph
+            // reads as the glyph itself being lit: brightest at the centre, gone by the box edge,
+            // so the whole mark glows its accent colour the way an active control should.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                0.00f to RefAccent.copy(alpha = 0.55f),
+                                0.42f to RefAccent.copy(alpha = 0.24f),
+                                0.72f to RefAccent.copy(alpha = 0.07f),
+                                1.00f to Color.Transparent,
+                            ),
+                            radius = size.minDimension * 0.60f,
+                        )
+                    },
+            )
+        }
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier
-                .size(22.dp)
-                .then(
-                    if (active) {
-                        Modifier.shadow(
-                            elevation = 6.dp,
-                            shape = CircleShape,
-                            ambientColor = RefAccent,
-                            spotColor = RefAccent,
-                        )
-                    } else {
-                        Modifier
-                    }
-                ),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
