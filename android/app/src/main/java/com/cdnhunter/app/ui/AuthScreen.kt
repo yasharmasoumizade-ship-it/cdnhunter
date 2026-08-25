@@ -180,7 +180,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
 
                         // Tab toggle: a sliding thumb behind the two labels, animated on mode change.
                         BoxWithConstraints(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(12.dp))
                                 .background(FieldBg).padding(4.dp)
                         ) {
                             val tabWidth = maxWidth / 2
@@ -193,7 +193,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                                 Modifier
                                     .offset(x = thumbOffset)
                                     .width(tabWidth)
-                                    .fillMaxHeight()
+                                    .height(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(Accent.copy(.15f))
                             )
