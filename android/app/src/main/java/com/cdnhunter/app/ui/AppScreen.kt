@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -740,7 +741,7 @@ fun AppScreen(onSignOut: () -> Unit = {}) {
 }
 
 // ── ANANAS navigation (Home ⇄ Locations / My Configs / Settings / Profile) ─────
-private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNNEL }
+private enum class AnanasScreen { HOME, LOCATIONS, SETTINGS, PROFILE, SPLIT_TUNNEL, PAYMENT_HISTORY }
 
 /**
  * How long a connect request keeps the hero's connecting surface lit on its own,
@@ -1554,8 +1555,14 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 account = account,
             )
 
-            AnanasScreen.PROFILE -> ProfileScreen(onBack = { navigateBack() }, account = account, onSignOut = onSignOut)
+            AnanasScreen.PROFILE -> ProfileScreen(
+                onBack = { navigateBack() },
+                account = account,
+                onSignOut = onSignOut,
+                onPaymentHistory = { navigateTo(AnanasScreen.PAYMENT_HISTORY) },
+            )
             AnanasScreen.SPLIT_TUNNEL -> SplitTunnelScreen(onBack = { navigateBack() })
+            AnanasScreen.PAYMENT_HISTORY -> PaymentHistoryScreen(onBack = { navigateBack() }, account = account)
         }
     }
 }
@@ -3526,7 +3533,7 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
 // the same gutter, card corner and section labels. Contents are still placeholder; wiring
 // this to a real account is separate work.
 @Composable
-private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit) {
+private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit, onPaymentHistory: () -> Unit) {
     val context = LocalContext.current
     var showSignOutDialog by remember { mutableStateOf(false) }
     if (showSignOutDialog) {
@@ -3634,7 +3641,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
         CardGroup {
             SettingsRow(Icons.Rounded.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
             RowDivider()
-            SettingsRow(Icons.Rounded.History, "Payment history", null, AnanasBlue, showChevron = true)
+            SettingsRow(Icons.Rounded.History, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
             RowDivider()
             // The one destructive row in the app, so it is the one row whose label is not
             // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
@@ -3657,6 +3664,76 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
                 )
             }
         }
+    }
+}
+
+/**
+ * Payment history. There is no billing/transaction backend, so [AccountUiState.payments] is always
+ * empty today and this shows a clean empty state rather than fabricated rows. When a real source
+ * exists, populate `payments` and the transaction list below renders automatically — no other
+ * change needed here.
+ */
+@Composable
+private fun PaymentHistoryScreen(onBack: () -> Unit, account: AccountUiState) {
+    SheetScreen(title = "Payment history", onBack = onBack) {
+        if (account.payments.isEmpty()) {
+            EmptyState(
+                icon = Icons.Rounded.ReceiptLong,
+                title = "No payment history yet",
+                subtitle = "Your transactions will appear here once billing is available.",
+            )
+        } else {
+            SectionLabel("TRANSACTIONS", top = 8.dp)
+            CardGroup {
+                account.payments.forEachIndexed { i, record ->
+                    if (i > 0) RowDivider()
+                    PaymentRow(record)
+                }
+            }
+        }
+    }
+}
+
+/** A centered icon + title + subtitle used for "nothing here yet" screens. */
+@Composable
+private fun EmptyState(icon: ImageVector, title: String, subtitle: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 56.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(64.dp).clip(CircleShape).background(AnanasCard2), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = AnanasFaint, modifier = Modifier.size(30.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            subtitle,
+            fontSize = 12.5.sp,
+            color = AnanasMuted,
+            lineHeight = 18.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+    }
+}
+
+/** One transaction row. Renders only when a real payment source populates
+ *  [AccountUiState.payments]; the shape is ready so no layout work is needed when billing lands. */
+@Composable
+private fun PaymentRow(record: PaymentRecord) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = SheetRowHeight).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        IconTile(Icons.Rounded.ReceiptLong, AnanasAccent)
+        Column(Modifier.weight(1f)) {
+            Text(record.description, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Text(record.dateLabel, fontSize = 11.5.sp, color = AnanasMuted)
+        }
+        Text(record.amountLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
     }
 }
 
