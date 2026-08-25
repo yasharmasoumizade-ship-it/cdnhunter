@@ -327,18 +327,41 @@ object VpnConfigBuilder {
                 add("IP-CIDR,192.168.0.0/16,DIRECT")
                 add("IP-CIDR,169.254.0.0/16,DIRECT")
                 add("IP-CIDR,127.0.0.0/8,DIRECT")
+                // ===== mihomo's OWN resolver IPs — exempt, route via PROXY =====
+                // CRITICAL: with respect-rules:true (set above) mihomo's own DNS
+                // client dials its `nameserver` entries THROUGH this same rule list,
+                // exactly like any app's traffic. The `nameserver` here is Google DoH
+                // (https://8.8.8.8/dns-query, https://8.8.4.4/dns-query — or the user's
+                // custom DNS). The IP-CIDR REJECT rules just below were added a day
+                // after respect-rules, in a separate commit, and list those very same
+                // IPs — so mihomo was REJECTING ITS OWN DNS RESOLVER. Effect:
+                //   • every DIRECT-rule destination (all the Iran GEOSITE/RULE-SET
+                //     domains) needs a local resolve to get a real IP to dial direct —
+                //     that resolve went to 8.8.8.8, got REJECTed, so Iran traffic could
+                //     not be dialed DIRECT and silently failed;
+                //   • DoH itself never worked — the resolver could never reach its DoH
+                //     endpoint at all.
+                //   • proxied (foreign) traffic still worked, because the proxy resolves
+                //     those domains remotely — which is exactly why the app looked
+                //     "connected and working" while Iran-direct and DoH were both dead.
+                // Route the resolver's own IPs to PROXY (honouring respect-rules' intent
+                // that DNS travel encrypted through the tunnel — the reliable path from
+                // inside Iran, where direct :443 to 8.8.8.8 is often blocked), placed
+                // ABOVE the anti-bypass rejects so they win, and drop them from the
+                // reject set below. proxy-server-nameserver resolves the proxy host
+                // itself out-of-band, so this cannot loop.
+                val resolverIps = nameservers.mapNotNull { literalDnsIp(it) }.distinct()
+                for (ip in resolverIps) add("IP-CIDR,$ip/32,PROXY,no-resolve")
                 // Known DoH/DoT provider IPs -- catches direct-to-IP DNS bypass
                 // attempts with no hostname/SNI at all for the sniffer to see
                 // (e.g. an app hardcoded to dial 8.8.8.8:443 or 1.1.1.1:853
-                // instead of resolving a DoH hostname first).
-                add("IP-CIDR,8.8.8.8/32,REJECT")
-                add("IP-CIDR,8.8.4.4/32,REJECT")
-                add("IP-CIDR,1.1.1.1/32,REJECT")
-                add("IP-CIDR,1.0.0.1/32,REJECT")
-                add("IP-CIDR,9.9.9.9/32,REJECT")
-                add("IP-CIDR,149.112.112.112/32,REJECT")
-                add("IP-CIDR,208.67.222.222/32,REJECT")
-                add("IP-CIDR,208.67.220.220/32,REJECT")
+                // instead of resolving a DoH hostname first). Any IP we ourselves
+                // use as a resolver is exempted above, so we never reject our own DNS.
+                val dohBypassIps = listOf(
+                    "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9",
+                    "149.112.112.112", "208.67.222.222", "208.67.220.220",
+                )
+                for (ip in dohBypassIps) if (ip !in resolverIps) add("IP-CIDR,$ip/32,REJECT")
                 // Known DoH/DoT provider hostnames -- REJECT before anything else.
                 // sniffer (enabled above) extracts these from the TLS SNI of the
                 // HTTPS/DoT connection itself, so this catches an app dialing a
@@ -489,6 +512,31 @@ object VpnConfigBuilder {
             is List<*> -> writeYamlValue(sb, item, indent + 1)
             else -> sb.append(scalar(item)).append("\n")
         }
+    }
+
+    // Pulls the literal IP out of a nameserver entry so it can be exempted from
+    // the DoH-bypass REJECT rules (see the resolver-exemption block in rules).
+    // "https://8.8.8.8/dns-query" -> "8.8.8.8", "8.8.4.4:53" -> "8.8.4.4",
+    // "quic://1.1.1.1" -> "1.1.1.1", "[2606:4700::1111]:53" -> "2606:4700::1111".
+    // A hostname-based resolver ("https://dns.google/dns-query") has no literal to
+    // pull and returns null — nothing to exempt by IP (it would be caught, if at
+    // all, by the DOMAIN rules, which our default IP-based resolvers never hit).
+    private val IPV4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+
+    private fun literalDnsIp(entry: String): String? {
+        var s = entry.trim()
+            .removePrefix("https://").removePrefix("http://")
+            .removePrefix("quic://").removePrefix("tls://").removePrefix("h3://")
+            .substringBefore("/")   // strip DoH path
+        // Bracketed IPv6, optional :port — "[::1]:53" -> "::1".
+        if (s.startsWith("[")) {
+            return s.substringAfter("[").substringBefore("]").takeIf { it.contains(":") }
+        }
+        // Bare IPv6 literal (more than one colon, so not "ipv4:port").
+        if (s.count { it == ':' } > 1) return s
+        // IPv4, optionally ":port".
+        s = s.substringBefore(":")
+        return s.takeIf { IPV4.matches(it) }
     }
 
     private fun scalar(v: Any?): String = when (v) {
