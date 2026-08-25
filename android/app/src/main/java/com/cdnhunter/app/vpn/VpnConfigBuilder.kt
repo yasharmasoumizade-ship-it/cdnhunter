@@ -352,6 +352,17 @@ object VpnConfigBuilder {
                 // itself out-of-band, so this cannot loop.
                 val resolverIps = nameservers.mapNotNull { literalDnsIp(it) }.distinct()
                 for (ip in resolverIps) add("IP-CIDR,$ip/32,PROXY,no-resolve")
+                // A HOSTNAME-based resolver (a custom DoH like https://dns.google/dns-query)
+                // has no literal IP to exempt above — and its host collides head-on with the
+                // DOMAIN,...,REJECT list below: `dns.google` IS in that list. Reproduced from
+                // this exact code (see /tmp doh repro): a custom resolver of
+                // "https://dns.google/dns-query" yields resolverIps=[] (so 8.8.8.8 is no longer
+                // exempted and gets REJECTed) AND a `DOMAIN,dns.google,REJECT` that rejects the
+                // user's own resolver — killing all DNS. Exempt resolver hosts to PROXY here,
+                // mirroring the IP exemption, and drop them from the reject set below.
+                val resolverHosts = nameservers.mapNotNull { literalDnsHost(it) }.distinct()
+                for (host in resolverHosts) add("DOMAIN,$host,PROXY")
+
                 // Known DoH/DoT provider IPs -- catches direct-to-IP DNS bypass
                 // attempts with no hostname/SNI at all for the sniffer to see
                 // (e.g. an app hardcoded to dial 8.8.8.8:443 or 1.1.1.1:853
@@ -362,7 +373,8 @@ object VpnConfigBuilder {
                     "149.112.112.112", "208.67.222.222", "208.67.220.220",
                 )
                 for (ip in dohBypassIps) if (ip !in resolverIps) add("IP-CIDR,$ip/32,REJECT")
-                // Known DoH/DoT provider hostnames -- REJECT before anything else.
+                // Known DoH/DoT provider hostnames -- REJECT before anything else, EXCEPT any
+                // host the user configured as their own resolver (exempted to PROXY just above).
                 // sniffer (enabled above) extracts these from the TLS SNI of the
                 // HTTPS/DoT connection itself, so this catches an app dialing a
                 // DoH endpoint directly even though mihomo's own DNS client never
@@ -372,18 +384,13 @@ object VpnConfigBuilder {
                 // :443 that looks identical to any other website until you read
                 // its SNI). Rejecting forces the app's own fallback path to the
                 // system resolver, which dns-hijack already fully controls.
-                add("DOMAIN,dns.google,REJECT")
-                add("DOMAIN,dns.google.com,REJECT")
-                add("DOMAIN,cloudflare-dns.com,REJECT")
-                add("DOMAIN,mozilla.cloudflare-dns.com,REJECT")
-                add("DOMAIN,dns.quad9.net,REJECT")
-                add("DOMAIN,doh.opendns.com,REJECT")
-                add("DOMAIN,dns.adguard.com,REJECT")
-                add("DOMAIN,doh.dns.sb,REJECT")
-                add("DOMAIN,dns.alidns.com,REJECT")
-                add("DOMAIN,doh.pub,REJECT")
-                add("DOMAIN,dns.nextdns.io,REJECT")
-                add("DOMAIN,ordns.he.net,REJECT")
+                val dohRejectHosts = listOf(
+                    "dns.google", "dns.google.com", "cloudflare-dns.com",
+                    "mozilla.cloudflare-dns.com", "dns.quad9.net", "doh.opendns.com",
+                    "dns.adguard.com", "doh.dns.sb", "dns.alidns.com", "doh.pub",
+                    "dns.nextdns.io", "ordns.he.net",
+                )
+                for (host in dohRejectHosts) if (host !in resolverHosts) add("DOMAIN,$host,REJECT")
 
                 // Ad/tracker/malware blocking — REJECT before anything else so
                 // the request dies on the device and never reaches the proxy.
@@ -537,6 +544,22 @@ object VpnConfigBuilder {
         // IPv4, optionally ":port".
         s = s.substringBefore(":")
         return s.takeIf { IPV4.matches(it) }
+    }
+
+    // The hostname of a hostname-based resolver entry ("https://dns.google/dns-query"
+    // -> "dns.google", "tls://dns.adguard.com" -> "dns.adguard.com"), or null when the
+    // entry is an IP literal (handled by [literalDnsIp]) or a bare IPv6. Used to exempt a
+    // user's custom DoH host from the DOMAIN,...,REJECT block so we never reject the very
+    // resolver we were told to use. A host must look like a hostname (has a dot, not an
+    // IPv4 literal) to qualify.
+    private fun literalDnsHost(entry: String): String? {
+        var s = entry.trim()
+            .removePrefix("https://").removePrefix("http://")
+            .removePrefix("quic://").removePrefix("tls://").removePrefix("h3://")
+            .substringBefore("/")   // strip DoH path
+        if (s.startsWith("[")) return null      // bracketed IPv6 — no hostname
+        s = s.substringBefore(":")               // strip :port
+        return s.takeIf { it.isNotBlank() && it.contains(".") && !IPV4.matches(it) }
     }
 
     private fun scalar(v: Any?): String = when (v) {
