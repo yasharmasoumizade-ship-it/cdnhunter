@@ -2923,7 +2923,10 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                // The magnifier is the row's only control, so it is pinned flush to the
+                // trailing (right) edge — [Arrangement.End] places a lone child at the end,
+                // where [Arrangement.SpaceBetween] would leave it parked at the start.
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
@@ -3330,11 +3333,13 @@ private fun ServerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            // The mockup has no selected state; the active server gets the faintest tint,
-            // and its title goes bold. There used to be a teal dot beside the name as well;
-            // it is gone, along with the row's `dotColor` parameter — with a tint and a
-            // weight already saying "this is the one", a third marker was just a speck.
-            .background(if (isActive) Color.White.copy(alpha = 0.03f) else Color.Transparent)
+            // The mockup has no selected state; the active server gets a faint accent-blue
+            // wash, and its title goes bold. There used to be a teal dot beside the name as
+            // well; it is gone, along with the row's `dotColor` parameter — with a tint and a
+            // weight already saying "this is the one", a third marker was just a speck. The
+            // wash is blue rather than plain white so the selection reads on-brand rather than
+            // as a generic highlight, and stays restrained enough not to compete with the row.
+            .background(if (isActive) RefAccent.copy(alpha = 0.06f) else Color.Transparent)
             // The row is a full-width tap target and it keeps the platform's 48dp floor,
             // which is the one dimension on this screen that is not a style decision. The
             // compaction below takes the *padding* out and leaves the target alone: a 42dp
@@ -3384,9 +3389,11 @@ private fun ServerRow(
 
 /**
  * .load-bars — three 3dp bars, 6/9/12dp tall. The mockup paints the best tier green,
- * which this screen no longer uses anywhere, so the fast tier is [RefLive] instead. How
- * many light up follows the app's own ping tiers (<80ms, <180ms, worse), so the row still
- * says how good the server is, not just what colour it is.
+ * which this screen never uses, so the fast tier is the accent blue [RefAccent] instead —
+ * the same accent that marks the selected row, so "good" reads as on-brand rather than as a
+ * stray colour. How many light up follows the app's own ping tiers (<80ms, <180ms, worse), so
+ * the row still says how good the server is, not just what colour it is. The two degraded
+ * tiers keep their amber/red as semantic warning colours.
  */
 @Composable
 private fun LoadBars(pingMs: Int) {
@@ -3398,7 +3405,7 @@ private fun LoadBars(pingMs: Int) {
     }
     val color = when {
         pingMs < 0 -> RefBorder
-        filled == 3 -> RefLive
+        filled == 3 -> RefAccent
         filled == 2 -> RefLoadMed
         else -> RefLoadHigh
     }
