@@ -1687,27 +1687,27 @@ private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
 private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean) {
     val tint = if (active) RefAccent else Color.White.copy(alpha = 0.22f)
     Box(
-        Modifier
-            .size(26.dp)
-            .then(
-                if (active) {
-                    Modifier.drawBehind {
-                        drawCircle(
-                            color = RefAccent.copy(alpha = 0.18f),
-                            radius = size.minDimension / 1.6f,
-                        )
-                    }
-                } else {
-                    Modifier
-                }
-            ),
+        Modifier.size(36.dp),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(15.dp),
+            modifier = Modifier
+                .size(22.dp)
+                .then(
+                    if (active) {
+                        Modifier.shadow(
+                            elevation = 6.dp,
+                            shape = CircleShape,
+                            ambientColor = RefAccent,
+                            spotColor = RefAccent,
+                        )
+                    } else {
+                        Modifier
+                    }
+                ),
         )
     }
 }
@@ -1748,7 +1748,7 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             CountryHeadline(state)
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(28.dp))
         StatusFeatureIcons(modifier = Modifier.offset(x = (-2).dp))
         // The open flag under the top row. The public-IP readout is no longer here — it now floats
         // below-right of the connect disc (drawn as an overlay by [HomeScreen]), so this stays clear
