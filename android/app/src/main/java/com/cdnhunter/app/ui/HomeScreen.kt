@@ -2469,18 +2469,9 @@ private fun PowerCircle(
         animationSpec = motionSpec(reduce, 140),
         label = "powerPressShade",
     )
-    // The ignition ring — see [POWER_IGNITION_MS]. Keyed on the phase, so it fires once per
-    // actual connection and not on recomposition, and snapped back to zero in every other
-    // state so a disconnect cannot leave a half-drawn ring behind.
-    val ignition = remember { Animatable(0f) }
-    LaunchedEffect(phase, reduce) {
-        if (phase == ConnPhase.CONNECTED && !reduce) {
-            ignition.snapTo(0f)
-            ignition.animateTo(1f, tween(POWER_IGNITION_MS, easing = FastOutSlowInEasing))
-        } else {
-            ignition.snapTo(0f)
-        }
-    }
+    // The ring reports the connection: a turning comet while connecting, and a lit [RefLive]
+    // ring — traced on by an ignition sweep on the instant of connect — once up. All of that
+    // now lives in [PowerRing], keyed on the same phase, so the disc itself carries no ring state.
     // The one coloured face left, over the white disc that is always there, so no value
     // of it can leave the button transparent mid-crossfade. There is deliberately no
     // second one for CONNECTED — see the section comment: the connected state is
@@ -2525,9 +2516,6 @@ private fun PowerCircle(
         else -> "Connect"
     }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // The ignition halo, behind everything and outside the box: [Modifier.requiredSize]
-        // is what lets it be bigger than its parent instead of clipped to it.
-
         // The ring band, under the disc's own scale so a press doesn't drag it in.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
@@ -2780,6 +2768,21 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "powerArcLive",
     )
+    // Ignition: a one-shot bright trace that draws the live ring on the instant the tunnel
+    // comes up, then hands off to the steady lit ring. Keyed on the phase so it fires once per
+    // real connect, not on recomposition; snapped straight to full when already connected (a
+    // recompose while up) or to zero in every other state so a disconnect leaves nothing behind.
+    val ignite = remember { Animatable(0f) }
+    LaunchedEffect(phase, reduce) {
+        when {
+            phase == ConnPhase.CONNECTED && !reduce -> {
+                ignite.snapTo(0f)
+                ignite.animateTo(1f, tween(POWER_IGNITION_MS, easing = FastOutSlowInEasing))
+            }
+            phase == ConnPhase.CONNECTED -> ignite.snapTo(1f)
+            else -> ignite.snapTo(0f)
+        }
+    }
     Canvas(modifier) {
         val stroke = PowerRingStroke.toPx()
         val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
@@ -2813,6 +2816,38 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
                     brush = powerComet(working, center),
                     startAngle = 0f,
                     sweepAngle = POWER_ARC_SWEEP_DEG,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+
+        if (live > 0.01f) {
+            // Connected: the band lights in [RefLive]. Two passes so it reads as lit rather than
+            // drawn — a wide, faint underglow of the same teal bleeding out past the track, then
+            // the crisp ring over it. On the first connect the crisp ring is *traced* on by the
+            // ignition sweep (a single arc growing from 12 o'clock to full over
+            // [POWER_IGNITION_MS]); once complete, and on any later recompose, it is the whole
+            // circle. Still — no breathing — per the section note: a light in the hand, not a beacon.
+            drawCircle(
+                color = RefLive.copy(alpha = 0.24f * live),
+                radius = radius,
+                style = Stroke(width = stroke * 3.4f),
+            )
+            val sweep = if (reduce) 1f else ignite.value
+            if (sweep >= 0.999f) {
+                drawCircle(
+                    color = RefLive.copy(alpha = 0.95f * live),
+                    radius = radius,
+                    style = Stroke(width = stroke),
+                )
+            } else {
+                drawArc(
+                    color = RefLive.copy(alpha = 0.95f * live),
+                    startAngle = -90f,
+                    sweepAngle = 360f * sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
