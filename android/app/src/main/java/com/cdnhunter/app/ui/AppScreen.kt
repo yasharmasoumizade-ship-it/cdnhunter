@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -2401,16 +2402,16 @@ private fun SectionLabel(text: String, top: Dp = 26.dp) {
     )
 }
 
-/** The card a group of rows sits in — clipped, so the rows' own ripples stop at the corner.
- *  Borderless; what separates it from the page is [Modifier.sheetSurface]. */
+/** A logical group of rows on the settings list. Flat and borderless: no card fill, no outline,
+ *  no elevation, no rounded clip — the section reads as a plain list on the page wash, grouped
+ *  only by the [SectionLabel] above it and the whitespace to the next group, and split internally
+ *  by [RowDivider] hairlines. This is the iOS/Windscribe flat-list treatment the Home screen uses;
+ *  the one real bordered/elevated card left on this screen is [AccountCard] in the glass header.
+ *  Rows keep their own 14dp horizontal padding, so nothing shifts sideways when the chrome goes. */
 @Composable
 private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(SheetCardCorner)
     Column(
-        modifier.fillMaxWidth()
-            .clip(shape)
-            .background(AnanasCard)
-            .border(1.dp, AnanasBorder, shape),
+        modifier.fillMaxWidth(),
         content = content,
     )
 }
@@ -2531,13 +2532,14 @@ private fun InlineField(
 }
 
 /**
- * A two-or-three way choice as one control: a tracked capsule with the selected segment lit.
+ * A two-or-three way choice as one control: a recessed track with a single lit thumb that glides
+ * to the selected segment, rather than the fill snapping segment-to-segment. The thumb is measured
+ * to each segment's real bounds ([onGloballyPositioned]), so it fits whether the segments are
+ * content-sized (Server choice, MTU) or share the row equally ([equalWeight], the split-tunnel
+ * mode picker). Flat accent tint per the spec — no glass.
  *
  * `options` is (stored value, shown label) — the key is what goes to [AppSettings] — so the
- * control cannot drift from the persisted value.
- *
- * The track is a well and the selected segment a raised tile inside it: now that the outline is
- * gone, the choice that is on is the one standing out of the groove.
+ * control cannot drift from the persisted value. Presentation only: [onSelect] fires as before.
  */
 @Composable
 private fun SegmentedControl(
@@ -2545,52 +2547,101 @@ private fun SegmentedControl(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
-    // Off by default so the MTU row's control stays as wide as its two short words.
-    // On, each segment takes an equal share of the row — for a full-width control
-    // whose labels are sentences rather than words.
+    // Off by default so the MTU / Server-choice control stays as wide as its two short words.
+    // On, each segment takes an equal share of the row — for a full-width control whose labels
+    // are sentences rather than words.
     equalWeight: Boolean = false,
 ) {
     val trackShape = remember { RoundedCornerShape(12.dp) }
     val segShape = remember { RoundedCornerShape(10.dp) }
-    Row(
+    val density = LocalDensity.current
+
+    // The measured (x, width) of every segment, so the lit thumb can be placed on the selected one
+    // regardless of how the row laid the segments out. Segment height is uniform, tracked once.
+    val segX = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
+    val segW = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
+    var segH by remember { mutableStateOf(0f) }
+
+    val selIdx = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    val targetX = segX.getOrElse(selIdx) { 0f }
+    val targetW = segW.getOrElse(selIdx) { 0f }
+
+    val thumbX = remember { Animatable(0f) }
+    val thumbW = remember { Animatable(0f) }
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(targetX, targetW) {
+        if (targetW <= 0f) return@LaunchedEffect
+        if (!settled) {
+            // First real measurement: seat the thumb without a grow-from-zero flash on entry.
+            thumbX.snapTo(targetX)
+            thumbW.snapTo(targetW)
+            settled = true
+        } else {
+            launch { thumbX.animateTo(targetX, tween(220, easing = FastOutSlowInEasing)) }
+            launch { thumbW.animateTo(targetW, tween(220, easing = FastOutSlowInEasing)) }
+        }
+    }
+
+    Box(
         modifier
             .clip(trackShape)
-            .background(Color(0xFF0F1116))
+            .background(Color(0xFF0D0E12))
+            // Shaded at the top like the toggle track and the field wells, so the track reads as a
+            // groove and the lit thumb reads as an object standing in it, not a flat swatch.
+            .drawBehind { drawRect(brush = SheetWellShade, size = Size(size.width, size.height / 2f)) }
             .border(1.dp, AnanasBorder, trackShape)
             .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        options.forEach { (key, label) ->
-            val on = key == selected
-            val interaction = remember { MutableInteractionSource() }
-            val ink by animateColorAsState(
-                targetValue = if (on) AnanasToggleOn else AnanasMuted,
-                animationSpec = tween(160), label = "segInk",
-            )
-            // Crossfade the lit segment's fill instead of snapping it, so the selection glides
-            // across the track. Colour-only animation — the segment box never changes size, so
-            // its siblings never reflow.
-            val segBg by animateColorAsState(
-                targetValue = if (on) AnanasToggleOn.copy(alpha = 0.16f) else Color.Transparent,
-                animationSpec = tween(160), label = "segBg",
-            )
+        // The lit thumb, drawn under the labels: accent-tinted fill plus a faint accent ring,
+        // flat per the no-glass spec, sliding between segments as the selection changes.
+        if (settled && thumbW.value > 0f && segH > 0f) {
             Box(
-                (if (equalWeight) Modifier.weight(1f) else Modifier)
+                Modifier
+                    .offset { IntOffset(thumbX.value.roundToInt(), 0) }
+                    .width(with(density) { thumbW.value.toDp() })
+                    .height(with(density) { segH.toDp() })
                     .clip(segShape)
-                    .background(segBg)
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                    ) { onSelect(key) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    fontSize = 12.sp,
-                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                    color = ink,
+                    .background(AnanasToggleOn.copy(alpha = 0.16f))
+                    .border(1.dp, AnanasToggleOn.copy(alpha = 0.30f), segShape),
+            )
+        }
+        Row(
+            (if (equalWeight) Modifier.fillMaxWidth() else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            options.forEachIndexed { i, (key, label) ->
+                val on = key == selected
+                val interaction = remember { MutableInteractionSource() }
+                val ink by animateColorAsState(
+                    targetValue = if (on) AnanasAccentLight else AnanasMuted,
+                    animationSpec = tween(200), label = "segInk",
                 )
+                Box(
+                    (if (equalWeight) Modifier.weight(1f) else Modifier)
+                        .onGloballyPositioned { c ->
+                            // Record this segment's place in the track so the thumb can find it.
+                            val nx = c.positionInParent().x
+                            val nw = c.size.width.toFloat()
+                            val nh = c.size.height.toFloat()
+                            if (segX[i] != nx) segX[i] = nx
+                            if (segW[i] != nw) segW[i] = nw
+                            if (segH != nh) segH = nh
+                        }
+                        .clip(segShape)
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                        ) { onSelect(key) }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        fontSize = 12.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        color = ink,
+                    )
+                }
             }
         }
     }
