@@ -3289,7 +3289,9 @@ private fun DrawScope.drawPanelTopEdge() {
 /** The magnifier in the card's header row: white ink, accent-blue while the field is open. */
 @Composable
 private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
-    val ink by animateColorAsState(if (open) RefAccent else Color.White, tween(180), label = "searchInk")
+    // Off state matches the other inactive masthead glyphs (StatusFeatureIcon) — the muted
+    // white@22% — so the three top-bar icons read as one set; open state lights to the accent.
+    val ink by animateColorAsState(if (open) RefAccent else Color.White.copy(alpha = 0.22f), tween(180), label = "searchInk")
     Box(
         Modifier
             .size(TapTarget)
