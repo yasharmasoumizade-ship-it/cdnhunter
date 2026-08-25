@@ -1656,7 +1656,6 @@ private val HeroTopGap = 10.dp
  */
 private val HeroDockWell = PowerSize / 2
 
-@Composable
 /**
  * Small read-only status glyphs for the two protections the person cares most about at a
  * glance — Kill Switch and Ad Blocker. Lit up (full opacity + a soft glow) when the
