@@ -122,35 +122,34 @@ fun AuthScreen(onSignedIn: () -> Unit) {
             visible = visible,
             enter = fadeIn(tween(600)) + slideInVertically(tween(700, easing = EaseOutCubic)) { it / 4 }
         ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // Flat card
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(CardBg)
-                        .border(1.dp, HairBorder, RoundedCornerShape(20.dp))
-                        .padding(28.dp)
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Borderless flat layout — content sits directly on BgDark, no card frame
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
                         // Monogram badge
                         Box(
-                            Modifier.size(64.dp).scale(pulse)
+                            Modifier.size(72.dp).scale(pulse)
                                 .background(Brush.linearGradient(listOf(Accent, AccentGlow)), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("A", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("A", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
 
-                        Spacer(Modifier.height(16.dp))
-                        Text("Ananas VPN", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextHi)
+                        Spacer(Modifier.height(20.dp))
+                        Text("Ananas VPN", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextHi)
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             if (mode == AuthMode.LOGIN) "Welcome back" else "Create your account",
                             fontSize = 13.sp, color = TextMid
                         )
 
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(32.dp))
 
                         // Tab toggle
                         Row(
@@ -271,7 +270,6 @@ fun AuthScreen(onSignedIn: () -> Unit) {
             }
         }
     }
-}
 
 @Composable
 fun AuthField(
