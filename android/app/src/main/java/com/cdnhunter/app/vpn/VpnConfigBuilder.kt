@@ -182,6 +182,30 @@ object VpnConfigBuilder {
                 //
                 // Clash-side DoH: these HTTPS URLs will be proxied through Clash
                 "nameserver" to nameservers,
+                // ===== direct-nameserver: resolve DIRECT-exit domains FROM Iran =====
+                // ROOT CAUSE of "Iran routing not going DIRECT": the only resolver was
+                // `nameserver` (Google DoH), and with respect-rules:true its query to
+                // 8.8.8.8 matches the IP-CIDR,8.8.8.8,PROXY rule below — so EVERY domain,
+                // including Iranian ones the rules send DIRECT, was resolved THROUGH THE
+                // FOREIGN PROXY. Google answering from a foreign exit returns the CDN/geo
+                // answer for that foreign location, so an Iranian domain that correctly
+                // matched GEOSITE,category-ir,DIRECT was then dialled to a FOREIGN IP —
+                // i.e. it left the country anyway, or hit a blocked/wrong endpoint. The
+                // DIRECT *rule* fired, but the IP it dialled was resolved abroad.
+                //
+                // direct-nameserver is mihomo's dedicated resolver "for domain resolution
+                // at the direct exit" (docs): it is used ONLY for domains a rule routes
+                // DIRECT, and leaves proxied/foreign domains resolving via `nameserver`
+                // exactly as before. Point it at reliable in-Iran resolvers so Iranian
+                // domains resolve from inside Iran to their true local IPs and genuinely
+                // go direct. These are Iran IPs, so their own DNS connections fall to
+                // GEOIP,ir,DIRECT below — no proxy loop. Listed redundantly (Shecan +
+                // 403 + Begzar) so one resolver being down does not break local browsing.
+                "direct-nameserver" to listOf(
+                    "178.22.122.100", "185.51.200.2",   // Shecan
+                    "10.202.10.202", "10.202.10.102",   // 403 (Radar Game)
+                    "185.55.226.26", "185.55.225.25",   // Begzar
+                ),
             ),
             // Wire mihomo directly to the TUN device Android already created via
             // VpnService.Builder.establish(). Without this block mihomo only opened
