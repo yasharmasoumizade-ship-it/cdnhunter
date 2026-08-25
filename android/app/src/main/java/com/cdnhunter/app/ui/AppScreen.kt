@@ -153,21 +153,55 @@ data class SavedConfig(
 // resolution would report inflated numbers that don't match what other apps
 // show for the same server.
 //
-// Critically, the probe socket is PROTECTED against the running VPN. Without
-// this, once the tunnel is up the app's own sockets are routed INTO the tunnel,
-// so a "ping" would actually measure app -> tun -> mihomo -> (proxy or DIRECT
-// rule) -> server -- i.e. latency through whatever route the tunnel picks, which
-// for a proxied/tunneled hop reads as a falsely low or otherwise meaningless
-// number instead of the real network delay to the server. protect() pins the
-// socket to the underlying physical network so the handshake goes straight to
-// the actual server IP:port, connected or not, giving true real-world latency.
-// When no VPN service is live (instance == null) the connect is already direct,
-// so protection is simply skipped.
+// Two things must bypass the running VPN for this to measure the REAL delay to
+// the server, and BOTH matter:
+//
+//   1. DNS resolution. Once the tunnel is up, the app's own getByName() is
+//      answered by mihomo's DNS, which is in enhanced-mode: fake-ip -- so a
+//      HOSTNAME server address resolves to a synthetic 198.18.x.x fake IP, not
+//      the real server. Connecting to that fake address measures nothing real
+//      (it is unroutable on the physical network) or times out. This was the
+//      actual "it pings the domain, not the server" bug: the probe was aimed at
+//      a fake-ip the tunnel handed back. We therefore resolve the host on the
+//      UNDERLYING physical network (Wi-Fi/cellular), which uses that network's
+//      own resolver and returns the server's true public IP. IP-literal server
+//      addresses were never affected (no lookup happens) -- this fixes the
+//      hostname case.
+//   2. The socket itself. protect() plus binding the probe socket to the same
+//      underlying network keeps the handshake off the tun, so the connect goes
+//      straight to the real server IP:port rather than through mihomo's route.
+//
+// When no VPN service is live (instance == null) there is no tunnel to bypass:
+// resolution and connect are already direct, so we just use the default path.
+private fun underlyingNonVpnNetwork(context: Context): android.net.Network? {
+    return try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val candidates = buildList {
+            cm.activeNetwork?.let { add(it) }
+            addAll(cm.allNetworks.toList())
+        }
+        candidates.firstOrNull { network ->
+            val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
+            !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) &&
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
 private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
     return try {
-        val addr = java.net.InetAddress.getByName(host)
+        val svc = com.cdnhunter.app.vpn.CdnVpnService.instance
+        // Resolve on the physical network so a hostname server address never comes
+        // back as a fake-ip from the tunnel (see note above).
+        val underlying = svc?.let { underlyingNonVpnNetwork(it) }
+        val addr = if (underlying != null) underlying.getByName(host)
+                   else java.net.InetAddress.getByName(host)
         java.net.Socket().use { socket ->
-            com.cdnhunter.app.vpn.CdnVpnService.instance?.protect(socket)
+            svc?.protect(socket)
+            underlying?.bindSocket(socket)
             val started = System.currentTimeMillis()
             socket.connect(java.net.InetSocketAddress(addr, port), timeoutMs)
             (System.currentTimeMillis() - started).toInt()
