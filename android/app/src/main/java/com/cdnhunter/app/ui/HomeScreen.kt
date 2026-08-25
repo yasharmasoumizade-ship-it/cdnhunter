@@ -99,6 +99,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import com.cdnhunter.app.vpn.AppSettings
+import androidx.compose.material.icons.rounded.WifiOff
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -1653,6 +1657,63 @@ private val HeroTopGap = 10.dp
 private val HeroDockWell = PowerSize / 2
 
 @Composable
+/**
+ * Small read-only status glyphs for the two protections the person cares most about at a
+ * glance — Kill Switch and Ad Blocker. Lit up (full opacity + a soft glow) when the
+ * corresponding [AppSettings] flag is on, dimmed to a faint outline when it is off. Not
+ * clickable: this is a status readout, not a settings shortcut — the person still toggles
+ * these from Settings.
+ */
+@Composable
+private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val killSwitchOn = remember { AppSettings.killSwitchEnabled(context) }
+    val adBlockerOn = remember { AppSettings.adBlockerEnabled(context) }
+
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        StatusFeatureIcon(
+            icon = Icons.Rounded.WifiOff,
+            label = "Kill Switch",
+            active = killSwitchOn,
+        )
+        StatusFeatureIcon(
+            icon = Icons.Rounded.Block,
+            label = "Ad Blocker",
+            active = adBlockerOn,
+        )
+    }
+}
+
+@Composable
+private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean) {
+    val tint = if (active) RefAccent else Color.White.copy(alpha = 0.22f)
+    Box(
+        Modifier
+            .size(26.dp)
+            .then(
+                if (active) {
+                    Modifier.drawBehind {
+                        drawCircle(
+                            color = RefAccent.copy(alpha = 0.18f),
+                            radius = size.minDimension / 1.6f,
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(15.dp),
+        )
+    }
+}
+
+@Composable
 private fun Header(
     state: HomeUiState,
     onOpenSettings: () -> Unit,
@@ -1688,6 +1749,8 @@ private fun Header(
             Spacer(Modifier.weight(1f))
             CountryHeadline(state)
         }
+        Spacer(Modifier.height(10.dp))
+        StatusFeatureIcons(modifier = Modifier.offset(x = (-2).dp))
         // The open flag under the top row. The public-IP readout is no longer here — it now floats
         // below-right of the connect disc (drawn as an overlay by [HomeScreen]), so this stays clear
         // flag under the country plate.
