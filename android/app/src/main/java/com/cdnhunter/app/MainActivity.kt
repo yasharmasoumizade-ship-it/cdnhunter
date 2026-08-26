@@ -1,5 +1,17 @@
 package com.cdnhunter.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -72,20 +84,58 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class RootScreen { AUTH, ENTERING, HOME }
+
 @Composable
 fun MainContent(activity: MainActivity) {
     val auth = remember { FirebaseAuth.getInstance() }
-    var signedIn by remember { mutableStateOf(auth.currentUser != null) }
-
+    var screen by remember { mutableStateOf(if (auth.currentUser != null) RootScreen.ENTERING else RootScreen.AUTH) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    if (signedIn) {
-        AppScreen(onSignOut = {
-            com.cdnhunter.app.vpn.CdnVpnService.stop(context)
-            auth.signOut()
-            signedIn = false
-        })
-    } else {
-        AuthScreen(onSignedIn = { signedIn = true })
+
+    AnimatedContent(
+        targetState = screen,
+        transitionSpec = {
+            (fadeIn(tween(400)))
+                .togetherWith(fadeOut(tween(250)))
+        },
+        label = "rootScreen",
+    ) { s ->
+        when (s) {
+            RootScreen.AUTH -> AuthScreen(onSignedIn = { screen = RootScreen.ENTERING })
+            RootScreen.ENTERING -> EnteringAppLoader(onDone = { screen = RootScreen.HOME })
+            RootScreen.HOME -> AppScreen(onSignOut = {
+                com.cdnhunter.app.vpn.CdnVpnService.stop(context)
+                auth.signOut()
+                screen = RootScreen.AUTH
+            })
+        }
+    }
+}
+
+/**
+ * A brief, branded loading beat shown every time the person lands on the home screen —
+ * both right after signing in and (via [RootScreen.ENTERING]'s initial state) on a cold
+ * launch where Firebase already has a current user. Purely cosmetic: there is no real
+ * async work gating this, just a short pause so the transition from auth to the VPN
+ * screen never feels like an abrupt cut.
+ */
+@Composable
+private fun EnteringAppLoader(onDone: () -> Unit) {
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(700)
+        onDone()
+    }
+    Box(
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color(0xFF0A0B0F)),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            color = androidx.compose.ui.graphics.Color(0xFF3B82F6),
+            modifier = androidx.compose.ui.Modifier.size(28.dp),
+            strokeWidth = 2.5.dp,
+        )
     }
 }
 
