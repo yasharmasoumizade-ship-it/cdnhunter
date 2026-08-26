@@ -2545,7 +2545,7 @@ private fun PowerCircle(
                     val innerRim = Brush.radialGradient(
                         0.90f to Color.Transparent,
                         1.00f to Color.Black.copy(alpha = 0.35f * depth),
-                        center = center,
+                        center = size.center,
                         radius = size.minDimension * 0.5f,
                     )
                     onDrawBehind {
