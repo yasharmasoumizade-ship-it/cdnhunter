@@ -1,5 +1,15 @@
 package com.cdnhunter.app
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -121,21 +131,47 @@ fun MainContent(activity: MainActivity) {
  */
 @Composable
 private fun EnteringAppLoader(onDone: () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    var typedChars by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(700)
+        visible = true
+        delay(200)
+        val name = "Thallo"
+        for (i in 1..name.length) {
+            typedChars = i
+            delay(65)
+        }
+        delay(500)
         onDone()
     }
+
     Box(
-        modifier = androidx.compose.ui.Modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Color(0xFF0A0B0F)),
+            .background(Color(0xFF0A0B0F)),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.material3.CircularProgressIndicator(
-            color = androidx.compose.ui.graphics.Color(0xFF3B82F6),
-            modifier = androidx.compose.ui.Modifier.size(28.dp),
-            strokeWidth = 2.5.dp,
-        )
+        androidx.compose.animation.AnimatedVisibility(
+            visible = visible,
+            enter = androidx.compose.animation.fadeIn(tween(500)),
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Image(
+                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_thallo),
+                    contentDescription = "Thallo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.width(200.dp),
+                )
+                Spacer(Modifier.height(22.dp))
+                Text("Private. Fast. Secure.", fontSize = 13.sp, color = Color(0xFF8B8E98))
+                Spacer(Modifier.height(28.dp))
+                CircularProgressIndicator(
+                    color = Color(0xFF3B82F6),
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
     }
 }
 
