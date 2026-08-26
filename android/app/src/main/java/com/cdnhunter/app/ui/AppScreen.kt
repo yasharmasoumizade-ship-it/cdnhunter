@@ -2353,12 +2353,22 @@ private val SheetSearchStyle = TextStyle(
 /** Rounded at the bottom only — see [Modifier.sheetHeaderPanel]. */
 private val SheetHeaderShape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
 
-/** The header sits flat on the app background per the spec HEADER recipe (no glass). */
-private val SheetHeaderGlass = Brush.verticalGradient(
-    listOf(AnanasScreenBg, AnanasScreenBg),
+/** The header now carries its own hero-style gradient -- a teal-to-blue neon wash rather
+ *  than sitting flat on the app background -- so Settings/Profile/Payment history open with
+ *  the same sense of a lit hero surface Home has, instead of reading as a separate grey
+ *  card floating over the page. */
+private val SheetHeaderGlass = Brush.linearGradient(
+    colors = listOf(
+        AnanasTeal.copy(alpha = 0.28f),
+        AnanasAccent.copy(alpha = 0.22f),
+        AnanasBg,
+    ),
+    start = Offset(0f, 0f),
+    end = Offset(0f, 560f),
 )
 
-/** No accent wash over the header any more — flat. */
+/** No separate flat tint layer any more -- the radial bloom is now drawn directly in
+ *  [Modifier.sheetHeaderPanel]'s drawBehind, where real pixel dimensions are available. */
 private val SheetHeaderTint = Brush.verticalGradient(
     0.00f to Color.Transparent,
     1.00f to Color.Transparent,
@@ -2403,6 +2413,19 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     .background(SheetHeaderGlass)
     .background(SheetHeaderTint)
     .drawBehind {
+        // Soft radial bloom, upper-left, echoing the light source used elsewhere (power
+        // button, hero flag) -- pixel-real center/radius since Brush.radialGradient with
+        // fractional Offset/Float doesn't map to fractions of the draw area.
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    AnanasTealLight.copy(alpha = 0.22f),
+                    Color.Transparent,
+                ),
+                center = Offset(size.width * 0.15f, size.height * 0.05f),
+                radius = size.width * 0.9f,
+            ),
+        )
         // Soft ambient blue light pooling along the hero's bottom edge. Drawn inside the clip so
         // it follows the 20dp bottom corners. Alpha is driven by [glow] (animated by the caller);
         // at glow == 0f nothing is drawn, so screens that don't opt in are visually unchanged.
