@@ -98,6 +98,12 @@ val AnanasBorder2  = Color(0xFF2A2E38)   // Alternative (raised) border
 val AnanasDivider  = Color(0xFF1C1F27)   // Divider
 val AnanasAccent   = Color(0xFF3B82F6)   // Blue accent (canonical, matches Auth)
 val AnanasAccentLight = Color(0xFF60A5FA)
+// Teal accent for the Settings/Profile subtree only — echoes the thallo wordmark's teal on the
+// login screen. Applied via sheet-exclusive composables/tokens (IconTile, AnanasToggleOn, the
+// Sheet* accent brushes) so it never leaks into Home/Locations/My Configs, which stay on the
+// canonical blue AnanasAccent.
+val AnanasTeal      = Color(0xFF4DB6AC)  // thallo teal — sheet accent
+val AnanasTealLight = Color(0xFF7FD4CB)  // lighter teal for selected-segment ink
 val AnanasSettingsIcon = Color(0xFF9BA0AC)   // text-mid, soft gray for settings row icons
 val AnanasAmber    = Color(0xFFE0B23B)   // Warm amber (premium/warn)
 val AnanasRed      = Color(0xFFEF4444)   // Error red
@@ -108,7 +114,7 @@ val AnanasPurple   = Color(0xFF3B82F6)   // Unified to the blue accent (no off-p
 // a green "on" state on a VPN app reads as a status/connection light, which these
 // controls are not. Blue keeps the active state legible and on-theme without that
 // false connotation.
-val AnanasToggleOn = AnanasBlue
+val AnanasToggleOn = AnanasTeal   // Settings/Profile toggles, segments & select-dots — thallo teal
 val AnanasTextHi   = Color(0xFFF6F7F9)   // Primary text
 val AnanasText     = Color(0xFFE3E6EC)   // Secondary text
 val AnanasMuted    = Color(0xFF9BA0AC)   // Muted / caption text (text-mid)
@@ -2273,12 +2279,12 @@ private val SheetNoteRuleWidth = 3.dp
 
 /** The accent tint over a lit segment in a [SegmentedControl]. */
 private val SheetSegmentTint = Brush.verticalGradient(
-    listOf(AnanasAccent.copy(alpha = 0.20f), AnanasAccent.copy(alpha = 0.11f)),
+    listOf(AnanasTeal.copy(alpha = 0.20f), AnanasTeal.copy(alpha = 0.11f)),
 )
 
-/** An accent [PillButton]'s material — flat accent fill, pressed a shade darker. */
-private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasAccent, AnanasAccent))
-private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF2563EB), Color(0xFF2563EB)))
+/** An accent [PillButton]'s material — flat teal fill, pressed a shade darker. */
+private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasTeal, AnanasTeal))
+private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF3C9488), Color(0xFF3C9488)))
 
 /** A tile riding inside [SheetScreen]'s header — flat raised surface. */
 private val SheetGlassTileFill = Brush.verticalGradient(
@@ -2286,9 +2292,10 @@ private val SheetGlassTileFill = Brush.verticalGradient(
 )
 
 /** The avatar's ring, and the disc it sits behind — see [AvatarRing]. The ring is brightest
- *  at the top left, so the avatar catches the same light as everything else. */
+ *  at the top left, so the avatar catches the same light as everything else. Teal, so the
+ *  hero on Settings/Profile echoes the thallo wordmark on the login screen. */
 private val SheetAvatarRing = Brush.linearGradient(
-    listOf(AnanasAccent.copy(alpha = 0.55f), AnanasAccent.copy(alpha = 0.10f)),
+    listOf(AnanasTeal.copy(alpha = 0.85f), AnanasTeal.copy(alpha = 0.14f)),
 )
 private val SheetAvatarWell = Brush.verticalGradient(
     listOf(Color(0xFF14151B), Color(0xFF14151B)),
@@ -2535,7 +2542,7 @@ private fun RowDivider() {
     Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasBorder))
 }
 
-/** A row's icon: a flat glyph in the app's single unified blue, no tile, no card behind it —
+/** A row's icon: a flat glyph in the Settings/Profile teal accent, no tile, no card behind it —
  *  a lighter, more modern treatment than the old colour-coded rounded squares. The `tint`
  *  parameter is kept in the signature so every call site is unchanged, but it is intentionally
  *  ignored: the whole point is one accent colour across Settings and Profile, not a per-row hue.
@@ -2550,7 +2557,7 @@ private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifi
         Icon(
             icon,
             null,
-            tint = AnanasAccent,
+            tint = AnanasTeal,
             modifier = Modifier.size(22.dp),
         )
     }
@@ -2583,7 +2590,7 @@ private fun InlineField(
     val underline by animateColorAsState(
         targetValue = when {
             error != null -> AnanasRed
-            focused -> AnanasAccent
+            focused -> AnanasTeal
             else -> Color.Transparent
         },
         animationSpec = tween(160),
@@ -2626,7 +2633,7 @@ private fun InlineField(
                 onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = SheetFieldStyle,
-                cursorBrush = SolidColor(AnanasAccent),
+                cursorBrush = SolidColor(AnanasTeal),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
             )
@@ -2720,7 +2727,7 @@ private fun SegmentedControl(
                 val on = key == selected
                 val interaction = remember { MutableInteractionSource() }
                 val ink by animateColorAsState(
-                    targetValue = if (on) AnanasAccentLight else AnanasMuted,
+                    targetValue = if (on) AnanasTealLight else AnanasMuted,
                     animationSpec = tween(200), label = "segInk",
                 )
                 Box(
@@ -2848,14 +2855,31 @@ private fun accountStatusShort(account: AccountUiState): String = when (val s = 
 @Composable
 private fun AvatarRing(size: Dp, initials: String, initialsSize: TextUnit, ringWidth: Dp = 1.5.dp) {
     Box(
-        Modifier.size(size).clip(CircleShape).background(SheetAvatarRing).padding(ringWidth),
+        // A soft teal halo pooled behind the ring gives the hero a lit, premium focal point that
+        // echoes the login screen's glow — drawn behind the disc so it reads as ambient light, not
+        // a second ring. Radius scales with the avatar so Settings' 46dp and Profile's 62dp match.
+        Modifier
+            .size(size)
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(AnanasTeal.copy(alpha = 0.22f), Color.Transparent),
+                        center = center,
+                        radius = size.toPx() * 0.72f,
+                    ),
+                    radius = size.toPx() * 0.72f,
+                )
+            }
+            .clip(CircleShape)
+            .background(SheetAvatarRing)
+            .padding(ringWidth),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier.fillMaxSize().clip(CircleShape).background(SheetAvatarWell),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AnanasAccent)
+            Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AnanasTeal)
         }
     }
 }
@@ -3183,23 +3207,23 @@ private fun SettingsScreen(
                     Spacer(Modifier.height(14.dp))
                     Column(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(AnanasAccent.copy(alpha = 0.07f))
+                            .background(AnanasTeal.copy(alpha = 0.07f))
                             .drawBehind {
                                 drawRect(
-                                    color = AnanasAccent.copy(alpha = 0.55f),
+                                    color = AnanasTeal.copy(alpha = 0.55f),
                                     size = Size(SheetNoteRuleWidth.toPx(), size.height),
                                 )
                             }
                             .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Icon(Icons.Rounded.Shield, null, tint = AnanasAccent, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Rounded.Shield, null, tint = AnanasTeal, modifier = Modifier.size(14.dp))
                             Text(
                                 "DNS leak protection",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.2.sp,
-                                color = AnanasAccent,
+                                color = AnanasTeal,
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -3466,14 +3490,14 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
 // ── Profile — visual reference screen (static placeholder, wired later) ────────
 /**
  * Verified / Not-verified pill for the account email. Real state: reads
- * [AccountUiState.emailVerified], which comes from `FirebaseUser.isEmailVerified`. Uses the app's
- * blue accent for verified (staying on the unified-blue palette rather than a stock green) and
- * amber for the "needs attention" unverified state.
+ * [AccountUiState.emailVerified], which comes from `FirebaseUser.isEmailVerified`. Uses the
+ * Settings/Profile teal accent for verified (matching the login wordmark) and amber for the
+ * "needs attention" unverified state.
  */
 @Composable
 private fun VerificationBadge(verified: Boolean) {
     val icon = if (verified) Icons.Rounded.Verified else Icons.Rounded.ErrorOutline
-    val color = if (verified) AnanasAccent else AnanasAmber
+    val color = if (verified) AnanasTeal else AnanasAmber
     val label = if (verified) "Verified" else "Not verified"
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
@@ -3514,7 +3538,7 @@ private fun EmailVerificationCard(account: AccountUiState) {
             )
             Spacer(Modifier.height(12.dp))
             Box(
-                Modifier.clip(RoundedCornerShape(10.dp)).background(AnanasAccent.copy(alpha = 0.14f))
+                Modifier.clip(RoundedCornerShape(10.dp)).background(AnanasTeal.copy(alpha = 0.14f))
                     .clickable(enabled = !sending) {
                         val user = FirebaseAuth.getInstance().currentUser
                         if (user != null && !sending) {
@@ -3535,11 +3559,11 @@ private fun EmailVerificationCard(account: AccountUiState) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     if (sending) {
-                        CircularProgressIndicator(Modifier.size(14.dp), color = AnanasAccent, strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(14.dp), color = AnanasTeal, strokeWidth = 2.dp)
                     } else {
-                        Icon(if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send, null, tint = AnanasAccent, modifier = Modifier.size(14.dp))
+                        Icon(if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send, null, tint = AnanasTeal, modifier = Modifier.size(14.dp))
                     }
-                    Text(if (sent) "Verification sent" else "Resend verification", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasAccent)
+                    Text(if (sent) "Verification sent" else "Resend verification", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasTeal)
                 }
             }
         }
