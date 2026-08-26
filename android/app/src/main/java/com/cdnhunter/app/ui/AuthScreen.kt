@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -193,9 +194,12 @@ private fun AuthFormContent(
 ) {
     val context = LocalContext.current
     val auth = remember { FirebaseAuth.getInstance() }
+    var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -228,7 +232,12 @@ private fun AuthFormContent(
     val submit: () -> Unit = {
         error = null
         when {
-            email.isBlank() || password.isBlank() -> error = "Please enter your email and password."
+            email.isBlank() || password.isBlank() ->
+                error = "Please enter your email and password."
+            mode == AuthMode.SIGNUP && username.isBlank() ->
+                error = "Please choose a username."
+            mode == AuthMode.SIGNUP && password != confirmPassword ->
+                error = "Passwords don't match."
             else -> {
                 loading = true
                 if (mode == AuthMode.LOGIN) {
@@ -237,7 +246,13 @@ private fun AuthFormContent(
                         .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                 } else {
                     auth.createUserWithEmailAndPassword(email.trim(), password)
-                        .addOnSuccessListener { onSuccess(true) }
+                        .addOnSuccessListener { result ->
+                            val profileUpdate = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                                .setDisplayName(username.trim())
+                                .build()
+                            result.user?.updateProfile(profileUpdate)
+                            onSuccess(true)
+                        }
                         .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                 }
             }
@@ -299,6 +314,10 @@ private fun AuthFormContent(
             }
             Spacer(Modifier.height(18.dp))
 
+            if (mode == AuthMode.SIGNUP) {
+                AuthField("Username", username, { username = it }, Icons.Default.Person)
+                Spacer(Modifier.height(14.dp))
+            }
             AuthField("Email Address", email, { email = it }, Icons.Default.Email, KeyboardType.Email)
             Spacer(Modifier.height(14.dp))
             AuthField(
@@ -313,6 +332,21 @@ private fun AuthFormContent(
                     }
                 },
             )
+            if (mode == AuthMode.SIGNUP) {
+                Spacer(Modifier.height(14.dp))
+                AuthField(
+                    "Confirm Password", confirmPassword, { confirmPassword = it }, Icons.Default.Lock, KeyboardType.Password,
+                    if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton({ confirmPasswordVisible = !confirmPasswordVisible }) {
+                            Icon(
+                                if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                null, tint = TextMid,
+                            )
+                        }
+                    },
+                )
+            }
 
             error?.let {
                 Spacer(Modifier.height(10.dp))
