@@ -302,7 +302,11 @@ private fun AuthFormContent(
                 border = BorderStroke(1.dp, FieldBorder),
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
             ) {
-                Text("G", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Accent, modifier = Modifier.padding(end = 8.dp))
+                Image(
+                    painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                )
                 Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
             }
 
@@ -378,7 +382,8 @@ private fun AuthFormContent(
                 )
                 Text(
                     if (mode == AuthMode.LOGIN) "Sign Up" else "Sign In",
-                    fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                     modifier = Modifier.clickable {
                         error = null
                         onModeChange(if (mode == AuthMode.LOGIN) AuthMode.SIGNUP else AuthMode.LOGIN)
