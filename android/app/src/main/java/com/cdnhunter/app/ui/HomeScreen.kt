@@ -67,6 +67,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -2336,15 +2338,15 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //
 //   OFF        — the brushed-white disc, [PowerInk] mark, bare hairline track. A white disc on
 //                dark chrome is the highest-contrast thing the screen can draw.
-//   CONNECTING — the same white disc and [PowerInk] mark as idle, with a monochrome white comet
-//                turning around it. The comet is outside the disc on purpose: the face keeps its
-//                shape, so the button still looks pressable while it works — and it carries no
-//                colour, so "working" reads as motion rather than as a hue.
-//   CONNECTED  — the *same white disc*, with a deep teal mark and the ring lit [RefLive]. The
-//                face never fills with colour in any state: a filled disc reads as "press me"
-//                in exactly the state where pressing disconnects. What reports "lit" is the
-//                room — [drawHeroAtmosphere] turns the backdrop [RefGlowOn] blue. Light is blue
-//                and state is teal deliberately; separating them keeps the lit ring legible.
+//   CONNECTING — the same white disc and [PowerInk] mark as idle, with one soft teal arc sweeping
+//                smoothly around it (see [PowerRing]). The arc is outside the disc on purpose: the
+//                face keeps its shape, so the button still looks pressable while it works. No teeth,
+//                no gear — a single fading comet that reads as "working" by its motion alone.
+//   CONNECTED  — the *same white disc*, with the ring resolved to a solid teal circle and a soft
+//                teal halo that breathes slowly around it. The face never fills with colour in any
+//                state: a filled disc reads as "press me" in exactly the state where pressing
+//                disconnects. What reports "lit" is the ring and its halo, in the thallo teal
+//                [ConnectTeal]; the room still washes [RefGlowOn] blue behind the hero.
 //
 // It carries one gesture besides the tap: a vertical drag switches Smart / Manual, as do its two
 // named accessibility actions. Settings' "Server choice" row is the drawn control for the same
@@ -2369,22 +2371,18 @@ private val PowerDiscSize = 118.dp
 private val PowerRingStroke = 3.dp
 private val PowerRingGap = 3.dp
 
-/** The mechanical collar around the disc: how many teeth the knurled bezel carries, and how
- *  long one full turn takes while connecting.
- *
- *  The collar replaced the old lit comet/ring — it is a physical mechanism, not a light. Twelve
- *  teeth is a coarse, countable bezel — a watch-bezel weight rather than a fine gear — which is
- *  what keeps it legible at arm's length and calm rather than busy. One turn is deliberately
- *  slow (2.6s): the connecting state should read as a mechanism working, not spinning. This is
- *  still the app's only indeterminate progress and the only motion that runs unasked. */
-private const val POWER_GEAR_TEETH = 12
-private const val POWER_GEAR_SPIN_MS = 2600
+/** The thallo teal, used for every animated part of the connect ring — the connecting arc, the
+ *  connected ring and its halo. Matches the wordmark; scoped to this control so it never leaks into
+ *  the blue room light ([RefGlowOn]) behind the hero. */
+private val ConnectTeal = Color(0xFF4DB6AC)
 
-/** A single tooth of the collar: a short radial tick straddling the ring, round-capped so it
- *  reads as a machined mark rather than a scratch. Length is across the band; width is the
- *  weight of the mark. */
-private val POWER_TOOTH_LEN = 6.dp
-private val POWER_TOOTH_WIDTH = 2.dp
+/** One full turn of the connecting arc. Slow and even — a premium sweep, not a busy spinner. This
+ *  is the app's only indeterminate progress and the only motion that runs unasked. */
+private const val CONNECT_SPIN_MS = 1400
+
+/** How much of the circle the connecting comet spans, in degrees — a soft quarter-turn head that
+ *  fades to nothing at its tail. */
+private const val CONNECT_ARC_SWEEP = 96f
 
 /** How far the disc travels down on a press, and how far the light travels with it.
  *
@@ -2445,9 +2443,9 @@ private fun PowerCircle(
         animationSpec = motionSpec(reduce, 140),
         label = "powerPressShade",
     )
-    // The collar reports the connection: a turning knurled bezel while connecting, and a locked
-    // teal detent once up. All of that now lives in [PowerRing], keyed on the same phase, so the
-    // disc itself carries no ring state.
+    // The ring reports the connection: a teal arc sweeping while connecting, and a solid teal
+    // ring with a slow-breathing halo once up. All of that lives in [PowerRing], keyed on the same
+    // phase, so the disc itself carries no ring state.
     // The one coloured face left, over the white disc that is always there, so no value
     // of it can leave the button transparent mid-crossfade. There is deliberately no
     // second one for CONNECTED — see the section comment: the connected state is
@@ -2492,8 +2490,8 @@ private fun PowerCircle(
         else -> "Connect"
     }
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // The collar in the band around the disc, under the disc's own scale so a press
-        // doesn't drag it in. No glow or bloom — the connection is reported mechanically.
+        // The ring in the band around the disc, under the disc's own scale so a press
+        // doesn't drag it in. A teal sweep while connecting, a lit teal ring once up.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
             Modifier
@@ -2703,124 +2701,115 @@ private fun PowerBolt(
 }
 
 /**
- * The mechanical collar in the band around the disc — the connection reported as a physical
- * mechanism, not a light. No glow, bloom or comet.
+ * The connect ring in the band around the disc — a clean, minimal progress ring, not a mechanism.
+ * No teeth, no gear, no crosshair; nothing that reads as machined hardware.
  *
- * A machined groove holds a ring of teeth. Idle, the collar rests (teeth still, dark steel).
- * Connecting, the whole collar turns — one slow rotation with a single bright index tooth riding
- * round it, so the movement reads even though the teeth are identical. Connected, it stops and
- * locks: teeth settle to teal ([RefLive]), a crisp teal ring seats over the groove, and a detent
- * notch clicks in at twelve o'clock with one sprung settle. Nothing breathes.
+ * A faint hairline track is always present, giving the disc a defined rim. Over it, three faces
+ * crossfaded on [PHASE_FADE_MS]:
  *
- * The turn is driven by an [Animatable], not an infinite transition: on a phase change it is
- * simply cancelled, so the collar freezes where it is with no jump. Animations off: it never
- * turns — the index parks at the top as a static working mark, and the lock snaps straight in.
+ *   OFF        — the bare track only. Nothing moves.
+ *   CONNECTING — one soft teal comet ([ConnectTeal]) sweeps smoothly around the track: a
+ *                [CONNECT_ARC_SWEEP]° arc that fades from a bright head to a transparent tail,
+ *                turning at a steady [CONNECT_SPIN_MS] per revolution. Motion alone says "working".
+ *   CONNECTED  — the arc resolves to a solid teal ring, and a wide, soft teal halo fades in and
+ *                breathes slowly outside it — the one thing on the screen that keeps living once
+ *                the tunnel is up.
+ *
+ * The sweep is driven by an [Animatable], not an infinite transition: on a phase change it is
+ * simply cancelled, so the arc stops cleanly with no snap-back. Reduce-motion: the arc parks as a
+ * static head at the top and the halo holds a fixed, un-breathing glow.
  */
 @Composable
 private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
-    // Rotation of the whole collar, in degrees. Driven only while connecting; cancelling the
-    // effect on any phase change leaves it frozen in place. Idle it holds 0.
-    val gear = remember { Animatable(0f) }
+    // Continuous rotation of the connecting comet, in degrees. Driven only while connecting;
+    // cancelling the effect on any phase change leaves it frozen. Idle it holds 0.
+    val spin = remember { Animatable(0f) }
     LaunchedEffect(phase, reduce) {
         if (phase == ConnPhase.CONNECTING && !reduce) {
-            // Turn continuously through many turns at a constant rate; cancelled — and the collar
-            // frozen — the moment the phase leaves CONNECTING, so there is never a snap back.
             val turns = 1000f
-            gear.animateTo(
-                targetValue = gear.value + 360f * turns,
-                animationSpec = tween((POWER_GEAR_SPIN_MS * turns).toInt(), easing = LinearEasing),
+            spin.animateTo(
+                targetValue = spin.value + 360f * turns,
+                animationSpec = tween((CONNECT_SPIN_MS * turns).toInt(), easing = LinearEasing),
             )
         }
     }
-    // Crossfades: teeth go teal once locked; the index shows while working.
+    // Crossfades: the comet shows while working, the lit ring + halo while up.
     val working by animateFloatAsState(
         targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerGearWorking",
+        label = "connectWorking",
     )
     val live by animateFloatAsState(
         targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
-        label = "powerGearLive",
+        label = "connectLive",
     )
-    // The detent: one sprung click on connect that seats the lock notch. Snapped full when already
-    // up (a recompose while connected) and to zero otherwise, so a disconnect seats nothing.
-    val lock = remember { Animatable(0f) }
+    // The connected halo's slow breath: 0..1, ping-ponging while up. It nudges the halo's width
+    // and alpha by a few percent — a sign of life, not a pulse. Off under reduce-motion.
+    val breath = remember { Animatable(0f) }
     LaunchedEffect(phase, reduce) {
-        when {
-            phase == ConnPhase.CONNECTED && !reduce -> {
-                lock.snapTo(0f)
-                lock.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
-            }
-            phase == ConnPhase.CONNECTED -> lock.snapTo(1f)
-            else -> lock.snapTo(0f)
+        if (phase == ConnPhase.CONNECTED && !reduce) {
+            breath.snapTo(0f)
+            breath.animateTo(
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2200, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+            )
+        } else {
+            breath.snapTo(0f)
         }
     }
     Canvas(modifier) {
         val stroke = PowerRingStroke.toPx()
         val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
-        val half = POWER_TOOTH_LEN.toPx() / 2f
-        val toothWidth = POWER_TOOTH_WIDTH.toPx()
-        val step = 360f / POWER_GEAR_TEETH
-        val top = center.y - radius
+        val topLeft = Offset(center.x - radius, center.y - radius)
+        val arcSize = Size(radius * 2f, radius * 2f)
 
-        // The machined groove the teeth ride in — always there, lit from the top so it reads as a
-        // real edge rather than a drawn circle.
+        // The always-present track: a faint hairline rim on the disc, never decoration.
         drawCircle(brush = PowerRingTrack, radius = radius, style = Stroke(width = stroke))
 
-        // Connected: a crisp teal ring seats over the groove. A solid stroke, not a bloom — the
-        // mechanical read of a tunnel that is up and sealed.
+        // CONNECTED: a soft teal halo outside the ring, breathing, then the crisp ring itself.
         if (live > 0.01f) {
+            val haloAlpha = (0.16f + 0.12f * breath.value) * live
             drawCircle(
-                color = RefLive.copy(alpha = 0.90f * live),
+                color = ConnectTeal.copy(alpha = haloAlpha),
+                radius = radius + stroke * (1.4f + 1.0f * breath.value),
+                style = Stroke(width = stroke * 3.4f),
+            )
+            drawCircle(
+                color = ConnectTeal.copy(alpha = 0.95f * live),
                 radius = radius,
                 style = Stroke(width = stroke),
             )
         }
 
-        // The teeth: dark brushed steel at rest, crossfading to teal as the collar locks. The whole
-        // ring is rotated by [gear]; each tooth is a radial tick placed at twelve o'clock and
-        // carried round by the rotation.
-        val restInk = lerp(PowerInk, Color.White, 0.42f)
-        val toothColor = lerp(restInk, RefLive, live)
-        for (i in 0 until POWER_GEAR_TEETH) {
-            rotate(degrees = gear.value + i * step, pivot = center) {
-                drawLine(
-                    color = toothColor,
-                    start = Offset(center.x, top - half),
-                    end = Offset(center.x, top + half),
-                    strokeWidth = toothWidth,
-                    cap = StrokeCap.Round,
-                )
-            }
-        }
-        // Connecting: one bright index tooth rides the turn, which is what makes an otherwise
-        // symmetric ring read as moving. Monochrome — the working state is motion, not colour.
-        // Animations off: it parks at the top as a static working mark.
+        // CONNECTING: one teal comet sweeps the track. The sweep gradient runs bright head →
+        // transparent tail across [CONNECT_ARC_SWEEP]°, and the whole frame is rotated by [spin]
+        // so it turns. Reduce-motion parks the head at twelve o'clock without turning.
         if (working > 0.01f) {
-            rotate(degrees = if (reduce) 0f else gear.value, pivot = center) {
-                drawLine(
-                    color = Color.White.copy(alpha = 0.92f * working),
-                    start = Offset(center.x, top - half * 1.5f),
-                    end = Offset(center.x, top + half * 1.5f),
-                    strokeWidth = toothWidth * 1.5f,
-                    cap = StrokeCap.Round,
+            val head = ConnectTeal.copy(alpha = 0.95f * working)
+            rotate(degrees = if (reduce) 0f else spin.value, pivot = center) {
+                drawArc(
+                    brush = Brush.sweepGradient(
+                        // sweepGradient's 0° is 3 o'clock, increasing clockwise; the arc below is
+                        // drawn from -90° (twelve o'clock) clockwise, so the head sits at the arc's
+                        // leading edge and the tail fades out behind it.
+                        0f to Color.Transparent,
+                        (CONNECT_ARC_SWEEP / 360f) to head,
+                        1f to Color.Transparent,
+                        center = center,
+                    ),
+                    startAngle = -90f,
+                    sweepAngle = CONNECT_ARC_SWEEP,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
             }
-        }
-
-        // Connected: the locked detent — a teal notch seated at twelve o'clock with the sprung
-        // click of [lock], growing out past the teeth as it seats, then holding.
-        if (live > 0.01f) {
-            val seat = lock.value.coerceIn(0f, 1.15f)
-            drawLine(
-                color = RefLive.copy(alpha = 0.95f * live),
-                start = Offset(center.x, top - half - half * 1.4f * seat),
-                end = Offset(center.x, top + half),
-                strokeWidth = toothWidth * 2f,
-                cap = StrokeCap.Round,
-            )
         }
     }
 }
