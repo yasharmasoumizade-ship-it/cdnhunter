@@ -138,6 +138,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -2610,24 +2611,12 @@ private fun PowerCircle(
  *  applying its transform and keeping only the bolt subpath. Mirrors `res/drawable/ic_connect_bolt`
  *  — keep the two in sync if the asset changes. */
 private const val CONNECT_BOLT_PATH_DATA =
-    "M315.1,9.4 C322.2,12.3 326.7,21.2 324.9,28.8 C324.1,32.5 311.9,54.8 293.8,85.5 " +
-        "C289.6,92.6 281.1,107 275.1,117.5 C269,127.9 259.4,144.4 253.7,154 " +
-        "C225.5,201.9 224.8,203.3 224.8,207.5 C224.8,209.7 225.5,212.6 226.4,213.9 " +
-        "C230,218.9 230.6,219 290.5,219 C342.7,219 346.6,219.2 350.4,220.9 " +
-        "C360.6,225.5 363.7,238.4 357.1,248.5 C355.6,250.7 329,286.5 298,328 " +
-        "C266.9,369.5 236.4,410.2 230.3,418.5 C143.6,534.9 104.2,587.3 101.8,589.5 " +
-        "C98.4,592.5 92.6,592.1 88.9,588.6 C83.3,583.3 82.4,587.7 102.9,517.5 " +
-        "C128.8,428.8 148.8,357.2 148.8,353.3 C148.8,347.7 146.6,343.8 141.8,341.1 " +
-        "C138.1,339 137,339 81.7,339 C29.3,339 25,338.8 21.3,337.1 " +
-        "C13.2,333.5 8,324.4 9.1,315.5 C9.5,311.2 13.5,300 27.6,263 " +
-        "C32.5,250.1 40.5,229.1 45.3,216.5 C61.3,174.3 64.6,165.6 71.3,148 " +
-        "C75,138.4 80.2,124.6 82.9,117.5 C93.6,88.7 115.8,30.4 118.1,24.9 " +
-        "C120.4,19.4 126.7,13 132.3,10.4 L137.3,8 L224.6,8 C296.1,8 312.5,8.2 315.1,9.4 Z"
+    "M701.70,3.90 C703.60,5.90 705.40,9.20 705.80,11.20 C706.70,16.10 703.90,23.00 699.90,25.90 L696.70,28.20 L644.20,28.70 C603.40,29.10 591.20,29.50 589.40,30.50 C583.50,33.90 581.40,43.30 585.20,49.50 C588.80,55.40 590.90,55.70 622.90,55.70 C655.10,55.70 656.70,56.00 660.60,62.70 C664.50,69.30 662.60,77.10 655.80,82.10 C653.10,84.20 651.70,84.20 592.80,84.70 C536.70,85.20 532.40,85.30 529.80,87.00 C524.60,90.40 522.90,98.10 525.80,104.40 C529.20,111.40 527.40,111.10 579.90,111.70 L627.30,112.20 L624.60,117.50 C620.60,125.50 613.10,133.10 605.40,136.90 L598.70,140.20 L540.70,140.80 L482.70,141.30 L470.00,144.00 C440.00,150.30 416.10,163.60 395.00,185.50 C379.10,202.10 367.30,221.90 360.40,243.70 C354.90,261.10 354.40,264.70 346.20,348.70 C336.50,448.10 336.60,447.60 331.60,462.70 C318.70,501.20 289.10,532.60 253.10,545.80 C236.00,552.10 230.40,552.90 199.20,553.40 C160.70,554.10 154.90,552.70 142.60,540.20 C129.60,526.90 127.60,511.00 135.60,482.70 C137.50,475.80 141.50,460.70 144.60,449.20 C147.60,437.60 153.00,417.00 156.60,403.40 C165.80,369.00 166.80,360.20 163.70,342.10 C158.20,310.40 139.30,283.50 108.20,263.20 C103.00,259.80 93.30,253.70 86.70,249.60 C62.10,234.40 47.00,221.00 34.00,203.00 C0.70,156.80 0.00,97.60 32.30,52.40 C52.20,24.40 84.90,4.60 117.40,0.80 C121.40,0.30 253.80,0.00 411.50,0.10 L698.40,0.20 L701.70,3.90 Z M142.10,83.10 C127.00,87.30 114.20,100.30 109.70,116.10 C108.40,120.60 108.10,124.50 108.40,131.90 C108.90,141.00 109.20,142.40 113.10,150.30 C119.10,162.40 124.30,167.10 147.10,181.10 C169.90,195.20 176.30,199.80 187.70,210.10 C203.50,224.50 218.70,248.00 225.70,268.60 C234.40,294.40 234.90,324.30 227.00,352.70 C221.60,372.30 208.80,398.60 195.40,417.60 C193.80,419.90 193.80,420.00 195.70,418.90 C199.50,416.90 213.30,402.20 219.30,393.70 C238.60,366.80 252.50,328.40 262.70,274.20 C267.40,249.10 268.40,245.00 273.10,230.90 C281.50,205.90 292.50,184.70 307.80,164.30 C336.60,126.00 375.90,98.40 421.00,84.80 L430.70,81.80 L288.70,81.80 C177.00,81.90 145.70,82.20 142.10,83.10 Z"
 
 /** The bolt's source viewport, from the converted vector ([ic_connect_bolt]). Path coordinates
  *  above are in this space; [PowerBolt] scales it to fit its canvas. */
-private const val BOLT_VW = 371.7f
-private const val BOLT_VH = 600.5f
+private const val BOLT_VW = 706.7f
+private const val BOLT_VH = 554.1f
 
 /** How long the lit fill takes to climb the bolt from foot to tip. Long and linear on purpose:
  *  the fill should read as a slow, steady charge over the whole connect, not a quick flash. If the
@@ -2643,7 +2632,9 @@ private const val BOLT_DRAIN_MS = 900
  *  (the same data the drawable carries). Kept as a [Path] so [PowerBolt] can both fill it and clip a
  *  rising window against it. */
 private val ConnectBoltPath: Path =
-    PathParser().parsePathString(CONNECT_BOLT_PATH_DATA).toPath()
+    PathParser().parsePathString(CONNECT_BOLT_PATH_DATA).toPath().apply {
+        fillType = PathFillType.EvenOdd
+    }
 
 /** The disc's mark: the imported lightning bolt, drawn as a dark struck base ([trackColor]) with a
  *  lit fill ([fillColor]) revealed from the foot up to [fill] (0 = empty, 1 = full). The base is
