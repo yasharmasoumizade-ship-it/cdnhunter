@@ -2414,11 +2414,18 @@ private fun PowerCircle(
     val haptics = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    // Springs rather than tweens, and two different ones: going down is fast and dead —
-    // stiff, no bounce — because a press has to feel like it arrived the instant the finger
-    // did; coming back up is softer and slightly under-damped, so the disc overshoots by
-    // about a percent and settles. That asymmetry is the whole difference between a button
-    // that feels mechanical and one that feels sprung, and it is two numbers.
+
+    val sink by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = if (reduce) {
+            snap()
+        } else if (pressed) {
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
+        } else {
+            spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium)
+        },
+        label = "powerSink",
+    )
     val scale by animateFloatAsState(
         targetValue = if (pressed) POWER_PRESS_SCALE else 1f,
         animationSpec = if (reduce) {
@@ -2430,33 +2437,7 @@ private fun PowerCircle(
         },
         label = "powerPress",
     )
-    // The shadow travels with the scale — see [POWER_PRESS_SCALE].
-    val elevation by animateDpAsState(
-        targetValue = if (pressed) PowerPressElevation else PowerRestElevation,
-        animationSpec = if (reduce) snap() else spring(stiffness = Spring.StiffnessMediumLow),
-        label = "powerPressLift",
-    )
-    // And so does the light on the face: pressing it takes the specular down and brings a
-    // little shade up from the foot, which is what a convex white object does when it is
-    // pushed towards the surface under it.
-    val pressShade by animateFloatAsState(
-        targetValue = if (pressed) 1f else 0f,
-        animationSpec = motionSpec(reduce, 140),
-        label = "powerPressShade",
-    )
-    // The ring reports the connection: a teal arc sweeping while connecting, and a solid teal
-    // ring with a slow-breathing halo once up. All of that lives in [PowerRing], keyed on the same
-    // phase, so the disc itself carries no ring state.
-    // The one coloured face left, over the white disc that is always there, so no value
-    // of it can leave the button transparent mid-crossfade. There is deliberately no
-    // second one for CONNECTED — see the section comment: the connected state is
-    // reported by the ring, and the face stays white.
 
-    // The bolt's fill level, 0 (empty) to 1 (full). At rest the mark is a dark struck bolt; as a
-    // tunnel comes up the lit fill rises slowly from its foot — a gauge charging over the whole
-    // connect rather than a quick flash — and holds full once connected. On disconnect it drains
-    // back down. The rise is deliberately long and linear so it reads as a steady, smooth climb;
-    // the drain is shorter and eased. See [PowerBolt] and [BOLT_FILL_MS].
     val fillTarget = when (phase) {
         ConnPhase.OFF -> 0f
         ConnPhase.CONNECTING -> 1f
@@ -2474,15 +2455,10 @@ private fun PowerCircle(
         },
         label = "powerBoltFill",
     )
-    // The struck-metal base bolt (dark idle ink) and the lit fill that rises over it (the active
-    // blue). The mark dims to a ghost only in the true idle state with no server to act on — but
-    // NEVER while connecting or connected, even if activeConfig momentarily reads null during the
-    // handshake (which used to fade the bolt to ~invisible on the white disc mid-connect: the
-    // "bolt goes blank while connecting" bug). Whenever the phase is not OFF the bolt is drawn at
-    // full strength so its shape always shows with the fill animating inside it.
     val markStrong = enabled || phase != ConnPhase.OFF
-    val boltTrack = if (markStrong) PowerInk else PowerInk.copy(alpha = 0.30f)
-    val boltFill = if (markStrong) RefGlowOn else RefGlowOn.copy(alpha = 0.30f)
+    val boltTrack = if (markStrong) PowerInk.copy(alpha = 0.55f) else PowerInk.copy(alpha = 0.22f)
+    val boltFill = if (connected) RefGlowOn else RefGlowOn.copy(alpha = if (markStrong) 0.9f else 0.3f)
+
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
     val label = when {
@@ -2490,32 +2466,31 @@ private fun PowerCircle(
         phase == ConnPhase.CONNECTING -> "Cancel connecting"
         else -> "Connect"
     }
+
+    val infinite = rememberInfiniteTransition(label = "powerBreathe")
+    val breathe by if (reduce) {
+        remember { mutableStateOf(0f) }
+    } else {
+        infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2600, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "powerBreatheVal",
+        )
+    }
+    val ambientDepth = if (connected) breathe * 0.25f else 0f
+
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // The ring in the band around the disc, under the disc's own scale so a press
-        // doesn't drag it in. A teal sweep while connecting, a lit teal ring once up.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
             Modifier
                 .size(PowerDiscSize)
                 .scale(scale)
-                .shadow(
-                    // 0 16px 34px rgba(0,0,0,.45) + 0 4px 10px rgba(0,0,0,.25). Both
-                    // colours named, like the panel's: the platform's own default put a
-                    // grey halo around a white disc on a near-black panel, which is the
-                    // single most visible place on the screen for it. The elevation is
-                    // animated — a press drops it to [PowerPressElevation].
-                    elevation = elevation,
-                    shape = CircleShape,
-                    ambientColor = PowerShadowAmbient,
-                    spotColor = PowerShadowSpot,
-                )
                 .clip(CircleShape)
-                .background(PowerFace)
-                // Vertical drag switches the mode. It sits before .clickable so a
-                // drag that passes the touch slop is claimed here and the tap is
-                // cancelled instead of also firing the tunnel; anything that never
-                // moves that far is still a plain tap on the button. The mode is a
-                // key so the callbacks can't go stale mid-gesture.
+                .background(PowerWellBg)
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2535,21 +2510,11 @@ private fun PowerCircle(
                     interactionSource = interaction,
                     indication = null,
                     onClickLabel = label,
-                    // A haptic on the primary action, and only on this one: the tunnel going
-                    // up or down is the single thing on this screen with a consequence outside
-                    // the app, and the confirmation should not depend on the user watching the
-                    // ring. LongPress rather than a tick — it is the firmest of the standard
-                    // constants, which is what a switch this size should feel like. The
-                    // platform routes it through the system's own haptics setting, so a user
-                    // who has turned touch feedback off gets nothing.
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onClick()
                     },
                 )
-                // A swipe is invisible to a screen reader, so the same two outcomes
-                // are offered as named actions on the button — which is also the only
-                // form the affordance takes now that the chevrons are gone.
                 .semantics {
                     contentDescription = label
                     customActions = listOf(
@@ -2560,41 +2525,36 @@ private fun PowerCircle(
                             onSwipeDown(); true
                         },
                     )
-                },
+                }
+                .drawWithCache {
+                    val depth = (0.55f + sink * 0.45f + ambientDepth * 0.12f).coerceIn(0f, 1f)
+                    val darkArc = Brush.radialGradient(
+                        0.72f to Color.Transparent,
+                        1.00f to Color.Black.copy(alpha = 0.50f * depth),
+                        center = Offset(size.width * 0.30f, size.height * 0.28f),
+                        radius = size.minDimension * 0.92f,
+                    )
+                    val lightArc = Brush.radialGradient(
+                        0.72f to Color.Transparent,
+                        1.00f to Color.White.copy(alpha = 0.10f * depth),
+                        center = Offset(size.width * 0.74f, size.height * 0.76f),
+                        radius = size.minDimension * 0.92f,
+                    )
+                    val innerRim = Brush.radialGradient(
+                        0.90f to Color.Transparent,
+                        1.00f to Color.Black.copy(alpha = 0.35f * depth),
+                        center = center,
+                        radius = size.minDimension * 0.5f,
+                    )
+                    onDrawBehind {
+                        drawCircle(darkArc)
+                        drawCircle(lightArc)
+                        drawCircle(innerRim)
+                    }
+                }
+                .border(PowerRimStroke, PowerWellRim, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-
-            // The specular: a soft off-centre highlight, built from the disc's measured size
-            // rather than as a fixed brush, which is why it is [Modifier.drawWithCache] and
-            // not a top-level val — a radial gradient needs a centre and a radius in pixels,
-            // and caching it means that arithmetic happens on resize instead of per frame.
-            // Placed up and left of centre because every other light on this screen comes
-            // from there; it is what turns a flat vertical ramp into something domed.
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawWithCache {
-                        val glow = Brush.radialGradient(
-                            0.00f to Color.White.copy(alpha = 0.92f),
-                            0.42f to Color.White.copy(alpha = 0.22f),
-                            0.78f to Color.White.copy(alpha = 0.04f),
-                            1.00f to Color.Transparent,
-                            center = Offset(size.width * 0.32f, size.height * 0.20f),
-                            radius = size.minDimension * 0.68f,
-                        )
-                        onDrawBehind { drawCircle(glow) }
-                    }
-            )
-            Box(Modifier.matchParentSize().background(PowerFaceSheen))
-            if (pressShade > 0.01f) {
-                Box(Modifier.matchParentSize().alpha(pressShade).background(PowerPressShade))
-            }
-            // The rim, last of the surfaces and over all of them, so it stays a crisp edge
-            // instead of being washed out by the sheen's own dark foot.
-            Box(Modifier.matchParentSize().border(PowerRimStroke, PowerDiscRim, CircleShape))
-            // The mark: the imported lightning bolt (see [ic_connect_bolt] / [CONNECT_BOLT_PATH_DATA]),
-            // drawn as a dark struck base with a lit fill that rises from its foot as the tunnel comes
-            // up. [boltTrack] dark idle, [boltFill] blue lit, [fill] the rising level.
             PowerBolt(
                 trackColor = boltTrack,
                 fillColor = boltFill,
@@ -2806,6 +2766,15 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 }
 
 // linear-gradient(160deg, #ffffff 0%, #e7e9ee 55%, #d9dce3 100%)
+// The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
+// carved well still reads against the background, with the dark/light arcs doing the
+// actual depth work. No white "face" anymore: the disc is not a raised object.
+private val PowerWellBg = Color(0xFF15171D)
+
+// The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
+// read as the lip of a carved hole rather than a drawn border.
+private val PowerWellRim = Color.Black.copy(alpha = 0.4f)
+
 private val PowerFace = Brush.linearGradient(
     0.00f to Color.White,
     0.30f to Color(0xFFF4F5F8),
