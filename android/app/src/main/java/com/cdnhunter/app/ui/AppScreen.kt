@@ -3000,7 +3000,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.Lock, "Kill switch", "Block traffic on disconnect",
+                Icons.Rounded.WifiOff, "Kill switch", "Block traffic on disconnect",
                 killSwitch, {
                     killSwitch = it
                     AppSettings.setKillSwitchEnabled(context, it)
@@ -3025,7 +3025,7 @@ private fun SettingsScreen(
             run {
                 var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
                 SettingsToggleRow(
-                    Icons.Rounded.Block, "Ad blocker", "Block ads & tracking domains",
+                    Icons.Rounded.FrontHand, "Ad blocker", "Block ads & tracking domains",
                     adBlockEnabled, {
                         adBlockEnabled = it
                         AppSettings.setAdBlockerEnabled(context, it)
