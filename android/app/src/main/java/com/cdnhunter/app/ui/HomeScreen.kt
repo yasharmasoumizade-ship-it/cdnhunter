@@ -2925,6 +2925,28 @@ private fun BrowseCard(
             // still what is behind the tab row — now behind cold glass instead of behind plain
             // dark. Order matters: fill, then wash, then the lit edges over both.
             .background(frost)
+            // A very fine noise-like grain, drawn as two overlapping low-alpha radial washes
+            // offset from centre, gives the panel a touch of material texture instead of a flat
+            // colour fill -- cheap to draw and reads as quality at a glance without costing a
+            // real blur pass.
+            .drawWithCache {
+                val grain1 = Brush.radialGradient(
+                    0.0f to Color.White.copy(alpha = 0.012f),
+                    1.0f to Color.Transparent,
+                    center = Offset(size.width * 0.18f, size.height * 0.06f),
+                    radius = size.width * 0.9f,
+                )
+                val grain2 = Brush.radialGradient(
+                    0.0f to Color.White.copy(alpha = 0.008f),
+                    1.0f to Color.Transparent,
+                    center = Offset(size.width * 0.85f, size.height * 0.35f),
+                    radius = size.width * 0.7f,
+                )
+                onDrawBehind {
+                    drawRect(grain1)
+                    drawRect(grain2)
+                }
+            }
             .drawBehind {
                 drawPanelSheen()
                 drawPanelTopEdge()
@@ -3183,22 +3205,10 @@ private fun panelFrost(heightPx: Float): Brush = Brush.verticalGradient(
  * first. Clipped to the same corner radius as the card so the bloom follows the arcs.
  */
 private fun DrawScope.drawPanelSheen() {
-    val depth = PanelSheenDepth.toPx()
-    val radius = PanelCorner.toPx()
-    clipRect(top = 0f, bottom = depth) {
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                0.00f to Color.White.copy(alpha = 0.055f),
-                0.34f to Color.White.copy(alpha = 0.024f),
-                0.68f to Color.White.copy(alpha = 0.008f),
-                1.00f to Color.Transparent,
-                startY = 0f,
-                endY = depth,
-            ),
-            cornerRadius = CornerRadius(radius),
-            size = size,
-        )
-    }
+    // No highlight bloom anymore -- an inset panel doesn't catch light on its top edge the
+    // way a raised one does. [drawPanelTopEdge] now carries the whole depth cue for this
+    // card via a dark inward shadow instead. Kept as a no-op rather than deleted so the
+    // call site in [BrowseCard] doesn't need touching if this needs reviving later.
 }
 
 /**
@@ -3217,17 +3227,30 @@ private fun DrawScope.drawPanelSheen() {
  * the card — it is just no longer a different temperature from it.
  */
 private fun DrawScope.drawPanelTopEdge() {
+    // Inset look: a dark shadow band falling INTO the card from its top edge (as if the
+    // card is a recess carved into the page), followed by a thin dark hairline stroke on
+    // the edge itself instead of the old bright highlight -- the reverse of a raised
+    // panel's lit rim.
     val hairline = 1.dp.toPx()
     val radius = PanelCorner.toPx()
+    val shadowDepth = radius * 1.4f
+    clipRect(top = 0f, bottom = shadowDepth) {
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                0.00f to Color.Black.copy(alpha = 0.34f),
+                0.35f to Color.Black.copy(alpha = 0.16f),
+                0.70f to Color.Black.copy(alpha = 0.05f),
+                1.00f to Color.Transparent,
+                startY = 0f,
+                endY = shadowDepth,
+            ),
+            cornerRadius = CornerRadius(radius),
+            size = size,
+        )
+    }
     clipRect(top = 0f, bottom = radius + hairline) {
         drawRoundRect(
-            brush = Brush.horizontalGradient(
-                0.00f to Color.White.copy(alpha = 0.08f),
-                0.20f to Color.White.copy(alpha = 0.22f),
-                0.50f to Color.White.copy(alpha = 0.28f),
-                0.80f to Color.White.copy(alpha = 0.22f),
-                1.00f to Color.White.copy(alpha = 0.08f),
-            ),
+            color = Color.Black.copy(alpha = 0.30f),
             topLeft = Offset(hairline / 2f, hairline / 2f),
             size = Size(size.width - hairline, size.height - hairline),
             cornerRadius = CornerRadius(radius),
