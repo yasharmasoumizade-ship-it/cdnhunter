@@ -2545,7 +2545,7 @@ private fun PowerCircle(
                     val innerRim = Brush.radialGradient(
                         0.90f to Color.Transparent,
                         1.00f to Color.Black.copy(alpha = 0.35f * depth),
-                        center = size.center,
+                        center = Offset(size.width / 2f, size.height / 2f),
                         radius = size.minDimension * 0.5f,
                     )
                     onDrawBehind {
@@ -2744,7 +2744,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         // so it turns. Reduce-motion parks the head at twelve o'clock without turning.
         if (working > 0.01f) {
             val head = ConnectTeal.copy(alpha = 0.95f * working)
-            rotate(degrees = if (reduce) 0f else spin.value, pivot = size.center) {
+            rotate(degrees = if (reduce) 0f else spin.value, pivot = center) {
                 drawArc(
                     brush = Brush.sweepGradient(
                         // sweepGradient's 0° is 3 o'clock, increasing clockwise; the arc below is
@@ -2753,7 +2753,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
                         0f to Color.Transparent,
                         (CONNECT_ARC_SWEEP / 360f) to head,
                         1f to Color.Transparent,
-                        center = size.center,
+                        center = center,
                     ),
                     startAngle = -90f,
                     sweepAngle = CONNECT_ARC_SWEEP,
@@ -3620,7 +3620,7 @@ private fun UsageRing(bytes: Long, accent: Color) {
             if (sweep > 0.001f) {
                 // Draw from twelve o'clock: rotate the frame so the sweep gradient's start
                 // (three o'clock in its own axis) lands at the top, matching the arc.
-                rotate(degrees = -90f, pivot = size.center) {
+                rotate(degrees = -90f, pivot = center) {
                     // Underglow — a wider, translucent pass so the head reads as lit.
                     drawArc(
                         color = accent.copy(alpha = 0.18f),
