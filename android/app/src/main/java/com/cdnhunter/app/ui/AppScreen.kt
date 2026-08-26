@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -2988,10 +2989,10 @@ private fun SettingsScreen(
             // disc as the sole way to change it — discoverable by nobody.
             ModeChoiceRow(mode = mode, onSetMode = onSetMode)
             RowDivider()
-            SettingsRow(Icons.Rounded.VerifiedUser, "Protocol", "VLESS", AnanasBlue, showChevron = true)
+            SettingsRow(Icons.Outlined.VerifiedUser, "Protocol", "VLESS", AnanasBlue, showChevron = true)
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
+                Icons.Outlined.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
                 autoReconnect, {
                     autoReconnect = it
                     AppSettings.setAutoReconnectEnabled(context, it)
@@ -3017,7 +3018,7 @@ private fun SettingsScreen(
                     else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                 }
                 SettingsRow(
-                    Icons.Rounded.CallSplit, "Split tunneling", summary, AnanasPurple,
+                    Icons.Outlined.CallSplit, "Split tunneling", summary, AnanasPurple,
                     showChevron = true, onClick = onSplitTunnelClick,
                 )
             }
@@ -3041,7 +3042,7 @@ private fun SettingsScreen(
                 // its own rule-provider in VpnConfigBuilder and is not gated behind ad blocking.
                 var malwareBlockEnabled by remember { mutableStateOf(AppSettings.malwareBlockerEnabled(context)) }
                 SettingsToggleRow(
-                    Icons.Rounded.Shield, "Malware blocker", "Block malware, phishing & scam domains",
+                    Icons.Outlined.Shield, "Malware blocker", "Block malware, phishing & scam domains",
                     malwareBlockEnabled, {
                         malwareBlockEnabled = it
                         AppSettings.setMalwareBlockerEnabled(context, it)
@@ -3137,7 +3138,7 @@ private fun SettingsScreen(
 
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.Router, "Allow LAN", "Access local network devices",
+                Icons.Outlined.Router, "Allow LAN", "Access local network devices",
                 allowLan, {
                     allowLan = it
                     AppSettings.setAllowLan(context, it)
@@ -3146,7 +3147,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.Language, "IPv6", "Route IPv6 traffic through VPN",
+                Icons.Outlined.Language, "IPv6", "Route IPv6 traffic through VPN",
                 ipv6Enabled, {
                     ipv6Enabled = it
                     AppSettings.setIpv6Enabled(context, it)
@@ -3155,7 +3156,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
+                Icons.Outlined.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
                 useDoh, {
                     useDoh = it
                     AppSettings.setUseDoh(context, it)
@@ -3178,7 +3179,7 @@ private fun SettingsScreen(
             var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
 
             SettingsToggleRow(
-                Icons.Rounded.Dns, "Custom DNS", "Use your own resolvers",
+                Icons.Outlined.Dns, "Custom DNS", "Use your own resolvers",
                 customDnsEnabled, {
                     customDnsEnabled = it
                     showDnsInputs = it
@@ -3756,9 +3757,9 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionLabel("ACCOUNT")
         CardGroup {
-            SettingsRow(Icons.Rounded.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
+            SettingsRow(Icons.Outlined.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
             RowDivider()
-            SettingsRow(Icons.Rounded.History, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
+            SettingsRow(Icons.Outlined.History, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
             RowDivider()
             // The one destructive row in the app, so it is the one row whose label is not
             // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
