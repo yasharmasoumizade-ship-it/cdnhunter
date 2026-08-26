@@ -89,20 +89,20 @@ import androidx.core.graphics.drawable.toBitmap
 // Retargeted to the canonical flat "Windscribe-style" spec: near-black bg, hairline
 // borders, single BLUE accent (no glass, no green). Symbol names are kept so the
 // retint propagates through Settings/Profile/Locations/AccountCard/SheetScreen in place.
-val AnanasBg       = Color(0xFF060709)   // App background
+val AnanasBg       = Color(0xFF0A0B0F)   // App background (canonical, matches Auth)
 val AnanasScreenBg = Color(0xFF0A0B0F)   // Slightly lighter page wash
 val AnanasCard     = Color(0xFF131316)   // Card surface
 val AnanasCard2    = Color(0xFF1A1B22)   // Raised element
 val AnanasBorder   = Color(0xFF23262F)   // Hairline border
 val AnanasBorder2  = Color(0xFF2A2E38)   // Alternative (raised) border
 val AnanasDivider  = Color(0xFF1C1F27)   // Divider
-val AnanasAccent   = Color(0xFF4D7FFF)   // Blue accent
-val AnanasAccentLight = Color(0xFF6E97FF)
+val AnanasAccent   = Color(0xFF3B82F6)   // Blue accent (canonical, matches Auth)
+val AnanasAccentLight = Color(0xFF60A5FA)
 val AnanasSettingsIcon = Color(0xFF9BA0AC)   // text-mid, soft gray for settings row icons
 val AnanasAmber    = Color(0xFFE0B23B)   // Warm amber (premium/warn)
 val AnanasRed      = Color(0xFFEF4444)   // Error red
-val AnanasBlue     = Color(0xFF4D7FFF)   // Unified to the blue accent
-val AnanasPurple   = Color(0xFF4D7FFF)   // Unified to the blue accent (no off-palette purple)
+val AnanasBlue     = Color(0xFF3B82F6)   // Unified to the blue accent
+val AnanasPurple   = Color(0xFF3B82F6)   // Unified to the blue accent (no off-palette purple)
 // The "on / active / selected" indicator color for controls (MinimalToggle track,
 // SegmentedControl selected segment, SelectDot). Deliberately NOT the green accent:
 // a green "on" state on a VPN app reads as a status/connection light, which these
@@ -2278,7 +2278,7 @@ private val SheetSegmentTint = Brush.verticalGradient(
 
 /** An accent [PillButton]'s material — flat accent fill, pressed a shade darker. */
 private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasAccent, AnanasAccent))
-private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF3D6BE6), Color(0xFF3D6BE6)))
+private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF2563EB), Color(0xFF2563EB)))
 
 /** A tile riding inside [SheetScreen]'s header — flat raised surface. */
 private val SheetGlassTileFill = Brush.verticalGradient(

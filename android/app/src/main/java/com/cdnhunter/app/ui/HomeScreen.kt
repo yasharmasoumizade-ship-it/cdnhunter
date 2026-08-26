@@ -184,7 +184,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
-private val RefBg = Color(0xFF060709)          // --bg
+private val RefBg = Color(0xFF0A0B0F)          // --bg (canonical, matches Auth)
 
 /**
  * The browse card's own base: the same luminance as [RefBg], a degree or two colder.
@@ -283,7 +283,7 @@ private val HeadlineInkShadow = Shadow(
     offset = Offset(0f, 3f),
     blurRadius = 14f,
 )
-private val RefAccent = Color(0xFF4D7FFF)      // --accent
+private val RefAccent = Color(0xFF3B82F6)      // --accent (canonical, matches Auth)
 private val RefTeal = Color(0xFF35D6B8)        // --teal
 /**
  * The connected colour: a deep, refined teal. There is no green on this screen.
@@ -306,7 +306,7 @@ private val RefLive = Color(0xFF22B9A2)
  * one light in the app allowed to be theatrical. It is thrown by [drawHeroAtmosphere]
  * across the whole backdrop; there is no longer a halo around the button itself.
  */
-private val RefGlowOn = Color(0xFF2F6BFF)
+private val RefGlowOn = Color(0xFF2563EB)
 // The connecting state carries no colour of its own any more: the working spinner, the disc
 // mark and the room's light are all monochrome (see [PowerRing], [phaseLight]). What used to be
 // a yellow-orange "working" hue (RefWorking) and its on-white ink (RefWorkingInk) are gone.
