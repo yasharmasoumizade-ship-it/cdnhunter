@@ -2351,41 +2351,6 @@ private val SheetSearchStyle = TextStyle(
     ),
 )
 
-/** Rounded at the bottom only — see [Modifier.sheetHeaderPanel]. */
-private val SheetHeaderShape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
-
-/** The header now carries its own hero-style gradient -- a teal-to-blue neon wash rather
- *  than sitting flat on the app background -- so Settings/Profile/Payment history open with
- *  the same sense of a lit hero surface Home has, instead of reading as a separate grey
- *  card floating over the page. */
-private val SheetHeaderGlass = Brush.linearGradient(
-    colors = listOf(
-        AnanasTeal.copy(alpha = 0.28f),
-        AnanasAccent.copy(alpha = 0.22f),
-        AnanasBg,
-    ),
-    start = Offset(0f, 0f),
-    end = Offset(0f, 560f),
-)
-
-/** No separate flat tint layer any more -- the radial bloom is now drawn directly in
- *  [Modifier.sheetHeaderPanel]'s drawBehind, where real pixel dimensions are available. */
-private val SheetHeaderTint = Brush.verticalGradient(
-    0.00f to Color.Transparent,
-    1.00f to Color.Transparent,
-)
-
-/** The lit bottom rim — the glass's thickness where it ends, and the one edge on the panel
- *  that is meant to be seen. Drawn inside the clip, so it follows the corner curve. */
-private val SheetHeaderRim = Brush.verticalGradient(
-    0.00f to Color.Transparent,
-    0.62f to Color.White.copy(alpha = 0.01f),
-    1.00f to Color.White.copy(alpha = 0.04f),
-)
-
-/** How deep that rim runs. */
-private val SheetHeaderRimDepth = 6.dp
-
 /** How tall the soft ambient glow pooling along the hero's bottom edge is (see
  *  [Modifier.sheetHeaderPanel]'s `glow` parameter). */
 private val SheetHeaderGlowDepth = 44.dp
@@ -2393,48 +2358,51 @@ private val SheetHeaderGlowDepth = 44.dp
 /** How much air is left between the panel's last row and its bottom edge. */
 private val SheetHeaderFootRoom = 22.dp
 
-/** How far the panel's shadow reaches on to the page below it. */
-private val SheetHeaderLift = 6.dp
-
 /**
- * The glass panel every secondary screen opens with: full-bleed, rounded only at the bottom, its
- * top running off the screen behind the status bar — so the one edge the eye can read is the lit
- * curve below the content, and the panel reads as a sheet sliding down from above the device.
+ * The hero wash every secondary screen (Settings/Profile/SplitTunnel/PaymentHistory) opens with.
  *
- * The status-bar inset is applied *inside* the fill, which is what lets the glass reach under the
- * clock while its content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
+ * It is deliberately NOT a panel: no bottom rounding, no lit rim, no opaque fill — those together
+ * rendered as a rounded-bottom card silhouette sitting on the page, a "box shape" breaking up the
+ * hero. Instead the tint is drawn straight over the page: a teal→blue wash strongest under the
+ * status bar that fades to nothing by the panel's own foot, so the header melts seamlessly into the
+ * page at any content height. (The old version clipped a [RoundedCornerShape] and filled it with a
+ * fixed-560px linear gradient, which left a tinted rounded band on panels shorter than 560px.)
+ *
+ * The status-bar inset is applied *after* the wash, so the tint reaches under the clock while the
+ * content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
  */
 private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     .fillMaxWidth()
-    // No drop shadow: on the page below, the opaque-black shadow of the panel's rounded bottom
-    // edge rendered as a stray rounded outline hovering just above the first content card. The
-    // panel already ends in a lit rim ([SheetHeaderRim]) drawn inside the clip — that curved
-    // highlight is the one edge meant to be seen, and it reads as depth without a ghost band.
-    .clip(SheetHeaderShape)
-    .background(SheetHeaderGlass)
-    .background(SheetHeaderTint)
     .drawBehind {
-        // Soft radial bloom, upper-left, echoing the light source used elsewhere (power
-        // button, hero flag) -- pixel-real center/radius since Brush.radialGradient with
-        // fractional Offset/Float doesn't map to fractions of the draw area.
+        // The hero tint, straight over the page: teal→blue at the top, gone by the foot, anchored
+        // to real pixel height so it always resolves to the page colour (no residual band, no edge).
         drawRect(
-            brush = Brush.radialGradient(
+            brush = Brush.verticalGradient(
                 colors = listOf(
-                    AnanasTealLight.copy(alpha = 0.22f),
+                    AnanasTeal.copy(alpha = 0.26f),
+                    AnanasAccent.copy(alpha = 0.15f),
                     Color.Transparent,
                 ),
-                center = Offset(size.width * 0.15f, size.height * 0.05f),
+                startY = 0f,
+                endY = size.height,
+            ),
+        )
+        // Soft radial bloom, upper-left, echoing the light source used elsewhere (power button,
+        // hero flag). Pixel-real center/radius since fractional Offset/Float doesn't map to the area.
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(AnanasTealLight.copy(alpha = 0.20f), Color.Transparent),
+                center = Offset(size.width * 0.15f, size.height * 0.10f),
                 radius = size.width * 0.9f,
             ),
         )
-        // Soft ambient blue light pooling along the hero's bottom edge. Drawn inside the clip so
-        // it follows the 20dp bottom corners. Alpha is driven by [glow] (animated by the caller);
-        // at glow == 0f nothing is drawn, so screens that don't opt in are visually unchanged.
+        // Optional ambient blue pooled along the foot, caller-driven ([glow]); off by default, so
+        // the seamless screens are unchanged and only an opting-in caller gets the pooled light.
         if (glow > 0f) {
             val band = SheetHeaderGlowDepth.toPx()
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, AnanasAccent.copy(alpha = 0.18f * glow)),
+                    colors = listOf(Color.Transparent, AnanasAccent.copy(alpha = 0.16f * glow)),
                     startY = size.height - band,
                     endY = size.height,
                 ),
@@ -2442,12 +2410,6 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
                 size = Size(size.width, band),
             )
         }
-        val rim = SheetHeaderRimDepth.toPx()
-        drawRect(
-            brush = SheetHeaderRim,
-            topLeft = Offset(0f, size.height - rim),
-            size = Size(size.width, rim),
-        )
     }
     .statusBarsPadding()
     .padding(horizontal = SheetPad)
