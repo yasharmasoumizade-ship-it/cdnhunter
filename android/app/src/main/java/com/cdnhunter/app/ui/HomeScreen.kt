@@ -2458,7 +2458,10 @@ private fun PowerCircle(
         label = "powerBoltFill",
     )
     val markStrong = enabled || phase != ConnPhase.OFF
-    val boltTrack = if (markStrong) PowerInk.copy(alpha = 0.55f) else PowerInk.copy(alpha = 0.22f)
+    // Idle bolt is a struck base, but pure ink over the dark well went muddy. Lift it with a touch
+    // of cool slate and more presence so the OFF/idle mark reads clearly instead of dark-on-dark.
+    val boltBase = lerp(PowerInk, Color(0xFF2B3446), 0.30f)
+    val boltTrack = if (markStrong) boltBase.copy(alpha = 0.72f) else boltBase.copy(alpha = 0.46f)
     val boltFill = if (connected) RefGlowOn else RefGlowOn.copy(alpha = if (markStrong) 0.9f else 0.3f)
 
     val density = LocalDensity.current
@@ -2623,10 +2626,15 @@ private fun PowerBolt(
             startY = 0f,
             endY = BOLT_VH,
         )
+        // The lit charge climbs the bolt from foot to tip. It reads green→blue: the app's teal at
+        // the foot warming up into the blue room-light at the tip, kept rich through the middle (no
+        // dark edge fade) so the fill sits inward rather than hugging the outline.
+        val tealEnd = ConnectTeal.copy(alpha = fillColor.alpha)
         val fillBrush = Brush.verticalGradient(
-            0f to lerp(fillColor, Color.White, 0.30f),
-            0.60f to fillColor,
-            1f to lerp(fillColor, Color.Black, 0.06f),
+            0f to lerp(fillColor, Color.White, 0.26f),
+            0.42f to fillColor,
+            0.78f to lerp(fillColor, tealEnd, 0.55f),
+            1f to tealEnd,
             startY = 0f,
             endY = BOLT_VH,
         )
