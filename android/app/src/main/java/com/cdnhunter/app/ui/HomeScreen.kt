@@ -746,6 +746,18 @@ private const val HEADER_FLAG_ALPHA = 1.0f
 private val FlagFootRise = 0.dp
 
 /**
+ * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
+ *
+ * The flag box would otherwise end exactly on the card's top edge, so nothing of the artwork sat
+ * behind the card and its translucent top revealed only the floor/atmosphere below it. This gives
+ * the flag a small foot *inside* the card's head, so the country's colour bleeds faintly through
+ * the card's top edge and then dissolves out (the box's own [HeaderFlagBottomFade] lands in this
+ * region). Kept small so the bleed is only near the top; [panelTopFade] goes fully opaque a little
+ * below, so the flag is never visible down the body of the card.
+ */
+private val FlagCardBleed = 32.dp
+
+/**
  * The single flag layer's bottom taper, applied inside its own box.
  *
  * Without it the artwork would end on a hard horizontal line. That line is behind the
@@ -1429,7 +1441,7 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    val flagHeight = (heroHeight - FlagFootRise).coerceAtLeast(0.dp)
+    val flagHeight = (heroHeight - FlagFootRise + FlagCardBleed).coerceAtLeast(0.dp)
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1651,7 +1663,7 @@ private val HeroVignetteStops = listOf(
  *  country sits top-right in [CountryHeadline] and the public IP is an overlay card drawn by
  *  [HomeScreen] over the lower-left of the flag. So this column's middle is bare artwork now,
  *  and this token is how much of it shows above the disc's dock well. */
-private val HeroFlagSpace = 104.dp
+private val HeroFlagSpace = 72.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. */
@@ -3164,10 +3176,10 @@ private val PanelSheenDepth = 48.dp
  * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefPanelBg.copy(alpha = 0.78f),
-    0.35f to RefPanelBg.copy(alpha = 0.88f),
-    0.70f to RefPanelBg.copy(alpha = 0.92f),
-    1.00f to RefPanelBg.copy(alpha = 0.94f),
+    0.00f to RefPanelBg.copy(alpha = 0.68f),
+    0.30f to RefPanelBg.copy(alpha = 0.86f),
+    0.65f to RefPanelBg.copy(alpha = 0.97f),
+    1.00f to RefPanelBg.copy(alpha = 1.00f),
     startY = 0f,
     endY = heightPx,
     tileMode = TileMode.Clamp,
@@ -3243,13 +3255,17 @@ private fun DrawScope.drawPanelTopEdge() {
     // panel's lit rim.
     val hairline = 1.dp.toPx()
     val radius = PanelCorner.toPx()
-    val shadowDepth = radius * 1.4f
+    // A deeper, longer inward shadow so the card reads as a recess set into the page rather than a
+    // panel resting on it: darkest right at the lip, falling away over ~1.9× the corner radius. The
+    // extra reach and the stronger peak are what sell the inset — a short, faint band read as flat.
+    val shadowDepth = radius * 1.9f
     clipRect(top = 0f, bottom = shadowDepth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.Black.copy(alpha = 0.34f),
-                0.35f to Color.Black.copy(alpha = 0.16f),
-                0.70f to Color.Black.copy(alpha = 0.05f),
+                0.00f to Color.Black.copy(alpha = 0.50f),
+                0.22f to Color.Black.copy(alpha = 0.30f),
+                0.50f to Color.Black.copy(alpha = 0.13f),
+                0.78f to Color.Black.copy(alpha = 0.04f),
                 1.00f to Color.Transparent,
                 startY = 0f,
                 endY = shadowDepth,
@@ -3260,7 +3276,7 @@ private fun DrawScope.drawPanelTopEdge() {
     }
     clipRect(top = 0f, bottom = radius + hairline) {
         drawRoundRect(
-            color = Color.Black.copy(alpha = 0.30f),
+            color = Color.Black.copy(alpha = 0.42f),
             topLeft = Offset(hairline / 2f, hairline / 2f),
             size = Size(size.width - hairline, size.height - hairline),
             cornerRadius = CornerRadius(radius),
