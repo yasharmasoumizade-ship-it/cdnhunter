@@ -323,7 +323,7 @@ private fun AuthFormContent(
                 Image(
                     painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
                     contentDescription = null,
-                    modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                    modifier = Modifier.size(26.dp).padding(end = 10.dp),
                 )
                 Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
             }
