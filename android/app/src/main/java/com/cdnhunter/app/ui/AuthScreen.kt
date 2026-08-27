@@ -57,17 +57,28 @@ private val SuccessGreen = Color(0xFF22C55E)
 enum class AuthMode { LOGIN, SIGNUP }
 private enum class AuthStep { SPLASH, FORM, SUCCESS }
 
-/** Turns Firebase's raw exception messages into a short, human-readable string. */
+/** Turns Firebase's raw exception messages into a short, human-readable string.
+ *
+ *  Two security properties on top of the friendliness:
+ *   - Login failures are made *indistinguishable*: a wrong password, a non-existent
+ *     account, and a malformed/expired credential all resolve to the same "Incorrect
+ *     email or password." so a caller can't probe which emails are registered
+ *     (account enumeration). Signup's "email already in use" is unavoidable there and
+ *     kept, matching platform behaviour.
+ *   - Unmapped errors are treated as opaque and NEVER echoed back: raw Firebase/GMS
+ *     strings can carry internal endpoints, HTML error pages, or backend detail, so the
+ *     fallback is a generic message rather than the original text.
+ */
 private fun friendlyAuthError(raw: String?): String {
     if (raw == null) return "Something went wrong. Please try again."
     val r = raw.lowercase()
     return when {
         "network" in r || "timeout" in r || "unable to resolve" in r ->
             "Network error. Check your connection and try again."
-        "password is invalid" in r || "wrong-password" in r || "invalid-credential" in r ->
+        "password is invalid" in r || "wrong-password" in r || "invalid-credential" in r ||
+            "no user record" in r || "user-not-found" in r ||
+            "invalid login credentials" in r || "invalid_login_credentials" in r ->
             "Incorrect email or password."
-        "no user record" in r || "user-not-found" in r ->
-            "No account found with that email."
         "email address is already in use" in r || "email-already-in-use" in r ->
             "An account already exists with that email."
         "badly formatted" in r || "invalid-email" in r ->
@@ -76,9 +87,7 @@ private fun friendlyAuthError(raw: String?): String {
             "Password should be at least 6 characters."
         "too many" in r ->
             "Too many attempts. Please wait and try again."
-        "internal error" in r || "<html" in r || "<!doctype" in r || raw.length > 120 ->
-            "Something went wrong. Please try again."
-        else -> raw
+        else -> "Something went wrong. Please try again."
     }
 }
 
@@ -217,13 +226,22 @@ private fun AuthFormContent(
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
             try {
                 val account = task.getResult(ApiException::class.java)
-                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-                loading = true
-                auth.signInWithCredential(credential)
-                    .addOnSuccessListener { onSuccess(false) }
-                    .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
+                val idToken = account.idToken
+                if (idToken == null) {
+                    // requestIdToken() is set, so a null here means a misconfigured
+                    // client or a cancelled/partial flow — don't hand a null credential
+                    // to Firebase, just report the same generic failure.
+                    error = "Google sign-in failed. Please try again."
+                } else {
+                    val credential = GoogleAuthProvider.getCredential(idToken, null)
+                    loading = true
+                    auth.signInWithCredential(credential)
+                        .addOnSuccessListener { onSuccess(false) }
+                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
+                }
             } catch (e: ApiException) {
-                error = "Google sign-in failed (${e.statusCode})"
+                // Don't surface the numeric GMS status code to the user.
+                error = "Google sign-in failed. Please try again."
                 loading = false
             }
         }
