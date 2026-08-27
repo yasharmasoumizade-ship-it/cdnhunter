@@ -102,6 +102,15 @@ fun MainContent(activity: MainActivity) {
     var screen by remember { mutableStateOf(if (auth.currentUser != null) RootScreen.ENTERING else RootScreen.AUTH) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Resolve which custom Auth domain to use before anything talks to Firebase Auth --
+    // see AuthDomainResolver for why this isn't a hardcoded string. Runs once per process;
+    // if it hasn't resolved yet, FirebaseAuth just uses its own default domain for that
+    // brief window, which is a safe fallback rather than a blocking one.
+    LaunchedEffect(Unit) {
+        val domain = com.cdnhunter.app.vpn.AuthDomainResolver.resolveActiveDomain()
+        auth.setCustomAuthDomain(domain)
+    }
+
     AnimatedContent(
         targetState = screen,
         transitionSpec = {
