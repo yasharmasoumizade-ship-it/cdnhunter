@@ -2371,8 +2371,21 @@ private val SheetHeaderFootRoom = 22.dp
  * The status-bar inset is applied *after* the wash, so the tint reaches under the clock while the
  * content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
  */
+private val SheetHeaderShape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+
 private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     .fillMaxWidth()
+    // A raised card again: clipped to a rounded-bottom shape and lifted off the page with a
+    // real shadow, so the hero reads as a distinct panel sitting above the background rather
+    // than a wash bleeding into it.
+    .shadow(
+        elevation = 14.dp,
+        shape = SheetHeaderShape,
+        ambientColor = Color.Black.copy(alpha = 0.5f),
+        spotColor = Color.Black.copy(alpha = 0.6f),
+    )
+    .clip(SheetHeaderShape)
+    .background(AnanasBg)
     .drawBehind {
         // The hero tint, straight over the page: teal→blue at the top, gone by the foot, anchored
         // to real pixel height so it always resolves to the page colour (no residual band, no edge).
@@ -2410,6 +2423,21 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
                 size = Size(size.width, band),
             )
         }
+        // The lit bottom rim: a bright teal-to-blue edge along the panel's own foot, the one
+        // border meant to be seen -- this is what makes the raised card read as having a
+        // definite, glowing edge instead of just fading out.
+        val rimDepth = 3.dp.toPx()
+        drawRect(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    AnanasTeal.copy(alpha = 0.55f),
+                    AnanasAccent.copy(alpha = 0.85f),
+                    AnanasTeal.copy(alpha = 0.55f),
+                ),
+            ),
+            topLeft = Offset(0f, size.height - rimDepth),
+            size = Size(size.width, rimDepth),
+        )
     }
     .statusBarsPadding()
     .padding(horizontal = SheetPad)
