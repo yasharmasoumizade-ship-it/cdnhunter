@@ -44,6 +44,7 @@ import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val BgDark = Color(0xFF0A0B0F)
 private val FieldBg = Color(0xFF15171E)
@@ -94,13 +95,18 @@ private fun friendlyAuthError(raw: String?): String {
 
 @Composable
 fun AuthScreen(onSignedIn: () -> Unit) {
-    val auth = remember { FirebaseAuth.getInstance() }
+    val context = LocalContext.current
     var step by remember { mutableStateOf(AuthStep.SPLASH) }
     var mode by remember { mutableStateOf(AuthMode.LOGIN) }
 
     LaunchedEffect(Unit) {
         delay(1100)
-        if (auth.currentUser != null) onSignedIn() else step = AuthStep.FORM
+        // Either a live Thallo backend session, or a still-valid Google sign-in via
+        // Firebase (Google Sign-In keeps using Firebase Auth -- only email/password
+        // moved to the self-hosted backend, see ThalloAuthClient).
+        val hasSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context) != null ||
+            FirebaseAuth.getInstance().currentUser != null
+        if (hasSession) onSignedIn() else step = AuthStep.FORM
     }
 
     Box(Modifier.fillMaxSize().background(BgDark)) {
@@ -248,6 +254,7 @@ private fun AuthFormContent(
         }
     }
 
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val submit: () -> Unit = {
         error = null
         when {
@@ -259,20 +266,23 @@ private fun AuthFormContent(
                 error = "Passwords don't match."
             else -> {
                 loading = true
-                if (mode == AuthMode.LOGIN) {
-                    auth.signInWithEmailAndPassword(email.trim(), password)
-                        .addOnSuccessListener { onSuccess(false) }
-                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
-                } else {
-                    auth.createUserWithEmailAndPassword(email.trim(), password)
-                        .addOnSuccessListener { result ->
-                            val profileUpdate = com.google.firebase.auth.UserProfileChangeRequest.Builder()
-                                .setDisplayName(username.trim())
-                                .build()
-                            result.user?.updateProfile(profileUpdate)
-                            onSuccess(true)
+                coroutineScope.launch {
+                    val outcome = if (mode == AuthMode.LOGIN) {
+                        com.cdnhunter.app.vpn.ThalloAuthClient.logIn(email.trim(), password)
+                    } else {
+                        com.cdnhunter.app.vpn.ThalloAuthClient.signUp(email.trim(), password, username.trim())
+                    }
+                    when (outcome) {
+                        is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
+                            com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
+                            onSuccess(mode == AuthMode.SIGNUP)
                         }
-                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
+                        is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                            error = outcome.message
+                            loading = false
+                        }
+                    }
+                }
                 }
             }
         }

@@ -125,6 +125,7 @@ fun MainContent(activity: MainActivity) {
             RootScreen.HOME -> AppScreen(onSignOut = {
                 com.cdnhunter.app.vpn.CdnVpnService.stop(context)
                 auth.signOut()
+                com.cdnhunter.app.vpn.ThalloAuthClient.signOut(context)
                 screen = RootScreen.AUTH
             })
         }
