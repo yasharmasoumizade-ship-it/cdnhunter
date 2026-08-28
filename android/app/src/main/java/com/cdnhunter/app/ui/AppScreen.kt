@@ -2386,6 +2386,15 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     )
     .clip(SheetHeaderShape)
     .background(AnanasBg)
+    .border(
+        width = 1.dp,
+        brush = Brush.verticalGradient(
+            0.0f to AnanasTeal.copy(alpha = 0.0f),
+            0.6f to AnanasTeal.copy(alpha = 0.18f),
+            1.0f to AnanasTeal.copy(alpha = 0.38f),
+        ),
+        shape = SheetHeaderShape,
+    )
     .drawBehind {
         // The hero tint, straight over the page: teal→blue at the top, gone by the foot, anchored
         // to real pixel height so it always resolves to the page colour (no residual band, no edge).
@@ -2426,13 +2435,13 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
         // The lit bottom rim: a bright teal-to-blue edge along the panel's own foot, the one
         // border meant to be seen -- this is what makes the raised card read as having a
         // definite, glowing edge instead of just fading out.
-        val rimDepth = 3.dp.toPx()
+        val rimDepth = 5.dp.toPx()
         drawRect(
             brush = Brush.horizontalGradient(
                 colors = listOf(
-                    AnanasTeal.copy(alpha = 0.55f),
-                    AnanasAccent.copy(alpha = 0.85f),
-                    AnanasTeal.copy(alpha = 0.55f),
+                    AnanasTeal.copy(alpha = 0.75f),
+                    AnanasAccent.copy(alpha = 0.95f),
+                    AnanasTeal.copy(alpha = 0.75f),
                 ),
             ),
             topLeft = Offset(0f, size.height - rimDepth),
