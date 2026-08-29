@@ -143,8 +143,17 @@ fun MainContent(activity: MainActivity) {
 private fun EnteringAppLoader(onDone: () -> Unit) {
     var visible by remember { mutableStateOf(false) }
     var typedChars by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         visible = true
+        // If this is a Thallo-backend session (not Google/Firebase), refresh it now so
+        // the access token is current for the rest of this app session -- refreshing
+        // here rather than on-demand means a stale/revoked refresh token is caught right
+        // away, sending the person back to sign-in instead of failing later mid-task.
+        val hasThalloSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context) != null
+        if (hasThalloSession) {
+            com.cdnhunter.app.vpn.ThalloAuthClient.refreshSession(context)
+        }
         delay(200)
         val name = "Thallo"
         for (i in 1..name.length) {
