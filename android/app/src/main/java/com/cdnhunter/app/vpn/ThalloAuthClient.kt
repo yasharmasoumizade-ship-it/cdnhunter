@@ -66,6 +66,46 @@ object ThalloAuthClient {
     suspend fun logIn(email: String, password: String): AuthOutcome =
         request("/login", email, password, null)
 
+    /** Exchanges a Google ID token (from Google Play Services' own Sign-In flow -- never
+     *  touches Firebase) for a Thallo session. The backend verifies the ID token directly
+     *  against Google's tokeninfo endpoint from Cloudflare's network, sidestepping the
+     *  API-region block that hits Firebase Auth for Iranian IPs. */
+    suspend fun signInWithGoogle(idToken: String): AuthOutcome = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().put("idToken", idToken)
+            val httpRequest = Request.Builder()
+                .url(workerBaseUrl + "/google-signin")
+                .post(body.toString().toRequestBody(jsonMedia))
+                .build()
+
+            client.newCall(httpRequest).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                val json = try {
+                    JSONObject(responseBody)
+                } catch (e: Exception) {
+                    return@withContext AuthOutcome.Failure("Something went wrong. Please try again.")
+                }
+
+                if (!response.isSuccessful) {
+                    val errorMsg = json.optString("error", "Something went wrong. Please try again.")
+                    return@withContext AuthOutcome.Failure(errorMsg)
+                }
+
+                AuthOutcome.Success(
+                    AuthResult(
+                        userId = json.getString("userId"),
+                        email = json.getString("email"),
+                        displayName = json.optString("displayName", ""),
+                        accessToken = json.getString("accessToken"),
+                        refreshToken = json.getString("refreshToken"),
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            AuthOutcome.Failure("Network error. Check your connection and try again.")
+        }
+    }
+
     private suspend fun request(
         path: String,
         email: String,

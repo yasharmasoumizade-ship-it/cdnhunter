@@ -225,6 +225,7 @@ private fun AuthFormContent(
             .requestEmail()
             .build()
     }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val googleClient = remember { GoogleSignIn.getClient(context, gso) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -254,7 +255,6 @@ private fun AuthFormContent(
         }
     }
 
-    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val submit: () -> Unit = {
         error = null
         when {
