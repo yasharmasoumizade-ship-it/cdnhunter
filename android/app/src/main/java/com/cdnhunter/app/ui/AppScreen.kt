@@ -2387,11 +2387,12 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     .clip(SheetHeaderShape)
     .background(AnanasBg)
     .border(
-        width = 1.dp,
+        width = 0.8.dp,
         brush = Brush.verticalGradient(
             0.0f to AnanasTeal.copy(alpha = 0.0f),
-            0.6f to AnanasTeal.copy(alpha = 0.18f),
-            1.0f to AnanasTeal.copy(alpha = 0.38f),
+            0.55f to AnanasTeal.copy(alpha = 0.30f),
+            0.85f to AnanasAccent.copy(alpha = 0.70f),
+            1.0f to AnanasTeal.copy(alpha = 0.85f),
         ),
         shape = SheetHeaderShape,
     )
@@ -2435,18 +2436,7 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
         // The lit bottom rim: a bright teal-to-blue edge along the panel's own foot, the one
         // border meant to be seen -- this is what makes the raised card read as having a
         // definite, glowing edge instead of just fading out.
-        val rimDepth = 5.dp.toPx()
-        drawRect(
-            brush = Brush.horizontalGradient(
-                colors = listOf(
-                    AnanasTeal.copy(alpha = 0.75f),
-                    AnanasAccent.copy(alpha = 0.95f),
-                    AnanasTeal.copy(alpha = 0.75f),
-                ),
-            ),
-            topLeft = Offset(0f, size.height - rimDepth),
-            size = Size(size.width, rimDepth),
-        )
+        // rim is now drawn by the border() modifier above, not here
     }
     .statusBarsPadding()
     .padding(horizontal = SheetPad)
