@@ -283,7 +283,6 @@ private fun AuthFormContent(
                         }
                     }
                 }
-                }
             }
         }
     }
