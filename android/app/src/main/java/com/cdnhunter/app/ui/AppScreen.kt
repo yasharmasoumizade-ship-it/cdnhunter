@@ -2379,10 +2379,10 @@ private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
     // real shadow, so the hero reads as a distinct panel sitting above the background rather
     // than a wash bleeding into it.
     .shadow(
-        elevation = 14.dp,
+        elevation = 20.dp,
         shape = SheetHeaderShape,
-        ambientColor = Color.Black.copy(alpha = 0.5f),
-        spotColor = Color.Black.copy(alpha = 0.6f),
+        ambientColor = AnanasTeal.copy(alpha = 0.22f),
+        spotColor = AnanasTeal.copy(alpha = 0.35f),
     )
     .clip(SheetHeaderShape)
     .background(AnanasBg)
