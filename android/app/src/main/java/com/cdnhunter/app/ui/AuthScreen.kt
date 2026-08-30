@@ -332,7 +332,7 @@ private fun SuccessContent(onContinue: () -> Unit) {
 private fun AuthFormContent(
     mode: AuthMode,
     onModeChange: (AuthMode) -> Unit,
-    onSuccess: (justSignedUp: Boolean) -> Unit,
+    onSuccess: (justSignedUp: Boolean, email: String) -> Unit,
 ) {
     val context = LocalContext.current
     val auth = remember { FirebaseAuth.getInstance() }
