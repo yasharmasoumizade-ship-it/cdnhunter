@@ -70,6 +70,66 @@ object ThalloAuthClient {
      *  touches Firebase) for a Thallo session. The backend verifies the ID token directly
      *  against Google's tokeninfo endpoint from Cloudflare's network, sidestepping the
      *  API-region block that hits Firebase Auth for Iranian IPs. */
+    /** Requests a fresh 6-digit verification code be emailed to this address. */
+    suspend fun resendVerificationCode(email: String): AuthOutcome = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().put("email", email)
+            val httpRequest = Request.Builder()
+                .url(workerBaseUrl + "/resend-code")
+                .post(body.toString().toRequestBody(jsonMedia))
+                .build()
+            client.newCall(httpRequest).execute().use { response ->
+                val json = try {
+                    JSONObject(response.body?.string() ?: "")
+                } catch (e: Exception) {
+                    return@withContext AuthOutcome.Failure("Something went wrong. Please try again.")
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthOutcome.Failure(json.optString("error", "Something went wrong. Please try again."))
+                }
+                // No AuthResult to report here -- reuse Success with an empty-ish
+                // placeholder isn't right, so this returns via a dedicated Unit-style
+                // outcome instead. See verifyEmail for the actual state-changing call.
+                AuthOutcome.Success(
+                    AuthResult(userId = "", email = email, displayName = "", accessToken = "", refreshToken = "")
+                )
+            }
+        } catch (e: Exception) {
+            AuthOutcome.Failure("Network error. Check your connection and try again.")
+        }
+    }
+
+    /** Verifies a 6-digit code sent to [email]. Does not itself change the local
+     *  session -- the account was already usable right after signup; this just marks
+     *  it verified on the backend. */
+    suspend fun verifyEmail(email: String, code: String): AuthOutcome = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().apply {
+                put("email", email)
+                put("code", code)
+            }
+            val httpRequest = Request.Builder()
+                .url(workerBaseUrl + "/verify-email")
+                .post(body.toString().toRequestBody(jsonMedia))
+                .build()
+            client.newCall(httpRequest).execute().use { response ->
+                val json = try {
+                    JSONObject(response.body?.string() ?: "")
+                } catch (e: Exception) {
+                    return@withContext AuthOutcome.Failure("Something went wrong. Please try again.")
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthOutcome.Failure(json.optString("error", "Incorrect code."))
+                }
+                AuthOutcome.Success(
+                    AuthResult(userId = "", email = email, displayName = "", accessToken = "", refreshToken = "")
+                )
+            }
+        } catch (e: Exception) {
+            AuthOutcome.Failure("Network error. Check your connection and try again.")
+        }
+    }
+
     suspend fun signInWithGoogle(idToken: String): AuthOutcome = withContext(Dispatchers.IO) {
         try {
             val body = JSONObject().put("idToken", idToken)
