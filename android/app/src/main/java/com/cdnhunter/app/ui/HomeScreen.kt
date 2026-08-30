@@ -1709,26 +1709,22 @@ private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
 
 @Composable
 private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean) {
-    val tint = if (active) RefAccent else Color.White.copy(alpha = 0.22f)
+    val tint = if (active) AnanasTeal else Color.White.copy(alpha = 0.75f)
     Box(
         Modifier.size(36.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (active) {
-            // A real bloom, not a coloured Modifier.shadow. On a bare glyph the platform shadow
-            // only smeared the icon's own alpha a few px downward in a near-black tint — it read
-            // as a smudge under the mark, never as light. A soft RefAccent radial behind the glyph
-            // reads as the glyph itself being lit: brightest at the centre, gone by the box edge,
-            // so the whole mark glows its accent colour the way an active control should.
+            // Teal glow behind the icon when active — same teal as Settings toggles.
             Box(
                 Modifier
                     .matchParentSize()
                     .drawBehind {
                         drawCircle(
                             brush = Brush.radialGradient(
-                                0.00f to RefAccent.copy(alpha = 0.55f),
-                                0.42f to RefAccent.copy(alpha = 0.24f),
-                                0.72f to RefAccent.copy(alpha = 0.07f),
+                                0.00f to AnanasTeal.copy(alpha = 0.50f),
+                                0.42f to AnanasTeal.copy(alpha = 0.22f),
+                                0.72f to AnanasTeal.copy(alpha = 0.06f),
                                 1.00f to Color.Transparent,
                             ),
                             radius = size.minDimension * 0.60f,
