@@ -57,7 +57,7 @@ private val ErrorRed = Color(0xFFEF4444)
 private val SuccessGreen = Color(0xFF22C55E)
 
 enum class AuthMode { LOGIN, SIGNUP }
-private enum class AuthStep { SPLASH, FORM, SUCCESS }
+private enum class AuthStep { SPLASH, FORM, VERIFY, SUCCESS }
 
 /** Turns Firebase's raw exception messages into a short, human-readable string.
  *
@@ -98,6 +98,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     val context = LocalContext.current
     var step by remember { mutableStateOf(AuthStep.SPLASH) }
     var mode by remember { mutableStateOf(AuthMode.LOGIN) }
+    var pendingEmail by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         delay(1100)
@@ -123,7 +124,19 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                 AuthStep.FORM -> AuthFormContent(
                     mode = mode,
                     onModeChange = { mode = it },
-                    onSuccess = { justSignedUp -> if (justSignedUp) step = AuthStep.SUCCESS else onSignedIn() },
+                    onSuccess = { justSignedUp, email ->
+                        if (justSignedUp) {
+                            pendingEmail = email
+                            step = AuthStep.VERIFY
+                        } else {
+                            onSignedIn()
+                        }
+                    },
+                )
+                AuthStep.VERIFY -> VerifyEmailContent(
+                    email = pendingEmail,
+                    onVerified = { step = AuthStep.SUCCESS },
+                    onSkip = { step = AuthStep.SUCCESS },
                 )
                 AuthStep.SUCCESS -> SuccessContent(onContinue = onSignedIn)
             }
@@ -170,6 +183,119 @@ private fun SplashContent() {
 }
 
 @Composable
+@Composable
+private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: () -> Unit) {
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    var code by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var resending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var resendMessage by remember { mutableStateOf<String?>(null) }
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Check your email", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextHi)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "We sent a 6-digit code to $email",
+                fontSize = 13.sp, color = TextMid, textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(28.dp))
+
+            OutlinedTextField(
+                value = code,
+                onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 24.sp, letterSpacing = 8.sp, textAlign = TextAlign.Center,
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.width(200.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent.copy(.6f),
+                    unfocusedBorderColor = FieldBorder,
+                    focusedTextColor = TextHi,
+                    unfocusedTextColor = TextHi.copy(.85f),
+                    cursorColor = Accent,
+                    focusedContainerColor = FieldBg,
+                    unfocusedContainerColor = FieldBg,
+                ),
+            )
+
+            error?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center)
+            }
+            resendMessage?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = TextMid, fontSize = 11.5.sp, textAlign = TextAlign.Center)
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    error = null
+                    loading = true
+                    coroutineScope.launch {
+                        when (val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.verifyEmail(email, code)) {
+                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> onVerified()
+                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                                error = outcome.message
+                                loading = false
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                enabled = !loading && code.length == 6,
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Verify", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row {
+                Text("Didn't get a code? ", fontSize = 13.sp, color = TextMid)
+                Text(
+                    if (resending) "Sending..." else "Resend",
+                    fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(enabled = !resending) {
+                        resending = true
+                        resendMessage = null
+                        coroutineScope.launch {
+                            val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.resendVerificationCode(email)
+                            resending = false
+                            resendMessage = when (outcome) {
+                                is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> "A new code was sent."
+                                is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> outcome.message
+                            }
+                        }
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            Text(
+                "Skip for now",
+                fontSize = 12.sp, color = TextMid.copy(alpha = 0.6f),
+                modifier = Modifier.clickable { onSkip() },
+            )
+        }
+    }
+}
+
 private fun SuccessContent(onContinue: () -> Unit) {
     var checkVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -244,7 +370,7 @@ private fun AuthFormContent(
                     val credential = GoogleAuthProvider.getCredential(idToken, null)
                     loading = true
                     auth.signInWithCredential(credential)
-                        .addOnSuccessListener { onSuccess(false) }
+                        .addOnSuccessListener { onSuccess(false, email) }
                         .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                 }
             } catch (e: ApiException) {
@@ -275,7 +401,7 @@ private fun AuthFormContent(
                     when (outcome) {
                         is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
                             com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
-                            onSuccess(mode == AuthMode.SIGNUP)
+                            onSuccess(mode == AuthMode.SIGNUP, email.trim())
                         }
                         is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
                             error = outcome.message
