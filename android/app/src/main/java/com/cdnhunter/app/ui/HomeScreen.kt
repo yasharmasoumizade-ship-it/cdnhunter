@@ -3176,9 +3176,12 @@ private val PanelSheenDepth = 48.dp
  * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
  */
 private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefPanelBg.copy(alpha = 0.68f),
-    0.30f to RefPanelBg.copy(alpha = 0.86f),
-    0.65f to RefPanelBg.copy(alpha = 0.97f),
+    // Starts near-transparent so the flag shows through the card's top edge,
+    // then ramps quickly to opaque so the effect stays contained to the top band.
+    0.00f to RefPanelBg.copy(alpha = 0.10f),
+    0.18f to RefPanelBg.copy(alpha = 0.55f),
+    0.38f to RefPanelBg.copy(alpha = 0.88f),
+    0.55f to RefPanelBg.copy(alpha = 0.97f),
     1.00f to RefPanelBg.copy(alpha = 1.00f),
     startY = 0f,
     endY = heightPx,
