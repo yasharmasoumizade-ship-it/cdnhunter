@@ -295,6 +295,7 @@ private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: ()
     }
 }
 
+@Composable
 private fun SuccessContent(onContinue: () -> Unit) {
     var checkVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
