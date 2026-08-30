@@ -183,7 +183,6 @@ private fun SplashContent() {
 }
 
 @Composable
-@Composable
 private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: () -> Unit) {
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     var code by remember { mutableStateOf("") }
