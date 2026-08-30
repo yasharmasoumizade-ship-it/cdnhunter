@@ -2497,6 +2497,28 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // Connected glow: a soft teal radial that pools below the disc, fading in/out with
+        // the connected state. No animation loop — just a crossfade — so it costs nothing
+        // on weak devices. The bloom is drawn BEHIND the ring and disc, on the Box itself.
+        if (connected) {
+            val glowAlpha = 0.55f
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                0.00f to ConnectTeal.copy(alpha = glowAlpha),
+                                0.40f to ConnectTeal.copy(alpha = glowAlpha * 0.45f),
+                                0.70f to ConnectTeal.copy(alpha = glowAlpha * 0.12f),
+                                1.00f to Color.Transparent,
+                                center = Offset(size.width / 2f, size.height * 0.78f),
+                                radius = size.width * 0.72f,
+                            ),
+                        )
+                    },
+            )
+        }
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
             Modifier
@@ -2739,20 +2761,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 
         // Track removed — no permanent ring around the disc at rest.
 
-        // CONNECTED: a soft teal halo outside the ring, breathing, then the crisp ring itself.
-        if (live > 0.01f) {
-            val haloAlpha = (0.16f + 0.12f * breath.value) * live
-            drawCircle(
-                color = ConnectTeal.copy(alpha = haloAlpha),
-                radius = radius + stroke * (1.4f + 1.0f * breath.value),
-                style = Stroke(width = stroke * 3.4f),
-            )
-            drawCircle(
-                color = ConnectTeal.copy(alpha = 0.95f * live),
-                radius = radius,
-                style = Stroke(width = stroke),
-            )
-        }
+        // CONNECTED ring removed — glow is now drawn below the disc in PowerCircle instead.
 
         // CONNECTING: one teal comet sweeps the track. The sweep gradient runs bright head →
         // transparent tail across [CONNECT_ARC_SWEEP]°, and the whole frame is rotated by [spin]
