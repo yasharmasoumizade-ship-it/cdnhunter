@@ -2909,8 +2909,16 @@ private fun BrowseCard(
     // clears [HomeUiState.refreshingPings] when the last measurement lands or the whole
     // sweep times out, and only then does the spinner retract — so the indicator is
     // showing for exactly as long as work is happening, never a frame more or less.
+    // A 10-second hard timeout is also set so the indicator never gets stuck on screen
+    // if refreshingPings never clears (e.g. a state bug or a very slow network).
     LaunchedEffect(state.refreshingPings) {
-        if (state.refreshingPings) pullState.startRefresh() else pullState.endRefresh()
+        if (state.refreshingPings) {
+            pullState.startRefresh()
+            delay(10_000L)
+            pullState.endRefresh()
+        } else {
+            pullState.endRefresh()
+        }
     }
     val density = LocalDensity.current
     val fade = remember(density) { panelTopFade(with(density) { PanelFade.toPx() }) }
