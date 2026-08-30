@@ -2544,7 +2544,7 @@ private fun PowerCircle(
                     )
                 }
                 .drawWithCache {
-                    val depth = (0.55f + sink * 0.45f + ambientDepth * 0.12f).coerceIn(0f, 1f)
+                    val depth = (0.65f + sink * 0.35f + ambientDepth * 0.10f).coerceIn(0f, 1f)
                     val darkArc = Brush.radialGradient(
                         0.72f to Color.Transparent,
                         1.00f to Color.Black.copy(alpha = 0.50f * depth),
@@ -2741,8 +2741,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         val topLeft = Offset(center.x - radius, center.y - radius)
         val arcSize = Size(radius * 2f, radius * 2f)
 
-        // The always-present track: a faint hairline rim on the disc, never decoration.
-        drawCircle(brush = PowerRingTrack, radius = radius, style = Stroke(width = stroke))
+        // Track removed — no permanent ring around the disc at rest.
 
         // CONNECTED: a soft teal halo outside the ring, breathing, then the crisp ring itself.
         if (live > 0.01f) {
@@ -2791,7 +2790,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFF15171D)
+private val PowerWellBg = Color(0xFF1E2130)
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
