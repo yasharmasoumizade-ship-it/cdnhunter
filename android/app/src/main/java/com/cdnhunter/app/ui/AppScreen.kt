@@ -867,7 +867,7 @@ private fun VpnTab(onSignOut: () -> Unit) {
     // Single source of truth for account/subscription display data (see AppUiState.kt).
     // Settings' AccountCard and ProfileScreen both read this one value rather than each
     // hard-coding their own copy of the name/email/plan.
-    val account = remember { currentAccountUiState() }
+    val account = remember { currentAccountUiState(context) }
     
     // Navigation stack for proper back button handling
     val navigationStack = remember { mutableStateListOf(AnanasScreen.HOME) }
