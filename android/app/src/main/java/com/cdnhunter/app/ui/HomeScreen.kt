@@ -2795,7 +2795,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFF1E2130)
+private val PowerWellBg = Color(0xFFF4F5F8)
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
@@ -3273,14 +3273,13 @@ private fun DrawScope.drawPanelTopEdge() {
     // A deeper, longer inward shadow so the card reads as a recess set into the page rather than a
     // panel resting on it: darkest right at the lip, falling away over ~1.9× the corner radius. The
     // extra reach and the stronger peak are what sell the inset — a short, faint band read as flat.
-    val shadowDepth = radius * 1.9f
+    val shadowDepth = radius * 1.2f
     clipRect(top = 0f, bottom = shadowDepth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.Black.copy(alpha = 0.50f),
-                0.22f to Color.Black.copy(alpha = 0.30f),
-                0.50f to Color.Black.copy(alpha = 0.13f),
-                0.78f to Color.Black.copy(alpha = 0.04f),
+                0.00f to Color.Black.copy(alpha = 0.22f),
+                0.30f to Color.Black.copy(alpha = 0.10f),
+                0.65f to Color.Black.copy(alpha = 0.03f),
                 1.00f to Color.Transparent,
                 startY = 0f,
                 endY = shadowDepth,
@@ -3289,13 +3288,19 @@ private fun DrawScope.drawPanelTopEdge() {
             size = size,
         )
     }
-    clipRect(top = 0f, bottom = radius + hairline) {
+    // Bright white rim — reads as a lit glass edge rather than a dark inset border.
+    val rimWidth = 1.2.dp.toPx()
+    clipRect(top = 0f, bottom = radius + rimWidth) {
         drawRoundRect(
-            color = Color.Black.copy(alpha = 0.42f),
-            topLeft = Offset(hairline / 2f, hairline / 2f),
-            size = Size(size.width - hairline, size.height - hairline),
+            brush = Brush.verticalGradient(
+                0.00f to Color.White.copy(alpha = 0.70f),
+                0.50f to Color.White.copy(alpha = 0.30f),
+                1.00f to Color.White.copy(alpha = 0.08f),
+            ),
+            topLeft = Offset(rimWidth / 2f, rimWidth / 2f),
+            size = Size(size.width - rimWidth, size.height - rimWidth),
             cornerRadius = CornerRadius(radius),
-            style = Stroke(width = hairline),
+            style = Stroke(width = rimWidth),
         )
     }
 }
