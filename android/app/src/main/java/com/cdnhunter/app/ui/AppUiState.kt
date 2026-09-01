@@ -82,17 +82,24 @@ private val PLACEHOLDER_SUBSCRIPTION: SubscriptionState = SubscriptionState.None
  * values when a field is missing (email/password sign-in has no display name, for instance) so
  * the cards always render something coherent rather than a blank.
  */
-fun currentAccountUiState(): AccountUiState {
-    val user = FirebaseAuth.getInstance().currentUser
-    val email = user?.email?.takeIf { it.isNotBlank() } ?: "—"
-    val name = user?.displayName?.takeIf { it.isNotBlank() }
+fun currentAccountUiState(context: android.content.Context): AccountUiState {
+    val thalloSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context)
+    val firebaseUser = FirebaseAuth.getInstance().currentUser
+
+    val email = thalloSession?.email?.takeIf { it.isNotBlank() }
+        ?: firebaseUser?.email?.takeIf { it.isNotBlank() }
+        ?: "—"
+    val name = thalloSession?.displayName?.takeIf { it.isNotBlank() }
+        ?: firebaseUser?.displayName?.takeIf { it.isNotBlank() }
         ?: email.substringBefore('@').takeIf { it.isNotBlank() && it != "—" }
         ?: "Account"
+    val emailVerified = firebaseUser?.isEmailVerified == true
+
     return AccountUiState(
         displayName = name,
         email = email,
         initials = initialsOf(name),
-        emailVerified = user?.isEmailVerified == true,
+        emailVerified = emailVerified,
         plan = PLACEHOLDER_PLAN,
         subscription = PLACEHOLDER_SUBSCRIPTION,
         payments = emptyList(),
