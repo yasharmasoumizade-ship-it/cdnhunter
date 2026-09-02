@@ -39,6 +39,8 @@ object ThalloAuthClient {
     private const val KEY_USER_ID = "user_id"
     private const val KEY_EMAIL = "email"
     private const val KEY_DISPLAY_NAME = "display_name"
+    private const val KEY_EMAIL_VERIFIED = "email_verified"
+    private const val KEY_EMAIL_VERIFIED = "email_verified"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -53,6 +55,7 @@ object ThalloAuthClient {
         val displayName: String,
         val accessToken: String,
         val refreshToken: String,
+        val emailVerified: Boolean = false,
     )
 
     sealed class AuthOutcome {
@@ -203,6 +206,7 @@ object ThalloAuthClient {
                         displayName = json.optString("displayName", ""),
                         accessToken = json.getString("accessToken"),
                         refreshToken = json.getString("refreshToken"),
+                        emailVerified = json.optBoolean("emailVerified", false),
                     )
                 )
             }
@@ -251,6 +255,15 @@ object ThalloAuthClient {
             .putString(KEY_USER_ID, result.userId)
             .putString(KEY_EMAIL, result.email)
             .putString(KEY_DISPLAY_NAME, result.displayName)
+            .putBoolean(KEY_EMAIL_VERIFIED, result.emailVerified)
+            .apply()
+    }
+
+    /** Updates just the verified flag on the existing stored session -- used right after
+     *  a successful [verifyEmail] call, without needing a full re-login. */
+    fun markEmailVerified(context: Context) {
+        SecurePrefs.get(context, PREFS_NAME).edit()
+            .putBoolean(KEY_EMAIL_VERIFIED, true)
             .apply()
     }
 
@@ -264,7 +277,8 @@ object ThalloAuthClient {
         val userId = prefs.getString(KEY_USER_ID, null) ?: return null
         val email = prefs.getString(KEY_EMAIL, null) ?: return null
         val displayName = prefs.getString(KEY_DISPLAY_NAME, "") ?: ""
-        return AuthResult(userId, email, displayName, accessToken, refreshToken)
+        val emailVerified = prefs.getBoolean(KEY_EMAIL_VERIFIED, false)
+        return AuthResult(userId, email, displayName, accessToken, refreshToken, emailVerified)
     }
 
     /** Signs out locally and tells the backend to revoke the refresh token, so a stolen

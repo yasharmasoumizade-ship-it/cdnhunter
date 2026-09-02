@@ -184,6 +184,7 @@ private fun SplashContent() {
 
 @Composable
 private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: () -> Unit) {
+    val context = LocalContext.current
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     var code by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -242,7 +243,10 @@ private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: ()
                     loading = true
                     coroutineScope.launch {
                         when (val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.verifyEmail(email, code)) {
-                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> onVerified()
+                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
+                                com.cdnhunter.app.vpn.ThalloAuthClient.markEmailVerified(context)
+                                onVerified()
+                            }
                             is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
                                 error = outcome.message
                                 loading = false
