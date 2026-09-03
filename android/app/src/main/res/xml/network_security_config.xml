@@ -20,4 +20,33 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!--
+      Certificate pinning for the Thallo auth backend (thallo-auth.mowzyz.workers.dev).
+      Three pins: the leaf cert Cloudflare currently serves, its issuing intermediate,
+      and the root -- pinning the intermediate/root rather than only the leaf means a
+      routine leaf rotation on Cloudflare's side doesn't lock the app out, since
+      Cloudflare reissues leaf certs from the same intermediate chain. All three were
+      captured from the live TLS handshake; if Cloudflare ever rotates the intermediate
+      itself, these pins need refreshing (see the note in AuthDomainResolver about the
+      matching risk for the domain gateway).
+
+      expiration attribute deliberately omitted: an expired pin set fails open to the
+      base-config's system-CA trust in the sense that Android simply stops enforcing
+      pinning past that date, not that it starts trusting arbitrary certs -- but leaving
+      it unset means this enforces indefinitely until the pins are manually rotated,
+      which is the safer default for a background service the person won't be watching
+      for expiry warnings.
+    -->
+    <domain-config>
+        <domain includeSubdomains="false">thallo-auth.mowzyz.workers.dev</domain>
+        <pin-set>
+            <pin digest="SHA-256">IPvckEPLZ/ynhZ2vQPnSJhWKk/qe3HIzhYMF1htUMBw=</pin>
+            <pin digest="SHA-256">RrNnbkTIogvQPacL92xaGADwq8HUy+4nA5poMeewrLo=</pin>
+            <pin digest="SHA-256">gBdItbWylHhTkoJDRwIiMuweY/qX4F0bJmLNs5wosUQ=</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
