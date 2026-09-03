@@ -40,7 +40,6 @@ object ThalloAuthClient {
     private const val KEY_EMAIL = "email"
     private const val KEY_DISPLAY_NAME = "display_name"
     private const val KEY_EMAIL_VERIFIED = "email_verified"
-    private const val KEY_EMAIL_VERIFIED = "email_verified"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
