@@ -93,7 +93,7 @@ fun currentAccountUiState(context: android.content.Context): AccountUiState {
         ?: firebaseUser?.displayName?.takeIf { it.isNotBlank() }
         ?: email.substringBefore('@').takeIf { it.isNotBlank() && it != "—" }
         ?: "Account"
-    val emailVerified = firebaseUser?.isEmailVerified == true
+    val emailVerified = thalloSession?.emailVerified ?: (firebaseUser?.isEmailVerified == true)
 
     return AccountUiState(
         displayName = name,
