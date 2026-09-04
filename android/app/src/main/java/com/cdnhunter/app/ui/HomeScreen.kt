@@ -84,6 +84,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -104,6 +105,8 @@ import com.cdnhunter.app.vpn.AppSettings
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material.icons.rounded.FrontHand
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -2590,11 +2593,13 @@ private fun PowerCircle(
                 .border(PowerRimStroke, PowerWellRim, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            PowerBolt(
-                trackColor = boltTrack,
-                fillColor = boltFill,
-                fill = fill,
+            Image(
+                painter = painterResource(id = com.cdnhunter.app.R.drawable.power_logo_thallo),
+                contentDescription = null,
                 modifier = Modifier.size(72.dp),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                    color = if (connected) ConnectTeal else PowerInk,
+                ),
             )
         }
     }
