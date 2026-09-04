@@ -2597,9 +2597,6 @@ private fun PowerCircle(
                 painter = painterResource(id = com.cdnhunter.app.R.drawable.power_logo_thallo),
                 contentDescription = null,
                 modifier = Modifier.size(72.dp),
-                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                    color = if (connected) ConnectTeal else PowerInk,
-                ),
             )
         }
     }
