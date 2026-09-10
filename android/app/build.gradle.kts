@@ -165,7 +165,5 @@ dependencies {
     // QR code generation + scanning (config sharing, v2rayNG-style)
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
