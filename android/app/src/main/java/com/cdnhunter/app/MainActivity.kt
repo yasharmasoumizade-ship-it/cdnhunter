@@ -1,12 +1,8 @@
 package com.cdnhunter.app
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -37,6 +33,7 @@ import com.cdnhunter.app.ui.AuthScreen
 import com.google.firebase.auth.FirebaseAuth
 import com.cdnhunter.app.ui.LocalThemeMode
 import com.cdnhunter.app.ui.ThemeMode
+import com.cdnhunter.app.ui.AnimatedThalloLogo
 import com.cdnhunter.app.vpn.AppSettings
 import com.cdnhunter.app.vpn.CdnVpnService
 
@@ -175,20 +172,9 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
             enter = androidx.compose.animation.fadeIn(tween(500)),
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_thallo),
-                    contentDescription = "Thallo",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.width(200.dp),
-                )
+                AnimatedThalloLogo()
                 Spacer(Modifier.height(22.dp))
                 Text("Private. Fast. Secure.", fontSize = 13.sp, color = Color(0xFF8B8E98))
-                Spacer(Modifier.height(28.dp))
-                CircularProgressIndicator(
-                    color = Color(0xFF3B82F6),
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                )
             }
         }
     }
