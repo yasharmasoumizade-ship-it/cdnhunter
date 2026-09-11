@@ -149,6 +149,21 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     Box(Modifier.fillMaxSize().background(BgDark)) {
         FullScreenLoopVideo(modifier = Modifier.fillMaxSize())
 
+        // Dark overlay so the video reads as background, not content
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.55f),
+                            Color.Black.copy(alpha = 0.35f),
+                            Color.Black.copy(alpha = 0.75f),
+                        ),
+                    ),
+                ),
+        )
+
         AnimatedContent(
             targetState = step,
             transitionSpec = {
