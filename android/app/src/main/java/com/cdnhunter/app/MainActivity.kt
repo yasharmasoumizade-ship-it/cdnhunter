@@ -94,12 +94,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class RootScreen { AUTH, ENTERING, HOME }
+private enum class RootScreen { ONBOARDING, AUTH, ENTERING, HOME }
 
 @Composable
 fun MainContent(activity: MainActivity) {
     val auth = remember { FirebaseAuth.getInstance() }
-    var screen by remember { mutableStateOf(if (auth.currentUser != null) RootScreen.ENTERING else RootScreen.AUTH) }
+    val prefs = androidx.compose.ui.platform.LocalContext.current
+        .getSharedPreferences("cdnhunter_prefs", android.content.Context.MODE_PRIVATE)
+    val onboardingSeen = prefs.getBoolean("onboarding_seen", false)
+    var screen by remember {
+        mutableStateOf(
+            when {
+                auth.currentUser != null -> RootScreen.ENTERING
+                !onboardingSeen -> RootScreen.ONBOARDING
+                else -> RootScreen.AUTH
+            }
+        )
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // Resolve which custom Auth domain to use before anything talks to Firebase Auth --
@@ -120,6 +131,10 @@ fun MainContent(activity: MainActivity) {
         label = "rootScreen",
     ) { s ->
         when (s) {
+            RootScreen.ONBOARDING -> com.cdnhunter.app.ui.OnboardingScreen(onDone = {
+                prefs.edit().putBoolean("onboarding_seen", true).apply()
+                screen = RootScreen.AUTH
+            })
             RootScreen.AUTH -> AuthScreen(onSignedIn = { screen = RootScreen.ENTERING })
             RootScreen.ENTERING -> EnteringAppLoader(onDone = { screen = RootScreen.HOME })
             RootScreen.HOME -> AppScreen(onSignOut = {

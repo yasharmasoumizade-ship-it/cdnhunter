@@ -52,15 +52,15 @@ import androidx.media3.ui.PlayerView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
 
-private val BgDark = Color(0xFF0A0B0F)
-private val FieldBg = Color(0xFF15171E)
-private val FieldBorder = Color(0xFF23262F)
-private val Accent = Color(0xFF3B82F6)
-private val TealAccent = Color(0xFF4DB6AC)
-private val TextHi = Color(0xFFF6F7F9)
-private val TextMid = Color(0xFF8B8E98)
-private val ErrorRed = Color(0xFFEF4444)
-private val SuccessGreen = Color(0xFF22C55E)
+private val BgDark = AppColors.BgDark
+private val FieldBg = AppColors.FieldBg
+private val FieldBorder = AppColors.FieldBorder
+private val Accent = AppColors.Accent
+private val TealAccent = AppColors.Accent
+private val TextHi = AppColors.TextHi
+private val TextMid = AppColors.TextMid
+private val ErrorRed = AppColors.ErrorRed
+private val SuccessGreen = AppColors.SuccessGreen
 
 enum class AuthMode { LOGIN, SIGNUP }
 private enum class AuthStep { SPLASH, FORM, VERIFY, SUCCESS }
@@ -100,7 +100,7 @@ private fun friendlyAuthError(raw: String?): String {
 }
 
 @Composable
-private fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
+internal fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
