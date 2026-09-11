@@ -131,10 +131,20 @@ fun MainContent(activity: MainActivity) {
         label = "rootScreen",
     ) { s ->
         when (s) {
-            RootScreen.ONBOARDING -> com.cdnhunter.app.ui.OnboardingScreen(onDone = {
-                prefs.edit().putBoolean("onboarding_seen", true).apply()
-                screen = RootScreen.AUTH
-            })
+            RootScreen.ONBOARDING -> com.cdnhunter.app.ui.OnboardingScreen(
+                onGoogleSignedIn = {
+                    prefs.edit().putBoolean("onboarding_seen", true).apply()
+                    screen = RootScreen.ENTERING
+                },
+                onContinueWithEmail = {
+                    prefs.edit().putBoolean("onboarding_seen", true).apply()
+                    screen = RootScreen.AUTH
+                },
+                onSignUp = {
+                    prefs.edit().putBoolean("onboarding_seen", true).apply()
+                    screen = RootScreen.AUTH
+                },
+            )
             RootScreen.AUTH -> AuthScreen(onSignedIn = { screen = RootScreen.ENTERING })
             RootScreen.ENTERING -> EnteringAppLoader(onDone = { screen = RootScreen.HOME })
             RootScreen.HOME -> AppScreen(onSignOut = {
