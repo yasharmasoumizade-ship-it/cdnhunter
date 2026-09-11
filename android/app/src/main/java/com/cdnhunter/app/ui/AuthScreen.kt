@@ -45,6 +45,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.runtime.DisposableEffect
 
 private val BgDark = Color(0xFF0A0B0F)
 private val FieldBg = Color(0xFF15171E)
@@ -94,6 +100,36 @@ private fun friendlyAuthError(raw: String?): String {
 }
 
 @Composable
+private fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            val uri = android.net.Uri.parse(
+                "android.resource://${context.packageName}/${com.cdnhunter.app.R.raw.auth_bg}"
+            )
+            setMediaItem(MediaItem.fromUri(uri))
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { exoPlayer.release() }
+    }
+    AndroidView(
+        modifier = modifier,
+        factory = {
+            PlayerView(context).apply {
+                player = exoPlayer
+                useController = false
+                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            }
+        },
+    )
+}
+
+@Composable
 fun AuthScreen(onSignedIn: () -> Unit) {
     val context = LocalContext.current
     var step by remember { mutableStateOf(AuthStep.SPLASH) }
@@ -111,6 +147,8 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize().background(BgDark)) {
+        FullScreenLoopVideo(modifier = Modifier.fillMaxSize())
+
         AnimatedContent(
             targetState = step,
             transitionSpec = {
