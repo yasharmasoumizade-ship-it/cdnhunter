@@ -191,7 +191,7 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_thallo),
+                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
                     contentDescription = "Thallo",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.width(200.dp),
