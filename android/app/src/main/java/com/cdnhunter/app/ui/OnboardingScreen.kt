@@ -1,6 +1,7 @@
 package com.cdnhunter.app.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +35,7 @@ private val onboardingSlides = listOf(
     OnboardingSlide("Always Free", "The core features stay free. No hidden fees, no surprises."),
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(onDone: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { onboardingSlides.size })
