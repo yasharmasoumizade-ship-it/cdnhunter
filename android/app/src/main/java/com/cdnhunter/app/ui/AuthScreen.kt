@@ -221,7 +221,7 @@ private fun SplashContent() {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(500))) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_thallo),
+                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
                     contentDescription = "Thallo",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.width(200.dp).scale(scale),
@@ -485,7 +485,7 @@ private fun AuthFormContent(
                 .padding(top = 48.dp, bottom = 28.dp),
         ) {
             Image(
-                painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_thallo),
+                painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
                 contentDescription = "Thallo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.width(110.dp),
