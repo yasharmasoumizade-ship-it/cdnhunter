@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Person
@@ -168,8 +169,8 @@ private fun UnderlineField(
             interactionSource = interactionSource,
             modifier = Modifier
                 .fillMaxWidth()
-                .glassSurface(shape = Glass.FieldShape, focused = isFocused),
-            shape = Glass.FieldShape,
+                .glassSurface(shape = Glass.Shape, focused = isFocused),
+            shape = Glass.Shape,
             keyboardOptions = KeyboardOptions(
                 keyboardType = keyboardType,
                 imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
@@ -454,6 +455,7 @@ private fun ValidatedField(
     )
 }
 
+@Composable
 private fun AuthFormContent(
     mode: AuthMode,
     onModeChange: (AuthMode) -> Unit,
