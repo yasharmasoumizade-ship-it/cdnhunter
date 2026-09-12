@@ -83,17 +83,17 @@ private val PLACEHOLDER_SUBSCRIPTION: SubscriptionState = SubscriptionState.None
  * the cards always render something coherent rather than a blank.
  */
 fun currentAccountUiState(context: android.content.Context): AccountUiState {
-    val thalloSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context)
+    val groomxSession = com.cdnhunter.app.vpn.GroomxAuthClient.currentSession(context)
     val firebaseUser = FirebaseAuth.getInstance().currentUser
 
-    val email = thalloSession?.email?.takeIf { it.isNotBlank() }
+    val email = groomxSession?.email?.takeIf { it.isNotBlank() }
         ?: firebaseUser?.email?.takeIf { it.isNotBlank() }
         ?: "—"
-    val name = thalloSession?.displayName?.takeIf { it.isNotBlank() }
+    val name = groomxSession?.displayName?.takeIf { it.isNotBlank() }
         ?: firebaseUser?.displayName?.takeIf { it.isNotBlank() }
         ?: email.substringBefore('@').takeIf { it.isNotBlank() && it != "—" }
         ?: "Account"
-    val emailVerified = thalloSession?.emailVerified ?: (firebaseUser?.isEmailVerified == true)
+    val emailVerified = groomxSession?.emailVerified ?: (firebaseUser?.isEmailVerified == true)
 
     return AccountUiState(
         displayName = name,

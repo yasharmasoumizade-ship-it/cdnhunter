@@ -22,7 +22,7 @@
     </base-config>
 
     <!--
-      Certificate pinning for the Thallo auth backend (thallo-auth.mowzyz.workers.dev).
+      Certificate pinning for the GROOMX auth backend (thallo-auth.mowzyz.workers.dev).
       Three pins: the leaf cert Cloudflare currently serves, its issuing intermediate,
       and the root — pinning the intermediate/root rather than only the leaf means a
       routine leaf rotation on Cloudflare's side doesn't lock the app out, since

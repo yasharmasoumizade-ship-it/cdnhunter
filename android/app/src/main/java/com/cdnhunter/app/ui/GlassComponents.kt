@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.dp
  */
 object Glass {
     val Shape: Shape = RoundedCornerShape(16.dp)
+    val FieldShape: Shape = RoundedCornerShape(14.dp)
+    val CardShape: Shape = RoundedCornerShape(28.dp)
+    val CardShape: Shape = RoundedCornerShape(28.dp)
 
     fun surfaceBrush(): Brush = Brush.verticalGradient(
         colors = listOf(
@@ -28,7 +31,7 @@ object Glass {
         ),
     )
 
-    val borderColor = Color.White.copy(alpha = 0.28f)
+    val borderColor = Color.White.copy(alpha = 0.35f)
 
     /** Apply the glass background + border to any Modifier, e.g. a Box or Column.
      *  Pass [focused] = true to swap the border to the accent color, e.g. when a

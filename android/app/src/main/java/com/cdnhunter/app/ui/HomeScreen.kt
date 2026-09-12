@@ -2356,7 +2356,7 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //   CONNECTED  — the *same white disc*, with the ring resolved to a solid teal circle and a soft
 //                teal halo that breathes slowly around it. The face never fills with colour in any
 //                state: a filled disc reads as "press me" in exactly the state where pressing
-//                disconnects. What reports "lit" is the ring and its halo, in the thallo teal
+//                disconnects. What reports "lit" is the ring and its halo, in the groomx teal
 //                [ConnectTeal]; the room still washes [RefGlowOn] blue behind the hero.
 //
 // It carries one gesture besides the tap: a vertical drag switches Smart / Manual, as do its two
@@ -2382,7 +2382,7 @@ private val PowerDiscSize = 118.dp
 private val PowerRingStroke = 3.dp
 private val PowerRingGap = 3.dp
 
-/** The thallo teal, used for every animated part of the connect ring — the connecting arc, the
+/** The groomx teal, used for every animated part of the connect ring — the connecting arc, the
  *  connected ring and its halo. Matches the wordmark; scoped to this control so it never leaks into
  *  the blue room light ([RefGlowOn]) behind the hero. */
 private val ConnectTeal = Color(0xFF4DB6AC)

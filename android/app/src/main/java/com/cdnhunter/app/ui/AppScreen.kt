@@ -99,11 +99,11 @@ val AnanasBorder2  = Color(0xFF2A2E38)   // Alternative (raised) border
 val AnanasDivider  = Color(0xFF1C1F27)   // Divider
 val AnanasAccent   = Color(0xFF3B82F6)   // Blue accent (canonical, matches Auth)
 val AnanasAccentLight = Color(0xFF60A5FA)
-// Teal accent for the Settings/Profile subtree only — echoes the thallo wordmark's teal on the
+// Teal accent for the Settings/Profile subtree only — echoes the groomx wordmark's teal on the
 // login screen. Applied via sheet-exclusive composables/tokens (IconTile, AnanasToggleOn, the
 // Sheet* accent brushes) so it never leaks into Home/Locations/My Configs, which stay on the
 // canonical blue AnanasAccent.
-val AnanasTeal      = Color(0xFF4DB6AC)  // thallo teal — sheet accent
+val AnanasTeal      = Color(0xFF4DB6AC)  // groomx teal — sheet accent
 val AnanasTealLight = Color(0xFF7FD4CB)  // lighter teal for selected-segment ink
 val AnanasSettingsIcon = Color(0xFF9BA0AC)   // text-mid, soft gray for settings row icons
 val AnanasAmber    = Color(0xFFE0B23B)   // Warm amber (premium/warn)
@@ -115,7 +115,7 @@ val AnanasPurple   = Color(0xFF3B82F6)   // Unified to the blue accent (no off-p
 // a green "on" state on a VPN app reads as a status/connection light, which these
 // controls are not. Blue keeps the active state legible and on-theme without that
 // false connotation.
-val AnanasToggleOn = AnanasTeal   // Settings/Profile toggles, segments & select-dots — thallo teal
+val AnanasToggleOn = AnanasTeal   // Settings/Profile toggles, segments & select-dots — groomx teal
 val AnanasTextHi   = Color(0xFFF6F7F9)   // Primary text
 val AnanasText     = Color(0xFFE3E6EC)   // Secondary text
 val AnanasMuted    = Color(0xFF9BA0AC)   // Muted / caption text (text-mid)
@@ -2294,7 +2294,7 @@ private val SheetGlassTileFill = Brush.verticalGradient(
 
 /** The avatar's ring, and the disc it sits behind — see [AvatarRing]. The ring is brightest
  *  at the top left, so the avatar catches the same light as everything else. Teal, so the
- *  hero on Settings/Profile echoes the thallo wordmark on the login screen. */
+ *  hero on Settings/Profile echoes the groomx wordmark on the login screen. */
 private val SheetAvatarRing = Brush.linearGradient(
     listOf(AnanasTeal.copy(alpha = 0.85f), AnanasTeal.copy(alpha = 0.14f)),
 )

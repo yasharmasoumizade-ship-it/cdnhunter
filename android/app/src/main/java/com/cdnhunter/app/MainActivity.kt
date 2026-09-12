@@ -157,7 +157,7 @@ fun MainContent(activity: MainActivity) {
             RootScreen.HOME -> AppScreen(onSignOut = {
                 com.cdnhunter.app.vpn.CdnVpnService.stop(context)
                 auth.signOut()
-                com.cdnhunter.app.vpn.ThalloAuthClient.signOut(context)
+                com.cdnhunter.app.vpn.GroomxAuthClient.signOut(context)
                 screen = RootScreen.AUTH
             })
         }
@@ -178,16 +178,16 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         visible = true
-        // If this is a Thallo-backend session (not Google/Firebase), refresh it now so
+        // If this is a GROOMX-backend session (not Google/Firebase), refresh it now so
         // the access token is current for the rest of this app session -- refreshing
         // here rather than on-demand means a stale/revoked refresh token is caught right
         // away, sending the person back to sign-in instead of failing later mid-task.
-        val hasThalloSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context) != null
-        if (hasThalloSession) {
-            com.cdnhunter.app.vpn.ThalloAuthClient.refreshSession(context)
+        val hasGroomxSession = com.cdnhunter.app.vpn.GroomxAuthClient.currentSession(context) != null
+        if (hasGroomxSession) {
+            com.cdnhunter.app.vpn.GroomxAuthClient.refreshSession(context)
         }
         delay(200)
-        val name = "Thallo"
+        val name = "GROOMX"
         for (i in 1..name.length) {
             typedChars = i
             delay(65)
@@ -209,7 +209,7 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Image(
                     painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
-                    contentDescription = "Thallo",
+                    contentDescription = "GROOMX",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.width(200.dp),
                 )

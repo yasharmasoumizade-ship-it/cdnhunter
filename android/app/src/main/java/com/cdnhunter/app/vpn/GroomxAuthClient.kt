@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
  * The Worker's base URL is obfuscated in the compiled class the same way
  * [AuthDomainResolver]'s fallback domain is, rather than appearing as a plaintext string.
  */
-object ThalloAuthClient {
+object GroomxAuthClient {
 
     private val WORKER_HOST_CHARS = intArrayOf(
         116, 104, 97, 108, 108, 111, 45, 97, 117, 116, 104, 46, 109, 111, 119, 122,
@@ -69,7 +69,7 @@ object ThalloAuthClient {
         request("/login", email, password, null)
 
     /** Exchanges a Google ID token (from Google Play Services' own Sign-In flow -- never
-     *  touches Firebase) for a Thallo session. The backend verifies the ID token directly
+     *  touches Firebase) for a GROOMX session. The backend verifies the ID token directly
      *  against Google's tokeninfo endpoint from Cloudflare's network, sidestepping the
      *  API-region block that hits Firebase Auth for Iranian IPs. */
     /** Requests a fresh 6-digit verification code be emailed to this address. */

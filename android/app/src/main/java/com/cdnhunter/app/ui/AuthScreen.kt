@@ -310,12 +310,12 @@ private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: ()
                     error = null
                     loading = true
                     coroutineScope.launch {
-                        when (val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.verifyEmail(email, code)) {
-                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
-                                com.cdnhunter.app.vpn.ThalloAuthClient.markEmailVerified(context)
+                        when (val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.verifyEmail(email, code)) {
+                            is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                                com.cdnhunter.app.vpn.GroomxAuthClient.markEmailVerified(context)
                                 onVerified()
                             }
-                            is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                            is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
                                 error = outcome.message
                                 loading = false
                             }
@@ -345,11 +345,11 @@ private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: ()
                         resending = true
                         resendMessage = null
                         coroutineScope.launch {
-                            val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.resendVerificationCode(email)
+                            val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.resendVerificationCode(email)
                             resending = false
                             resendMessage = when (outcome) {
-                                is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> "A new code was sent."
-                                is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> outcome.message
+                                is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> "A new code was sent."
+                                is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> outcome.message
                             }
                         }
                     },
@@ -483,13 +483,13 @@ private fun AuthFormContent(
         } else {
             loading = true
             coroutineScope.launch {
-                val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.logIn(email.trim(), password)
+                val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.logIn(email.trim(), password)
                 when (outcome) {
-                    is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
-                        com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                        com.cdnhunter.app.vpn.GroomxAuthClient.saveSession(context, outcome.result)
                         onSuccess(false, email.trim())
                     }
-                    is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
                         error = outcome.message
                         loading = false
                     }
@@ -508,13 +508,13 @@ private fun AuthFormContent(
             else -> {
                 loading = true
                 coroutineScope.launch {
-                    val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.signUp(email.trim(), password, username.trim())
+                    val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.signUp(email.trim(), password, username.trim())
                     when (outcome) {
-                        is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
-                            com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
+                        is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                            com.cdnhunter.app.vpn.GroomxAuthClient.saveSession(context, outcome.result)
                             onSuccess(true, email.trim())
                         }
-                        is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                        is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
                             error = outcome.message
                             loading = false
                         }
