@@ -119,6 +119,15 @@ jobs:
           /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
           chmod +x gradlew
 
+      - name: TEMP Diagnose Compose UI dependency
+        working-directory: android
+        run: |
+          ./gradlew :app:dependencies --configuration releaseCompileClasspath --no-daemon > /tmp/full-deps.txt 2>&1 || true
+          echo "=== compose-ui related lines ==="
+          grep -i "compose.ui:ui\b\|compose.ui:ui-graphics\|compose:compose-bom" /tmp/full-deps.txt
+          echo "=== tail (in case resolution itself errored) ==="
+          tail -60 /tmp/full-deps.txt
+
       - name: Build Release APK
         working-directory: android
         env:
