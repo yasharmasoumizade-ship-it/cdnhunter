@@ -150,9 +150,15 @@ private fun UnderlineField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailingIcon: @Composable (() -> Unit)? = null,
     onImeAction: (() -> Unit)? = null,
+    onFocusLost: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    var wasFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(isFocused) {
+        if (wasFocused && !isFocused) onFocusLost?.invoke()
+        wasFocused = isFocused
+    }
     with(Glass) {
         OutlinedTextField(
             value = value,
@@ -162,8 +168,8 @@ private fun UnderlineField(
             interactionSource = interactionSource,
             modifier = Modifier
                 .fillMaxWidth()
-                .glassSurface(focused = isFocused),
-            shape = Glass.Shape,
+                .glassSurface(shape = Glass.FieldShape, focused = isFocused),
+            shape = Glass.FieldShape,
             keyboardOptions = KeyboardOptions(
                 keyboardType = keyboardType,
                 imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
@@ -393,7 +399,61 @@ private fun SuccessContent(onContinue: () -> Unit) {
     }
 }
 
+/**
+ * Wraps [UnderlineField] with pass/fail validation feedback: a green check or red
+ * X trailing icon appears once the field loses focus, based on [validator]. Used
+ * for the step-by-step Sign Up flow so each field confirms itself before the
+ * user moves to the next one.
+ */
 @Composable
+private fun ValidatedField(
+    label: String,
+    value: String,
+    onValue: (String) -> Unit,
+    validator: (String) -> Boolean,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    showToggle: Boolean = false,
+    toggleVisible: Boolean = false,
+    onToggleVisible: (() -> Unit)? = null,
+    onImeAction: (() -> Unit)? = null,
+) {
+    var touched by remember { mutableStateOf(false) }
+    val isValid = value.isNotEmpty() && validator(value)
+    val showResult = touched && value.isNotEmpty()
+
+    UnderlineField(
+        label = label,
+        value = value,
+        onValue = { onValue(it); touched = false },
+        keyboardType = keyboardType,
+        visualTransformation = visualTransformation,
+        onImeAction = onImeAction,
+        onFocusLost = { if (value.isNotEmpty()) touched = true },
+        trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showResult) {
+                    Icon(
+                        if (isValid) Icons.Default.Check else Icons.Default.Close,
+                        contentDescription = null,
+                        tint = if (isValid) SuccessGreen else ErrorRed,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    if (showToggle) Spacer(Modifier.width(4.dp))
+                }
+                if (showToggle) {
+                    IconButton(onClick = { onToggleVisible?.invoke() }) {
+                        Icon(
+                            if (toggleVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            null, tint = TextMid,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
 private fun AuthFormContent(
     mode: AuthMode,
     onModeChange: (AuthMode) -> Unit,
@@ -405,6 +465,7 @@ private fun AuthFormContent(
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var emailConfirmed by remember { mutableStateOf(false) }
+    var signupStep by remember { mutableStateOf(SignupStep.USERNAME) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -616,56 +677,135 @@ private fun AuthFormContent(
                     )
                 }
             } else {
-                // --- Sign Up: full form, all fields visible together ---
-                UnderlineField("Username", username, { username = it; error = null })
-                Spacer(Modifier.height(16.dp))
-                UnderlineField("Email", email, { email = it; error = null }, KeyboardType.Email)
-                Spacer(Modifier.height(16.dp))
-                UnderlineField(
-                    "Password", password, { password = it; error = null }, KeyboardType.Password,
-                    if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton({ passwordVisible = !passwordVisible }) {
-                            Icon(
-                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                null, tint = TextMid,
-                            )
-                        }
+                // --- Sign Up: one field confirmed at a time (Username -> Email -> Password) ---
+                AnimatedContent(
+                    targetState = signupStep,
+                    transitionSpec = {
+                        (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 4 })
+                            .togetherWith(fadeOut(tween(200)) + slideOutVertically(tween(200)) { -it / 4 })
                     },
-                )
-                Spacer(Modifier.height(16.dp))
-                UnderlineField(
-                    "Confirm Password", confirmPassword, { confirmPassword = it; error = null }, KeyboardType.Password,
-                    if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton({ confirmPasswordVisible = !confirmPasswordVisible }) {
-                            Icon(
-                                if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                null, tint = TextMid,
-                            )
+                    label = "signupStep",
+                ) { stepNow ->
+                    Column {
+                        if (stepNow > SignupStep.USERNAME) {
+                            ConfirmedFieldRow(label = "Username", value = username) {
+                                signupStep = SignupStep.USERNAME
+                            }
+                            Spacer(Modifier.height(14.dp))
                         }
-                    },
-                    onImeAction = submitSignup,
-                )
+                        if (stepNow > SignupStep.EMAIL) {
+                            ConfirmedFieldRow(label = "Email", value = email) {
+                                signupStep = SignupStep.EMAIL
+                            }
+                            Spacer(Modifier.height(14.dp))
+                        }
 
-                error?.let {
-                    Spacer(Modifier.height(14.dp))
-                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                }
+                        when (stepNow) {
+                            SignupStep.USERNAME -> {
+                                ValidatedField(
+                                    label = "Username",
+                                    value = username,
+                                    onValue = { username = it; error = null },
+                                    validator = { it.trim().length >= 3 },
+                                    onImeAction = {
+                                        if (username.trim().length >= 3) signupStep = SignupStep.EMAIL
+                                        else error = "Username must be at least 3 characters."
+                                    },
+                                )
+                                error?.let {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                }
+                                Spacer(Modifier.height(22.dp))
+                                Button(
+                                    onClick = {
+                                        if (username.trim().length >= 3) { error = null; signupStep = SignupStep.EMAIL }
+                                        else error = "Username must be at least 3 characters."
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                                ) {
+                                    Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                }
+                            }
+                            SignupStep.EMAIL -> {
+                                ValidatedField(
+                                    label = "Email",
+                                    value = email,
+                                    onValue = { email = it; error = null },
+                                    validator = ::isValidEmail,
+                                    keyboardType = KeyboardType.Email,
+                                    onImeAction = {
+                                        if (isValidEmail(email)) signupStep = SignupStep.PASSWORD
+                                        else error = "Please enter a valid email address."
+                                    },
+                                )
+                                error?.let {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                }
+                                Spacer(Modifier.height(22.dp))
+                                Button(
+                                    onClick = {
+                                        if (isValidEmail(email)) { error = null; signupStep = SignupStep.PASSWORD }
+                                        else error = "Please enter a valid email address."
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                                ) {
+                                    Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                }
+                            }
+                            SignupStep.PASSWORD -> {
+                                ValidatedField(
+                                    label = "Password",
+                                    value = password,
+                                    onValue = { password = it; error = null },
+                                    validator = { it.length >= 6 },
+                                    keyboardType = KeyboardType.Password,
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    showToggle = true,
+                                    toggleVisible = passwordVisible,
+                                    onToggleVisible = { passwordVisible = !passwordVisible },
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                ValidatedField(
+                                    label = "Confirm Password",
+                                    value = confirmPassword,
+                                    onValue = { confirmPassword = it; error = null },
+                                    validator = { it.length >= 6 && it == password },
+                                    keyboardType = KeyboardType.Password,
+                                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    showToggle = true,
+                                    toggleVisible = confirmPasswordVisible,
+                                    onToggleVisible = { confirmPasswordVisible = !confirmPasswordVisible },
+                                    onImeAction = submitSignup,
+                                )
 
-                Spacer(Modifier.height(22.dp))
+                                error?.let {
+                                    Spacer(Modifier.height(14.dp))
+                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                                }
 
-                Button(
-                    onClick = submitSignup,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                    enabled = !loading,
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Spacer(Modifier.height(22.dp))
+
+                                Button(
+                                    onClick = submitSignup,
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                                    enabled = !loading,
+                                ) {
+                                    if (loading) {
+                                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Text("Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -688,3 +828,33 @@ private fun AuthFormContent(
         }
     }
 }
+
+private enum class SignupStep { USERNAME, EMAIL, PASSWORD }
+
+@Composable
+private fun ConfirmedFieldRow(label: String, value: String, onEdit: () -> Unit) {
+    Row(
+        with(Glass) {
+            Modifier
+                .fillMaxWidth()
+                .glassSurface()
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column {
+            Text(label, fontSize = 11.sp, color = TextMid)
+            Text(value, fontSize = 14.sp, color = TextHi.copy(.85f))
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable { onEdit() },
+        ) {
+            Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Edit", fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
