@@ -102,6 +102,7 @@ fun MainContent(activity: MainActivity) {
     val prefs = androidx.compose.ui.platform.LocalContext.current
         .getSharedPreferences("cdnhunter_prefs", android.content.Context.MODE_PRIVATE)
     val onboardingSeen = prefs.getBoolean("onboarding_seen", false)
+    var authInitialMode by remember { mutableStateOf(com.cdnhunter.app.ui.AuthMode.LOGIN) }
     var screen by remember {
         mutableStateOf(
             when {
@@ -138,14 +139,20 @@ fun MainContent(activity: MainActivity) {
                 },
                 onContinueWithEmail = {
                     prefs.edit().putBoolean("onboarding_seen", true).apply()
+                    authInitialMode = com.cdnhunter.app.ui.AuthMode.LOGIN
                     screen = RootScreen.AUTH
                 },
                 onSignUp = {
                     prefs.edit().putBoolean("onboarding_seen", true).apply()
+                    authInitialMode = com.cdnhunter.app.ui.AuthMode.SIGNUP
                     screen = RootScreen.AUTH
                 },
             )
-            RootScreen.AUTH -> AuthScreen(onSignedIn = { screen = RootScreen.ENTERING })
+            RootScreen.AUTH -> AuthScreen(
+                initialMode = authInitialMode,
+                onSignedIn = { screen = RootScreen.ENTERING },
+                onBack = { screen = RootScreen.ONBOARDING },
+            )
             RootScreen.ENTERING -> EnteringAppLoader(onDone = { screen = RootScreen.HOME })
             RootScreen.HOME -> AppScreen(onSignOut = {
                 com.cdnhunter.app.vpn.CdnVpnService.stop(context)

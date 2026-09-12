@@ -16,7 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Lock
@@ -63,7 +65,7 @@ private val ErrorRed = AppColors.ErrorRed
 private val SuccessGreen = AppColors.SuccessGreen
 
 enum class AuthMode { LOGIN, SIGNUP }
-private enum class AuthStep { SPLASH, FORM, VERIFY, SUCCESS }
+private enum class AuthStep { FORM, VERIFY, SUCCESS }
 
 /** Turns Firebase's raw exception messages into a short, human-readable string.
  *
@@ -99,6 +101,9 @@ private fun friendlyAuthError(raw: String?): String {
     }
 }
 
+private fun isValidEmail(email: String): Boolean =
+    android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+
 @Composable
 internal fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -129,27 +134,68 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * A borderless text field: just an underline that highlights teal on focus, no
+ * outlined box. Used for the single-field login flow (email-only, then
+ * password-only) where a full bordered field would look heavier than needed.
+ */
 @Composable
-fun AuthScreen(onSignedIn: () -> Unit) {
-    val context = LocalContext.current
-    var step by remember { mutableStateOf(AuthStep.SPLASH) }
-    var mode by remember { mutableStateOf(AuthMode.LOGIN) }
-    var pendingEmail by remember { mutableStateOf("") }
+private fun UnderlineField(
+    label: String,
+    value: String,
+    onValue: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    onImeAction: (() -> Unit)? = null,
+) {
+    TextField(
+        value = value,
+        onValueChange = onValue,
+        label = { Text(label, fontSize = 13.sp) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
+                else androidx.compose.ui.text.input.ImeAction.Default,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+            onDone = { onImeAction?.invoke() },
+        ),
+        visualTransformation = visualTransformation,
+        trailingIcon = trailingIcon,
+        colors = TextFieldDefaults.colors(
+            focusedIndicatorColor = TealAccent,
+            unfocusedIndicatorColor = FieldBorder,
+            focusedLabelColor = TealAccent,
+            unfocusedLabelColor = TextMid,
+            focusedTextColor = TextHi,
+            unfocusedTextColor = TextHi.copy(.85f),
+            cursorColor = TealAccent,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+        ),
+    )
+}
 
-    LaunchedEffect(Unit) {
-        delay(1100)
-        // Either a live Thallo backend session, or a still-valid Google sign-in via
-        // Firebase (Google Sign-In keeps using Firebase Auth -- only email/password
-        // moved to the self-hosted backend, see ThalloAuthClient).
-        val hasSession = com.cdnhunter.app.vpn.ThalloAuthClient.currentSession(context) != null ||
-            FirebaseAuth.getInstance().currentUser != null
-        if (hasSession) onSignedIn() else step = AuthStep.FORM
-    }
+/**
+ * Login screen: a single email field first (underline style, no border). Once a
+ * valid email is entered and the user continues, the email field collapses into
+ * a small pill showing the address (with an Edit affordance) and a password
+ * field slides in below it -- avoids showing both fields at once. Google
+ * sign-in stays as a secondary option, matching how Onboarding presents it.
+ */
+@Composable
+fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, onBack: (() -> Unit)? = null) {
+    val context = LocalContext.current
+    var step by remember { mutableStateOf(AuthStep.FORM) }
+    var mode by remember { mutableStateOf(initialMode) }
+    var pendingEmail by remember { mutableStateOf("") }
 
     Box(Modifier.fillMaxSize().background(BgDark)) {
         FullScreenLoopVideo(modifier = Modifier.fillMaxSize())
 
-        // Dark overlay so the video reads as background, not content
         Box(
             Modifier
                 .fillMaxSize()
@@ -173,10 +219,10 @@ fun AuthScreen(onSignedIn: () -> Unit) {
             label = "authStep",
         ) { s ->
             when (s) {
-                AuthStep.SPLASH -> SplashContent()
                 AuthStep.FORM -> AuthFormContent(
                     mode = mode,
                     onModeChange = { mode = it },
+                    onBack = onBack,
                     onSuccess = { justSignedUp, email ->
                         if (justSignedUp) {
                             pendingEmail = email
@@ -192,44 +238,6 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                     onSkip = { step = AuthStep.SUCCESS },
                 )
                 AuthStep.SUCCESS -> SuccessContent(onContinue = onSignedIn)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SplashContent() {
-    val pulse = rememberInfiniteTransition(label = "splashPulse")
-    val scale by pulse.animateFloat(
-        0.94f, 1.02f,
-        infiniteRepeatable(tween(1100, easing = EaseInOutSine), RepeatMode.Reverse),
-        label = "splashScale",
-    )
-    var visible by remember { mutableStateOf(false) }
-    var typedChars by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) {
-        visible = true
-        delay(250)
-        val name = "Thallo"
-        for (i in 1..name.length) {
-            typedChars = i
-            delay(65)
-        }
-    }
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        AnimatedVisibility(visible = visible, enter = fadeIn(tween(500))) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
-                    contentDescription = "Thallo",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.width(200.dp).scale(scale),
-                )
-                Spacer(Modifier.height(22.dp))
-                Text("Private. Fast. Secure.", fontSize = 13.sp, color = TextMid)
-                Spacer(Modifier.height(28.dp))
-                CircularProgressIndicator(color = Accent, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             }
         }
     }
@@ -389,12 +397,14 @@ private fun SuccessContent(onContinue: () -> Unit) {
 private fun AuthFormContent(
     mode: AuthMode,
     onModeChange: (AuthMode) -> Unit,
+    onBack: (() -> Unit)?,
     onSuccess: (justSignedUp: Boolean, email: String) -> Unit,
 ) {
     val context = LocalContext.current
     val auth = remember { FirebaseAuth.getInstance() }
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var emailConfirmed by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -419,9 +429,6 @@ private fun AuthFormContent(
                 val account = task.getResult(ApiException::class.java)
                 val idToken = account.idToken
                 if (idToken == null) {
-                    // requestIdToken() is set, so a null here means a misconfigured
-                    // client or a cancelled/partial flow — don't hand a null credential
-                    // to Firebase, just report the same generic failure.
                     error = "Google sign-in failed. Please try again."
                 } else {
                     val credential = GoogleAuthProvider.getCredential(idToken, null)
@@ -431,34 +438,49 @@ private fun AuthFormContent(
                         .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
                 }
             } catch (e: ApiException) {
-                // Don't surface the numeric GMS status code to the user.
                 error = "Google sign-in failed. Please try again."
                 loading = false
             }
         }
     }
 
-    val submit: () -> Unit = {
+    val submitLogin: () -> Unit = {
+        error = null
+        if (password.isBlank()) {
+            error = "Please enter your password."
+        } else {
+            loading = true
+            coroutineScope.launch {
+                val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.logIn(email.trim(), password)
+                when (outcome) {
+                    is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
+                        com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
+                        onSuccess(false, email.trim())
+                    }
+                    is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
+                        error = outcome.message
+                        loading = false
+                    }
+                }
+            }
+        }
+    }
+
+    val submitSignup: () -> Unit = {
         error = null
         when {
-            email.isBlank() || password.isBlank() ->
-                error = "Please enter your email and password."
-            mode == AuthMode.SIGNUP && username.isBlank() ->
-                error = "Please choose a username."
-            mode == AuthMode.SIGNUP && password != confirmPassword ->
-                error = "Passwords don't match."
+            username.isBlank() -> error = "Please choose a username."
+            email.isBlank() || !isValidEmail(email) -> error = "Please enter a valid email address."
+            password.isBlank() -> error = "Please enter a password."
+            password != confirmPassword -> error = "Passwords don't match."
             else -> {
                 loading = true
                 coroutineScope.launch {
-                    val outcome = if (mode == AuthMode.LOGIN) {
-                        com.cdnhunter.app.vpn.ThalloAuthClient.logIn(email.trim(), password)
-                    } else {
-                        com.cdnhunter.app.vpn.ThalloAuthClient.signUp(email.trim(), password, username.trim())
-                    }
+                    val outcome = com.cdnhunter.app.vpn.ThalloAuthClient.signUp(email.trim(), password, username.trim())
                     when (outcome) {
                         is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Success -> {
                             com.cdnhunter.app.vpn.ThalloAuthClient.saveSession(context, outcome.result)
-                            onSuccess(mode == AuthMode.SIGNUP, email.trim())
+                            onSuccess(true, email.trim())
                         }
                         is com.cdnhunter.app.vpn.ThalloAuthClient.AuthOutcome.Failure -> {
                             error = outcome.message
@@ -484,73 +506,192 @@ private fun AuthFormContent(
                 .padding(horizontal = 26.dp)
                 .padding(top = 48.dp, bottom = 28.dp),
         ) {
-            Image(
-                painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
-                contentDescription = "Thallo",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.width(110.dp),
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack, modifier = Modifier.padding(end = 4.dp)) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
+                    }
+                }
+                Image(
+                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
+                    contentDescription = "Thallo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.width(96.dp),
+                )
+            }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(24.dp))
 
             Text(
-                if (mode == AuthMode.LOGIN) "Welcome Back" else "Create Account",
+                if (mode == AuthMode.LOGIN) "Sign In" else "Join Sector 51",
                 fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextHi,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                if (mode == AuthMode.LOGIN) "Sign in to keep your connection secure."
-                else "Set up your account to get started.",
+                if (mode == AuthMode.LOGIN) "Access granted only to the cleared."
+                else "Get clearance. Access begins here.",
                 fontSize = 13.sp, color = TextMid,
             )
 
             Spacer(Modifier.height(30.dp))
 
-            OutlinedButton(
-                onClick = { launcher.launch(googleClient.signInIntent) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, FieldBorder),
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
-            ) {
-                Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
-                    contentDescription = null,
-                    modifier = Modifier.size(26.dp).padding(end = 10.dp),
-                )
-                Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Divider(Modifier.weight(1f), color = FieldBorder)
-                Text("  or  ", fontSize = 11.sp, color = TextMid)
-                Divider(Modifier.weight(1f), color = FieldBorder)
-            }
-            Spacer(Modifier.height(18.dp))
-
-            if (mode == AuthMode.SIGNUP) {
-                AuthField("Username", username, { username = it }, Icons.Default.Person)
-                Spacer(Modifier.height(14.dp))
-            }
-            AuthField("Email Address", email, { email = it }, Icons.Default.Email, KeyboardType.Email)
-            Spacer(Modifier.height(14.dp))
-            AuthField(
-                "Password", password, { password = it }, Icons.Default.Lock, KeyboardType.Password,
-                if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton({ passwordVisible = !passwordVisible }) {
-                        Icon(
-                            if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            null, tint = TextMid,
-                        )
+            if (mode == AuthMode.LOGIN) {
+                // --- Single-field login flow: email first, then password replaces it ---
+                AnimatedContent(
+                    targetState = emailConfirmed,
+                    transitionSpec = {
+                        (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 4 })
+                            .togetherWith(fadeOut(tween(200)) + slideOutVertically(tween(200)) { -it / 4 })
+                    },
+                    label = "emailToPassword",
+                ) { confirmed ->
+                    if (!confirmed) {
+                        Column {
+                            UnderlineField(
+                                label = "Email",
+                                value = email,
+                                onValue = { email = it; error = null },
+                                keyboardType = KeyboardType.Email,
+                                onImeAction = {
+                                    if (isValidEmail(email)) emailConfirmed = true
+                                    else error = "Please enter a valid email address."
+                                },
+                            )
+                            error?.let {
+                                Spacer(Modifier.height(10.dp))
+                                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                            }
+                            Spacer(Modifier.height(22.dp))
+                            Button(
+                                onClick = {
+                                    if (isValidEmail(email)) emailConfirmed = true
+                                    else error = "Please enter a valid email address."
+                                },
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                            ) {
+                                Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            }
+                        }
+                    } else {
+                        Column {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(email, fontSize = 14.sp, color = TextHi.copy(.85f))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        emailConfirmed = false
+                                        password = ""
+                                        error = null
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Edit", fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            Spacer(Modifier.height(18.dp))
+                            UnderlineField(
+                                label = "Password",
+                                value = password,
+                                onValue = { password = it; error = null },
+                                keyboardType = KeyboardType.Password,
+                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton({ passwordVisible = !passwordVisible }) {
+                                        Icon(
+                                            if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            null, tint = TextMid,
+                                        )
+                                    }
+                                },
+                                onImeAction = submitLogin,
+                            )
+                            error?.let {
+                                Spacer(Modifier.height(10.dp))
+                                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                            }
+                            Spacer(Modifier.height(22.dp))
+                            Button(
+                                onClick = submitLogin,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                                enabled = !loading,
+                            ) {
+                                if (loading) {
+                                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text("Sign In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                }
+                            }
+                        }
                     }
-                },
-            )
-            if (mode == AuthMode.SIGNUP) {
-                Spacer(Modifier.height(14.dp))
-                AuthField(
-                    "Confirm Password", confirmPassword, { confirmPassword = it }, Icons.Default.Lock, KeyboardType.Password,
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Divider(Modifier.weight(1f), color = FieldBorder)
+                    Text("  or  ", fontSize = 11.sp, color = TextMid)
+                    Divider(Modifier.weight(1f), color = FieldBorder)
+                }
+                Spacer(Modifier.height(18.dp))
+
+                OutlinedButton(
+                    onClick = { launcher.launch(googleClient.signInIntent) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, FieldBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
+                ) {
+                    Image(
+                        painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(26.dp).padding(end = 10.dp),
+                    )
+                    Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Text("Don't have an account? ", fontSize = 13.sp, color = TextMid)
+                    Text(
+                        "Sign Up",
+                        fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            error = null
+                            onModeChange(AuthMode.SIGNUP)
+                        },
+                    )
+                }
+            } else {
+                // --- Sign Up: full form, all fields visible together ---
+                UnderlineField("Username", username, { username = it; error = null })
+                Spacer(Modifier.height(16.dp))
+                UnderlineField("Email", email, { email = it; error = null }, KeyboardType.Email)
+                Spacer(Modifier.height(16.dp))
+                UnderlineField(
+                    "Password", password, { password = it; error = null }, KeyboardType.Password,
+                    if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton({ passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                null, tint = TextMid,
+                            )
+                        }
+                    },
+                )
+                Spacer(Modifier.height(16.dp))
+                UnderlineField(
+                    "Confirm Password", confirmPassword, { confirmPassword = it; error = null }, KeyboardType.Password,
                     if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         IconButton({ confirmPasswordVisible = !confirmPasswordVisible }) {
@@ -560,93 +701,68 @@ private fun AuthFormContent(
                             )
                         }
                     },
+                    onImeAction = submitSignup,
                 )
-            }
 
-            error?.let {
-                Spacer(Modifier.height(10.dp))
-                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            }
-
-            Spacer(Modifier.height(22.dp))
-
-            Button(
-                onClick = submit,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                enabled = !loading,
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(if (mode == AuthMode.LOGIN) "Sign In" else "Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                error?.let {
+                    Spacer(Modifier.height(14.dp))
+                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 }
-            }
 
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(22.dp))
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                Text(
-                    if (mode == AuthMode.LOGIN) "Don't have an account? " else "Already have an account? ",
-                    fontSize = 13.sp, color = TextMid,
-                )
-                Text(
-                    if (mode == AuthMode.LOGIN) "Sign Up" else "Sign In",
-                    fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
-                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                    modifier = Modifier.clickable {
-                        error = null
-                        onModeChange(if (mode == AuthMode.LOGIN) AuthMode.SIGNUP else AuthMode.LOGIN)
-                    },
-                )
+                Button(
+                    onClick = submitSignup,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    enabled = !loading,
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Divider(Modifier.weight(1f), color = FieldBorder)
+                    Text("  or  ", fontSize = 11.sp, color = TextMid)
+                    Divider(Modifier.weight(1f), color = FieldBorder)
+                }
+                Spacer(Modifier.height(18.dp))
+
+                OutlinedButton(
+                    onClick = { launcher.launch(googleClient.signInIntent) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, FieldBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
+                ) {
+                    Image(
+                        painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(26.dp).padding(end = 10.dp),
+                    )
+                    Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Text("Already have an account? ", fontSize = 13.sp, color = TextMid)
+                    Text(
+                        "Sign In",
+                        fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            error = null
+                            onModeChange(AuthMode.LOGIN)
+                        },
+                    )
+                }
             }
         }
     }
-}
-
-@Composable
-fun AuthField(
-    label: String,
-    value: String,
-    onValue: (String) -> Unit,
-    leading: androidx.compose.ui.graphics.vector.ImageVector,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    trailingIcon: @Composable (() -> Unit)? = null,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValue,
-        // Wrapped in a Box with the same [FieldBg] as the field's own container: Material3
-        // punches a background behind the floating label out of the *theme's* surface colour
-        // (near-black here), not the field's actual container colour, so the shrunken label
-        // sat on an unreadable black patch mid-transition. Giving it an explicit matching
-        // background closes that gap.
-        label = {
-            Box(Modifier.background(FieldBg)) {
-                Text(label, fontSize = 12.sp)
-            }
-        },
-        singleLine = true,
-        leadingIcon = { Icon(leading, null) },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        visualTransformation = visualTransformation,
-        trailingIcon = trailingIcon,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = TealAccent,
-            unfocusedBorderColor = FieldBorder,
-            focusedLeadingIconColor = TealAccent,
-            unfocusedLeadingIconColor = TextMid,
-            focusedLabelColor = TealAccent,
-            unfocusedLabelColor = TextMid,
-            focusedTextColor = TextHi,
-            unfocusedTextColor = TextHi.copy(.85f),
-            cursorColor = TealAccent,
-            focusedContainerColor = FieldBg,
-            unfocusedContainerColor = FieldBg,
-        ),
-    )
 }
