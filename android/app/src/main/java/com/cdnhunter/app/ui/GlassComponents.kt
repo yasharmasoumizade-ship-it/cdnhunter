@@ -22,7 +22,6 @@ object Glass {
     val Shape: Shape = RoundedCornerShape(16.dp)
     val FieldShape: Shape = RoundedCornerShape(14.dp)
     val CardShape: Shape = RoundedCornerShape(28.dp)
-    val CardShape: Shape = RoundedCornerShape(28.dp)
 
     fun surfaceBrush(): Brush = Brush.verticalGradient(
         colors = listOf(
