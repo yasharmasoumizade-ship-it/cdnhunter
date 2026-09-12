@@ -160,30 +160,35 @@ private fun UnderlineField(
         if (wasFocused && !isFocused) onFocusLost?.invoke()
         wasFocused = isFocused
     }
-    with(Glass) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValue,
-            label = { Text(label, fontSize = 13.sp) },
-            singleLine = true,
-            interactionSource = interactionSource,
-            modifier = Modifier
-                .fillMaxWidth()
-                .glassSurface(shape = Glass.Shape, focused = isFocused),
-            shape = Glass.Shape,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = keyboardType,
-                imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
-                    else androidx.compose.ui.text.input.ImeAction.Default,
-            ),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                onDone = { onImeAction?.invoke() },
-            ),
-            visualTransformation = visualTransformation,
-            trailingIcon = trailingIcon,
-            colors = Glass.textFieldColors(),
-        )
-    }
+    TextField(
+        value = value,
+        onValueChange = onValue,
+        label = { Text(label, fontSize = 13.sp) },
+        singleLine = true,
+        interactionSource = interactionSource,
+        modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
+                else androidx.compose.ui.text.input.ImeAction.Default,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+            onDone = { onImeAction?.invoke() },
+        ),
+        visualTransformation = visualTransformation,
+        trailingIcon = trailingIcon,
+        colors = TextFieldDefaults.colors(
+            focusedIndicatorColor = TealAccent,
+            unfocusedIndicatorColor = Color.White.copy(alpha = 0.25f),
+            focusedLabelColor = TealAccent,
+            unfocusedLabelColor = TextMid,
+            focusedTextColor = TextHi,
+            unfocusedTextColor = TextHi.copy(.85f),
+            cursorColor = TealAccent,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+        ),
+    )
 }
 
 /**
@@ -535,7 +540,7 @@ private fun AuthFormContent(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 26.dp)
+                .padding(horizontal = 22.dp)
                 .padding(top = 90.dp, bottom = 28.dp),
         ) {
             if (onBack != null) {
@@ -544,7 +549,16 @@ private fun AuthFormContent(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            // Single glass card holds the title, form, and footer link -- matching
+            // the "one contained card" reference instead of full-width loose fields.
+            Column(
+                with(Glass) {
+                    Modifier
+                        .fillMaxWidth()
+                        .glassSurface()
+                        .padding(horizontal = 22.dp, vertical = 28.dp)
+                },
+            ) {
 
             Text(
                 if (mode == AuthMode.LOGIN) "Sign In" else "Join Sector 51",
@@ -826,6 +840,7 @@ private fun AuthFormContent(
                         },
                     )
                 }
+            }
             }
         }
     }
