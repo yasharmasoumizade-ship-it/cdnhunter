@@ -473,23 +473,15 @@ private fun AuthFormContent(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 26.dp)
-                .padding(top = 48.dp, bottom = 28.dp),
+                .padding(top = 90.dp, bottom = 28.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) {
-                    IconButton(onClick = onBack, modifier = Modifier.padding(end = 4.dp)) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
-                    }
+            if (onBack != null) {
+                IconButton(onClick = onBack, modifier = Modifier.padding(bottom = 8.dp)) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
                 }
-                Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
-                    contentDescription = "Thallo",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.width(96.dp),
-                )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
 
             Text(
                 if (mode == AuthMode.LOGIN) "Sign In" else "Join Sector 51",
