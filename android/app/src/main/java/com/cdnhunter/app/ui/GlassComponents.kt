@@ -23,24 +23,32 @@ object Glass {
 
     fun surfaceBrush(): Brush = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.10f),
-            Color.White.copy(alpha = 0.05f),
+            Color.White.copy(alpha = 0.16f),
+            Color(0xFF0A0B0F).copy(alpha = 0.55f),
         ),
     )
 
-    val borderColor = Color.White.copy(alpha = 0.18f)
+    val borderColor = Color.White.copy(alpha = 0.28f)
 
-    /** Apply the glass background + border to any Modifier, e.g. a Box or Column. */
-    fun Modifier.glassSurface(shape: Shape = Shape): Modifier = this
+    /** Apply the glass background + border to any Modifier, e.g. a Box or Column.
+     *  Pass [focused] = true to swap the border to the accent color, e.g. when a
+     *  wrapped text field has focus -- this is the single source of the visible
+     *  border, so the wrapped field's own border must stay Color.Transparent
+     *  (see [textFieldColors]) or a double ring appears. */
+    fun Modifier.glassSurface(shape: Shape = Shape, focused: Boolean = false): Modifier = this
         .clip(shape)
         .background(surfaceBrush())
-        .border(1.dp, borderColor, shape)
+        .border(1.dp, if (focused) AppColors.Accent.copy(alpha = 0.7f) else borderColor, shape)
 
-    /** Text field colors tuned for the glass look: transparent fill, soft border. */
+    /** Text field colors tuned for the glass look: transparent fill, soft border.
+     *  Both border colors are transparent here because the visible border comes
+     *  from [glassSurface]'s own Modifier.border() -- letting OutlinedTextField
+     *  draw its own border too produced a double-border artifact (an extra green
+     *  ring outside the glass card whenever a field gained focus). */
     @Composable
     fun textFieldColors() = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = AppColors.Accent.copy(alpha = 0.7f),
-        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+        focusedBorderColor = Color.Transparent,
+        unfocusedBorderColor = Color.Transparent,
         focusedLeadingIconColor = AppColors.Accent,
         unfocusedLeadingIconColor = AppColors.TextMid,
         focusedLabelColor = AppColors.Accent,
@@ -48,7 +56,7 @@ object Glass {
         focusedTextColor = AppColors.TextHi,
         unfocusedTextColor = AppColors.TextHi.copy(alpha = 0.85f),
         cursorColor = AppColors.Accent,
-        focusedContainerColor = Color.White.copy(alpha = 0.06f),
-        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
+        focusedContainerColor = Color.White.copy(alpha = 0.10f),
+        unfocusedContainerColor = Color.Black.copy(alpha = 0.30f),
     )
 }
