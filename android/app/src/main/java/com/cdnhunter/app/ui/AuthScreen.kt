@@ -149,34 +149,29 @@ private fun UnderlineField(
     trailingIcon: @Composable (() -> Unit)? = null,
     onImeAction: (() -> Unit)? = null,
 ) {
-    TextField(
-        value = value,
-        onValueChange = onValue,
-        label = { Text(label, fontSize = 13.sp) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = keyboardType,
-            imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
-                else androidx.compose.ui.text.input.ImeAction.Default,
-        ),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-            onDone = { onImeAction?.invoke() },
-        ),
-        visualTransformation = visualTransformation,
-        trailingIcon = trailingIcon,
-        colors = TextFieldDefaults.colors(
-            focusedIndicatorColor = TealAccent,
-            unfocusedIndicatorColor = FieldBorder,
-            focusedLabelColor = TealAccent,
-            unfocusedLabelColor = TextMid,
-            focusedTextColor = TextHi,
-            unfocusedTextColor = TextHi.copy(.85f),
-            cursorColor = TealAccent,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-        ),
-    )
+    with(Glass) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValue,
+            label = { Text(label, fontSize = 13.sp) },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .glassSurface(),
+            shape = Glass.Shape,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = keyboardType,
+                imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
+                    else androidx.compose.ui.text.input.ImeAction.Default,
+            ),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                onDone = { onImeAction?.invoke() },
+            ),
+            visualTransformation = visualTransformation,
+            trailingIcon = trailingIcon,
+            colors = Glass.textFieldColors(),
+        )
+    }
 }
 
 /**
@@ -538,7 +533,12 @@ private fun AuthFormContent(
                     } else {
                         Column {
                             Row(
-                                Modifier.fillMaxWidth(),
+                                with(Glass) {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .glassSurface()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                                },
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {

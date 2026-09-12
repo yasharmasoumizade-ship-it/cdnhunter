@@ -9,6 +9,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -124,9 +126,12 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
         )
 
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 28.dp),
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp),
         ) {
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(210.dp))
 
             HorizontalPager(
                 state = pagerState,
