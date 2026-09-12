@@ -411,38 +411,7 @@ private fun AuthFormContent(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-
-    val gso = remember {
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("270834492287-nppqi8eb25khf5l2icprs2c73at80l9u.apps.googleusercontent.com")
-            .requestEmail()
-            .build()
-    }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-    val googleClient = remember { GoogleSignIn.getClient(context, gso) }
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                val idToken = account.idToken
-                if (idToken == null) {
-                    error = "Google sign-in failed. Please try again."
-                } else {
-                    val credential = GoogleAuthProvider.getCredential(idToken, null)
-                    loading = true
-                    auth.signInWithCredential(credential)
-                        .addOnSuccessListener { onSuccess(false, email) }
-                        .addOnFailureListener { e -> error = friendlyAuthError(e.message); loading = false }
-                }
-            } catch (e: ApiException) {
-                error = "Google sign-in failed. Please try again."
-                loading = false
-            }
-        }
-    }
 
     val submitLogin: () -> Unit = {
         error = null
@@ -635,35 +604,13 @@ private fun AuthFormContent(
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Divider(Modifier.weight(1f), color = FieldBorder)
-                    Text("  or  ", fontSize = 11.sp, color = TextMid)
-                    Divider(Modifier.weight(1f), color = FieldBorder)
-                }
-                Spacer(Modifier.height(18.dp))
-
-                OutlinedButton(
-                    onClick = { launcher.launch(googleClient.signInIntent) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, FieldBorder),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
-                ) {
-                    Image(
-                        painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp).padding(end = 10.dp),
-                    )
-                    Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                }
-
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     Text("Don't have an account? ", fontSize = 13.sp, color = TextMid)
                     Text(
                         "Sign Up",
-                        fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp, color = Accent, fontWeight = FontWeight.Bold,
                         textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                         modifier = Modifier.clickable {
                             error = null
@@ -726,35 +673,13 @@ private fun AuthFormContent(
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Divider(Modifier.weight(1f), color = FieldBorder)
-                    Text("  or  ", fontSize = 11.sp, color = TextMid)
-                    Divider(Modifier.weight(1f), color = FieldBorder)
-                }
-                Spacer(Modifier.height(18.dp))
-
-                OutlinedButton(
-                    onClick = { launcher.launch(googleClient.signInIntent) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, FieldBorder),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = FieldBg),
-                ) {
-                    Image(
-                        painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp).padding(end = 10.dp),
-                    )
-                    Text("Continue with Google", color = TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                }
-
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     Text("Already have an account? ", fontSize = 13.sp, color = TextMid)
                     Text(
                         "Sign In",
-                        fontSize = 13.sp, color = TextHi, fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp, color = Accent, fontWeight = FontWeight.Bold,
                         textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                         modifier = Modifier.clickable {
                             error = null
