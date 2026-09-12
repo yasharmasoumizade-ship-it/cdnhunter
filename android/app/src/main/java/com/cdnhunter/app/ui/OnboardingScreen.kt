@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -131,13 +132,16 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 28.dp),
         ) {
-            Spacer(Modifier.height(210.dp))
+            Spacer(Modifier.height(130.dp))
 
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxWidth(),
             ) { page ->
-                OnboardingSlideContent(onboardingSlides[page])
+                val pageOffset = (
+                    (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                )
+                OnboardingSlideContent(onboardingSlides[page], pageOffset = pageOffset)
             }
 
             Spacer(Modifier.height(24.dp))
@@ -164,41 +168,45 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
 
             Spacer(Modifier.height(28.dp))
 
-            // Fixed sign-in actions — identical on every slide.
-            OutlinedButton(
-                onClick = { googleError = null; launcher.launch(googleClient.signInIntent) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, AppColors.FieldBorder),
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = AppColors.FieldBg),
-                enabled = !googleLoading,
+            // Fixed sign-in actions — identical on every slide. Email is the primary,
+            // full-width action; Google sits beside it as a compact icon-only button.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (googleLoading) {
-                    CircularProgressIndicator(color = AppColors.TextHi, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Image(
-                        painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp).padding(end = 10.dp),
-                    )
-                    Text("Continue with Google", color = AppColors.TextHi.copy(.9f), fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Button(
+                    onClick = onContinueWithEmail,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                ) {
+                    Text("Continue with Email", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+
+                OutlinedButton(
+                    onClick = { googleError = null; launcher.launch(googleClient.signInIntent) },
+                    modifier = Modifier.size(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    border = BorderStroke(1.dp, AppColors.FieldBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = AppColors.FieldBg),
+                    enabled = !googleLoading,
+                ) {
+                    if (googleLoading) {
+                        CircularProgressIndicator(color = AppColors.TextHi, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Image(
+                            painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
+                            contentDescription = "Continue with Google",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
 
             googleError?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = AppColors.ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Button(
-                onClick = onContinueWithEmail,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-            ) {
-                Text("Continue with Email", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
 
             Spacer(Modifier.height(20.dp))
@@ -219,7 +227,7 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
 }
 
 @Composable
-private fun OnboardingSlideContent(slide: OnboardingSlide) {
+private fun OnboardingSlideContent(slide: OnboardingSlide, pageOffset: Float = 0f) {
     Column(
         Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -228,7 +236,17 @@ private fun OnboardingSlideContent(slide: OnboardingSlide) {
             painter = painterResource(id = slide.imageRes),
             contentDescription = slide.title,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.width(160.dp),
+            modifier = Modifier
+                .width(160.dp)
+                .graphicsLayer {
+                    // A playful spin tied to how far this slide is from center: fully
+                    // settled (0 deg) when active, spun a quarter-turn while swiping in/out.
+                    rotationY = pageOffset * 90f
+                    val scale = 1f - (kotlin.math.abs(pageOffset) * 0.25f)
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = 1f - (kotlin.math.abs(pageOffset) * 0.6f)
+                },
         )
         Spacer(Modifier.height(24.dp))
         Text(
@@ -242,7 +260,7 @@ private fun OnboardingSlideContent(slide: OnboardingSlide) {
         Text(
             slide.subtitle,
             fontSize = 13.sp,
-            color = AppColors.TextMid,
+            color = AppColors.TextHi.copy(alpha = 0.85f),
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 12.dp),
         )
