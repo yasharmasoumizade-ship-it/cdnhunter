@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -109,22 +110,10 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
         }
     }
 
-    Box(Modifier.fillMaxSize().background(AppColors.BgDark)) {
-        FullScreenLoopVideo(modifier = Modifier.fillMaxSize())
+    val hazeState = remember { HazeState() }
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Black.copy(alpha = 0.35f),
-                            Color.Black.copy(alpha = 0.82f),
-                        ),
-                    ),
-                ),
-        )
+    Box(Modifier.fillMaxSize().background(AppColors.BgDark)) {
+        FullScreenLoopVideo(modifier = Modifier.fillMaxSize(), hazeState = hazeState)
 
         Column(
             Modifier
@@ -132,7 +121,15 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 28.dp),
         ) {
-            Spacer(Modifier.height(130.dp))
+            Spacer(Modifier.height(90.dp))
+
+            with(Glass) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .glassSurface(shape = Glass.CardShape, hazeState = hazeState)
+                        .padding(horizontal = 20.dp, vertical = 26.dp),
+                ) {
 
             HorizontalPager(
                 state = pagerState,
@@ -221,7 +218,9 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
                 )
             }
 
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(24.dp))
+                }
+            }
         }
     }
 }

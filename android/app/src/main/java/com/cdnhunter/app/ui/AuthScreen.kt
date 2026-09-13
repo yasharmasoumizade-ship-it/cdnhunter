@@ -56,6 +56,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 
 private val BgDark = AppColors.BgDark
 private val FieldBg = AppColors.FieldBg
@@ -108,7 +110,7 @@ private fun isValidEmail(email: String): Boolean =
     android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
 
 @Composable
-internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> Unit)? = null) {
+internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> Unit)? = null, hazeState: HazeState? = null) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -133,7 +135,7 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> 
         onDispose { exoPlayer.release() }
     }
     AndroidView(
-        modifier = modifier,
+        modifier = if (hazeState != null) modifier.haze(hazeState) else modifier,
         factory = {
             PlayerView(context).apply {
                 player = exoPlayer
@@ -205,15 +207,22 @@ private fun UnderlineField(
  * field slides in below it -- avoids showing both fields at once. Google
  * sign-in stays as a secondary option, matching how Onboarding presents it.
  */
+/** Shared Haze blur source across a screen: the video sets itself as the blur
+ *  source, and any glass card reads this local to sample it, without every
+ *  composable in between needing to thread a HazeState parameter through. */
+internal val LocalHazeState = compositionLocalOf<HazeState?> { null }
+
 @Composable
 fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, onBack: (() -> Unit)? = null) {
+    val hazeState = remember { HazeState() }
     val context = LocalContext.current
     var step by remember { mutableStateOf(AuthStep.FORM) }
     var mode by remember { mutableStateOf(initialMode) }
     var pendingEmail by remember { mutableStateOf("") }
 
+    CompositionLocalProvider(LocalHazeState provides hazeState) {
     Box(Modifier.fillMaxSize().background(BgDark)) {
-        FullScreenLoopVideo(modifier = Modifier.fillMaxSize())
+        FullScreenLoopVideo(modifier = Modifier.fillMaxSize(), hazeState = hazeState)
 
         Box(
             Modifier
@@ -259,6 +268,7 @@ fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, o
                 AuthStep.SUCCESS -> SuccessContent(onContinue = onSignedIn)
             }
         }
+    }
     }
 }
 
@@ -562,7 +572,7 @@ private fun AuthFormContent(
                 with(Glass) {
                     Modifier
                         .fillMaxWidth()
-                        .glassSurface()
+                        .glassSurface(hazeState = LocalHazeState.current)
                         .padding(horizontal = 22.dp, vertical = 28.dp)
                 },
             ) {
@@ -625,7 +635,7 @@ private fun AuthFormContent(
                                 with(Glass) {
                                     Modifier
                                         .fillMaxWidth()
-                                        .glassSurface()
+                                        .glassSurface(hazeState = LocalHazeState.current)
                                         .padding(horizontal = 16.dp, vertical = 14.dp)
                                 },
                                 verticalAlignment = Alignment.CenterVertically,
@@ -861,7 +871,7 @@ private fun ConfirmedFieldRow(label: String, value: String, onEdit: () -> Unit) 
         with(Glass) {
             Modifier
                 .fillMaxWidth()
-                .glassSurface()
+                .glassSurface(hazeState = LocalHazeState.current)
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         },
         verticalAlignment = Alignment.CenterVertically,
