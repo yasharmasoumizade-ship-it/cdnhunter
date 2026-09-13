@@ -92,6 +92,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
     buildFeatures {
         compose = true
@@ -120,13 +121,6 @@ require(aarFiles.size <= 1) {
         "Only one gomobile-built AAR (e.g. libmihomo.aar) may be present at a time — " +
         "multiple gomobile AARs collide on shared Go runtime classes and libgojni.so. " +
         "Move any AAR not currently used by the app out of app/libs."
-}
-
-configurations.all {
-    resolutionStrategy {
-        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
-        force("org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24")
-    }
 }
 
 dependencies {
