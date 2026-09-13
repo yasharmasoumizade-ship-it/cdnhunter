@@ -20,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -238,14 +237,16 @@ private fun OnboardingSlideContent(slide: OnboardingSlide, pageOffset: Float = 0
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .width(160.dp)
-                .graphicsLayer {
+                .run {
                     // A playful spin tied to how far this slide is from center: fully
                     // settled (0 deg) when active, spun a quarter-turn while swiping in/out.
-                    rotationY = pageOffset * 90f
                     val scale = 1f - (kotlin.math.abs(pageOffset) * 0.25f)
-                    scaleX = scale
-                    scaleY = scale
-                    alpha = 1f - (kotlin.math.abs(pageOffset) * 0.6f)
+                    graphicsLayer(
+                        rotationY = pageOffset * 90f,
+                        scaleX = scale,
+                        scaleY = scale,
+                        alpha = 1f - (kotlin.math.abs(pageOffset) * 0.6f),
+                    )
                 },
         )
         Spacer(Modifier.height(24.dp))
