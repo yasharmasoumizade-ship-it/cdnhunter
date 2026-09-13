@@ -192,7 +192,7 @@ fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Un
                     enabled = !googleLoading,
                 ) {
                     if (googleLoading) {
-                        CircularProgressIndicator(color = AppColors.TextHi, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        GlowSpinner(size = 18.dp)
                     } else {
                         Image(
                             painter = painterResource(id = com.cdnhunter.app.R.drawable.ic_google_logo),
@@ -237,16 +237,14 @@ private fun OnboardingSlideContent(slide: OnboardingSlide, pageOffset: Float = 0
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .width(160.dp)
-                .run {
+                .graphicsLayer {
                     // A playful spin tied to how far this slide is from center: fully
                     // settled (0 deg) when active, spun a quarter-turn while swiping in/out.
                     val scale = 1f - (kotlin.math.abs(pageOffset) * 0.25f)
-                    graphicsLayer(
-                        rotationY = pageOffset * 90f,
-                        scaleX = scale,
-                        scaleY = scale,
-                        alpha = 1f - (kotlin.math.abs(pageOffset) * 0.6f),
-                    )
+                    rotationY = pageOffset * 90f
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = 1f - (kotlin.math.abs(pageOffset) * 0.6f)
                 },
         )
         Spacer(Modifier.height(24.dp))
