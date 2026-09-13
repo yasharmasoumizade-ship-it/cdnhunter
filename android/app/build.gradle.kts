@@ -122,6 +122,13 @@ require(aarFiles.size <= 1) {
         "Move any AAR not currently used by the app out of app/libs."
 }
 
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
+        force("org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24")
+    }
+}
+
 dependencies {
     // Local libs (libmihomo.aar built by CI — see mihomo-mobile/ + .github/workflows/build-unified.yml)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
