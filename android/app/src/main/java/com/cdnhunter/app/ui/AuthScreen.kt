@@ -108,7 +108,7 @@ private fun isValidEmail(email: String): Boolean =
     android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
 
 @Composable
-internal fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
+internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> Unit)? = null) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -118,6 +118,13 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier) {
             setMediaItem(MediaItem.fromUri(uri))
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
+            if (onReady != null) {
+                addListener(object : Player.Listener {
+                    override fun onRenderedFirstFrame() {
+                        onReady()
+                    }
+                })
+            }
             prepare()
             playWhenReady = true
         }
@@ -333,7 +340,7 @@ private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: ()
                 enabled = !loading && code.length == 6,
             ) {
                 if (loading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    GlowSpinner(size = 20.dp)
                 } else {
                     Text("Verify", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 }
@@ -668,7 +675,7 @@ private fun AuthFormContent(
                                 enabled = !loading,
                             ) {
                                 if (loading) {
-                                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    GlowSpinner(size = 20.dp)
                                 } else {
                                     Text("Sign In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                 }
@@ -815,7 +822,7 @@ private fun AuthFormContent(
                                     enabled = !loading,
                                 ) {
                                     if (loading) {
-                                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                        GlowSpinner(size = 20.dp)
                                     } else {
                                         Text("Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                     }
