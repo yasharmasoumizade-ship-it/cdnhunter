@@ -137,11 +137,21 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> 
     AndroidView(
         modifier = if (hazeState != null) modifier.haze(hazeState) else modifier,
         factory = {
-            PlayerView(context).apply {
-                player = exoPlayer
-                useController = false
-                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            }
+            // Inflated from XML (surface_type="texture_view") rather than built via the
+            // PlayerView(context) constructor, because that constructor always creates a
+            // SurfaceView-backed player and PlayerView offers no programmatic way to
+            // change it -- surface_type is an XML-only attribute. This matters here
+            // because Haze can only capture Compose/TextureView content for its blur
+            // snapshot; a SurfaceView renders to a separate hardware layer the compositor
+            // can't read from, which crashed on launch once hazeState was wired into this
+            // video (see PR discussion / Haze docs: "a SurfaceView cannot be captured").
+            android.view.LayoutInflater.from(context)
+                .inflate(com.cdnhunter.app.R.layout.player_view_texture, null) as PlayerView
+                .apply {
+                    player = exoPlayer
+                    useController = false
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                }
         },
     )
 }
