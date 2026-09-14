@@ -207,13 +207,6 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
             enter = androidx.compose.animation.fadeIn(tween(500)),
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
-                    contentDescription = "GROOMX",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.width(200.dp),
-                )
-                Spacer(Modifier.height(22.dp))
                 Text("Private. Fast. Secure.", fontSize = 13.sp, color = Color(0xFF8B8E98))
                 Spacer(Modifier.height(28.dp))
                 com.cdnhunter.app.ui.GlowSpinner(size = 32.dp, strokeWidth = 3.dp)
