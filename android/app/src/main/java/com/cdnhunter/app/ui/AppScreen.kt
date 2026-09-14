@@ -2589,17 +2589,39 @@ private fun RowDivider() {
  *  row divider still lands under the text. */
 @Composable
 private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier.size(34.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+    IconTileBadge(modifier) {
+        Icon(icon, null, tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(18.dp))
+    }
+}
+
+/** Same badge, for a Lucide vector drawable instead of a Material [ImageVector]. `tint` is
+ *  accepted for call-site parity with [IconTile] and, likewise, ignored. */
+@Composable
+private fun IconTileRes(@androidx.annotation.DrawableRes icon: Int, tint: Color, modifier: Modifier = Modifier) {
+    IconTileBadge(modifier) {
         Icon(
-            icon,
+            painterResource(id = icon),
             null,
-            tint = AnanasTeal,
-            modifier = Modifier.size(22.dp),
+            tint = Color.White.copy(alpha = 0.92f),
+            modifier = Modifier.size(18.dp),
         )
     }
+}
+
+/** A dark rounded badge behind each row's icon (Figma-style settings list treatment), rather
+ *  than a bare flat glyph. Shared by [IconTile] and [IconTileRes] so both icon sources render
+ *  in the exact same badge. */
+@Composable
+private fun IconTileBadge(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(
+        modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape),
+        contentAlignment = Alignment.Center,
+        content = { content() },
+    )
 }
 
 /**
@@ -3004,10 +3026,10 @@ private fun SettingsScreen(
             // disc as the sole way to change it — discoverable by nobody.
             ModeChoiceRow(mode = mode, onSetMode = onSetMode)
             RowDivider()
-            SettingsRow(Icons.Outlined.VerifiedUser, "Protocol", "VLESS", AnanasBlue, showChevron = true)
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS", AnanasBlue, showChevron = true)
             RowDivider()
             SettingsToggleRow(
-                Icons.Outlined.Autorenew, "Auto-reconnect", "Reconnect if connection drops",
+                com.cdnhunter.app.R.drawable.ic_lucide_refresh, "Auto-reconnect", "Reconnect if connection drops",
                 autoReconnect, {
                     autoReconnect = it
                     AppSettings.setAutoReconnectEnabled(context, it)
@@ -3016,7 +3038,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Rounded.WifiOff, "Kill switch", "Block traffic on disconnect",
+                com.cdnhunter.app.R.drawable.ic_lucide_wifi_off, "Kill switch", "Block traffic on disconnect",
                 killSwitch, {
                     killSwitch = it
                     AppSettings.setKillSwitchEnabled(context, it)
@@ -3033,7 +3055,7 @@ private fun SettingsScreen(
                     else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                 }
                 SettingsRow(
-                    Icons.Outlined.CallSplit, "Split tunneling", summary, AnanasPurple,
+                    com.cdnhunter.app.R.drawable.ic_lucide_split, "Split tunneling", summary, AnanasPurple,
                     showChevron = true, onClick = onSplitTunnelClick,
                 )
             }
@@ -3041,7 +3063,7 @@ private fun SettingsScreen(
             run {
                 var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
                 SettingsToggleRow(
-                    Icons.Rounded.FrontHand, "Ad blocker", "Block ads & tracking domains",
+                    com.cdnhunter.app.R.drawable.ic_lucide_hand, "Ad blocker", "Block ads & tracking domains",
                     adBlockEnabled, {
                         adBlockEnabled = it
                         AppSettings.setAdBlockerEnabled(context, it)
@@ -3057,7 +3079,7 @@ private fun SettingsScreen(
                 // its own rule-provider in VpnConfigBuilder and is not gated behind ad blocking.
                 var malwareBlockEnabled by remember { mutableStateOf(AppSettings.malwareBlockerEnabled(context)) }
                 SettingsToggleRow(
-                    Icons.Outlined.Shield, "Malware blocker", "Block malware, phishing & scam domains",
+                    com.cdnhunter.app.R.drawable.ic_lucide_shield, "Malware blocker", "Block malware, phishing & scam domains",
                     malwareBlockEnabled, {
                         malwareBlockEnabled = it
                         AppSettings.setMalwareBlockerEnabled(context, it)
@@ -3153,7 +3175,7 @@ private fun SettingsScreen(
 
             RowDivider()
             SettingsToggleRow(
-                Icons.Outlined.Router, "Allow LAN", "Access local network devices",
+                com.cdnhunter.app.R.drawable.ic_lucide_router, "Allow LAN", "Access local network devices",
                 allowLan, {
                     allowLan = it
                     AppSettings.setAllowLan(context, it)
@@ -3162,7 +3184,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Outlined.Language, "IPv6", "Route IPv6 traffic through VPN",
+                com.cdnhunter.app.R.drawable.ic_lucide_globe, "IPv6", "Route IPv6 traffic through VPN",
                 ipv6Enabled, {
                     ipv6Enabled = it
                     AppSettings.setIpv6Enabled(context, it)
@@ -3171,7 +3193,7 @@ private fun SettingsScreen(
             )
             RowDivider()
             SettingsToggleRow(
-                Icons.Outlined.Security, "DNS over HTTPS", "Encrypt DNS queries with DoH",
+                com.cdnhunter.app.R.drawable.ic_lucide_lock, "DNS over HTTPS", "Encrypt DNS queries with DoH",
                 useDoh, {
                     useDoh = it
                     AppSettings.setUseDoh(context, it)
@@ -3194,7 +3216,7 @@ private fun SettingsScreen(
             var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
 
             SettingsToggleRow(
-                Icons.Outlined.Dns, "Custom DNS", "Use your own resolvers",
+                com.cdnhunter.app.R.drawable.ic_lucide_database, "Custom DNS", "Use your own resolvers",
                 customDnsEnabled, {
                     customDnsEnabled = it
                     showDnsInputs = it
@@ -3389,7 +3411,26 @@ private fun SettingsScreen(
 /** A row that opens something, or just states a value: tile, label, optional value under it,
  *  optional chevron. */
 @Composable
+private fun SettingsRow(
+    @androidx.annotation.DrawableRes iconRes: Int,
+    label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null,
+) {
+    SettingsRowContent(
+        tile = { IconTileRes(iconRes, iconTint) },
+        label = label, value = value, showChevron = showChevron, onClick = onClick,
+    )
+}
+
+@Composable
 private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
+    SettingsRowContent(
+        tile = { IconTile(icon, iconTint) },
+        label = label, value = value, showChevron = showChevron, onClick = onClick,
+    )
+}
+
+@Composable
+private fun SettingsRowContent(tile: @Composable () -> Unit, label: String, value: String?, showChevron: Boolean, onClick: (() -> Unit)? = null) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -3404,7 +3445,7 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.weight(1f),
         ) {
-            IconTile(icon, iconTint)
+            tile()
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     label,
@@ -3435,12 +3476,41 @@ private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTi
  *  thing being switched, so a group of five switches can be scanned rather than read. */
 @Composable
 private fun SettingsToggleRow(
+    @androidx.annotation.DrawableRes iconRes: Int,
+    label: String,
+    desc: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    tint: Color = AnanasSettingsIcon,
+) {
+    SettingsToggleRowContent(
+        tile = { IconTileRes(iconRes, tint) },
+        label = label, desc = desc, checked = checked, onCheckedChange = onCheckedChange,
+    )
+}
+
+@Composable
+private fun SettingsToggleRow(
     icon: ImageVector,
     label: String,
     desc: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     tint: Color = AnanasSettingsIcon,
+) {
+    SettingsToggleRowContent(
+        tile = { IconTile(icon, tint) },
+        label = label, desc = desc, checked = checked, onCheckedChange = onCheckedChange,
+    )
+}
+
+@Composable
+private fun SettingsToggleRowContent(
+    tile: @Composable () -> Unit,
+    label: String,
+    desc: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
         Modifier
@@ -3455,7 +3525,7 @@ private fun SettingsToggleRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.weight(1f),
         ) {
-            IconTile(icon, tint)
+            tile()
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     label,
