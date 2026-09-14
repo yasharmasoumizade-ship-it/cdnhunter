@@ -1,5 +1,9 @@
 package com.cdnhunter.app.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.cdnhunter.app.R
+
 // ── HOME ──────────────────────────────────────────────────────────────────────
 // Rebuilt from design-reference/vpn-home-v3-clean-bg.html — a visual reference kept in the repo,
 // never read by the build. The mockup frames a 390px device, so its CSS pixels map 1:1 onto dp
@@ -2710,10 +2714,16 @@ private fun PowerBolt(
  * simply cancelled, so the arc stops cleanly with no snap-back. Reduce-motion: the arc parks as a
  * static head at the top and the halo holds a fixed, un-breathing glow.
  */
+/** Angular gap, in degrees, between the two connecting bars while they spin as a pair. */
+private const val CONNECT_BAR_GAP_DEG = 50f
+
+/** Length of each connecting bar, in degrees. */
+private const val CONNECT_BAR_SWEEP_DEG = 40f
+
 @Composable
 private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
-    // Continuous rotation of the connecting comet, in degrees. Driven only while connecting;
+    // Continuous rotation of the connecting pair, in degrees. Driven only while connecting;
     // cancelling the effect on any phase change leaves it frozen. Idle it holds 0.
     val spin = remember { Animatable(0f) }
     LaunchedEffect(phase, reduce) {
@@ -2725,7 +2735,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             )
         }
     }
-    // Crossfades: the comet shows while working, the lit ring + halo while up.
+    // Crossfades: the two bars show while working, the merged lit ring + halo while up.
     val working by animateFloatAsState(
         targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
@@ -2735,6 +2745,14 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
         animationSpec = motionSpec(reduce, PHASE_FADE_MS),
         label = "connectLive",
+    )
+    // 0 while connecting (two separate bars with a gap), 1 once connected (gap closed, bars
+    // read as one continuous ring). Animates on its own spec so the merge reads as a distinct
+    // beat right as the tunnel comes up, rather than riding the phase crossfade.
+    val merge by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
+        animationSpec = if (reduce) snap() else tween(420, easing = FastOutSlowInEasing),
+        label = "connectMerge",
     )
     // The connected halo's slow breath: 0..1, ping-ponging while up. It nudges the halo's width
     // and alpha by a few percent — a sign of life, not a pulse. Off under reduce-motion.
@@ -2761,26 +2779,48 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 
         // Track removed — no permanent ring around the disc at rest.
 
-        // CONNECTED ring removed — glow is now drawn below the disc in PowerCircle instead.
+        if (live > 0.01f) {
+            // CONNECTED: the two bars have merged into one solid teal ring, with a soft halo
+            // breathing outside it.
+            val haloWidth = stroke * (2.4f + breath.value * 0.6f)
+            val haloAlpha = (0.35f + breath.value * 0.15f) * live
+            drawCircle(
+                color = ConnectTeal.copy(alpha = haloAlpha),
+                radius = radius,
+                center = center,
+                style = Stroke(width = haloWidth),
+            )
+            drawCircle(
+                color = ConnectTeal.copy(alpha = 0.95f * live),
+                radius = radius,
+                center = center,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+        }
 
-        // CONNECTING: one teal comet sweeps the track. The sweep gradient runs bright head →
-        // transparent tail across [CONNECT_ARC_SWEEP]°, and the whole frame is rotated by [spin]
-        // so it turns. Reduce-motion parks the head at twelve o'clock without turning.
+        // CONNECTING: two short white bars, [CONNECT_BAR_GAP_DEG] apart, spinning together as a
+        // rigid pair. On the way to CONNECTED, [merge] closes the gap between them so the pair
+        // reads as coming together into the single ring above, rather than just fading out.
         if (working > 0.01f) {
-            val head = ConnectTeal.copy(alpha = 0.95f * working)
+            val gap = CONNECT_BAR_GAP_DEG * (1f - merge)
+            val sweep = CONNECT_BAR_SWEEP_DEG + (CONNECT_BAR_GAP_DEG - gap) / 2f
+            val alpha = 0.95f * working
             rotate(degrees = if (reduce) 0f else spin.value, pivot = center) {
+                // First bar, leading edge at twelve o'clock, opening clockwise.
                 drawArc(
-                    brush = Brush.sweepGradient(
-                        // sweepGradient's 0° is 3 o'clock, increasing clockwise; the arc below is
-                        // drawn from -90° (twelve o'clock) clockwise, so the head sits at the arc's
-                        // leading edge and the tail fades out behind it.
-                        0f to Color.Transparent,
-                        (CONNECT_ARC_SWEEP / 360f) to head,
-                        1f to Color.Transparent,
-                        center = center,
-                    ),
-                    startAngle = -90f,
-                    sweepAngle = CONNECT_ARC_SWEEP,
+                    color = Color.White.copy(alpha = alpha),
+                    startAngle = -90f - gap / 2f - sweep,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+                // Second bar, mirrored on the other side of twelve o'clock.
+                drawArc(
+                    color = Color.White.copy(alpha = alpha),
+                    startAngle = -90f + gap / 2f,
+                    sweepAngle = sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
