@@ -3599,7 +3599,7 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
                 .size(22.dp)
                 .shadow(5.dp, CircleShape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
                 .clip(CircleShape)
-                .background(if (checked) SolidColor(AnanasCard2) else SheetThumbFill)
+                .background(if (checked) SolidColor(Color.White) else SheetThumbFill)
         )
     }
 }

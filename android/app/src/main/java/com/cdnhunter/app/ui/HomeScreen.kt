@@ -330,6 +330,7 @@ private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 // tier (>180ms, see [LoadBars]); one step hotter in the same 0xE0 family.
 private val RefLoadHigh = Color(0xFFE0563B)
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
+private val PowerGlyphInk = Color(0xFF0A0A0A)       // always-black power glyph, no phase colour
 
 // ── Hero surface ──────────────────────────────────────────────────────────────
 // The top of the screen is not a panel any more. It is the page, with the country's flag
@@ -2594,9 +2595,9 @@ private fun PowerCircle(
                 .border(PowerRimStroke, PowerWellRim, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            PowerBolt(
-                trackColor = boltTrack,
-                fillColor = boltFill,
+            PowerGlyph(
+                trackColor = PowerGlyphInk,
+                fillColor = PowerGlyphInk,
                 fill = fill,
                 modifier = Modifier.size(72.dp),
             )
@@ -2640,58 +2641,73 @@ private val ConnectBoltPath: Path =
  *  always fully drawn so the mark reads as a bolt even at rest; the fill is clipped to a rectangle
  *  rising from the bottom, so the colour climbs the bolt like a charging gauge. A faint white rim
  *  over both keeps the upper facets lit. See [PowerCircle] for how [fill] is animated. */
+/** How wide the gap at the top of the ring is, in degrees — the classic broken-ring "power"
+ *  symbol shape. */
+private const val POWER_GLYPH_GAP_DEG = 44f
+
+/** How far the stem reaches down into the ring, as a fraction of its radius. */
+private const val POWER_GLYPH_STEM_FRACTION = 0.78f
+
+/** The disc's mark: a broken ring with a vertical stem through the gap — the classic power
+ *  symbol — replacing the former lightning bolt. Two strokes only (a soft halo, then the sharp
+ *  glyph on top), no path parsing, no native blur: kept deliberately light. [trackColor] is the
+ *  glyph at rest, [fillColor] is lit, [fill] (0..1) crossfades between them and drives the halo. */
 @Composable
-private fun PowerBolt(
+private fun PowerGlyph(
     trackColor: Color,
     fillColor: Color,
     fill: Float,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier) {
-        // Fit the bolt into the canvas, centred, preserving aspect. All drawing below is then in the
-        // bolt's own path space, so the clip window can be expressed directly in path coordinates.
-        val s = minOf(size.width / BOLT_VW, size.height / BOLT_VH)
-        val dx = (size.width - BOLT_VW * s) / 2f
-        val dy = (size.height - BOLT_VH * s) / 2f
-        val trackBrush = Brush.verticalGradient(
-            0f to lerp(trackColor, Color.White, 0.22f),
-            0.55f to trackColor,
-            1f to lerp(trackColor, Color.Black, 0.12f),
-            startY = 0f,
-            endY = BOLT_VH,
-        )
-        // The lit charge climbs the bolt from foot to tip. It reads green→blue: the app's teal at
-        // the foot warming up into the blue room-light at the tip, kept rich through the middle (no
-        // dark edge fade) so the fill sits inward rather than hugging the outline.
-        val tealEnd = ConnectTeal.copy(alpha = fillColor.alpha)
-        val fillBrush = Brush.verticalGradient(
-            0f to lerp(fillColor, Color.White, 0.26f),
-            0.42f to fillColor,
-            0.78f to lerp(fillColor, tealEnd, 0.55f),
-            1f to tealEnd,
-            startY = 0f,
-            endY = BOLT_VH,
-        )
-        withTransform({
-            translate(dx, dy)
-            scale(s, s, pivot = Offset.Zero)
-        }) {
-            // The dark base bolt, always whole.
-            drawPath(ConnectBoltPath, brush = trackBrush)
-            // The lit fill, clipped to a window rising from the foot. At fill = 0 nothing is drawn;
-            // at fill = 1 the whole bolt is covered.
-            if (fill > 0.001f) {
-                clipRect(left = 0f, top = BOLT_VH * (1f - fill), right = BOLT_VW, bottom = BOLT_VH) {
-                    drawPath(ConnectBoltPath, brush = fillBrush)
-                }
-            }
-            // A hair of bright rim over both, on the upper facets.
-            drawPath(
-                ConnectBoltPath,
-                color = Color.White.copy(alpha = 0.14f),
-                style = Stroke(width = BOLT_VW * 0.012f),
+        val stroke = size.minDimension * 0.09f
+        val radius = (size.minDimension - stroke) / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val topLeft = Offset(center.x - radius, center.y - radius)
+        val ringSize = Size(radius * 2f, radius * 2f)
+        val startAngle = -90f + POWER_GLYPH_GAP_DEG / 2f
+        val sweepAngle = 360f - POWER_GLYPH_GAP_DEG
+        val stemTop = center.y - radius - stroke * 0.15f
+        val stemBottom = center.y - radius * (1f - POWER_GLYPH_STEM_FRACTION)
+
+        val glyphColor = lerp(trackColor, fillColor, fill.coerceIn(0f, 1f))
+
+        if (fill > 0.02f) {
+            val haloAlpha = 0.35f * fill
+            drawArc(
+                color = fillColor.copy(alpha = haloAlpha),
+                startAngle = startAngle,
+                sweepAngle = sweepAngle,
+                useCenter = false,
+                topLeft = topLeft,
+                size = ringSize,
+                style = Stroke(width = stroke * 2.2f, cap = StrokeCap.Round),
+            )
+            drawLine(
+                color = fillColor.copy(alpha = haloAlpha),
+                start = Offset(center.x, stemTop),
+                end = Offset(center.x, stemBottom),
+                strokeWidth = stroke * 2.2f,
+                cap = StrokeCap.Round,
             )
         }
+
+        drawArc(
+            color = glyphColor,
+            startAngle = startAngle,
+            sweepAngle = sweepAngle,
+            useCenter = false,
+            topLeft = topLeft,
+            size = ringSize,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+        drawLine(
+            color = glyphColor,
+            start = Offset(center.x, stemTop),
+            end = Offset(center.x, stemBottom),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
     }
 }
 
@@ -2835,11 +2851,11 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFFF4F5F8)
+private val PowerWellBg = Color(0xFF0B0D10)
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
-private val PowerWellRim = Color.Black.copy(alpha = 0.4f)
+private val PowerWellRim = Color.White.copy(alpha = 0.12f)
 
 private val PowerFace = Brush.linearGradient(
     0.00f to Color.White,
