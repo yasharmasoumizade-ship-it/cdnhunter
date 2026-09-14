@@ -2472,7 +2472,25 @@ private fun SheetScreen(
     headerContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(AnanasScreenBg)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(AnanasTeal.copy(alpha = 0.16f), Color.Transparent),
+                    center = Offset(0.15f, 0.05f),
+                    radius = 900f,
+                ),
+            )
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(AnanasPurple.copy(alpha = 0.14f), Color.Transparent),
+                    center = Offset(0.9f, 0.4f),
+                    radius = 900f,
+                ),
+            ),
+    ) {
         // No ambient blue glow band on this header. The sheet header's background is the SAME
         // color as the page (flat spec), so unlike Home's hero — where the glow pools against a
         // distinct solid panel — here the rounded-bottom blue band had nothing to sit on and
@@ -2539,8 +2557,16 @@ private fun SectionLabel(text: String, top: Dp = 26.dp) {
  *  Rows keep their own 14dp horizontal padding, so nothing shifts sideways when the chrome goes. */
 @Composable
 private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    // Each settings group is its own frosted glass card (falls back to a plain translucent
+    // surface here since this screen sits over a flat color background, not the video/haze
+    // backdrop used on Auth/Onboarding -- there's nothing behind it worth a real blur).
     Column(
-        modifier.fillMaxWidth(),
+        with(Glass) {
+            modifier
+                .fillMaxWidth()
+                .glassSurface(shape = Glass.CardShape)
+                .padding(vertical = 4.dp)
+        },
         content = content,
     )
 }
