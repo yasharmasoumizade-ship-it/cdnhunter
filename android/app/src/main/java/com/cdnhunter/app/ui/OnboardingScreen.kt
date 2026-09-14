@@ -75,6 +75,16 @@ private val onboardingSlides = listOf(
 fun OnboardingScreen(onGoogleSignedIn: () -> Unit, onContinueWithEmail: () -> Unit, onSignUp: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { onboardingSlides.size })
     val context = LocalContext.current
+
+    // Auto-advance the pager every 3 seconds -- manual swiping still works because
+    // this just calls animateScrollToPage on a timer; a manual swipe simply becomes
+    // the pager's current page early, and this effect picks up from there on its next
+    // tick since it always reads pagerState.currentPage fresh each time it restarts.
+    LaunchedEffect(pagerState.currentPage) {
+        kotlinx.coroutines.delay(3000)
+        val nextPage = (pagerState.currentPage + 1) % onboardingSlides.size
+        pagerState.animateScrollToPage(nextPage)
+    }
     val auth = remember { FirebaseAuth.getInstance() }
     var googleError by remember { mutableStateOf<String?>(null) }
     var googleLoading by remember { mutableStateOf(false) }
