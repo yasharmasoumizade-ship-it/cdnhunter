@@ -2499,7 +2499,11 @@ private fun SheetScreen(
         // no such artifact; Settings/Profile now match it. The lit rim inside the clip is the one
         // edge meant to be seen. (The old full-width SheetPageWash box was removed for the same
         // reason — a square rectangle behind a round-bottomed header poked its corners out.)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // The header (title/back-row + the account card passed as headerContent) is now
+        // OUTSIDE the scroll container, so it stays pinned while only the settings groups
+        // below it scroll -- previously the whole page, header included, scrolled as one
+        // Column, which meant "Settings" and the profile card slid off the top with the rest.
+        Column(Modifier.fillMaxSize()) {
             Column(Modifier.sheetHeaderPanel()) {
                 // Title on the SAME row as the back chevron. The chevron is a plain icon
                 // (no disc/border) so the two read as one line: "‹ Settings".
@@ -2522,6 +2526,8 @@ private fun SheetScreen(
             }
             Column(
                 Modifier.fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
                     .navigationBarsPadding()
                     .padding(horizontal = SheetPad),
             ) {
