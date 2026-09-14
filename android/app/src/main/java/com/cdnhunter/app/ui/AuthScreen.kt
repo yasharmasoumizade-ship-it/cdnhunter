@@ -261,14 +261,14 @@ fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, o
                     mode = mode,
                     onModeChange = { mode = it },
                     onBack = onBack,
-                    onSuccess = { justSignedUp, email ->
-                        if (justSignedUp) {
-                            pendingEmail = email
-                            step = AuthStep.VERIFY
-                        } else {
-                            onSignedIn()
-                        }
-                    },
+                    // The 6-digit email-verification step has no real backend behind it --
+                    // it's UI-only, not wired to an actual code-send/verify flow -- so signup
+                    // now goes straight to SUCCESS like sign-in does. Whether the account's
+                    // real email is verified is still tracked and surfaced later, in
+                    // EmailVerificationCard on the Profile screen, via Firebase's own
+                    // isEmailVerified -- this just removes the fake gate that blocked entry
+                    // into the app on a code this screen never actually checked server-side.
+                    onSuccess = { _, _ -> onSignedIn() },
                 )
                 AuthStep.VERIFY -> VerifyEmailContent(
                     email = pendingEmail,

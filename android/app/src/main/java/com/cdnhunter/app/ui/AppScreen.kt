@@ -3636,10 +3636,12 @@ private fun EmailVerificationCard(account: AccountUiState) {
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxWidth().sheetSurface(RoundedCornerShape(SheetCardCorner), SheetCardFill).padding(16.dp),
+        with(Glass) {
+            Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
+        },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconTile(Icons.Rounded.Email, AnanasAccent)
+            IconTileRes(com.cdnhunter.app.R.drawable.ic_lucide_mail, AnanasAccent)
             Column(Modifier.weight(1f)) {
                 Text(account.email, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
@@ -3792,9 +3794,9 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionLabel("SUBSCRIPTION")
         Column(
-            Modifier.fillMaxWidth()
-                .sheetSurface(RoundedCornerShape(SheetCardCorner), if (account.isPro) SheetPlanFill else SheetCardFill)
-                .padding(16.dp),
+            with(Glass) {
+                Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
+            },
         ) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -3849,9 +3851,9 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionLabel("ACCOUNT")
         CardGroup {
-            SettingsRow(Icons.Outlined.Diamond, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
             RowDivider()
-            SettingsRow(Icons.Outlined.History, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
             RowDivider()
             // The one destructive row in the app, so it is the one row whose label is not
             // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
@@ -3864,7 +3866,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                IconTile(Icons.Rounded.Logout, AnanasRed)
+                IconTileRes(com.cdnhunter.app.R.drawable.ic_lucide_log_out, AnanasRed)
                 Text(
                     "Sign out",
                     fontSize = 14.5.sp,
