@@ -145,8 +145,8 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> 
             // snapshot; a SurfaceView renders to a separate hardware layer the compositor
             // can't read from, which crashed on launch once hazeState was wired into this
             // video (see PR discussion / Haze docs: "a SurfaceView cannot be captured").
-            android.view.LayoutInflater.from(context)
-                .inflate(com.cdnhunter.app.R.layout.player_view_texture, null) as PlayerView
+            (android.view.LayoutInflater.from(context)
+                .inflate(com.cdnhunter.app.R.layout.player_view_texture, null) as PlayerView)
                 .apply {
                     player = exoPlayer
                     useController = false
