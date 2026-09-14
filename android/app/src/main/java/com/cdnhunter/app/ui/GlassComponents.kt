@@ -57,7 +57,6 @@ object Glass {
             if (hazeState != null) {
                 Modifier.hazeChild(
                     state = hazeState,
-                    shape = shape,
                     style = HazeStyle(
                         tints = listOf(HazeTint(Color.Black.copy(alpha = 0.35f))),
                         blurRadius = 22.dp,
