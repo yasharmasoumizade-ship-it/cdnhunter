@@ -216,11 +216,7 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
                 Spacer(Modifier.height(22.dp))
                 Text("Private. Fast. Secure.", fontSize = 13.sp, color = Color(0xFF8B8E98))
                 Spacer(Modifier.height(28.dp))
-                CircularProgressIndicator(
-                    color = Color(0xFF3B82F6),
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                )
+                com.cdnhunter.app.ui.GlowSpinner(size = 32.dp, strokeWidth = 3.dp)
             }
         }
     }
