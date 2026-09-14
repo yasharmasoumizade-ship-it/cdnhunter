@@ -248,20 +248,31 @@ private fun OnboardingSlideContent(slide: OnboardingSlide, pageOffset: Float = 0
                 },
         )
         Spacer(Modifier.height(24.dp))
-        Text(
-            slide.title,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = AppColors.TextHi,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            slide.subtitle,
-            fontSize = 13.sp,
-            color = AppColors.TextHi.copy(alpha = 0.85f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
+        // A fixed-height box around the title + subtitle so the card's overall height
+        // (and therefore its border) stays put as the pager swipes between slides of
+        // different text lengths, instead of the card resizing on every swipe. The
+        // height is sized for the longest slide's two-line title + two-line subtitle.
+        Box(
+            Modifier.height(104.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    slide.title,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AppColors.TextHi,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    slide.subtitle,
+                    fontSize = 13.sp,
+                    color = AppColors.TextHi.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        }
     }
 }

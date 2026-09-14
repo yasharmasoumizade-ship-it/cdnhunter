@@ -570,14 +570,9 @@ private fun AuthFormContent(
                 .padding(horizontal = 22.dp)
                 .padding(top = 90.dp, bottom = 28.dp),
         ) {
-            if (onBack != null) {
-                IconButton(onClick = onBack, modifier = Modifier.padding(bottom = 8.dp)) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
-                }
-            }
-
-            // Single glass card holds the title, form, and footer link -- matching
-            // the "one contained card" reference instead of full-width loose fields.
+            // Single glass card holds the back button, title, form, and footer link --
+            // matching the "one contained card" reference instead of loose elements
+            // floating above/below it.
             Column(
                 with(Glass) {
                     Modifier
@@ -586,6 +581,15 @@ private fun AuthFormContent(
                         .padding(horizontal = 22.dp, vertical = 28.dp)
                 },
             ) {
+
+            if (onBack != null) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.padding(bottom = 8.dp).size(32.dp),
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
+                }
+            }
 
             Text(
                 if (mode == AuthMode.LOGIN) "Sign In" else "Join Sector 51",
