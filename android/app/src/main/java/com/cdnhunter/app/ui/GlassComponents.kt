@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeChild
 
 /**
@@ -58,7 +59,7 @@ object Glass {
                     state = hazeState,
                     shape = shape,
                     style = HazeStyle(
-                        tint = Color.Black.copy(alpha = 0.35f),
+                        tints = listOf(HazeTint(Color.Black.copy(alpha = 0.35f))),
                         blurRadius = 22.dp,
                         noiseFactor = 0.08f,
                     ),
