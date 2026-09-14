@@ -33,6 +33,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -3598,7 +3600,7 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
                 .size(22.dp)
                 .shadow(5.dp, CircleShape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
                 .clip(CircleShape)
-                .background(if (checked) AnanasCard2 else SheetThumbFill)
+                .background(if (checked) SolidColor(AnanasCard2) else SheetThumbFill)
         )
     }
 }
