@@ -35,12 +35,12 @@ object Glass {
 
     fun surfaceBrush(): Brush = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.16f),
-            Color(0xFF0A0B0F).copy(alpha = 0.55f),
+            Color.White.copy(alpha = 0.26f),
+            Color(0xFF0A0B0F).copy(alpha = 0.40f),
         ),
     )
 
-    val borderColor = Color.White.copy(alpha = 0.35f)
+    val borderColor = Color.White.copy(alpha = 0.45f)
 
     /** Apply the glass background + border to any Modifier, e.g. a Box or Column.
      *  Pass [focused] = true to swap the border to the accent color, e.g. when a

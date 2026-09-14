@@ -3562,23 +3562,24 @@ private fun SettingsToggleRowContent(
 // background).
 @Composable
 private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    // Wide pill track with a thumb close to half its width (reference: a light/dark toggle
+    // component with a big white thumb sliding across a short track), white when on instead
+    // of the old teal accent -- this control is now colour-neutral, unlike the tinted icon
+    // badges next to it.
     val trackColor by animateColorAsState(
-        targetValue = if (checked) AnanasToggleOn else AnanasCard2,
+        targetValue = if (checked) Color.White.copy(alpha = 0.9f) else AnanasCard2,
         animationSpec = tween(180), label = "toggleTrack"
     )
     val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 22.dp else 2.dp,
+        targetValue = if (checked) 24.dp else 3.dp,
         animationSpec = tween(180, easing = FastOutSlowInEasing), label = "toggleThumb"
     )
     Box(
         modifier
-            .width(44.dp)
-            .height(24.dp)
+            .width(50.dp)
+            .height(28.dp)
             .clip(RoundedCornerShape(50))
             .background(trackColor)
-            // The track is a groove, so it is shaded at the top rather than lit there —
-            // the opposite of every raised surface on these screens, which is what makes
-            // the thumb read as standing above it.
             .drawBehind { drawRect(brush = SheetWellShade, size = Size(size.width, size.height / 2f)) }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -3587,11 +3588,11 @@ private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, 
     ) {
         Box(
             Modifier
-                .padding(start = thumbOffset, top = 2.dp)
-                .size(20.dp)
+                .padding(start = thumbOffset, top = 3.dp)
+                .size(22.dp)
                 .shadow(5.dp, CircleShape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
                 .clip(CircleShape)
-                .background(SheetThumbFill)
+                .background(if (checked) AnanasCard2 else SheetThumbFill)
         )
     }
 }
