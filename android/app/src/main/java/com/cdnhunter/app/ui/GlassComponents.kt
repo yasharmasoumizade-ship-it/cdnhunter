@@ -58,6 +58,12 @@ object Glass {
                 Modifier.hazeChild(
                     state = hazeState,
                     style = HazeStyle(
+                        // Haze throws IllegalArgumentException("backgroundColor not
+                        // specified") if this is left at its Color.Unspecified default --
+                        // it's the color drawn behind the blurred content on platforms/API
+                        // levels where real blurring isn't available, so it has to be
+                        // opaque. Matches the app's own near-black background.
+                        backgroundColor = Color(0xFF0A0B0F),
                         tints = listOf(HazeTint(Color.Black.copy(alpha = 0.35f))),
                         blurRadius = 22.dp,
                         noiseFactor = 0.08f,
