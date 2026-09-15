@@ -149,6 +149,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -2660,7 +2661,6 @@ private const val POWER_GLYPH_STEM_FRACTION = 0.78f
  *  symbol — replacing the former lightning bolt. Two strokes only (a soft halo, then the sharp
  *  glyph on top), no path parsing, no native blur: kept deliberately light. [trackColor] is the
  *  glyph at rest, [fillColor] is lit, [fill] (0..1) crossfades between them and drives the halo. */
-@Composable
 private val ConnectingBoltColor = Color(0xFFFF5A36)
 
 @Composable
