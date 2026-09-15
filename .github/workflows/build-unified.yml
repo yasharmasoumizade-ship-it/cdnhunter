@@ -34,6 +34,13 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: '11076708'
+          # Google removed the legacy 'tools' package from the SDK repository around
+          # 2026-09-14; the action's default packages list ('tools platform-tools') now
+          # fails immediately with "Failed to find package 'tools'" before any build step
+          # runs. Only platform-tools (adb, fastboot) is actually needed here -- the
+          # platform/build-tools versions this project needs are installed explicitly by
+          # the next step ("Install SDK + NDK"), same as before.
+          packages: 'platform-tools'
 
       - name: Install SDK + NDK
         run: |
