@@ -1717,7 +1717,12 @@ private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
 private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean) {
     val tint = if (active) AnanasTeal else Color.White.copy(alpha = 0.75f)
     Box(
-        Modifier.size(36.dp),
+        Modifier
+            .size(36.dp)
+            .shadow(2.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.14f))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (active) {
@@ -1742,7 +1747,7 @@ private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean)
             imageVector = icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -2605,10 +2610,10 @@ private fun PowerCircle(
         ) {
             PowerGlyph(
                 trackColor = PowerGlyphInk,
-                fillColor = RefGlowOn,
+                fillColor = ConnectTeal,
                 fill = fill,
                 phase = phase,
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier.size(96.dp),
             )
         }
     }
@@ -2696,7 +2701,7 @@ private fun PowerGlyph(
 
     Canvas(modifier) {
         val bounds = boltPath.getBounds()
-        val boltScale = (size.minDimension * 0.62f) / maxOf(bounds.width, bounds.height)
+        val boltScale = (size.minDimension * 0.82f) / maxOf(bounds.width, bounds.height)
         val offsetX = (size.width - bounds.width * boltScale) / 2f - bounds.left * boltScale
         val offsetY = (size.height - bounds.height * boltScale) / 2f - bounds.top * boltScale
 
@@ -2832,7 +2837,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             rotate(degrees = if (reduce) 0f else spin.value, pivot = center) {
                 // First bar, leading edge at twelve o'clock, opening clockwise.
                 drawArc(
-                    color = Color.Black.copy(alpha = alpha),
+                    color = ConnectingBoltColor.copy(alpha = alpha),
                     startAngle = -90f - gap / 2f - sweep,
                     sweepAngle = sweep,
                     useCenter = false,
@@ -2842,7 +2847,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
                 )
                 // Second bar, mirrored on the other side of twelve o'clock.
                 drawArc(
-                    color = Color.Black.copy(alpha = alpha),
+                    color = ConnectingBoltColor.copy(alpha = alpha),
                     startAngle = -90f + gap / 2f,
                     sweepAngle = sweep,
                     useCenter = false,
