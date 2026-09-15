@@ -2512,9 +2512,8 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // Connected glow removed on purpose: once up, the disc shows the plain glyph only,
-        // no light and no ring — see [PowerRing]'s CONNECTED branch below.
-        PowerRing(phase = phase, modifier = Modifier.matchParentSize())
+        // No ring, no glow, no spinner in any phase now — the disc shows the plain black
+        // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
         Box(
             Modifier
                 .size(PowerDiscSize)
@@ -2594,7 +2593,7 @@ private fun PowerCircle(
         ) {
             PowerGlyph(
                 trackColor = PowerGlyphInk,
-                fillColor = ConnectTeal,
+                fillColor = PowerGlyphInk,
                 fill = fill,
                 phase = phase,
                 modifier = Modifier.size(96.dp),
@@ -2660,27 +2659,9 @@ private fun PowerGlyph(
     modifier: Modifier = Modifier,
     phase: ConnPhase = ConnPhase.OFF,
 ) {
-    val reduce = rememberReduceMotion()
-    val infinite = rememberInfiniteTransition(label = "boltPulse")
-    val pulse by if (reduce || phase != ConnPhase.CONNECTING) {
-        remember { mutableStateOf(1f) }
-    } else {
-        infinite.animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(620, easing = EaseInOutSine),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "boltPulseVal",
-        )
-    }
-
-    val boltColor = when (phase) {
-        ConnPhase.OFF -> lerp(trackColor, fillColor, fill.coerceIn(0f, 1f))
-        ConnPhase.CONNECTING -> ConnectingBoltColor.copy(alpha = pulse)
-        ConnPhase.CONNECTED -> fillColor
-    }
+    // Always the plain black glyph ink, in every phase — no orange pulse while connecting,
+    // no teal fill once connected.
+    val boltColor = PowerGlyphInk
     val boltPath = remember { ConnectBoltPath }
 
     Canvas(modifier) {
@@ -2691,13 +2672,6 @@ private fun PowerGlyph(
 
         translate(left = offsetX, top = offsetY) {
             scale(scale = boltScale, pivot = Offset.Zero) {
-                if (phase == ConnPhase.CONNECTED) {
-                    drawPath(
-                        path = boltPath,
-                        color = fillColor.copy(alpha = 0.35f),
-                        style = Fill,
-                    )
-                }
                 drawPath(
                     path = boltPath,
                     color = boltColor,
