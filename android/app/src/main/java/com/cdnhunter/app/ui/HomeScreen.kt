@@ -2597,8 +2597,9 @@ private fun PowerCircle(
         ) {
             PowerGlyph(
                 trackColor = PowerGlyphInk,
-                fillColor = PowerGlyphInk,
+                fillColor = RefGlowOn,
                 fill = fill,
+                phase = phase,
                 modifier = Modifier.size(72.dp),
             )
         }
@@ -2653,61 +2654,61 @@ private const val POWER_GLYPH_STEM_FRACTION = 0.78f
  *  glyph on top), no path parsing, no native blur: kept deliberately light. [trackColor] is the
  *  glyph at rest, [fillColor] is lit, [fill] (0..1) crossfades between them and drives the halo. */
 @Composable
+private val ConnectingBoltColor = Color(0xFFFF5A36)
+
+@Composable
 private fun PowerGlyph(
     trackColor: Color,
     fillColor: Color,
     fill: Float,
     modifier: Modifier = Modifier,
+    phase: ConnPhase = ConnPhase.OFF,
 ) {
+    val reduce = rememberReduceMotion()
+    val infinite = rememberInfiniteTransition(label = "boltPulse")
+    val pulse by if (reduce || phase != ConnPhase.CONNECTING) {
+        remember { mutableStateOf(1f) }
+    } else {
+        infinite.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(620, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "boltPulseVal",
+        )
+    }
+
+    val boltColor = when (phase) {
+        ConnPhase.OFF -> lerp(trackColor, fillColor, fill.coerceIn(0f, 1f))
+        ConnPhase.CONNECTING -> ConnectingBoltColor.copy(alpha = pulse)
+        ConnPhase.CONNECTED -> fillColor
+    }
+    val boltPath = remember { ConnectBoltPath }
+
     Canvas(modifier) {
-        val stroke = size.minDimension * 0.09f
-        val radius = (size.minDimension - stroke) / 2f
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val topLeft = Offset(center.x - radius, center.y - radius)
-        val ringSize = Size(radius * 2f, radius * 2f)
-        val startAngle = -90f + POWER_GLYPH_GAP_DEG / 2f
-        val sweepAngle = 360f - POWER_GLYPH_GAP_DEG
-        val stemTop = center.y - radius - stroke * 0.15f
-        val stemBottom = center.y - radius * (1f - POWER_GLYPH_STEM_FRACTION)
+        val bounds = boltPath.getBounds()
+        val boltScale = (size.minDimension * 0.62f) / maxOf(bounds.width, bounds.height)
+        val offsetX = (size.width - bounds.width * boltScale) / 2f - bounds.left * boltScale
+        val offsetY = (size.height - bounds.height * boltScale) / 2f - bounds.top * boltScale
 
-        val glyphColor = lerp(trackColor, fillColor, fill.coerceIn(0f, 1f))
-
-        if (fill > 0.02f) {
-            val haloAlpha = 0.35f * fill
-            drawArc(
-                color = fillColor.copy(alpha = haloAlpha),
-                startAngle = startAngle,
-                sweepAngle = sweepAngle,
-                useCenter = false,
-                topLeft = topLeft,
-                size = ringSize,
-                style = Stroke(width = stroke * 2.2f, cap = StrokeCap.Round),
-            )
-            drawLine(
-                color = fillColor.copy(alpha = haloAlpha),
-                start = Offset(center.x, stemTop),
-                end = Offset(center.x, stemBottom),
-                strokeWidth = stroke * 2.2f,
-                cap = StrokeCap.Round,
-            )
+        translate(left = offsetX, top = offsetY) {
+            scale(scale = boltScale, pivot = Offset.Zero) {
+                if (phase == ConnPhase.CONNECTED) {
+                    drawPath(
+                        path = boltPath,
+                        color = fillColor.copy(alpha = 0.35f),
+                        style = Fill,
+                    )
+                }
+                drawPath(
+                    path = boltPath,
+                    color = boltColor,
+                    style = Fill,
+                )
+            }
         }
-
-        drawArc(
-            color = glyphColor,
-            startAngle = startAngle,
-            sweepAngle = sweepAngle,
-            useCenter = false,
-            topLeft = topLeft,
-            size = ringSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color = glyphColor,
-            start = Offset(center.x, stemTop),
-            end = Offset(center.x, stemBottom),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
     }
 }
 
