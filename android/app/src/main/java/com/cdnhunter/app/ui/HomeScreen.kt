@@ -749,7 +749,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 90.dp
+private val FlagFootRise = 10.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
@@ -2390,7 +2390,7 @@ private val PowerDiscSize = 118.dp
  *  around a small disc reads as a scratch around a 118dp one. The gap stays at 3dp — it
  *  is the space that makes the ring a rim on the disc rather than a second circle near
  *  it, and that reads the same at any diameter. */
-private val PowerRingStroke = 3.dp
+private val PowerRingStroke = 6.dp
 private val PowerRingGap = 3.dp
 
 /** The groomx teal, used for every animated part of the connect ring — the connecting arc, the
@@ -2747,7 +2747,7 @@ private fun PowerGlyph(
 private const val CONNECT_BAR_GAP_DEG = 10f
 
 /** Length of each connecting bar, in degrees. */
-private const val CONNECT_BAR_SWEEP_DEG = 40f
+private const val CONNECT_BAR_SWEEP_DEG = 175f
 
 @Composable
 private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
@@ -2802,7 +2802,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
     }
     Canvas(modifier) {
         val stroke = PowerRingStroke.toPx()
-        val radius = (PowerDiscSize.toPx() / 2f) + PowerRingGap.toPx() + (stroke / 2f)
+        val radius = (PowerDiscSize.toPx() / 2f) * 0.78f
         val topLeft = Offset(center.x - radius, center.y - radius)
         val arcSize = Size(radius * 2f, radius * 2f)
 
