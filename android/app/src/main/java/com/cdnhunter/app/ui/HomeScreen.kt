@@ -2390,7 +2390,7 @@ private val PowerRingGap = 3.dp
 /** The groomx teal, used for every animated part of the connect ring — the connecting arc, the
  *  connected ring and its halo. Matches the wordmark; scoped to this control so it never leaks into
  *  the blue room light ([RefGlowOn]) behind the hero. */
-private val ConnectTeal = Color(0xFF4DB6AC)
+private val ConnectTeal = Color(0xFF0A0A0A)
 
 /** One full turn of the connecting arc. Slow and even — a premium sweep, not a busy spinner. This
  *  is the app's only indeterminate progress and the only motion that runs unasked. */
@@ -2731,7 +2731,7 @@ private fun PowerGlyph(
  * static head at the top and the halo holds a fixed, un-breathing glow.
  */
 /** Angular gap, in degrees, between the two connecting bars while they spin as a pair. */
-private const val CONNECT_BAR_GAP_DEG = 50f
+private const val CONNECT_BAR_GAP_DEG = 26f
 
 /** Length of each connecting bar, in degrees. */
 private const val CONNECT_BAR_SWEEP_DEG = 40f
@@ -2824,7 +2824,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
             rotate(degrees = if (reduce) 0f else spin.value, pivot = center) {
                 // First bar, leading edge at twelve o'clock, opening clockwise.
                 drawArc(
-                    color = Color.White.copy(alpha = alpha),
+                    color = Color.Black.copy(alpha = alpha),
                     startAngle = -90f - gap / 2f - sweep,
                     sweepAngle = sweep,
                     useCenter = false,
@@ -2834,7 +2834,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
                 )
                 // Second bar, mirrored on the other side of twelve o'clock.
                 drawArc(
-                    color = Color.White.copy(alpha = alpha),
+                    color = Color.Black.copy(alpha = alpha),
                     startAngle = -90f + gap / 2f,
                     sweepAngle = sweep,
                     useCenter = false,
@@ -2851,7 +2851,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFF0B0D10)
+private val PowerWellBg = Color.White
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
