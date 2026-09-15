@@ -2620,12 +2620,17 @@ private fun IconTileRes(@androidx.annotation.DrawableRes icon: Int, tint: Color,
  *  in the exact same badge. */
 @Composable
 private fun IconTileBadge(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // Higher-contrast badge than the first pass: more opaque fill and a brighter, crisper
+    // border so the circle reads clearly against the now-brighter glass cards instead of
+    // washing out into them, plus a soft shadow to lift it off the card like a real raised
+    // chip rather than a flat tint.
     Box(
         modifier
             .size(34.dp)
+            .shadow(2.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape),
+            .background(Color.White.copy(alpha = 0.14f))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
         contentAlignment = Alignment.Center,
         content = { content() },
     )
@@ -3703,7 +3708,9 @@ private fun showComingSoon(context: Context) {
 @Composable
 private fun UpgradeCard(onUpgrade: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().sheetSurface(RoundedCornerShape(SheetCardCorner), SheetPlanFill).padding(16.dp),
+        with(Glass) {
+            Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
+        },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
