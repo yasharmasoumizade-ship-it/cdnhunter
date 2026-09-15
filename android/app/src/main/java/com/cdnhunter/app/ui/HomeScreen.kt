@@ -391,6 +391,10 @@ private val HeroBackdropFallback = 340.dp
 /** How long the phase crossfade takes — the ink, the light, and every surface. */
 private const val PHASE_FADE_MS = 520
 
+/** How fast the connecting spinner itself fades out once CONNECTED lands — quicker than
+ *  [PHASE_FADE_MS] so it disappears promptly rather than lingering into the connected state. */
+private const val SPINNER_FADE_MS = 220
+
 
 // ── Connected colour ──────────────────────────────────────────────────────────
 // One thing says "the tunnel is up": the ambient light turns blue. There is no
@@ -749,7 +753,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 10.dp
+private val FlagFootRise = 55.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
@@ -1669,7 +1673,7 @@ private val HeroVignetteStops = listOf(
  *  country sits top-right in [CountryHeadline] and the public IP is an overlay card drawn by
  *  [HomeScreen] over the lower-left of the flag. So this column's middle is bare artwork now,
  *  and this token is how much of it shows above the disc's dock well. */
-private val HeroFlagSpace = 72.dp
+private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. */
@@ -2508,28 +2512,8 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // Connected glow: a soft teal radial that pools below the disc, fading in/out with
-        // the connected state. No animation loop — just a crossfade — so it costs nothing
-        // on weak devices. The bloom is drawn BEHIND the ring and disc, on the Box itself.
-        if (connected) {
-            val glowAlpha = 0.55f
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                0.00f to ConnectTeal.copy(alpha = glowAlpha),
-                                0.40f to ConnectTeal.copy(alpha = glowAlpha * 0.45f),
-                                0.70f to ConnectTeal.copy(alpha = glowAlpha * 0.12f),
-                                1.00f to Color.Transparent,
-                                center = Offset(size.width / 2f, size.height * 0.78f),
-                                radius = size.width * 0.72f,
-                            ),
-                        )
-                    },
-            )
-        }
+        // Connected glow removed on purpose: once up, the disc shows the plain glyph only,
+        // no light and no ring — see [PowerRing]'s CONNECTED branch below.
         PowerRing(phase = phase, modifier = Modifier.matchParentSize())
         Box(
             Modifier
@@ -2765,9 +2749,11 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
         }
     }
     // Crossfades: the two bars show while working, the merged lit ring + halo while up.
+    // The spinner's own fade is quicker than the rest of the phase crossfade (PHASE_FADE_MS)
+    // so it disappears promptly and smoothly the instant CONNECTED lands, instead of lingering.
     val working by animateFloatAsState(
         targetValue = if (phase == ConnPhase.CONNECTING) 1f else 0f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        animationSpec = motionSpec(reduce, SPINNER_FADE_MS),
         label = "connectWorking",
     )
     val live by animateFloatAsState(
@@ -2808,24 +2794,7 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 
         // Track removed — no permanent ring around the disc at rest.
 
-        if (live > 0.01f) {
-            // CONNECTED: the two bars have merged into one solid teal ring, with a soft halo
-            // breathing outside it.
-            val haloWidth = stroke * (2.4f + breath.value * 0.6f)
-            val haloAlpha = (0.35f + breath.value * 0.15f) * live
-            drawCircle(
-                color = ConnectTeal.copy(alpha = haloAlpha),
-                radius = radius,
-                center = center,
-                style = Stroke(width = haloWidth),
-            )
-            drawCircle(
-                color = ConnectTeal.copy(alpha = 0.95f * live),
-                radius = radius,
-                center = center,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-        }
+        // CONNECTED draws nothing here — up means the plain glyph only, no ring, no halo.
 
         // CONNECTING: two short white bars, [CONNECT_BAR_GAP_DEG] apart, spinning together as a
         // rigid pair. On the way to CONNECTED, [merge] closes the gap between them so the pair
