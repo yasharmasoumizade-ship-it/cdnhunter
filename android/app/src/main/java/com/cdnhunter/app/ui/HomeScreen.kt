@@ -749,7 +749,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 0.dp
+private val FlagFootRise = 90.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
@@ -2400,7 +2400,7 @@ private val ConnectTeal = Color(0xFF4DB6AC)
 
 /** One full turn of the connecting arc. Slow and even — a premium sweep, not a busy spinner. This
  *  is the app's only indeterminate progress and the only motion that runs unasked. */
-private const val CONNECT_SPIN_MS = 1400
+private const val CONNECT_SPIN_MS = 900
 
 /** How much of the circle the connecting comet spans, in degrees — a soft quarter-turn head that
  *  fades to nothing at its tail. */
@@ -2744,7 +2744,7 @@ private fun PowerGlyph(
  * static head at the top and the halo holds a fixed, un-breathing glow.
  */
 /** Angular gap, in degrees, between the two connecting bars while they spin as a pair. */
-private const val CONNECT_BAR_GAP_DEG = 26f
+private const val CONNECT_BAR_GAP_DEG = 10f
 
 /** Length of each connecting bar, in degrees. */
 private const val CONNECT_BAR_SWEEP_DEG = 40f
