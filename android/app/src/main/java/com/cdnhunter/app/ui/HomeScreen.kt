@@ -757,7 +757,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 90.dp
+private val FlagFootRise = 110.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
@@ -1509,35 +1509,8 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .alpha(flagAlpha),
             )
         }
-        // Shade, then light, in that order — see [HeroDepthScrim]. Both cover the whole
-        // band rather than the flag's box, so the shading does not stop where the artwork
-        // does and leave the card's edge on a differently-lit patch.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(bandHeight)
-                .drawBehind {
-                    drawRect(HeroDepthScrim)
-                    drawRect(HeroDepthEdge)
-                    // A vignette centred on the power disc: gives the artwork a middle, which
-                    // is where all of the hero's ink is.
-                    drawRect(
-                        Brush.radialGradient(
-                            colors = HeroVignetteStops,
-                            center = Offset(size.width / 2f, size.height * 0.44f),
-                            radius = size.width * 0.98f,
-                        )
-                    )
-                    // The frosted glass itself: a cold, even wash over the whole band, so the
-                    // flag reads as artwork seen *through* dark tinted glass rather than as a
-                    // plain bright field. It is a colour, not a blur — see [panelFrost] for
-                    // why blur is deliberately avoided on this screen. No cast shadow at the
-                    // foot any more: the card announces its own edge ([drawPanelTopEdge]) and
-                    // the docked disc casts its own, so the flag no longer needs a dark fade
-                    // above the seam.
-                    drawRect(HeroGlassFrost)
-                }
-        )
+        // Dark overlay layers (scrim, vignette, frosted-glass wash) removed — the flag now
+        // shows at its own true colours and brightness, not dimmed or tinted behind glass.
         Box(
             Modifier
                 .fillMaxWidth()
