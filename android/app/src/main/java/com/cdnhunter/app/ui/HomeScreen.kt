@@ -779,7 +779,7 @@ private val FlagCardBleed = 32.dp
  * taller. This scale gets that zoom level back without reintroducing a mismatch between
  * the flag's box and the lit band behind it. 1f is no zoom; > 1f crops in tighter.
  */
-private const val FlagZoom = 1.35f
+private const val FlagZoom = 1.05f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
