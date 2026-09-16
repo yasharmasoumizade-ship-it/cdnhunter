@@ -90,9 +90,13 @@ internal fun remoteFlagUrl(countryCode: String): String? {
 
 /**
  * A LOCAL, bundled hero background for a well-known exit country whose landscape artwork this app
- * ships itself rather than deriving it from a flag SVG — the six countries in [localHeroFlagRes]'s
- * `when` (US, GB, FR, DE, SG, SE), each a wide illustration in
- * `res/drawable-xxxhdpi/hero_flag_<cc>.webp`. Returns that drawable's resource id (a Coil-loadable
+ * ships itself rather than deriving it from a flag SVG — the ten countries in [localHeroFlagRes]'s
+ * `when` (US, GB, FR, DE, SG, SE, NL, IT, TR, QA), each a wide illustration in
+ * `res/drawable-xxxhdpi/hero_flag_<cc>.webp`. For NL/IT/TR/QA/US/GB/FR/DE/SE these are rendered
+ * from flagcdn's true-aspect source and pre-cropped to a generous ~1.7:1 frame rather than the
+ * bundled circle-flags asset's own square, which — being drawn to fill a 512×512 canvas for the
+ * circular badge — distorts a flag like the Netherlands' into looking mostly like its middle
+ * band. Returns that drawable's resource id (a Coil-loadable
  * model) for those countries, or null for every other code — where [HeaderFlag] falls back to
  * [remoteFlagUrl] and then to the bundled circle-flags asset.
  *
@@ -108,6 +112,10 @@ internal fun localHeroFlagRes(countryCode: String): Int? =
         "DE" -> com.cdnhunter.app.R.drawable.hero_flag_de
         "SG" -> com.cdnhunter.app.R.drawable.hero_flag_sg
         "SE" -> com.cdnhunter.app.R.drawable.hero_flag_se
+        "NL" -> com.cdnhunter.app.R.drawable.hero_flag_nl
+        "IT" -> com.cdnhunter.app.R.drawable.hero_flag_it
+        "TR" -> com.cdnhunter.app.R.drawable.hero_flag_tr
+        "QA" -> com.cdnhunter.app.R.drawable.hero_flag_qa
         else -> null
     }
 
