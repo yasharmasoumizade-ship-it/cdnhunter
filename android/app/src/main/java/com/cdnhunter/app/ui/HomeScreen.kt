@@ -1480,7 +1480,10 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
         // The top strip — from the very top of the screen down to where the flag band begins —
         // is its own rounded, bordered panel: plain black fill, white hairline border, rounded
         // bottom corners, matching the browse card's own look down at the foot of the screen.
-        val topPanelHeight = (bandHeight - flagHeight).coerceAtLeast(0.dp)
+        // Measured off heroHeight, NOT bandHeight — bandHeight includes HeroBleed, the extra
+        // reach the light's glow needs below the hero's own rows, which has nothing to do with
+        // where the flag panel actually sits.
+        val topPanelHeight = (heroHeight - flagHeight).coerceAtLeast(0.dp)
         Box(
             Modifier
                 .fillMaxWidth()
