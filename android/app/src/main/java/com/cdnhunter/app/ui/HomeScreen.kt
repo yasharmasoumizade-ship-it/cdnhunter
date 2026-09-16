@@ -774,18 +774,10 @@ private val FlagCardBleed = 32.dp
 /**
  * Zoom applied to the flag artwork itself, independent of its box's height.
  *
- * The box is now sized by [FlagAspect], so Crop has nothing left to crop — this is purely
- * an extra scale on top of that. 1f is no zoom; > 1f crops in tighter.
+ * The box no longer forces a crop — see [HeroBackdrop] — so this is purely an extra scale on
+ * top of a flag already drawn whole. 1f is no zoom; > 1f zooms in (and reintroduces cropping).
  */
 private const val FlagZoom = 1.0f
-
-/**
- * The flag artwork's own width:height ratio — 3:2, true of the large majority of flag assets
- * (including the flagcdn source this screen draws from). Used to size the flag's box by its
- * real shape instead of by [bandHeight], so [ContentScale.Crop] never has to crop the artwork
- * itself. See the call in [HeroBackdrop].
- */
-private const val FlagAspect = 1.5f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -1046,9 +1038,9 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
 /**
  * The one drawn copy of the flag, filling whatever box [modifier] gives it.
  *
- * One rule for both sources: scale uniformly until the box is covered, clip
- * the overhang. [ContentScale.Crop] against the box, and nothing between the image and that
- * box — no forced ratio, no unbounded width. The flag's own proportions are what get drawn,
+ * One rule for both sources: scale uniformly until the whole image fits the box, nothing
+ * cropped. [ContentScale.Fit], centred — no forced ratio, no unbounded width. The flag's own
+ * proportions are what get drawn,
  * whatever the source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
  * American one) and whatever the box's are on this particular phone.
  *
@@ -1087,7 +1079,7 @@ private fun FlagLayer(
             .build(),
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
-        contentScale = ContentScale.Crop,
+        contentScale = ContentScale.Fit,
         alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
@@ -1471,6 +1463,11 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
+    // Every country's flag is a different real ratio (5:3 German, 19:10 American, 2:1
+    // British...) so no single box shape shows all of them uncropped. [ContentScale.Fit] on
+    // the image itself (see [FlagLayer]) sidesteps that: it always draws the whole flag,
+    // centred, at whatever size fits the box — nothing is ever cut off, and nothing is ever
+    // off-centre. What's left of the box beyond the flag's own silhouette shows [HeroFloor].
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1491,25 +1488,18 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
     val lit = phase == ConnPhase.CONNECTED
 
-    BoxWithConstraints(modifier) {
+    Box(modifier) {
         // The floor under the artwork, over the band only: it fades out across the bleed so
         // the card's own translucent top is not backed by opaque chrome. Without it, a flag
         // crossfading at 40% alpha would show the page gradient through itself.
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
-            // The flag's box height is locked to its own aspect ratio (most flags are 3:2 —
-            // see [FlagAspect]) rather than to [bandHeight]. A box shorter than that forces
-            // [ContentScale.Crop] to cut the top and bottom stripes to cover the width, which
-            // is what was leaving only the flag's middle band visible. Locking the height this
-            // way means Crop never has to crop at all — the whole flag always shows, edge to
-            // edge, with no dead space beside it.
-            val flagHeight = maxOf(bandHeight, maxWidth / FlagAspect)
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
-                    .height(flagHeight)
+                    .height(bandHeight)
                     .alpha(flagAlpha)
                     .scale(FlagZoom),
             )
