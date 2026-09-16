@@ -757,7 +757,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 110.dp
+private val FlagFootRise = 40.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
