@@ -382,7 +382,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 180.dp
+private val HeroBleed = 80.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -779,7 +779,7 @@ private val FlagCardBleed = 32.dp
  * taller. This scale gets that zoom level back without reintroducing a mismatch between
  * the flag's box and the lit band behind it. 1f is no zoom; > 1f crops in tighter.
  */
-private const val FlagZoom = 1.05f
+private const val FlagZoom = 1.0f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -958,7 +958,7 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                     (
                         fadeIn(tween(FLAG_FADE_IN_MS, easing = LinearOutSlowInEasing)) +
                             scaleIn(
-                                initialScale = 1.04f,
+                                initialScale = 1.0f,
                                 animationSpec = tween(FLAG_SETTLE_MS, easing = LinearOutSlowInEasing),
                             )
                         ).togetherWith(
