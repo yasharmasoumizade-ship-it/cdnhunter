@@ -757,7 +757,7 @@ private const val HEADER_FLAG_ALPHA = 1.0f
  * dark shelf between the artwork and the card. The flag runs to within 12dp of the card's top
  * edge instead, where the card's own translucent fill ([panelTopFade]) takes over.
  */
-private val FlagFootRise = 40.dp
+private val FlagFootRise = 55.dp
 
 /**
  * How far the flag's box runs **past** the seam, down behind the browse card's translucent head.
@@ -1477,33 +1477,20 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     val lit = phase == ConnPhase.CONNECTED
 
     Box(modifier) {
-        // The top strip — from the very top of the screen down to where the flag band begins —
-        // is its own rounded, bordered panel: plain black fill, white hairline border, rounded
-        // bottom corners, matching the browse card's own look down at the foot of the screen.
-        // Measured off heroHeight, NOT bandHeight — bandHeight includes HeroBleed, the extra
-        // reach the light's glow needs below the hero's own rows, which has nothing to do with
-        // where the flag panel actually sits.
-        val topPanelHeight = (heroHeight - flagHeight).coerceAtLeast(0.dp)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(topPanelHeight)
-                .clip(RoundedCornerShape(bottomStart = PanelCorner, bottomEnd = PanelCorner))
-                .background(Color.Black)
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.30f),
-                    shape = RoundedCornerShape(bottomStart = PanelCorner, bottomEnd = PanelCorner),
-                ),
-        )
+        // The floor under the artwork, over the band only: it fades out across the bleed so
+        // the card's own translucent top is not backed by opaque chrome. Without it, a flag
+        // crossfading at 40% alpha would show the page gradient through itself.
+        Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
-            // The flag now docks at the BOTTOM of the hero's rows instead of the top, so it
-            // only shows in a band just above the browse card / connect disc, and the screen's
-            // top stays plain black. [ContentScale.Crop] still scales to cover this box.
+            // The flag's box is the hero's rows *minus* [FlagFootRise] — not the light's
+            // band, and certainly not the screen. [ContentScale.Crop] scales to *cover* this
+            // box, so the box's shape is the flag's zoom: every dp of height taken off here
+            // is width handed back to the artwork. See [FlagFootRise] for the arithmetic and
+            // for the trade it makes at the hero's foot.
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
+                    .align(Alignment.TopStart)
                     .fillMaxWidth()
                     .height(flagHeight)
                     .alpha(flagAlpha),
@@ -1663,7 +1650,7 @@ private val HeroVignetteStops = listOf(
  *  country sits top-right in [CountryHeadline] and the public IP is an overlay card drawn by
  *  [HomeScreen] over the lower-left of the flag. So this column's middle is bare artwork now,
  *  and this token is how much of it shows above the disc's dock well. */
-private val HeroFlagSpace = 72.dp
+private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. */
