@@ -774,8 +774,8 @@ private val FlagCardBleed = 32.dp
 /**
  * Zoom applied to the flag artwork itself, independent of its box's height.
  *
- * The box no longer forces a crop — see [HeroBackdrop] — so this is purely an extra scale on
- * top of a flag already drawn whole. 1f is no zoom; > 1f zooms in (and reintroduces cropping).
+ * On top of the box's own Crop (see [HeroBackdrop]), this crops in tighter still. 1f is no
+ * extra zoom; > 1f zooms in further.
  */
 private const val FlagZoom = 1.0f
 
@@ -1038,8 +1038,8 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
 /**
  * The one drawn copy of the flag, filling whatever box [modifier] gives it.
  *
- * One rule for both sources: scale uniformly until the whole image fits the box, nothing
- * cropped. [ContentScale.Fit], centred — no forced ratio, no unbounded width. The flag's own
+ * One rule for both sources: scale uniformly until the box is covered, clip the overhang.
+ * [ContentScale.Crop], centred — no forced ratio, no unbounded width. The flag's own
  * proportions are what get drawn,
  * whatever the source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
  * American one) and whatever the box's are on this particular phone.
@@ -1079,7 +1079,7 @@ private fun FlagLayer(
             .build(),
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
-        contentScale = ContentScale.Fit,
+        contentScale = ContentScale.Crop,
         alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
@@ -1463,11 +1463,12 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    // Every country's flag is a different real ratio (5:3 German, 19:10 American, 2:1
-    // British...) so no single box shape shows all of them uncropped. [ContentScale.Fit] on
-    // the image itself (see [FlagLayer]) sidesteps that: it always draws the whole flag,
-    // centred, at whatever size fits the box — nothing is ever cut off, and nothing is ever
-    // off-centre. What's left of the box beyond the flag's own silhouette shows [HeroFloor].
+    // Fixed box, [ContentScale.Crop]: every country's flag scales uniformly to cover this
+    // exact box and gets clipped to it, so there is never a gap on any side for any aspect
+    // ratio — a wide flag (2:1 British) crops its sides, a narrow one (5:3 German is close
+    // to square by comparison) crops less. This is the Windscribe-style fixed-frame look:
+    // consistent geometry across every country, at the cost of never showing 100% of any
+    // one flag. See [HeroBleed] for the one knob that tunes how tight that crop is.
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
