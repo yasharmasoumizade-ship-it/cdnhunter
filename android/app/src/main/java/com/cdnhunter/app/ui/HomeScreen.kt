@@ -774,12 +774,18 @@ private val FlagCardBleed = 32.dp
 /**
  * Zoom applied to the flag artwork itself, independent of its box's height.
  *
- * [flagHeight] now always matches [bandHeight] exactly (no gap of bare floor below the
- * artwork), which on its own would show the flag less zoomed than before — the box got
- * taller. This scale gets that zoom level back without reintroducing a mismatch between
- * the flag's box and the lit band behind it. 1f is no zoom; > 1f crops in tighter.
+ * The box is now sized by [FlagAspect], so Crop has nothing left to crop — this is purely
+ * an extra scale on top of that. 1f is no zoom; > 1f crops in tighter.
  */
 private const val FlagZoom = 1.0f
+
+/**
+ * The flag artwork's own width:height ratio — 3:2, true of the large majority of flag assets
+ * (including the flagcdn source this screen draws from). Used to size the flag's box by its
+ * real shape instead of by [bandHeight], so [ContentScale.Crop] never has to crop the artwork
+ * itself. See the call in [HeroBackdrop].
+ */
+private const val FlagAspect = 1.5f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -1465,10 +1471,6 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    // The flag's box is always exactly the lit band's height now, so there is never a gap of
-    // bare floor beneath the artwork. Zoom is controlled separately by [FlagZoom], a scale
-    // applied to the image itself rather than to its box — see the call below.
-    val flagHeight = bandHeight
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1489,17 +1491,19 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
     val lit = phase == ConnPhase.CONNECTED
 
-    Box(modifier) {
+    BoxWithConstraints(modifier) {
         // The floor under the artwork, over the band only: it fades out across the bleed so
         // the card's own translucent top is not backed by opaque chrome. Without it, a flag
         // crossfading at 40% alpha would show the page gradient through itself.
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
-            // The flag's box is the hero's rows *minus* [FlagFootRise] — not the light's
-            // band, and certainly not the screen. [ContentScale.Crop] scales to *cover* this
-            // box, so the box's shape is the flag's zoom: every dp of height taken off here
-            // is width handed back to the artwork. See [FlagFootRise] for the arithmetic and
-            // for the trade it makes at the hero's foot.
+            // The flag's box height is locked to its own aspect ratio (most flags are 3:2 —
+            // see [FlagAspect]) rather than to [bandHeight]. A box shorter than that forces
+            // [ContentScale.Crop] to cut the top and bottom stripes to cover the width, which
+            // is what was leaving only the flag's middle band visible. Locking the height this
+            // way means Crop never has to crop at all — the whole flag always shows, edge to
+            // edge, with no dead space beside it.
+            val flagHeight = maxOf(bandHeight, maxWidth / FlagAspect)
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
