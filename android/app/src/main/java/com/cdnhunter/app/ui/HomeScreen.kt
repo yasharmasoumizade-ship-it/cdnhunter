@@ -333,6 +333,10 @@ private val RefLoadHigh = Color(0xFFE0563B)
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 private val PowerGlyphInk = Color(0xFF0A0A0A)       // always-black power glyph, no phase colour
 
+/** Darker teal for the bolt glyph once CONNECTED — deeper than [ConnectTeal] so it reads as a
+ *  settled, confident colour rather than the brighter, more energetic connecting tone. */
+private val ConnectedBoltColor = Color(0xFF1F6E64)
+
 // ── Hero surface ──────────────────────────────────────────────────────────────
 // The top of the screen is not a panel any more. It is the page, with the country's flag
 // drawn full-bleed across it — edge to edge, and up behind the system status bar, which
@@ -2659,9 +2663,28 @@ private fun PowerGlyph(
     modifier: Modifier = Modifier,
     phase: ConnPhase = ConnPhase.OFF,
 ) {
-    // Always the plain black glyph ink, in every phase — no orange pulse while connecting,
-    // no teal fill once connected.
-    val boltColor = PowerGlyphInk
+    val reduce = rememberReduceMotion()
+    val infinite = rememberInfiniteTransition(label = "boltPulse")
+    val pulse by if (reduce || phase != ConnPhase.CONNECTING) {
+        remember { mutableStateOf(1f) }
+    } else {
+        infinite.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(620, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "boltPulseVal",
+        )
+    }
+
+    // OFF: plain black. CONNECTING: pulsing orange/red. CONNECTED: a settled, darker teal.
+    val boltColor = when (phase) {
+        ConnPhase.OFF -> PowerGlyphInk
+        ConnPhase.CONNECTING -> ConnectingBoltColor.copy(alpha = pulse)
+        ConnPhase.CONNECTED -> ConnectedBoltColor
+    }
     val boltPath = remember { ConnectBoltPath }
 
     Canvas(modifier) {
