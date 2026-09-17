@@ -2376,7 +2376,6 @@ private val PowerPressElevation = 9.dp
 /** The hairline on the disc's own edge. See [PowerDiscRim]. */
 private val PowerRimStroke = 1.dp
 
-@Composable
 /**
  * Three concentric glass rings filling the band between [PowerDiscSize] and [PowerSize] —
  * the layered-glass button design picked from the mockup samples. Each ring reuses
