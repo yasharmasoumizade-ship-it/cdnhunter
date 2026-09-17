@@ -2900,6 +2900,26 @@ private fun BrowseCard(
     val frost = remember(density) { panelFrost(with(density) { PanelFrostFade.toPx() }) }
     val listState = rememberLazyListState()
     val reduce = rememberReduceMotion()
+    // The card's top edge and its own soft tint both key off connection phase — idle blue,
+    // [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — the same
+    // three colours the connect disc itself already uses, so the card reads as part of the
+    // same status rather than a decoration next to it.
+    val phaseColor by animateColorAsState(
+        targetValue = when (state.phase) {
+            ConnPhase.OFF -> RefAccent
+            ConnPhase.CONNECTING -> ConnectingBoltColor
+            ConnPhase.CONNECTED -> ConnectedBoltColor
+        },
+        animationSpec = motionSpec(reduce, 500),
+        label = "cardPhaseColor",
+    )
+    val phaseWash = remember(phaseColor) {
+        Brush.verticalGradient(
+            0.00f to phaseColor.copy(alpha = 0.10f),
+            0.35f to phaseColor.copy(alpha = 0.03f),
+            1.00f to Color.Transparent,
+        )
+    }
     // Scroll elevation: the divider under the card's head brightens and casts a soft shadow once
     // the list has scrolled off its first row — the standard "there is content under this edge"
     // cue. Read off [rememberLazyListState] and animated (honouring reduced motion).
@@ -2929,6 +2949,10 @@ private fun BrowseCard(
             // still what is behind the tab row — now behind cold glass instead of behind plain
             // dark. Order matters: fill, then wash, then the lit edges over both.
             .background(frost)
+            // The soft phase tint: a gentle colour wash over the frost, animated with
+            // [phaseColor] — this is what shifts the card's colour through the connect
+            // sequence rather than leaving it a fixed neutral.
+            .background(phaseWash)
             // A very fine noise-like grain, drawn as two overlapping low-alpha radial washes
             // offset from centre, gives the panel a touch of material texture instead of a flat
             // colour fill -- cheap to draw and reads as quality at a glance without costing a
@@ -2953,7 +2977,7 @@ private fun BrowseCard(
             }
             .drawBehind {
                 drawPanelSheen()
-                drawPanelTopEdge()
+                drawPanelTopEdge(phaseColor)
             }
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
@@ -3216,53 +3240,42 @@ private fun DrawScope.drawPanelSheen() {
 }
 
 /**
- * The card's top edge and its two corner arcs.
+ * The card's top edge and its two corner arcs — a raised, lit rim rather than a recessed
+ * shadow. No dark inward band anymore: the edge reads as *catching* light, not as a lip
+ * carved into the page.
  *
- * 0.13 at the peak, up from 0.08 and originally 0.14. The 0.08 was tuned for an edge that was
- * *meant* to be hard to find, when the card's first 84dp were translucent and the join was
- * supposed to be a dissolve rather than a boundary. That turned out to be the whole reason the
- * tabs looked adrift above an empty region of flag: nothing on the screen said where the card
- * began. With [PanelFade] now a 30dp hairline, this edge is the thing that says it — bright
- * enough to be located at a glance, still short of the 0.14 border that the redesign removed.
- *
- * Icy rather than white, now that the pane under it is frosted: this is the lit edge of that
- * glass, and a neutral white one sat on top of the wash instead of belonging to it. The tint
- * is [RefFrost] carried most of the way to white, so the edge is still the brightest thing on
- * the card — it is just no longer a different temperature from it.
+ * The colour is [edgeColor], animated in [BrowseCard] off [HomeUiState.phase] — idle blue,
+ * [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — so the one
+ * edge does double duty as a status cue as well as the card's finish.
  */
-private fun DrawScope.drawPanelTopEdge() {
-    // Inset look: a dark shadow band falling INTO the card from its top edge (as if the
-    // card is a recess carved into the page), followed by a thin dark hairline stroke on
-    // the edge itself instead of the old bright highlight -- the reverse of a raised
-    // panel's lit rim.
-    val hairline = 1.dp.toPx()
+private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
     val radius = PanelCorner.toPx()
-    // A deeper, longer inward shadow so the card reads as a recess set into the page rather than a
-    // panel resting on it: darkest right at the lip, falling away over ~1.9× the corner radius. The
-    // extra reach and the stronger peak are what sell the inset — a short, faint band read as flat.
-    val shadowDepth = radius * 1.2f
-    clipRect(top = 0f, bottom = shadowDepth) {
+    val rimWidth = 1.4.dp.toPx()
+    // A soft glow just inside the rim, in the state colour, is what sells "raised" without
+    // a shadow: a highlight needs something slightly dimmer under it to read as depth, and
+    // a colour wash reads as light bouncing off the edge rather than as a shading trick.
+    val glowDepth = radius * 1.1f
+    clipRect(top = 0f, bottom = glowDepth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.Black.copy(alpha = 0.22f),
-                0.30f to Color.Black.copy(alpha = 0.10f),
-                0.65f to Color.Black.copy(alpha = 0.03f),
+                0.00f to edgeColor.copy(alpha = 0.20f),
+                0.35f to edgeColor.copy(alpha = 0.08f),
                 1.00f to Color.Transparent,
                 startY = 0f,
-                endY = shadowDepth,
+                endY = glowDepth,
             ),
             cornerRadius = CornerRadius(radius),
             size = size,
         )
     }
-    // Bright white rim — reads as a lit glass edge rather than a dark inset border.
-    val rimWidth = 1.2.dp.toPx()
+    // The rim itself: bright near-white at the very top, easing toward the state colour —
+    // a lit bevel rather than a flat painted line.
     clipRect(top = 0f, bottom = radius + rimWidth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.White.copy(alpha = 0.70f),
-                0.50f to Color.White.copy(alpha = 0.30f),
-                1.00f to Color.White.copy(alpha = 0.08f),
+                0.00f to lerp(Color.White, edgeColor, 0.25f).copy(alpha = 0.85f),
+                0.50f to edgeColor.copy(alpha = 0.55f),
+                1.00f to edgeColor.copy(alpha = 0.18f),
             ),
             topLeft = Offset(rimWidth / 2f, rimWidth / 2f),
             size = Size(size.width - rimWidth, size.height - rimWidth),
