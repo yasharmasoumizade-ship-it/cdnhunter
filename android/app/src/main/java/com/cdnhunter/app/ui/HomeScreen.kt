@@ -108,6 +108,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
@@ -169,7 +170,9 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -180,7 +183,38 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cdnhunter.app.R
 import kotlinx.coroutines.delay
+
+// ── Typography ───────────────────────────────────────────────────────────────
+// Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
+// system default everywhere on Home. It is a geometric, close-set sans with a genuinely
+// premium feel at both small UI sizes and the large country headline — closer to the
+// typeface a paid fintech or VPN product would commission than a system font ever reads.
+// One Font() entry per weight actually used, each pinned to its own point on the variable
+// font's weight axis via [FontVariation.Settings]: Compose then picks the entry that
+// matches a Text's own `fontWeight` automatically, so True Manrope Bold renders where the
+// code asks for [FontWeight.Bold] rather than the platform faking it by skewing Medium.
+// On API < 26 (this app's floor is 24) the OS ignores the variation axis and falls back to
+// the font's own default instance — a readable, if less differentiated, degradation.
+private val LuxuryFont = FontFamily(
+    Font(R.font.manrope, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.manrope, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.manrope, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.manrope, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.manrope, weight = FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
+)
+
+/**
+ * Home's type scale, replacing the ad hoc half-point sizes each composable used to pick for
+ * itself (11.5/12.5/13.5/14.5/15.5sp...). Five steps, each with the weight it is always used
+ * at, so a size implies a weight instead of the two being chosen separately at each call site.
+ */
+private val TypeCaption = 12.sp    to FontWeight.Medium    // ping/city/timestamp captions
+private val TypeBody = 14.sp       to FontWeight.SemiBold  // list rows, chips, buttons
+private val TypeSubtitle = 16.sp   to FontWeight.SemiBold  // usage card title, section heads
+private val TypeTitle = 20.sp      to FontWeight.SemiBold  // dialog/sheet titles
+private val TypeHeadline = 26.sp   to FontWeight.Bold      // the country name
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF0A0B0F)          // --bg (canonical, matches Auth)
@@ -415,7 +449,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * built to be read in.
  */
 private val PowerSize = 140.dp
-private val PanelCorner = 28.dp      // .browse-card border-radius
+private val PanelCorner = 24.dp      // .browse-card border-radius (was 28dp — closer to CardCorner for harmony)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
  * The server list's own flag, smaller than the connect bar's.
@@ -437,7 +471,7 @@ private val RowFlagSize = 27.dp
  */
 private val DividerStart = ListPad + RowFlagSize
 
-private val CardCorner = 20.dp       // --radius-lg on .bottom-card
+private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
 private val CardMargin = 14.dp       // .bottom-card margin / bottom
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
@@ -1375,6 +1409,7 @@ internal fun HomeScreen(
         if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
     }
 
+    ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
         // Behind everything: the flag under dark glass, and the light.
         HeroBackdrop(
@@ -1439,6 +1474,7 @@ internal fun HomeScreen(
                 .padding(horizontal = CardMargin)
                 .padding(bottom = CardMargin),
         )
+    }
     }
 }
 
@@ -3344,7 +3380,7 @@ private fun SearchField(visible: Boolean, query: String, onQueryChange: (String)
 /** The search field's type, shared by the input and its placeholder — see [SearchField]. */
 private val SearchFieldStyle = TextStyle(
     color = RefTextHi,
-    fontSize = 14.5.sp,
+    fontSize = TypeBody.first,
     lineHeight = 19.sp,
     platformStyle = PlatformTextStyle(includeFontPadding = false),
     lineHeightStyle = LineHeightStyle(
@@ -3416,7 +3452,7 @@ private fun ServerRow(
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                fontSize = 14.5.sp,
+                fontSize = TypeBody.first,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
                 color = RefTextHi,
                 maxLines = 1,
@@ -3424,7 +3460,7 @@ private fun ServerRow(
             )
             Text(
                 subtitle,
-                fontSize = 11.5.sp,
+                fontSize = TypeCaption.first,
                 color = RefTextLow,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -3503,9 +3539,9 @@ private fun EmptyHint(allEmpty: Boolean, searching: Boolean, onAdd: () -> Unit) 
             PlusGlyph(color = RefTextMid, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.height(14.dp))
-        Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, color = RefTextHi)
+        Text(title, fontSize = TypeSubtitle.first, fontWeight = TypeSubtitle.second, color = RefTextHi)
         Spacer(Modifier.height(4.dp))
-        Text(subtitle, fontSize = 12.5.sp, color = RefTextLow)
+        Text(subtitle, fontSize = TypeCaption.first, color = RefTextLow)
     }
 }
 
@@ -3559,7 +3595,7 @@ private fun UsageCard(
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                fontSize = 13.5.sp,
+                fontSize = TypeBody.first,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.1.sp,
                 color = RefTextHi,
