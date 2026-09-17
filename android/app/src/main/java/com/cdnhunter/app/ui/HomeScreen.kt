@@ -1,9 +1,5 @@
 package com.cdnhunter.app.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
-import com.cdnhunter.app.R
-
 // ── HOME ──────────────────────────────────────────────────────────────────────
 // Rebuilt from design-reference/vpn-home-v3-clean-bg.html — a visual reference kept in the repo,
 // never read by the build. The mockup frames a 390px device, so its CSS pixels map 1:1 onto dp
@@ -63,18 +59,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseInOutSine
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.EaseInOutSine
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -129,21 +125,21 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -155,6 +151,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -163,7 +160,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -255,7 +251,7 @@ private val RefElev2 = Color(0xFF15171E)       // --bg-elev-2
 private val RefBorder = Color(0xFF23262F)      // --border
 private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
 private val RefTextMid = Color(0xFF9BA0AC)     // --text-mid
-private val RefTextLow = Color(0xFF656B78)     // --text-low
+private val RefTextLow = Color(0xFF7A8090)     // --text-low (bumped from #656B78 for contrast)
 
 /**
  * The shadow every piece of hero type carries now that most of them have no surface under
@@ -666,6 +662,13 @@ private fun phaseLight(phase: ConnPhase): Color {
  */
 private val HeroShadowAmbient = Color.Black.copy(alpha = 0.62f)
 private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
+
+/** A lighter pair for cards that float over content rather than sit on it like a button —
+ *  [UsageCard]. Same two-colour split as [HeroShadowAmbient]/[HeroShadowSpot], just dialled
+ *  down: a card should read as gently lifted, not as casting the same deep well a pressable
+ *  control does. */
+private val CardShadowAmbient = Color.Black.copy(alpha = 0.30f)
+private val CardShadowSpot = Color.Black.copy(alpha = 0.42f)
 
 
 /**
@@ -1857,14 +1860,16 @@ private fun Modifier.embossed(
     fill: Brush,
     elevation: Dp,
     pressed: Boolean,
+    ambientColor: Color = HeroShadowAmbient,
+    spotColor: Color = HeroShadowSpot,
 ): Modifier = this
     .scale(if (pressed) EMBOSS_PRESS_SCALE else 1f)
     .shadow(
         elevation = if (pressed) elevation / 3 else elevation,
         shape = shape,
         clip = false,
-        ambientColor = HeroShadowAmbient,
-        spotColor = HeroShadowSpot,
+        ambientColor = ambientColor,
+        spotColor = spotColor,
     )
     .clip(shape)
     .background(fill)
@@ -3533,7 +3538,7 @@ private fun UsageCard(
             // The hard [RefBorder] outline is gone, in step with the rest of the app: this card
             // is now separated by its own lift and its lit rim ([Modifier.embossed]) rather than
             // by a drawn line. Deeper than the buttons — it floats over a scrolling list.
-            .embossed(shape, UsageCardFill, 16.dp, pressed)
+            .embossed(shape, UsageCardFill, 10.dp, pressed, CardShadowAmbient, CardShadowSpot)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
