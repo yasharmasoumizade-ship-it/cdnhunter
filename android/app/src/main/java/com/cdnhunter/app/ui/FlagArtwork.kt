@@ -116,6 +116,7 @@ internal fun localHeroFlagRes(countryCode: String): Int? =
         "IT" -> com.cdnhunter.app.R.drawable.hero_flag_it
         "TR" -> com.cdnhunter.app.R.drawable.hero_flag_tr
         "QA" -> com.cdnhunter.app.R.drawable.hero_flag_qa
+        "CA" -> com.cdnhunter.app.R.drawable.hero_flag_ca
         else -> null
     }
 
