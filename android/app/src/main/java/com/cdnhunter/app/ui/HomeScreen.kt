@@ -185,6 +185,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
 import kotlinx.coroutines.delay
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.haze
 
 // ── Typography ───────────────────────────────────────────────────────────────
 // Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
@@ -464,13 +469,12 @@ private val ListPad = 16.dp          // .server-row / .tab-row horizontal paddin
  */
 private val RowFlagSize = 27.dp
 /**
- * Where each row's hairline starts: [ListPad] + [RowFlagSize], so the divider begins
- * exactly at the flag's trailing edge and the flags read as one unbroken column down the
- * list. The mockup's literal 52px was that same relationship at the old 36dp flag; it is
- * written as the sum now so shrinking the flag again can't leave the line floating in the
- * middle of it.
+ * Corner radius for each server row now that rows are individual cards rather than a
+ * divided list — see [ServerRow].
  */
-private val DividerStart = ListPad + RowFlagSize
+private val RowCorner = 14.dp
+/** Gap between server cards, replacing the old hairline divider. */
+private val RowGap = 4.dp
 
 private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
@@ -1391,13 +1395,18 @@ internal fun HomeScreen(
         if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
     }
 
+    // Blur source for the connect disc's glass rings ([PowerGlassRings]): the flag artwork
+    // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the rings
+    // can real-blur it, exactly the technique [Glass.glassSurface] uses on the auth screens.
+    val hazeState = remember { HazeState() }
+
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
         // Behind everything: the flag under dark glass, and the light.
         HeroBackdrop(
             state = state,
             heroHeight = heroHeight,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().haze(hazeState),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its measured height is where the card
@@ -1438,6 +1447,7 @@ internal fun HomeScreen(
             onClick = onTogglePower,
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
             onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
@@ -2324,7 +2334,10 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //   inset 0 -10px 14px rgba(0,0,0,0.14)     ┘ are [PowerFaceSheen]: bright top rim, dark foot.
 
 /** The disc itself, inside [PowerSize]'s box — the rest of the box is the ring band. */
-private val PowerDiscSize = 118.dp
+// Shrunk from 118dp so the glass ring band ([PowerGlassRings]) has real room to read as
+// layered glass rather than a thin 11dp seam — the disc is now the one small solid part
+// of the button, everything around it out to [PowerSize] is glass.
+private val PowerDiscSize = 84.dp
 
 /** The ring's own weight, and how far outside the disc it is drawn.
  *
@@ -2364,6 +2377,26 @@ private val PowerPressElevation = 9.dp
 private val PowerRimStroke = 1.dp
 
 @Composable
+/**
+ * Three concentric glass rings filling the band between [PowerDiscSize] and [PowerSize] —
+ * the layered-glass button design picked from the mockup samples. Each ring reuses
+ * [Glass.glassSurface] (same brush, border and inset-shadow as the auth screens) circular
+ * and real-blurring the flag artwork behind it through [hazeState], so the effect matches
+ * Auth exactly rather than approximating it with flat translucent fills.
+ */
+@Composable
+private fun PowerGlassRings(hazeState: HazeState?) {
+    val ringSizes = listOf(PowerSize, PowerSize - 18.dp, PowerSize - 36.dp)
+    ringSizes.forEach { size ->
+        Box(
+            Modifier
+                .size(size)
+                .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState) } },
+        )
+    }
+}
+
+@Composable
 private fun PowerCircle(
     mode: ConnectMode,
     phase: ConnPhase,
@@ -2371,6 +2404,7 @@ private fun PowerCircle(
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit,
+    hazeState: HazeState?,
     modifier: Modifier = Modifier,
 ) {
     val connected = phase == ConnPhase.CONNECTED
@@ -2451,6 +2485,10 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // Three concentric glass rings, real-blurring the flag behind the button via
+        // [hazeState] — the same [Glass.glassSurface] technique the auth screens use,
+        // just circular. Drawn first so the disc sits on top of them.
+        PowerGlassRings(hazeState)
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
         Box(
@@ -2465,7 +2503,7 @@ private fun PowerCircle(
                     spotColor = HeroShadowSpot,
                 )
                 .clip(CircleShape)
-                .background(PowerWellBg)
+                .background(Brush.verticalGradient(listOf(PowerCoreTop, PowerCoreBottom)))
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2765,7 +2803,12 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFFF6F6F3)
+// The disc's core is now a small teal glass-free puck — [AppColors.AccentBright] to
+// [AppColors.Accent], the same tokens the auth screens' glow uses — instead of the old
+// flat off-white [PowerWellBg]. It sits inside the glass ring band drawn by
+// [PowerGlassRings], so the only non-glass part of the button is this small core.
+private val PowerCoreTop = AppColors.AccentBright
+private val PowerCoreBottom = AppColors.Accent
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
@@ -3039,7 +3082,7 @@ private fun BrowseCard(
                         )
                     }
                 }
-                itemsIndexed(servers, key = { _, cfg -> cfg.id }) { index, cfg ->
+                itemsIndexed(servers, key = { _, cfg -> cfg.id }) { _, cfg ->
                     val isActive = cfg.id == activeId
                     ServerRow(
                         title = state.rowTitle(cfg),
@@ -3047,7 +3090,6 @@ private fun BrowseCard(
                         countryCode = state.countryCodeFor(cfg),
                         pingMs = cfg.pingMs,
                         isActive = isActive,
-                        showDivider = index < servers.lastIndex,
                         onClick = { onSelectConfig(cfg) },
                     )
                 }
@@ -3381,8 +3423,13 @@ private val SearchFieldStyle = TextStyle(
 )
 
 // ── Server list ───────────────────────────────────────────────────────────────
-// .server-row: a [RowFlagSize] circular flag, name over ping, three load bars, and a
-// hairline that starts past the flag ([DividerStart]) on every row but the last.
+// .server-row: a [RowFlagSize] circular flag, name over ping, three load bars.
+//
+// Rows used to be separated by a hairline divider; that read as a bright white seam on
+// the dark list, so each row is now its own rounded card ([RowCorner]) sitting on a
+// slightly lifted surface ([RefElev1]), with [RowGap] of breathing room between cards
+// instead of a line. The active server keeps its accent wash, just warmer now that it
+// sits on a card rather than flat background.
 //
 // The row is deliberately compact — 48dp against the 72dp it started at — because the
 // list is the part of this screen the user scrolls, and two more servers visible without
@@ -3402,40 +3449,32 @@ private fun ServerRow(
     countryCode: String,
     pingMs: Int,
     isActive: Boolean,
-    showDivider: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = ListPad, vertical = RowGap / 2)
+            .clip(RoundedCornerShape(RowCorner))
             // The mockup has no selected state; the active server gets a faint accent-blue
             // wash, and its title goes bold. There used to be a teal dot beside the name as
             // well; it is gone, along with the row's `dotColor` parameter — with a tint and a
             // weight already saying "this is the one", a third marker was just a speck. The
             // wash is blue rather than plain white so the selection reads on-brand rather than
             // as a generic highlight, and stays restrained enough not to compete with the row.
-            .background(if (isActive) RefAccent.copy(alpha = 0.06f) else Color.Transparent)
+            // Non-active rows get a faint lifted surface ([RefElev1]) instead of the old
+            // hairline, so cards read as separate without a bright line between them.
+            .background(if (isActive) RefAccent.copy(alpha = 0.12f) else RefElev1.copy(alpha = 0.55f))
             // The row is a full-width tap target and it keeps the platform's 48dp floor,
             // which is the one dimension on this screen that is not a style decision. The
             // compaction below takes the *padding* out and leaves the target alone: a 42dp
             // list row would look tighter and be measurably harder to hit.
             .heightIn(min = 48.dp)
             .clickable(onClickLabel = "Use $title", onClick = onClick)
-            .drawBehind {
-                if (showDivider) {
-                    val hairline = 1.dp.toPx()
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.09f),
-                        start = Offset(DividerStart.toPx(), size.height - hairline),
-                        end = Offset(size.width - ListPad.toPx(), size.height - hairline),
-                        strokeWidth = hairline,
-                    )
-                }
-            }
             // 8dp of padding around a 27dp flag is 43dp of content, close enough to the 48dp
             // floor that [heightIn] above still sets the row height, with a touch more air
-            // between rows than the old 6dp gave.
-            .padding(horizontal = ListPad, vertical = 8.dp),
+            // between rows than the old 6dp gave — see [heightIn] above.
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CountryFlagBadge(countryCode, RowFlagSize)
