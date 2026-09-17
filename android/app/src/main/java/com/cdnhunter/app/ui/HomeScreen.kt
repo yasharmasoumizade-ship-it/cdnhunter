@@ -472,7 +472,7 @@ private val RowFlagSize = 27.dp
 private val DividerStart = ListPad + RowFlagSize
 
 private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
-private val CardMargin = 14.dp       // .bottom-card margin / bottom
+private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
@@ -1702,7 +1702,7 @@ private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. */
-private val HeroTopGap = 10.dp
+private val HeroTopGap = 12.dp       // snapped to the 4dp grid, was 10dp
 
 /**
  * The flag the hero reserves below the top row for the docked connect disc's *upper half*.
@@ -2027,7 +2027,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
             .height(HeadlinePlateHeight)
             // No card, no wash -- just the text sitting straight on the flag. Legibility comes
             // entirely from [HeadlineInkShadow] now, not from a plate behind it.
-            .padding(start = 24.dp, end = 18.dp, top = 14.dp),
+            .padding(start = 24.dp, end = 20.dp, top = 16.dp),  // 18/14 snapped to the 4dp grid
         contentAlignment = Alignment.TopEnd,
     ) {
         // Country and city stacked, not joined by a middot -- the country reads first and large,
@@ -2193,7 +2193,7 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                             maxLines = 1,
                             style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(8.dp))          // snapped to the 4dp grid, was 6dp
                         Icon(
                             Icons.Rounded.Refresh,
                             contentDescription = null,
@@ -3330,13 +3330,13 @@ private fun SearchField(visible: Boolean, query: String, onQueryChange: (String)
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = ListPad)
-                .padding(bottom = 9.dp)            // .search-bar margin
+                .padding(bottom = 8.dp)            // .search-bar margin (snapped to the 4dp grid, was 9dp)
                 .clip(RoundedCornerShape(50))
                 .background(Color.White.copy(alpha = 0.045f))
                 // [heroEdge], the same graded hairline as the glyph chips beside it — the
                 // field opens in that row and the two should not disagree about the light.
                 .border(1.dp, heroEdge, RoundedCornerShape(50))
-                .padding(horizontal = 15.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),  // 15/10 snapped to the 4dp grid
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -3345,7 +3345,7 @@ private fun SearchField(visible: Boolean, query: String, onQueryChange: (String)
                 tint = RefTextMid,
                 modifier = Modifier.size(17.dp),
             )
-            Spacer(Modifier.width(10.dp))          // .search-bar gap
+            Spacer(Modifier.width(12.dp))          // .search-bar gap (snapped to the 4dp grid, was 10dp)
             // One style for the field and its placeholder, and it is what fixes the caret.
             // [BasicTextField] sizes its cursor to the *line box*, and by default that box
             // carries the font's own ascent/descent padding on top of the glyphs — so the
@@ -3448,7 +3448,7 @@ private fun ServerRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CountryFlagBadge(countryCode, RowFlagSize)
-        Spacer(Modifier.width(11.dp))              // .server-row gap
+        Spacer(Modifier.width(12.dp))              // .server-row gap (snapped to the 4dp grid, was 11dp)
         Column(Modifier.weight(1f)) {
             Text(
                 title,
@@ -3538,7 +3538,7 @@ private fun EmptyHint(allEmpty: Boolean, searching: Boolean, onAdd: () -> Unit) 
         ) {
             PlusGlyph(color = RefTextMid, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))          // snapped to the 4dp grid, was 14dp
         Text(title, fontSize = TypeSubtitle.first, fontWeight = TypeSubtitle.second, color = RefTextHi)
         Spacer(Modifier.height(4.dp))
         Text(subtitle, fontSize = TypeCaption.first, color = RefTextLow)
@@ -3591,7 +3591,7 @@ private fun UsageCard(
             // against [USAGE_DAILY_CAP_BYTES], not the current session.
             accent = if (state.connected) RefTeal else RefTextMid,
         )
-        Spacer(Modifier.width(14.dp))              // .bottom-card gap
+        Spacer(Modifier.width(16.dp))              // .bottom-card gap (snapped to the 4dp grid, was 14dp)
         Column(Modifier.weight(1f)) {
             Text(
                 title,
@@ -3612,7 +3612,7 @@ private fun UsageCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(16.dp))     // snapped to the 4dp grid, was 14dp
         Chevron(size = 16.dp, color = RefTextLow)
     }
 }
