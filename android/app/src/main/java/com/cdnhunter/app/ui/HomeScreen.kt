@@ -31,12 +31,11 @@ package com.cdnhunter.app.ui
 // source is warped on one axis (a square asset, a 5:3 flagcdn SVG and a 19:10 one all keep their
 // proportions), then faded by an alpha mask ([HeaderFlagFadeX], [HeaderFlagFadeY]) rather than by
 // a coat of paint — where the mask eases, the page's own gradient shows through, so the artwork
-// has no edges of its own. Between artwork and mask sit a slight desaturation
-// ([HEADER_FLAG_SATURATION]) and a vertical scrim ([HeaderFlagScrim]) shaped to be heavy only
-// where text lands: the status bar at the top, the band the card's first rows sit over at the
-// foot, light through the middle. Worst case is a white flag level with the top bar, where the
-// scrim puts it near #6b6b6c — which [RefTextHi] and the white power disc clear, and the dimmer
-// inks do not, which is what [HeroDepthScrim] and the glass chips are for. No flag to draw
+// has no edges of its own. Between artwork and mask sits a slight desaturation
+// ([HEADER_FLAG_SATURATION]); legibility over the artwork is [HeroDepthScrim]'s job alone now
+// (a second scrim inside this masked layer used to double up with it — removed). Worst case is
+// a white flag level with the top bar, where [HeroDepthScrim] and the glass chips are what keep
+// [RefTextHi] and the dimmer inks readable. No flag to draw
 // (country unresolved, asset missing, still decoding) falls back to [HeaderFlagFallback].
 //
 // Choosing another server crossfades the flag rather than cutting to it: 420ms in over 260ms out.
@@ -741,13 +740,13 @@ private val PageGradient = Brush.verticalGradient(
  * own colours arrive distinct and confident rather than calmed toward a swatch. It is paired
  * with [HEADER_FLAG_CONTRAST] and both are done with a colour matrix on the image rather than by
  * fading it toward black, which would take the brightness with it and leave the flag looking
- * dirty. The shadow treatment ([HeaderFlagScrim]) is untouched — this changes the artwork's
+ * dirty. [HeroDepthScrim], the shade over the artwork, is untouched — this changes the artwork's
  * colour, not the shade over it.
  */
 private const val HEADER_FLAG_SATURATION = 1.06f
 
 /**
- * How much the flag's tones are expanded around mid-grey before the scrim is applied.
+ * How much the flag's tones are expanded around mid-grey before [HeroDepthScrim] is applied.
  *
  * A contrast scale just over 1 pushes the darks down and the lights up around a 50% pivot, which
  * is what makes the colour bands read as *distinct* rather than as one even wash — the vivid,
@@ -758,7 +757,7 @@ private const val HEADER_FLAG_SATURATION = 1.06f
 private const val HEADER_FLAG_CONTRAST = 1.16f
 
 /**
- * How much the artwork itself gives up before [HeaderFlagScrim] is even applied.
+ * How much the artwork itself gives up before [HeroDepthScrim] is even applied.
  *
  * The flag is on in every state (see [HomeUiState.heroFlagCountry]) and it is the screen's
  * actual background rather than a panel's fill — it runs behind the status bar at the top
@@ -771,9 +770,9 @@ private const val HEADER_FLAG_CONTRAST = 1.16f
  * the whole artwork's presence rather than the brighter half of a pair, and it is set
  * near-opaque on purpose: the brief for this screen is a flag that is unmistakably a flag
  * and *also* works as a backdrop. The legibility of the rows on top of it is not paid for
- * by dimming the artwork; it is paid for by the scrim, which is where it belongs, because
- * the scrim can be shaped — heavy exactly where text lands, light where the flag is just
- * flag. See [HeaderFlagScrim].
+ * by dimming the artwork; it is paid for by [HeroDepthScrim], which is where it belongs,
+ * because that scrim can be shaped — heavy exactly where text lands, light where the flag is
+ * just flag.
  */
 private const val HEADER_FLAG_ALPHA = 1.0f
 
@@ -812,7 +811,7 @@ private val FlagCardBleed = 32.dp
  * On top of the box's own Crop (see [HeroBackdrop]), this crops in tighter still. 1f is no
  * extra zoom; > 1f zooms in further.
  */
-private const val FlagZoom = 1.0f
+private const val FlagZoom = 1.05f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -843,32 +842,12 @@ private const val FLAG_FADE_IN_MS = 420
 private const val FLAG_FADE_OUT_MS = 260
 private const val FLAG_SETTLE_MS = 620
 
-/**
- * A soft vertical scrim, drawn *inside* the masked flag layer, so it tapers away exactly where
- * the flag does — it darkens the artwork, never the page.
- *
- * Shaped so it is heavy only where text actually lands: a little at the head, lighter through
- * the middle where the flag is allowed to be a flag, heavier again at the foot under the browse
- * card's first rows. The artwork itself stays near-opaque ([HEADER_FLAG_ALPHA]) and this is what
- * buys legibility back — dimming the whole flag to protect two bands is what used to make it
- * read as grey.
- *
- * The head is much lighter than it was (0.18 against 0.58) because it is no longer alone up
- * there: the flag now runs to the very top of the screen, behind the system clock, and the
- * even dark glass over the whole band ([HeroDepthScrim], heaviest at its head) is what gives
- * the system status-bar glyphs their field now that the opaque black bar is gone.
- */
-private val HeaderFlagScrim = Brush.verticalGradient(
-    // Darkened on request: the flag now reads as a deeper, more tinted backdrop. Every stop
-    // carries more black than before (was 0.18/0.08/0.04/0.08/0.20) so the artwork sits further
-    // back under glass while still legibly a flag — the middle is where it breathes, the top and
-    // foot (where the clock and the browse-card head land) are heaviest.
-    0.00f to Color.Black.copy(alpha = 0.44f),
-    0.20f to Color.Black.copy(alpha = 0.32f),
-    0.50f to Color.Black.copy(alpha = 0.26f),
-    0.80f to Color.Black.copy(alpha = 0.34f),
-    1.00f to Color.Black.copy(alpha = 0.50f),
-)
+// ── Header flag scrim — removed ─────────────────────────────────────────────────
+// Used to be a second vertical scrim drawn inside the flag's own masked layer, on top of
+// [HeroDepthScrim] which already glasses the whole hero band. The two compounded (their
+// alphas multiply, not add) into a much heavier veil than either was tuned for on its own,
+// and it read as a flat shadow sitting on the flag rather than as depth. Legibility for the
+// glyphs that sit over the artwork now comes from [HeroDepthScrim] alone.
 
 /**
  * The horizontal half of the flag's alpha mask: full from the left edge, held nearly all
@@ -899,7 +878,7 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * the window now drawing under that bar (MainActivity's `setDecorFitsSystemWindows(false)`)
  * the same stops would have put a pale horizontal band across the top of the screen at
  * exactly the height of the clock: a seam, drawn by the very thing that was there to
- * avoid one. [HeaderFlagScrim]'s heavy top stop protects the glyphs instead, by darkening
+ * avoid one. [HeroDepthScrim]'s heavy top stop protects the glyphs instead, by darkening
  * the flag rather than by removing it.
  *
  * The foot no longer reaches zero either, and that is the change that makes the artwork a
@@ -909,7 +888,7 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * screen" reading it was drawn to avoid. It now holds 0.88 to the very last row instead of
  * falling to 0.52, so there is no point down the page where the flag can be said to stop;
  * what keeps the list legible over it is the browse card's own translucent fill
- * ([panelTopFade]) plus [HeaderFlagScrim]'s heavier foot, both of which sit *over* the
+ * ([panelTopFade]) plus [HeroDepthScrim]'s heavier foot, both of which sit *over* the
  * artwork rather than removing it.
  */
 private val HeaderFlagFadeY = Brush.verticalGradient(
@@ -933,9 +912,9 @@ private val HeaderFlagFallback = Brush.linearGradient(
 )
 
 /**
- * The flag panel: the artwork and its scrim, faded out on three sides by an alpha mask.
+ * The flag panel: the artwork, faded out on three sides by an alpha mask.
  *
- * The artwork and [HeaderFlagScrim] are drawn into an offscreen layer, then
+ * The artwork is drawn into an offscreen layer, then
  * [HeaderFlagFadeX] and [HeaderFlagFadeY] are multiplied into that layer's alpha with
  * [BlendMode.DstIn]. Masking rather than scrimming the edges is what keeps the header
  * ambient: where the mask is zero the page's own gradient shows at exactly the value it
@@ -951,8 +930,8 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     // Saturation and contrast in one matrix: chroma just over full so the colours read as the
     // country's own and confident, then a mild contrast expansion around mid-grey so the bands
-    // stay distinct rather than washing into one field. The scrim over the artwork is separate
-    // and unchanged — see [HeaderFlagScrim].
+    // stay distinct rather than washing into one field. Legibility over the artwork is
+    // [HeroDepthScrim]'s job, applied separately over the whole hero band.
     val chroma = remember {
         val m = ColorMatrix().apply { setToSaturation(HEADER_FLAG_SATURATION) }
         val c = HEADER_FLAG_CONTRAST
@@ -1069,8 +1048,9 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                 )
             }
         }
-        // Inside the masked layer, so it darkens the flag and tapers away with it.
-        Box(Modifier.matchParentSize().background(HeaderFlagScrim))
+        // [HeaderFlagScrim] removed — it was compounding with [HeroDepthScrim] (the glass
+        // layer over the whole hero band) and reading as a heavy shadow across the flag.
+        // Legibility now comes from [HeroDepthScrim] alone.
     }
 }
 
@@ -1546,14 +1526,10 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .scale(FlagZoom),
             )
         }
-        // Dark overlay layers (scrim, vignette, frosted-glass wash) removed — the flag now
-        // shows at its own true colours and brightness, not dimmed or tinted behind glass.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(bandHeight)
-                .drawBehind { drawHeroAtmosphere(ambient, lit) }
-        )
+        // drawHeroAtmosphere's crown/key-light/rim/horizon/vignette stack removed entirely
+        // (not just dimmed) -- the flag shows at its own true colours with nothing drawn over
+        // it, in both idle and connected states. `ambient`/`lit` above are now only used by
+        // whatever else still reads phaseLight(phase) elsewhere on this screen.
     }
 }
 
@@ -1579,11 +1555,11 @@ private val HeroFloor = Brush.verticalGradient(
  * bright field into artwork seen *through* tinted glass, and lets everything on the hero be read
  * on top of an arbitrary country.
  *
- * Deliberately *not* the same job as [HeaderFlagScrim], and the two do not double up by
- * accident. That one lives inside the flag's own masked layer and is about the artwork —
- * keeping a saturated field from shouting, and tapering its head and foot. This one covers the
- * whole band, flag or no flag, and is now an *even* dark veil rather than a bright-through-the-
- * middle one:
+ * This is now the ONLY dark layer over the artwork — a second scrim used to live inside the
+ * flag's own masked layer as well, and the two compounded (alphas multiply, not add) into a
+ * flat shadow far heavier than either was tuned for alone. Removed; this one carries all of
+ * it now, covering the whole band, flag or no flag, as an *even* dark veil rather than a
+ * bright-through-the-middle one:
  *
  *  - ~0.46 at the top, behind the hamburger and the 34sp headline, where a flag's top stripe is
  *    at its brightest and least negotiable;
