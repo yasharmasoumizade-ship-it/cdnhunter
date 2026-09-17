@@ -166,6 +166,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -197,6 +198,7 @@ import kotlinx.coroutines.delay
 // code asks for [FontWeight.Bold] rather than the platform faking it by skewing Medium.
 // On API < 26 (this app's floor is 24) the OS ignores the variation axis and falls back to
 // the font's own default instance — a readable, if less differentiated, degradation.
+@OptIn(ExperimentalTextApi::class)
 private val LuxuryFont = FontFamily(
     Font(R.font.manrope, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
     Font(R.font.manrope, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
