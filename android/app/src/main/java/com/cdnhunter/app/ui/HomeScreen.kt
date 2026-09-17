@@ -1924,15 +1924,15 @@ private val HeadlinePlateHeight = 84.dp
  *  city both read larger now — so each step is a few sp above the old ramp; it still steps down for
  *  a long pairing so the fixed plate is never overrun (the backstop past that is ellipsis). */
 private fun headlineFontFor(label: String): TextUnit = when {
-    label.length <= 13 -> 26.sp
-    label.length <= 19 -> 21.sp
-    label.length <= 26 -> 18.sp
-    else -> 15.sp
+    label.length <= 13 -> 24.sp
+    label.length <= 19 -> 20.sp
+    label.length <= 26 -> 17.sp
+    else -> 14.sp
 }
 
 /** The city line sits under the country name at a fixed, smaller step -- it never competes with
  *  the country for the ramp, so it stays legible even when the country name itself is long. */
-private val HeadlineCitySize = 14.sp
+private val HeadlineCitySize = 13.sp
 
 /** The left-to-right wipe when the name changes: the new label is revealed progressively across
  *  its glyphs rather than swapped or crossfaded. */
@@ -3419,10 +3419,10 @@ private fun ServerRow(
                     )
                 }
             }
-            // 6dp of padding around a 27dp flag is 39dp of content, so the 48dp floor is
-            // what actually sets the row height now — see [heightIn] above. The padding is
-            // still here because it is what keeps the two text lines off the divider.
-            .padding(horizontal = ListPad, vertical = 6.dp),
+            // 8dp of padding around a 27dp flag is 43dp of content, close enough to the 48dp
+            // floor that [heightIn] above still sets the row height, with a touch more air
+            // between rows than the old 6dp gave.
+            .padding(horizontal = ListPad, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CountryFlagBadge(countryCode, RowFlagSize)
