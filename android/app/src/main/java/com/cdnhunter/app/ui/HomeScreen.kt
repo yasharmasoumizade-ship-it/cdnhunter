@@ -104,10 +104,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import com.cdnhunter.app.vpn.AppSettings
-import androidx.compose.material.icons.rounded.WifiOff
-import androidx.compose.material.icons.rounded.FrontHand
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -993,14 +989,18 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                     flag === remote -> "flag-cdn-$cc"
                     else -> "flag-rect-$cc"
                 }
-                // The bundled/flagcdn flags crop centred. Sweden's local artwork is a 2:1 landscape
-                // illustration whose subject — the Stockholm skyline and ship — sits on the RIGHT
-                // half, so a plain centre-crop into this ~1.3:1 landscape box would trim the far
-                // buildings off the right. A gentle right bias keeps the whole skyline (and the
-                // ship) in frame while still leaving the yellow cross's vertical bar visible; the
-                // only thing given up is a sliver of the left blue field. Still uniform Crop —
-                // nothing is stretched. See [FlagLayer].
-                val flagAlignment = if (local != null) {
+                // The bundled/flagcdn flags crop centred. Sweden's LOCAL artwork specifically is
+                // a 2:1 landscape illustration whose subject — the Stockholm skyline and ship —
+                // sits on the RIGHT half, so a plain centre-crop into this ~1.3:1 landscape box
+                // would trim the far buildings off the right. A gentle right bias keeps the whole
+                // skyline (and the ship) in frame while still leaving the yellow cross's vertical
+                // bar visible; the only thing given up is a sliver of the left blue field. This is
+                // keyed to Sweden alone, not to "any local asset": the other local flags (GB, US,
+                // FR, DE, NL, IT, TR, QA) are plain flags whose design is already centred in their
+                // own frame, so the same right-bias would just push them off-centre the same way —
+                // which is what made the Union Jack's cross read as shifted left. Still uniform
+                // Crop — nothing is stretched. See [FlagLayer].
+                val flagAlignment = if (local != null && canonicalCountryCode(code) == "SE") {
                     BiasAlignment(horizontalBias = 0.15f, verticalBias = 0f)
                 } else {
                     Alignment.Center
@@ -1675,72 +1675,6 @@ private val HeroTopGap = 10.dp
  * exactly under its equator.
  */
 private val HeroDockWell = PowerSize / 2
-
-/**
- * Small read-only status glyphs for the two protections the person cares most about at a
- * glance — Kill Switch and Ad Blocker. Lit up (full opacity + a soft glow) when the
- * corresponding [AppSettings] flag is on, dimmed to a faint outline when it is off. Not
- * clickable: this is a status readout, not a settings shortcut — the person still toggles
- * these from Settings.
- */
-@Composable
-private fun StatusFeatureIcons(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val killSwitchOn = remember { AppSettings.killSwitchEnabled(context) }
-    val adBlockerOn = remember { AppSettings.adBlockerEnabled(context) }
-
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatusFeatureIcon(
-            icon = Icons.Rounded.WifiOff,
-            label = "Kill Switch",
-            active = killSwitchOn,
-        )
-        StatusFeatureIcon(
-            icon = Icons.Rounded.FrontHand,
-            label = "Ad Blocker",
-            active = adBlockerOn,
-        )
-    }
-}
-
-@Composable
-private fun StatusFeatureIcon(icon: ImageVector, label: String, active: Boolean) {
-    val tint = if (active) AnanasTeal else Color.White.copy(alpha = 0.75f)
-    Box(
-        Modifier
-            .size(36.dp)
-            .shadow(2.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.14f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (active) {
-            // Teal glow behind the icon when active — same teal as Settings toggles.
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                0.00f to AnanasTeal.copy(alpha = 0.50f),
-                                0.42f to AnanasTeal.copy(alpha = 0.22f),
-                                0.72f to AnanasTeal.copy(alpha = 0.06f),
-                                1.00f to Color.Transparent,
-                            ),
-                            radius = size.minDimension * 0.60f,
-                        )
-                    },
-            )
-        }
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
 
 @Composable
 private fun Header(
@@ -3003,11 +2937,10 @@ private fun BrowseCard(
                 drawPanelTopEdge()
             }
     ) {
-        // The card's masthead. The Kill Switch / Ad Blocker status glyphs sit on the LEFT (moved
-        // off the hero flag, where they used to overlap the connect disc), and the search magnifier
-        // on the RIGHT. They sit *at the top* rather than below the well — the connect disc docks in
-        // the centre of this band, so the two corners are clear and neither control collides with it.
-        // The band's height ([CardTopRoom]) still reserves the room the disc's lower half rests over.
+        // The card's masthead: just the search magnifier now, pinned to the trailing (right)
+        // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
+        // been removed. The band still sits *at the top* rather than below the well, and still
+        // reserves [CardTopRoom] for the connect disc's lower half, which docks in the centre.
         Box(
             Modifier
                 .fillMaxWidth()
@@ -3019,13 +2952,11 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                // Status glyphs pinned to the leading (left) edge, search to the trailing (right)
-                // edge — [Arrangement.SpaceBetween] pushes the two groups to opposite corners, both
-                // clear of the disc that docks in the centre.
-                horizontalArrangement = Arrangement.SpaceBetween,
+                // Only the search toggle lives in this band now — pinned to the trailing
+                // (right) edge, clear of the disc that docks in the centre.
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusFeatureIcons()
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
@@ -3325,8 +3256,8 @@ private fun DrawScope.drawPanelTopEdge() {
 /** The magnifier in the card's header row: white ink, accent-blue while the field is open. */
 @Composable
 private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
-    // Off state matches the other inactive masthead glyphs (StatusFeatureIcon) — the muted
-    // white@22% — so the three top-bar icons read as one set; open state lights to the accent.
+    // Muted white@22% off-state, same as the rest of this masthead's ink; open state lights to
+    // the accent.
     val ink by animateColorAsState(if (open) RefAccent else Color.White.copy(alpha = 0.22f), tween(180), label = "searchInk")
     Box(
         Modifier
