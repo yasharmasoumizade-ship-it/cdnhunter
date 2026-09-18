@@ -189,6 +189,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
 
 // ── Palette — the mockup's :root custom properties, verbatim ───────────────────
 private val RefBg = Color(0xFF0A0B0F)          // --bg (canonical, matches Auth)
@@ -1375,44 +1380,50 @@ internal fun HomeScreen(
     }
 
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // Behind everything: the flag under dark glass, and the light.
-        HeroBackdrop(
-            state = state,
-            heroHeight = heroHeight,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Column(Modifier.fillMaxSize()) {
-            // The hero: hamburger, country, address. Its measured height is where the card
-            // begins and where the connect disc docks — the card rises to meet the disc's foot.
-            Header(
+        // Everything the connect disc's glass surface samples through: the flag and the browse
+        // card underneath it. Marked as a single haze source so the disc — a separate sibling
+        // drawn below — can show a real frosted blur of whatever is actually behind it, the
+        // same dev.chrisbanes.haze technique [Glass] already uses for the auth screens.
+        val hazeState = remember { HazeState() }
+        Box(Modifier.fillMaxSize().haze(hazeState)) {
+            // Behind everything: the flag under dark glass, and the light.
+            HeroBackdrop(
                 state = state,
-                onOpenSettings = onOpenSettings,
-                modifier = Modifier.onSizeChanged { heroContentPx = it.height },
+                heroHeight = heroHeight,
+                modifier = Modifier.fillMaxSize(),
             )
-            BrowseCard(
-                state = state,
-                servers = servers,
-                activeId = activeId,
-                query = query,
-                searchOpen = searchOpen,
-                onQueryChange = { query = it },
-                onSelectConfig = onSelectConfig,
-                onAddServer = onAddServer,
-                onToggleSearch = toggleSearch,
-                onRefreshPings = onRefreshPings,
-                onRetryIp = onRetryIp,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.fillMaxSize()) {
+                // The hero: hamburger, country, address. Its measured height is where the card
+                // begins and where the connect disc docks — the card rises to meet the disc's foot.
+                Header(
+                    state = state,
+                    onOpenSettings = onOpenSettings,
+                    modifier = Modifier.onSizeChanged { heroContentPx = it.height },
+                )
+                BrowseCard(
+                    state = state,
+                    servers = servers,
+                    activeId = activeId,
+                    query = query,
+                    searchOpen = searchOpen,
+                    onQueryChange = { query = it },
+                    onSelectConfig = onSelectConfig,
+                    onAddServer = onAddServer,
+                    onToggleSearch = toggleSearch,
+                    onRefreshPings = onRefreshPings,
+                    onRetryIp = onRetryIp,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         // The public IP and the list's add/search controls all live in the card's own top row now
         // (see [BrowseCard]) — the IP on the left where the "+" button used to be, search on the right.
 
-        // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
-        // foot, which is the browse card's top edge — so its lower half rests on the card's head
-        // (a dock well, [CardTopRoom]) and its upper half floats over the flag. Drawn after the
-        // card, so it is the topmost layer. The mode is still switched by a vertical drag on it
-        // (up = Smart, down = Manual), plus the two named accessibility actions.
+        // The connect disc, now docked INSIDE the hero rather than on the seam (see the redesign
+        // note on [HeroDockWell]). Drawn after the card, so it is the topmost layer. The mode is
+        // still switched by a vertical drag on it (up = Smart, down = Manual), plus the two named
+        // accessibility actions.
         PowerCircle(
             mode = state.mode,
             phase = state.phase,
@@ -1420,6 +1431,7 @@ internal fun HomeScreen(
             onClick = onTogglePower,
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
             onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = (heroHeight - PowerSize - 24.dp).coerceAtLeast(0.dp)),
@@ -2423,6 +2435,7 @@ private fun PowerCircle(
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val connected = phase == ConnPhase.CONNECTED
@@ -2502,6 +2515,18 @@ private fun PowerCircle(
     }
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
+    // The disc's glass tint, animated off [phase] — idle blue, [ConnectingBoltColor] while
+    // connecting, [ConnectedBoltColor] once connected.
+    val phaseColor by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> RefAccent
+            ConnPhase.CONNECTING -> ConnectingBoltColor
+            ConnPhase.CONNECTED -> ConnectedBoltColor
+        },
+        animationSpec = if (reduce) snap() else tween(500),
+        label = "discPhaseColor",
+    )
+
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
@@ -2517,7 +2542,25 @@ private fun PowerCircle(
                     spotColor = HeroShadowSpot,
                 )
                 .clip(CircleShape)
-                .background(PowerWellBg)
+                // Multi-layer glass, same recipe as [Glass.glassSurface] on the auth screens: a
+                // real frosted blur of whatever the disc is sitting over (flag while OFF, card
+                // list once it's been dragged down over content) instead of a flat fill, tinted
+                // with [phaseColor]. Falls back to the flat well colour if hazeState is null.
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeChild(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = PowerWellBg,
+                                tints = listOf(HazeTint(phaseColor.copy(alpha = 0.22f))),
+                                blurRadius = 18.dp,
+                                noiseFactor = 0.06f,
+                            ),
+                        )
+                    } else {
+                        Modifier.background(PowerWellBg)
+                    },
+                )
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2577,9 +2620,28 @@ private fun PowerCircle(
                         drawCircle(darkArc)
                         drawCircle(lightArc)
                         drawCircle(innerRim)
+                        // The second, inner ring that reads as layered glass rather than one
+                        // frosted disc — a thin phase-coloured stroke set in from the outer rim,
+                        // plus a bright top-left cap where the light above already implies it's
+                        // catching the glass.
+                        val midRadius = size.minDimension / 2f * 0.84f
+                        drawCircle(
+                            color = phaseColor.copy(alpha = 0.30f),
+                            radius = midRadius,
+                            style = Stroke(width = 1.2.dp.toPx()),
+                        )
+                        drawArc(
+                            color = Color.White.copy(alpha = 0.35f),
+                            startAngle = 200f,
+                            sweepAngle = 70f,
+                            useCenter = false,
+                            topLeft = Offset(size.width / 2f - midRadius, size.height / 2f - midRadius),
+                            size = Size(midRadius * 2f, midRadius * 2f),
+                            style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round),
+                        )
                     }
                 }
-                .border(PowerRimStroke, PowerWellRim, CircleShape),
+                .border(PowerRimStroke, lerp(PowerWellRim, phaseColor, 0.35f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             PowerGlyph(
