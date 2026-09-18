@@ -46,11 +46,17 @@ object Glass {
      *  Pass [focused] = true to swap the border to the accent color, e.g. when a
      *  wrapped text field has focus -- this is the single source of the visible
      *  border, so the wrapped field's own border must stay Color.Transparent
-     *  (see [textFieldColors]) or a double ring appears. */
+     *  (see [textFieldColors]) or a double ring appears. [tintAlpha] darkens the
+     *  blurred content underneath -- the auth screens' cards want that (0.35, the
+     *  default) to stay legible over bright video, but a single glass layer over
+     *  something already dark (the connect button, over a flag) wants much less
+     *  or it reads as a muddy tint rather than clear glass; such a caller can pass
+     *  a lower value. */
     fun Modifier.glassSurface(
         shape: Shape = Shape,
         focused: Boolean = false,
         hazeState: HazeState? = null,
+        tintAlpha: Float = 0.35f,
     ): Modifier = this
         .clip(shape)
         .then(
@@ -64,7 +70,7 @@ object Glass {
                         // levels where real blurring isn't available, so it has to be
                         // opaque. Matches the app's own near-black background.
                         backgroundColor = Color(0xFF0A0B0F),
-                        tints = listOf(HazeTint(Color.Black.copy(alpha = 0.35f))),
+                        tints = listOf(HazeTint(Color.Black.copy(alpha = tintAlpha))),
                         blurRadius = 22.dp,
                         noiseFactor = 0.08f,
                     ),

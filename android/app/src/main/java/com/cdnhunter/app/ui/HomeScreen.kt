@@ -2377,22 +2377,21 @@ private val PowerPressElevation = 9.dp
 private val PowerRimStroke = 1.dp
 
 /**
- * Three concentric glass rings filling the band between [PowerDiscSize] and [PowerSize] —
- * the layered-glass button design picked from the mockup samples. Each ring reuses
- * [Glass.glassSurface] (same brush, border and inset-shadow as the auth screens) circular
- * and real-blurring the flag artwork behind it through [hazeState], so the effect matches
- * Auth exactly rather than approximating it with flat translucent fills.
+ * A single glass ring filling the whole band between [PowerDiscSize] and [PowerSize] —
+ * one real-blurred layer rather than three stacked ones, which is what was reading as a
+ * muddy tint instead of clear glass (each ring re-tinted the same flag underneath it, so
+ * the darkening compounded three times over). Reuses [Glass.glassSurface] (same brush,
+ * border and inset-shadow as the auth screens) circular and real-blurring the flag
+ * artwork behind it through [hazeState], with a much lighter tint than the auth default —
+ * see [Glass.glassSurface]'s tintAlpha doc.
  */
 @Composable
 private fun PowerGlassRings(hazeState: HazeState?) {
-    val ringSizes = listOf(PowerSize, PowerSize - 18.dp, PowerSize - 36.dp)
-    ringSizes.forEach { size ->
-        Box(
-            Modifier
-                .size(size)
-                .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState) } },
-        )
-    }
+    Box(
+        Modifier
+            .size(PowerSize)
+            .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState, tintAlpha = 0.12f) } },
+    )
 }
 
 @Composable
@@ -2484,9 +2483,9 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // Three concentric glass rings, real-blurring the flag behind the button via
-        // [hazeState] — the same [Glass.glassSurface] technique the auth screens use,
-        // just circular. Drawn first so the disc sits on top of them.
+        // A single glass ring, real-blurring the flag behind the button via [hazeState] —
+        // the same [Glass.glassSurface] technique the auth screens use, just circular and
+        // lighter-tinted. Drawn first so the disc sits on top of it.
         PowerGlassRings(hazeState)
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
