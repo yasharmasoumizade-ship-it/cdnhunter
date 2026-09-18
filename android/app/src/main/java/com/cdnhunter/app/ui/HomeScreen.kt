@@ -31,12 +31,11 @@ package com.cdnhunter.app.ui
 // source is warped on one axis (a square asset, a 5:3 flagcdn SVG and a 19:10 one all keep their
 // proportions), then faded by an alpha mask ([HeaderFlagFadeX], [HeaderFlagFadeY]) rather than by
 // a coat of paint — where the mask eases, the page's own gradient shows through, so the artwork
-// has no edges of its own. Between artwork and mask sit a slight desaturation
-// ([HEADER_FLAG_SATURATION]) and a vertical scrim ([HeaderFlagScrim]) shaped to be heavy only
-// where text lands: the status bar at the top, the band the card's first rows sit over at the
-// foot, light through the middle. Worst case is a white flag level with the top bar, where the
-// scrim puts it near #6b6b6c — which [RefTextHi] and the white power disc clear, and the dimmer
-// inks do not, which is what [HeroDepthScrim] and the glass chips are for. No flag to draw
+// has no edges of its own. Between artwork and mask sits a slight desaturation
+// ([HEADER_FLAG_SATURATION]); legibility over the artwork is [HeroDepthScrim]'s job alone now
+// (a second scrim inside this masked layer used to double up with it — removed). Worst case is
+// a white flag level with the top bar, where [HeroDepthScrim] and the glass chips are what keep
+// [RefTextHi] and the dimmer inks readable. No flag to draw
 // (country unresolved, asset missing, still decoding) falls back to [HeaderFlagFallback].
 //
 // Choosing another server crossfades the flag rather than cutting to it: 420ms in over 260ms out.
@@ -186,6 +185,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
 import kotlinx.coroutines.delay
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.haze
 
 // ── Typography ───────────────────────────────────────────────────────────────
 // Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
@@ -410,7 +414,8 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 40.dp
+private val HeroBleed = 64.dp   // bumped from 40dp — the masthead glass band (see [CardTopRoom])
+                                 // needs real flag drawn behind it too, not just the seam.
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -450,7 +455,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * leaves the headline above it as the largest *text*, which is the order the hero is
  * built to be read in.
  */
-private val PowerSize = 140.dp
+private val PowerSize = 72.dp   // shrunk from 140dp — still clears the 48dp touch-target floor
 private val PanelCorner = 24.dp      // .browse-card border-radius (was 28dp — closer to CardCorner for harmony)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -465,13 +470,12 @@ private val ListPad = 16.dp          // .server-row / .tab-row horizontal paddin
  */
 private val RowFlagSize = 27.dp
 /**
- * Where each row's hairline starts: [ListPad] + [RowFlagSize], so the divider begins
- * exactly at the flag's trailing edge and the flags read as one unbroken column down the
- * list. The mockup's literal 52px was that same relationship at the old 36dp flag; it is
- * written as the sum now so shrinking the flag again can't leave the line floating in the
- * middle of it.
+ * Corner radius for each server row now that rows are individual cards rather than a
+ * divided list — see [ServerRow].
  */
-private val DividerStart = ListPad + RowFlagSize
+private val RowCorner = 14.dp
+/** Gap between server cards, replacing the old hairline divider. */
+private val RowGap = 4.dp
 
 private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
@@ -741,13 +745,13 @@ private val PageGradient = Brush.verticalGradient(
  * own colours arrive distinct and confident rather than calmed toward a swatch. It is paired
  * with [HEADER_FLAG_CONTRAST] and both are done with a colour matrix on the image rather than by
  * fading it toward black, which would take the brightness with it and leave the flag looking
- * dirty. The shadow treatment ([HeaderFlagScrim]) is untouched — this changes the artwork's
+ * dirty. [HeroDepthScrim], the shade over the artwork, is untouched — this changes the artwork's
  * colour, not the shade over it.
  */
 private const val HEADER_FLAG_SATURATION = 1.06f
 
 /**
- * How much the flag's tones are expanded around mid-grey before the scrim is applied.
+ * How much the flag's tones are expanded around mid-grey before [HeroDepthScrim] is applied.
  *
  * A contrast scale just over 1 pushes the darks down and the lights up around a 50% pivot, which
  * is what makes the colour bands read as *distinct* rather than as one even wash — the vivid,
@@ -758,7 +762,7 @@ private const val HEADER_FLAG_SATURATION = 1.06f
 private const val HEADER_FLAG_CONTRAST = 1.16f
 
 /**
- * How much the artwork itself gives up before [HeaderFlagScrim] is even applied.
+ * How much the artwork itself gives up before [HeroDepthScrim] is even applied.
  *
  * The flag is on in every state (see [HomeUiState.heroFlagCountry]) and it is the screen's
  * actual background rather than a panel's fill — it runs behind the status bar at the top
@@ -771,9 +775,9 @@ private const val HEADER_FLAG_CONTRAST = 1.16f
  * the whole artwork's presence rather than the brighter half of a pair, and it is set
  * near-opaque on purpose: the brief for this screen is a flag that is unmistakably a flag
  * and *also* works as a backdrop. The legibility of the rows on top of it is not paid for
- * by dimming the artwork; it is paid for by the scrim, which is where it belongs, because
- * the scrim can be shaped — heavy exactly where text lands, light where the flag is just
- * flag. See [HeaderFlagScrim].
+ * by dimming the artwork; it is paid for by [HeroDepthScrim], which is where it belongs,
+ * because that scrim can be shaped — heavy exactly where text lands, light where the flag is
+ * just flag.
  */
 private const val HEADER_FLAG_ALPHA = 1.0f
 
@@ -812,7 +816,7 @@ private val FlagCardBleed = 32.dp
  * On top of the box's own Crop (see [HeroBackdrop]), this crops in tighter still. 1f is no
  * extra zoom; > 1f zooms in further.
  */
-private const val FlagZoom = 1.0f
+private const val FlagZoom = 1.05f
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -843,9 +847,12 @@ private const val FLAG_FADE_IN_MS = 420
 private const val FLAG_FADE_OUT_MS = 260
 private const val FLAG_SETTLE_MS = 620
 
-// HeaderFlagScrim removed: it duplicated what [HeroDepthScrim] already does across the
-// whole band, and the two together read as a shadow cast on the flag rather than as the
-// flag's own colour. See the note where it used to be applied, in [HeaderFlag].
+// ── Header flag scrim — removed ─────────────────────────────────────────────────
+// Used to be a second vertical scrim drawn inside the flag's own masked layer, on top of
+// [HeroDepthScrim] which already glasses the whole hero band. The two compounded (their
+// alphas multiply, not add) into a much heavier veil than either was tuned for on its own,
+// and it read as a flat shadow sitting on the flag rather than as depth. Legibility for the
+// glyphs that sit over the artwork now comes from [HeroDepthScrim] alone.
 
 /**
  * The horizontal half of the flag's alpha mask: full from the left edge, held nearly all
@@ -876,7 +883,7 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * the window now drawing under that bar (MainActivity's `setDecorFitsSystemWindows(false)`)
  * the same stops would have put a pale horizontal band across the top of the screen at
  * exactly the height of the clock: a seam, drawn by the very thing that was there to
- * avoid one. [HeaderFlagScrim]'s heavy top stop protects the glyphs instead, by darkening
+ * avoid one. [HeroDepthScrim]'s heavy top stop protects the glyphs instead, by darkening
  * the flag rather than by removing it.
  *
  * The foot no longer reaches zero either, and that is the change that makes the artwork a
@@ -886,7 +893,7 @@ private val HeaderFlagFadeX = Brush.horizontalGradient(
  * screen" reading it was drawn to avoid. It now holds 0.88 to the very last row instead of
  * falling to 0.52, so there is no point down the page where the flag can be said to stop;
  * what keeps the list legible over it is the browse card's own translucent fill
- * ([panelTopFade]) plus [HeaderFlagScrim]'s heavier foot, both of which sit *over* the
+ * ([panelTopFade]) plus [HeroDepthScrim]'s heavier foot, both of which sit *over* the
  * artwork rather than removing it.
  */
 private val HeaderFlagFadeY = Brush.verticalGradient(
@@ -910,9 +917,9 @@ private val HeaderFlagFallback = Brush.linearGradient(
 )
 
 /**
- * The flag panel: the artwork and its scrim, faded out on three sides by an alpha mask.
+ * The flag panel: the artwork, faded out on three sides by an alpha mask.
  *
- * The artwork and [HeaderFlagScrim] are drawn into an offscreen layer, then
+ * The artwork is drawn into an offscreen layer, then
  * [HeaderFlagFadeX] and [HeaderFlagFadeY] are multiplied into that layer's alpha with
  * [BlendMode.DstIn]. Masking rather than scrimming the edges is what keeps the header
  * ambient: where the mask is zero the page's own gradient shows at exactly the value it
@@ -928,8 +935,8 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     // Saturation and contrast in one matrix: chroma just over full so the colours read as the
     // country's own and confident, then a mild contrast expansion around mid-grey so the bands
-    // stay distinct rather than washing into one field. The scrim over the artwork is separate
-    // and unchanged — see [HeaderFlagScrim].
+    // stay distinct rather than washing into one field. Legibility over the artwork is
+    // [HeroDepthScrim]'s job, applied separately over the whole hero band.
     val chroma = remember {
         val m = ColorMatrix().apply { setToSaturation(HEADER_FLAG_SATURATION) }
         val c = HEADER_FLAG_CONTRAST
@@ -1046,9 +1053,9 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
                 )
             }
         }
-        // HeaderFlagScrim (a second dark veil on top of [HeroDepthScrim], which already
-        // glasses the whole band) removed — it was compounding with that layer to read as
-        // a shadow sitting on the flag rather than as the flag's own colour.
+        // [HeaderFlagScrim] removed — it was compounding with [HeroDepthScrim] (the glass
+        // layer over the whole hero band) and reading as a heavy shadow across the flag.
+        // Legibility now comes from [HeroDepthScrim] alone.
     }
 }
 
@@ -1389,13 +1396,18 @@ internal fun HomeScreen(
         if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
     }
 
+    // Blur source for the connect button's glass fill: the flag artwork
+    // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the button
+    // can real-blur it, exactly the technique [Glass.glassSurface] uses on the auth screens.
+    val hazeState = remember { HazeState() }
+
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
         // Behind everything: the flag under dark glass, and the light.
         HeroBackdrop(
             state = state,
             heroHeight = heroHeight,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().haze(hazeState),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its measured height is where the card
@@ -1417,6 +1429,7 @@ internal fun HomeScreen(
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
+                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -1436,6 +1449,7 @@ internal fun HomeScreen(
             onClick = onTogglePower,
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
             onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
@@ -1524,14 +1538,10 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .scale(FlagZoom),
             )
         }
-        // Dark overlay layers (scrim, vignette, frosted-glass wash) removed — the flag now
-        // shows at its own true colours and brightness, not dimmed or tinted behind glass.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(bandHeight)
-                .drawBehind { drawHeroAtmosphere(ambient, lit) }
-        )
+        // drawHeroAtmosphere's crown/key-light/rim/horizon/vignette stack removed entirely
+        // (not just dimmed) -- the flag shows at its own true colours with nothing drawn over
+        // it, in both idle and connected states. `ambient`/`lit` above are now only used by
+        // whatever else still reads phaseLight(phase) elsewhere on this screen.
     }
 }
 
@@ -1557,11 +1567,11 @@ private val HeroFloor = Brush.verticalGradient(
  * bright field into artwork seen *through* tinted glass, and lets everything on the hero be read
  * on top of an arbitrary country.
  *
- * Deliberately *not* the same job as [HeaderFlagScrim], and the two do not double up by
- * accident. That one lives inside the flag's own masked layer and is about the artwork —
- * keeping a saturated field from shouting, and tapering its head and foot. This one covers the
- * whole band, flag or no flag, and is now an *even* dark veil rather than a bright-through-the-
- * middle one:
+ * This is now the ONLY dark layer over the artwork — a second scrim used to live inside the
+ * flag's own masked layer as well, and the two compounded (alphas multiply, not add) into a
+ * flat shadow far heavier than either was tuned for alone. Removed; this one carries all of
+ * it now, covering the whole band, flag or no flag, as an *even* dark veil rather than a
+ * bright-through-the-middle one:
  *
  *  - ~0.46 at the top, behind the hamburger and the 34sp headline, where a flag's top stripe is
  *    at its brightest and least negotiable;
@@ -1928,15 +1938,15 @@ private val HeadlinePlateHeight = 84.dp
  *  city both read larger now — so each step is a few sp above the old ramp; it still steps down for
  *  a long pairing so the fixed plate is never overrun (the backstop past that is ellipsis). */
 private fun headlineFontFor(label: String): TextUnit = when {
-    label.length <= 13 -> 26.sp
-    label.length <= 19 -> 21.sp
-    label.length <= 26 -> 18.sp
-    else -> 15.sp
+    label.length <= 13 -> 24.sp
+    label.length <= 19 -> 20.sp
+    label.length <= 26 -> 17.sp
+    else -> 14.sp
 }
 
 /** The city line sits under the country name at a fixed, smaller step -- it never competes with
  *  the country for the ramp, so it stays legible even when the country name itself is long. */
-private val HeadlineCitySize = 14.sp
+private val HeadlineCitySize = 13.sp
 
 /** The left-to-right wipe when the name changes: the new label is revealed progressively across
  *  its glyphs rather than swapped or crossfaded. */
@@ -2327,8 +2337,9 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //   inset 0 3px 4px rgba(255,255,255,0.95)  ┐ Compose has no inset box-shadow, so these two
 //   inset 0 -10px 14px rgba(0,0,0,0.14)     ┘ are [PowerFaceSheen]: bright top rim, dark foot.
 
-/** The disc itself, inside [PowerSize]'s box — the rest of the box is the ring band. */
-private val PowerDiscSize = 118.dp
+/** The disc itself — now the same size as [PowerSize], since the button is one glass
+ *  circle rather than a small solid disc inside a separate glass ring band. */
+private val PowerDiscSize = PowerSize
 
 /** The ring's own weight, and how far outside the disc it is drawn.
  *
@@ -2375,6 +2386,7 @@ private fun PowerCircle(
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit,
+    hazeState: HazeState?,
     modifier: Modifier = Modifier,
 ) {
     val connected = phase == ConnPhase.CONNECTED
@@ -2468,8 +2480,11 @@ private fun PowerCircle(
                     ambientColor = HeroShadowAmbient,
                     spotColor = HeroShadowSpot,
                 )
-                .clip(CircleShape)
-                .background(PowerWellBg)
+                // The whole button is one real-blurred glass layer now — no solid teal
+                // core underneath — reusing [Glass.glassSurface] (same brush, border and
+                // inset-shadow as the auth screens), lighter-tinted than the auth default
+                // so it reads as clear glass over the flag rather than a muddy tint.
+                .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState, tintAlpha = 0.12f) } }
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2769,7 +2784,8 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-private val PowerWellBg = Color(0xFFF6F6F3)
+// No solid core color at all anymore -- [PowerCircle]'s disc is entirely the glass fill
+// from [Glass.glassSurface], so there is nothing to define here.
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
@@ -2872,6 +2888,7 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     onRetryIp: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -2904,6 +2921,26 @@ private fun BrowseCard(
     val frost = remember(density) { panelFrost(with(density) { PanelFrostFade.toPx() }) }
     val listState = rememberLazyListState()
     val reduce = rememberReduceMotion()
+    // The card's top edge and its own soft tint both key off connection phase — idle blue,
+    // [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — the same
+    // three colours the connect disc itself already uses, so the card reads as part of the
+    // same status rather than a decoration next to it.
+    val phaseColor by animateColorAsState(
+        targetValue = when (state.phase) {
+            ConnPhase.OFF -> RefAccent
+            ConnPhase.CONNECTING -> ConnectingBoltColor
+            ConnPhase.CONNECTED -> ConnectedBoltColor
+        },
+        animationSpec = motionSpec(reduce, 500),
+        label = "cardPhaseColor",
+    )
+    val phaseWash = remember(phaseColor) {
+        Brush.verticalGradient(
+            0.00f to phaseColor.copy(alpha = 0.10f),
+            0.35f to phaseColor.copy(alpha = 0.03f),
+            1.00f to Color.Transparent,
+        )
+    }
     // Scroll elevation: the divider under the card's head brightens and casts a soft shadow once
     // the list has scrolled off its first row — the standard "there is content under this edge"
     // cue. Read off [rememberLazyListState] and animated (honouring reduced motion).
@@ -2933,6 +2970,10 @@ private fun BrowseCard(
             // still what is behind the tab row — now behind cold glass instead of behind plain
             // dark. Order matters: fill, then wash, then the lit edges over both.
             .background(frost)
+            // The soft phase tint: a gentle colour wash over the frost, animated with
+            // [phaseColor] — this is what shifts the card's colour through the connect
+            // sequence rather than leaving it a fixed neutral.
+            .background(phaseWash)
             // A very fine noise-like grain, drawn as two overlapping low-alpha radial washes
             // offset from centre, gives the panel a touch of material texture instead of a flat
             // colour fill -- cheap to draw and reads as quality at a glance without costing a
@@ -2957,17 +2998,35 @@ private fun BrowseCard(
             }
             .drawBehind {
                 drawPanelSheen()
-                drawPanelTopEdge()
+                drawPanelTopEdge(phaseColor)
             }
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
         // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
-        // been removed. The band still sits *at the top* rather than below the well, and still
-        // reserves [CardTopRoom] for the connect disc's lower half, which docks in the centre.
+        // been removed. Now real glass ([CardTopRoom] tall) rather than the card's own
+        // fake fade/frost fill: a low-blur, near-untinted haze layer (see the tintAlpha/
+        // blurRadius below — deliberately much lighter than the connect button's) real-
+        // blurring the flag behind it, which is why [HeroBleed] was bumped to reach this
+        // far down. Same colour as the rest of the card, just blurred, not recoloured.
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(CardTopRoom),
+                .height(CardTopRoom)
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeChild(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = RefPanelBg,
+                                tints = listOf(HazeTint(Color.Black.copy(alpha = 0.03f))),
+                                blurRadius = 6.dp,
+                                noiseFactor = 0.08f,
+                            ),
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             Row(
                 Modifier
@@ -3019,7 +3078,7 @@ private fun BrowseCard(
                         )
                     }
                 }
-                itemsIndexed(servers, key = { _, cfg -> cfg.id }) { index, cfg ->
+                itemsIndexed(servers, key = { _, cfg -> cfg.id }) { _, cfg ->
                     val isActive = cfg.id == activeId
                     ServerRow(
                         title = state.rowTitle(cfg),
@@ -3027,7 +3086,6 @@ private fun BrowseCard(
                         countryCode = state.countryCodeFor(cfg),
                         pingMs = cfg.pingMs,
                         isActive = isActive,
-                        showDivider = index < servers.lastIndex,
                         onClick = { onSelectConfig(cfg) },
                     )
                 }
@@ -3102,16 +3160,11 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
 private val PanelFade = 30.dp
 
 /**
- * The dock well at the top of the browse card — the band of clear glass the connect disc's lower
- * half rests over.
- *
- * The disc is docked on the card's top edge again: its centre sits on the card's head ([heroHeight])
- * and its lower half overlaps down into the card. This well is that overlap depth plus a little air,
- * so the disc rests over empty glass and the card's own header row (the IP on the left, the
- * add/search controls on the right) sits *below* the disc's foot rather than colliding with it.
- * Sized off [PowerDiscSize] (the visible disc), not the full [PowerSize] touch box.
+ * Height of the card's masthead band (the search-toggle row) — no longer reserved for the
+ * connect disc's overlap (it's 72dp now, doesn't need one), but kept as a fixed band so it
+ * has a defined area to apply real glass to (see [BrowseCard]'s masthead Box).
  */
-private val CardTopRoom = PowerDiscSize / 2 + 28.dp
+private val CardTopRoom = 56.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
@@ -3220,53 +3273,42 @@ private fun DrawScope.drawPanelSheen() {
 }
 
 /**
- * The card's top edge and its two corner arcs.
+ * The card's top edge and its two corner arcs — a raised, lit rim rather than a recessed
+ * shadow. No dark inward band anymore: the edge reads as *catching* light, not as a lip
+ * carved into the page.
  *
- * 0.13 at the peak, up from 0.08 and originally 0.14. The 0.08 was tuned for an edge that was
- * *meant* to be hard to find, when the card's first 84dp were translucent and the join was
- * supposed to be a dissolve rather than a boundary. That turned out to be the whole reason the
- * tabs looked adrift above an empty region of flag: nothing on the screen said where the card
- * began. With [PanelFade] now a 30dp hairline, this edge is the thing that says it — bright
- * enough to be located at a glance, still short of the 0.14 border that the redesign removed.
- *
- * Icy rather than white, now that the pane under it is frosted: this is the lit edge of that
- * glass, and a neutral white one sat on top of the wash instead of belonging to it. The tint
- * is [RefFrost] carried most of the way to white, so the edge is still the brightest thing on
- * the card — it is just no longer a different temperature from it.
+ * The colour is [edgeColor], animated in [BrowseCard] off [HomeUiState.phase] — idle blue,
+ * [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — so the one
+ * edge does double duty as a status cue as well as the card's finish.
  */
-private fun DrawScope.drawPanelTopEdge() {
-    // Inset look: a dark shadow band falling INTO the card from its top edge (as if the
-    // card is a recess carved into the page), followed by a thin dark hairline stroke on
-    // the edge itself instead of the old bright highlight -- the reverse of a raised
-    // panel's lit rim.
-    val hairline = 1.dp.toPx()
+private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
     val radius = PanelCorner.toPx()
-    // A deeper, longer inward shadow so the card reads as a recess set into the page rather than a
-    // panel resting on it: darkest right at the lip, falling away over ~1.9× the corner radius. The
-    // extra reach and the stronger peak are what sell the inset — a short, faint band read as flat.
-    val shadowDepth = radius * 1.2f
-    clipRect(top = 0f, bottom = shadowDepth) {
+    val rimWidth = 1.4.dp.toPx()
+    // A soft glow just inside the rim, in the state colour, is what sells "raised" without
+    // a shadow: a highlight needs something slightly dimmer under it to read as depth, and
+    // a colour wash reads as light bouncing off the edge rather than as a shading trick.
+    val glowDepth = radius * 1.1f
+    clipRect(top = 0f, bottom = glowDepth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.Black.copy(alpha = 0.22f),
-                0.30f to Color.Black.copy(alpha = 0.10f),
-                0.65f to Color.Black.copy(alpha = 0.03f),
+                0.00f to edgeColor.copy(alpha = 0.20f),
+                0.35f to edgeColor.copy(alpha = 0.08f),
                 1.00f to Color.Transparent,
                 startY = 0f,
-                endY = shadowDepth,
+                endY = glowDepth,
             ),
             cornerRadius = CornerRadius(radius),
             size = size,
         )
     }
-    // Bright white rim — reads as a lit glass edge rather than a dark inset border.
-    val rimWidth = 1.2.dp.toPx()
+    // The rim itself: bright near-white at the very top, easing toward the state colour —
+    // a lit bevel rather than a flat painted line.
     clipRect(top = 0f, bottom = radius + rimWidth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to Color.White.copy(alpha = 0.70f),
-                0.50f to Color.White.copy(alpha = 0.30f),
-                1.00f to Color.White.copy(alpha = 0.08f),
+                0.00f to lerp(Color.White, edgeColor, 0.25f).copy(alpha = 0.85f),
+                0.50f to edgeColor.copy(alpha = 0.55f),
+                1.00f to edgeColor.copy(alpha = 0.18f),
             ),
             topLeft = Offset(rimWidth / 2f, rimWidth / 2f),
             size = Size(size.width - rimWidth, size.height - rimWidth),
@@ -3372,20 +3414,10 @@ private val SearchFieldStyle = TextStyle(
 )
 
 // ── Server list ───────────────────────────────────────────────────────────────
-// .server-row: a [RowFlagSize] circular flag, name over ping, three load bars, and a
-// hairline that starts past the flag ([DividerStart]) on every row but the last.
-//
-// The row is deliberately compact — 48dp against the 72dp it started at — because the
-// list is the part of this screen the user scrolls, and two more servers visible without
-// scrolling are worth more than the whitespace. Nothing was dropped to get there: every
-// field the row carried it still carries, at a size it can still be read at. What changed
-// is the flag (36 → 30 → 27dp), the vertical padding (12 → 9 → 6dp), the gap after the
-// flag (14 → 11dp) and a point off each of the two text sizes.
-//
-// 48dp is where the compaction stops, and it stops there deliberately: that is the
-// platform's minimum touch target, the row is a tap target across its whole width, and
-// the content now measures ~39dp, so [heightIn] is what sets the height rather than the
-// padding. Taking the row below it would look tighter and be measurably harder to hit.
+// .server-row: a [RowFlagSize] circular flag and the country name — no subtitle line,
+// no side margin. Rows used to sit in rounded cards with [ListPad] of side margin and a
+// custom-label subtitle under the name; per request the row is edge-to-edge (no left/right
+// border), left-aligned, and only the country name is written.
 @Composable
 private fun ServerRow(
     title: String,
@@ -3393,61 +3425,32 @@ private fun ServerRow(
     countryCode: String,
     pingMs: Int,
     isActive: Boolean,
-    showDivider: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            // The mockup has no selected state; the active server gets a faint accent-blue
-            // wash, and its title goes bold. There used to be a teal dot beside the name as
-            // well; it is gone, along with the row's `dotColor` parameter — with a tint and a
-            // weight already saying "this is the one", a third marker was just a speck. The
-            // wash is blue rather than plain white so the selection reads on-brand rather than
-            // as a generic highlight, and stays restrained enough not to compete with the row.
-            .background(if (isActive) RefAccent.copy(alpha = 0.06f) else Color.Transparent)
-            // The row is a full-width tap target and it keeps the platform's 48dp floor,
-            // which is the one dimension on this screen that is not a style decision. The
-            // compaction below takes the *padding* out and leaves the target alone: a 42dp
-            // list row would look tighter and be measurably harder to hit.
+            .padding(vertical = RowGap / 2)
+            // Active server keeps a faint accent-blue wash and a bold name; other rows sit
+            // on a faint lifted surface ([RefElev1]) — both now full-bleed, no side margin.
+            .background(if (isActive) RefAccent.copy(alpha = 0.12f) else RefElev1.copy(alpha = 0.55f))
             .heightIn(min = 48.dp)
             .clickable(onClickLabel = "Use $title", onClick = onClick)
-            .drawBehind {
-                if (showDivider) {
-                    val hairline = 1.dp.toPx()
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.09f),
-                        start = Offset(DividerStart.toPx(), size.height - hairline),
-                        end = Offset(size.width - ListPad.toPx(), size.height - hairline),
-                        strokeWidth = hairline,
-                    )
-                }
-            }
-            // 6dp of padding around a 27dp flag is 39dp of content, so the 48dp floor is
-            // what actually sets the row height now — see [heightIn] above. The padding is
-            // still here because it is what keeps the two text lines off the divider.
-            .padding(horizontal = ListPad, vertical = 6.dp),
+            .padding(horizontal = ListPad, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CountryFlagBadge(countryCode, RowFlagSize)
-        Spacer(Modifier.width(12.dp))              // .server-row gap (snapped to the 4dp grid, was 11dp)
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontSize = TypeBody.first,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
-                color = RefTextHi,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                fontSize = TypeCaption.first,
-                color = RefTextLow,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title,
+            fontSize = TypeBody.first,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
+            color = RefTextHi,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.weight(1f),
+        )
         Spacer(Modifier.width(12.dp))
         LoadBars(pingMs)
     }
