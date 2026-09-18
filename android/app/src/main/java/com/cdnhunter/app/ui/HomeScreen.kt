@@ -414,7 +414,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 8.dp
+private val HeroBleed = 40.dp
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -1435,11 +1435,11 @@ internal fun HomeScreen(
         // The public IP and the list's add/search controls all live in the card's own top row now
         // (see [BrowseCard]) — the IP on the left where the "+" button used to be, search on the right.
 
-        // The connect disc, docked INSIDE the hero rather than on the seam: its foot sits
-        // [HeroDockWell] above [heroHeight], entirely over the flag rather than straddling the
-        // card's edge. Drawn after the card, so it is the topmost layer. The mode is still
-        // switched by a vertical drag on it (up = Smart, down = Manual), plus the two named
-        // accessibility actions.
+        // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
+        // foot, which is the browse card's top edge — so its lower half rests on the card's head
+        // (a dock well, [CardTopRoom]) and its upper half floats over the flag. Drawn after the
+        // card, so it is the topmost layer. The mode is still switched by a vertical drag on it
+        // (up = Smart, down = Manual), plus the two named accessibility actions.
         PowerCircle(
             mode = state.mode,
             phase = state.phase,
@@ -1450,7 +1450,7 @@ internal fun HomeScreen(
             hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = (heroHeight - PowerSize - 24.dp).coerceAtLeast(0.dp)),
+                .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
         )
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
@@ -1686,7 +1686,7 @@ private val HeroVignetteStops = listOf(
  *  country sits top-right in [CountryHeadline] and the public IP is an overlay card drawn by
  *  [HomeScreen] over the lower-left of the flag. So this column's middle is bare artwork now,
  *  and this token is how much of it shows above the disc's dock well. */
-private val HeroFlagSpace = 20.dp
+private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. */
@@ -1695,12 +1695,13 @@ private val HeroTopGap = 12.dp       // snapped to the 4dp grid, was 10dp
 /**
  * The flag the hero reserves below the top row for the docked connect disc's *upper half*.
  *
- * The disc lives entirely inside the hero now — [HomeScreen] docks its foot [HeroDockWell] above
- * [heroHeight], not straddling the seam with the card below. This spacer reserves that room so
- * the flag has enough height above the country/city text for the whole disc plus a 24dp margin,
- * instead of only its upper half.
+ * The disc no longer lives in this column — [HomeScreen] draws it as an overlay whose centre
+ * lands on this column's measured foot, i.e. the browse card's top edge. So the disc straddles
+ * the seam: its lower half sits on the card, its upper half floats over the flag. This spacer is
+ * that upper half — [PowerSize] / 2 — so the disc has flag around its top and the card begins
+ * exactly under its equator.
  */
-private val HeroDockWell = PowerSize + 24.dp
+private val HeroDockWell = PowerSize / 2
 
 @Composable
 private fun Header(
@@ -3162,12 +3163,16 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
 private val PanelFade = 30.dp
 
 /**
- * The card's own top clearance now that the disc lives entirely inside the hero rather than
- * straddling the seam — no disc overlap to reserve room for, just enough air so the card's own
- * header row (the IP on the left, the add/search controls on the right) doesn't feel like it
- * starts right at the flag's edge.
+ * The dock well at the top of the browse card — the band of clear glass the connect disc's lower
+ * half rests over.
+ *
+ * The disc is docked on the card's top edge again: its centre sits on the card's head ([heroHeight])
+ * and its lower half overlaps down into the card. This well is that overlap depth plus a little air,
+ * so the disc rests over empty glass and the card's own header row (the IP on the left, the
+ * add/search controls on the right) sits *below* the disc's foot rather than colliding with it.
+ * Sized off [PowerDiscSize] (the visible disc), not the full [PowerSize] touch box.
  */
-private val CardTopRoom = 52.dp
+private val CardTopRoom = PowerDiscSize / 2 + 28.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
