@@ -414,7 +414,8 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 40.dp
+private val HeroBleed = 64.dp   // bumped from 40dp — the masthead glass band (see [CardTopRoom])
+                                 // needs real flag drawn behind it too, not just the seam.
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -1428,6 +1429,7 @@ internal fun HomeScreen(
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
+                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -2884,6 +2886,7 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     onRetryIp: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -2998,12 +3001,30 @@ private fun BrowseCard(
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
         // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
-        // been removed. The band still sits *at the top* rather than below the well, and still
-        // reserves [CardTopRoom] for the connect disc's lower half, which docks in the centre.
+        // been removed. Now real glass ([CardTopRoom] tall) rather than the card's own
+        // fake fade/frost fill: a low-blur, near-untinted haze layer (see the tintAlpha/
+        // blurRadius below — deliberately much lighter than the connect button's) real-
+        // blurring the flag behind it, which is why [HeroBleed] was bumped to reach this
+        // far down. Same colour as the rest of the card, just blurred, not recoloured.
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(CardTopRoom),
+                .height(CardTopRoom)
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeChild(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = RefPanelBg,
+                                tints = listOf(HazeTint(Color.Black.copy(alpha = 0.03f))),
+                                blurRadius = 6.dp,
+                                noiseFactor = 0.08f,
+                            ),
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             Row(
                 Modifier
@@ -3137,11 +3158,11 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
 private val PanelFade = 30.dp
 
 /**
- * Removed per request — the button is small enough now (72dp) that its overlap into the
- * card's top edge no longer needs a reserved dock well; the card's header row starts
- * right at the top instead.
+ * Height of the card's masthead band (the search-toggle row) — no longer reserved for the
+ * connect disc's overlap (it's 72dp now, doesn't need one), but kept as a fixed band so it
+ * has a defined area to apply real glass to (see [BrowseCard]'s masthead Box).
  */
-private val CardTopRoom = 0.dp
+private val CardTopRoom = 56.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
