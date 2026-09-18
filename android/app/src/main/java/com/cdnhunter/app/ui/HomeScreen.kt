@@ -98,6 +98,8 @@ import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
@@ -184,6 +186,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
+import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -469,13 +472,8 @@ private val ListPad = 16.dp          // .server-row / .tab-row horizontal paddin
  * being identifiable.
  */
 private val RowFlagSize = 27.dp
-/**
- * Corner radius for each server row now that rows are individual cards rather than a
- * divided list — see [ServerRow].
- */
-private val RowCorner = 14.dp
-/** Gap between server cards, replacing the old hairline divider. */
-private val RowGap = 4.dp
+// RowCorner / RowGap removed: rows are back to a hairline-divided list (Windscribe-style),
+// not individual rounded cards with a gap between them — see [ServerRow].
 
 private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
@@ -2920,6 +2918,12 @@ private fun BrowseCard(
     val fade = remember(density) { panelTopFade(with(density) { PanelFade.toPx() }) }
     val frost = remember(density) { panelFrost(with(density) { PanelFrostFade.toPx() }) }
     val listState = rememberLazyListState()
+    // Favorites: [AppSettings] already persists a bare set of server ids — this is that
+    // store finally surfaced in the row itself, via the heart. Loaded once per composition
+    // of the card and kept in a local snapshot state so toggling one heart recomposes only
+    // that row's derived membership, not a fresh SharedPreferences read on every row.
+    val favContext = LocalContext.current
+    var favoriteIds by remember { mutableStateOf(AppSettings.favoriteServers(favContext)) }
     val reduce = rememberReduceMotion()
     // The card's top edge and its own soft tint both key off connection phase — idle blue,
     // [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — the same
@@ -3086,6 +3090,11 @@ private fun BrowseCard(
                         countryCode = state.countryCodeFor(cfg),
                         pingMs = cfg.pingMs,
                         isActive = isActive,
+                        isFavorite = cfg.id in favoriteIds,
+                        onToggleFavorite = {
+                            favoriteIds = if (cfg.id in favoriteIds) favoriteIds - cfg.id else favoriteIds + cfg.id
+                            AppSettings.setFavoriteServers(favContext, favoriteIds)
+                        },
                         onClick = { onSelectConfig(cfg) },
                     )
                 }
@@ -3414,10 +3423,10 @@ private val SearchFieldStyle = TextStyle(
 )
 
 // ── Server list ───────────────────────────────────────────────────────────────
-// .server-row: a [RowFlagSize] circular flag and the country name — no subtitle line,
-// no side margin. Rows used to sit in rounded cards with [ListPad] of side margin and a
-// custom-label subtitle under the name; per request the row is edge-to-edge (no left/right
-// border), left-aligned, and only the country name is written.
+// .server-row, Windscribe-style: a [RowFlagSize] circular flag, the country name, an
+// optional ping (bars + ms, only when measured), and a favourite heart at the trailing
+// edge. No per-row background wash — a hairline divider between rows and a slim leading
+// accent bar on the active one do that job instead. See [ServerRow] below.
 @Composable
 private fun ServerRow(
     title: String,
@@ -3425,17 +3434,35 @@ private fun ServerRow(
     countryCode: String,
     pingMs: Int,
     isActive: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
+    // Windscribe-style row: transparent, no per-row colour wash — a hairline divider is
+    // what separates rows, and a slim leading accent bar (not a full-row tint) is what
+    // marks the active one. Ping is bars-over-number, right-aligned, and shown only when
+    // there is a real measurement; a favourite heart sits at the very trailing edge,
+    // wired to the same [AppSettings] store the old Settings screen already persisted to
+    // but never surfaced in this list.
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = RowGap / 2)
-            // Active server keeps a faint accent-blue wash and a bold name; other rows sit
-            // on a faint lifted surface ([RefElev1]) — both now full-bleed, no side margin.
-            .background(if (isActive) RefAccent.copy(alpha = 0.12f) else RefElev1.copy(alpha = 0.55f))
             .heightIn(min = 48.dp)
             .clickable(onClickLabel = "Use $title", onClick = onClick)
+            .drawBehind {
+                if (isActive) {
+                    drawRect(
+                        color = RefAccent,
+                        size = Size(3.dp.toPx(), size.height),
+                    )
+                }
+                drawLine(
+                    color = RefBorder,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
             .padding(horizontal = ListPad, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3452,7 +3479,22 @@ private fun ServerRow(
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
-        LoadBars(pingMs)
+        if (pingMs >= 0) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                LoadBars(pingMs)
+                Spacer(Modifier.height(2.dp))
+                Text("${pingMs}ms", fontSize = TypeCaption.first, color = RefTextLow)
+            }
+            Spacer(Modifier.width(12.dp))
+        }
+        Icon(
+            if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            contentDescription = if (isFavorite) "Remove $title from favorites" else "Add $title to favorites",
+            tint = if (isFavorite) RefAccent else RefTextLow,
+            modifier = Modifier
+                .size(22.dp)
+                .clickable(onClickLabel = "Toggle favorite", onClick = onToggleFavorite),
+        )
     }
 }
 
