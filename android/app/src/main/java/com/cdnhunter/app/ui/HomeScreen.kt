@@ -454,7 +454,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * leaves the headline above it as the largest *text*, which is the order the hero is
  * built to be read in.
  */
-private val PowerSize = 140.dp
+private val PowerSize = 72.dp   // shrunk from 140dp — still clears the 48dp touch-target floor
 private val PanelCorner = 24.dp      // .browse-card border-radius (was 28dp — closer to CardCorner for harmony)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -1395,8 +1395,8 @@ internal fun HomeScreen(
         if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
     }
 
-    // Blur source for the connect disc's glass rings ([PowerGlassRings]): the flag artwork
-    // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the rings
+    // Blur source for the connect button's glass fill: the flag artwork
+    // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the button
     // can real-blur it, exactly the technique [Glass.glassSurface] uses on the auth screens.
     val hazeState = remember { HazeState() }
 
@@ -2333,11 +2333,9 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //   inset 0 3px 4px rgba(255,255,255,0.95)  ┐ Compose has no inset box-shadow, so these two
 //   inset 0 -10px 14px rgba(0,0,0,0.14)     ┘ are [PowerFaceSheen]: bright top rim, dark foot.
 
-/** The disc itself, inside [PowerSize]'s box — the rest of the box is the ring band. */
-// Shrunk from 118dp so the glass ring band ([PowerGlassRings]) has real room to read as
-// layered glass rather than a thin 11dp seam — the disc is now the one small solid part
-// of the button, everything around it out to [PowerSize] is glass.
-private val PowerDiscSize = 84.dp
+/** The disc itself — now the same size as [PowerSize], since the button is one glass
+ *  circle rather than a small solid disc inside a separate glass ring band. */
+private val PowerDiscSize = PowerSize
 
 /** The ring's own weight, and how far outside the disc it is drawn.
  *
@@ -2375,24 +2373,6 @@ private val PowerPressElevation = 9.dp
 
 /** The hairline on the disc's own edge. See [PowerDiscRim]. */
 private val PowerRimStroke = 1.dp
-
-/**
- * A single glass ring filling the whole band between [PowerDiscSize] and [PowerSize] —
- * one real-blurred layer rather than three stacked ones, which is what was reading as a
- * muddy tint instead of clear glass (each ring re-tinted the same flag underneath it, so
- * the darkening compounded three times over). Reuses [Glass.glassSurface] (same brush,
- * border and inset-shadow as the auth screens) circular and real-blurring the flag
- * artwork behind it through [hazeState], with a much lighter tint than the auth default —
- * see [Glass.glassSurface]'s tintAlpha doc.
- */
-@Composable
-private fun PowerGlassRings(hazeState: HazeState?) {
-    Box(
-        Modifier
-            .size(PowerSize)
-            .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState, tintAlpha = 0.12f) } },
-    )
-}
 
 @Composable
 private fun PowerCircle(
@@ -2483,10 +2463,6 @@ private fun PowerCircle(
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // A single glass ring, real-blurring the flag behind the button via [hazeState] —
-        // the same [Glass.glassSurface] technique the auth screens use, just circular and
-        // lighter-tinted. Drawn first so the disc sits on top of it.
-        PowerGlassRings(hazeState)
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
         Box(
@@ -2500,8 +2476,11 @@ private fun PowerCircle(
                     ambientColor = HeroShadowAmbient,
                     spotColor = HeroShadowSpot,
                 )
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(PowerCoreTop, PowerCoreBottom)))
+                // The whole button is one real-blurred glass layer now — no solid teal
+                // core underneath — reusing [Glass.glassSurface] (same brush, border and
+                // inset-shadow as the auth screens), lighter-tinted than the auth default
+                // so it reads as clear glass over the flag rather than a muddy tint.
+                .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState, tintAlpha = 0.12f) } }
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2801,12 +2780,8 @@ private fun PowerRing(phase: ConnPhase, modifier: Modifier = Modifier) {
 // The inset disc's flat base colour -- a touch lighter than the panel it sits in so the
 // carved well still reads against the background, with the dark/light arcs doing the
 // actual depth work. No white "face" anymore: the disc is not a raised object.
-// The disc's core is now a small teal glass-free puck — [AppColors.AccentBright] to
-// [AppColors.Accent], the same tokens the auth screens' glow uses — instead of the old
-// flat off-white [PowerWellBg]. It sits inside the glass ring band drawn by
-// [PowerGlassRings], so the only non-glass part of the button is this small core.
-private val PowerCoreTop = AppColors.AccentBright
-private val PowerCoreBottom = AppColors.Accent
+// No solid core color at all anymore -- [PowerCircle]'s disc is entirely the glass fill
+// from [Glass.glassSurface], so there is nothing to define here.
 
 // The inner rim of the well: a hairline just inside the disc's own edge, dark enough to
 // read as the lip of a carved hole rather than a drawn border.
@@ -3162,16 +3137,11 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
 private val PanelFade = 30.dp
 
 /**
- * The dock well at the top of the browse card — the band of clear glass the connect disc's lower
- * half rests over.
- *
- * The disc is docked on the card's top edge again: its centre sits on the card's head ([heroHeight])
- * and its lower half overlaps down into the card. This well is that overlap depth plus a little air,
- * so the disc rests over empty glass and the card's own header row (the IP on the left, the
- * add/search controls on the right) sits *below* the disc's foot rather than colliding with it.
- * Sized off [PowerDiscSize] (the visible disc), not the full [PowerSize] touch box.
+ * Removed per request — the button is small enough now (72dp) that its overlap into the
+ * card's top edge no longer needs a reserved dock well; the card's header row starts
+ * right at the top instead.
  */
-private val CardTopRoom = PowerDiscSize / 2 + 28.dp
+private val CardTopRoom = 0.dp
 
 /**
  * How deep the icy wash over the card runs — a good deal further than [PanelFade].
@@ -3421,25 +3391,10 @@ private val SearchFieldStyle = TextStyle(
 )
 
 // ── Server list ───────────────────────────────────────────────────────────────
-// .server-row: a [RowFlagSize] circular flag, name over ping, three load bars.
-//
-// Rows used to be separated by a hairline divider; that read as a bright white seam on
-// the dark list, so each row is now its own rounded card ([RowCorner]) sitting on a
-// slightly lifted surface ([RefElev1]), with [RowGap] of breathing room between cards
-// instead of a line. The active server keeps its accent wash, just warmer now that it
-// sits on a card rather than flat background.
-//
-// The row is deliberately compact — 48dp against the 72dp it started at — because the
-// list is the part of this screen the user scrolls, and two more servers visible without
-// scrolling are worth more than the whitespace. Nothing was dropped to get there: every
-// field the row carried it still carries, at a size it can still be read at. What changed
-// is the flag (36 → 30 → 27dp), the vertical padding (12 → 9 → 6dp), the gap after the
-// flag (14 → 11dp) and a point off each of the two text sizes.
-//
-// 48dp is where the compaction stops, and it stops there deliberately: that is the
-// platform's minimum touch target, the row is a tap target across its whole width, and
-// the content now measures ~39dp, so [heightIn] is what sets the height rather than the
-// padding. Taking the row below it would look tighter and be measurably harder to hit.
+// .server-row: a [RowFlagSize] circular flag and the country name — no subtitle line,
+// no side margin. Rows used to sit in rounded cards with [ListPad] of side margin and a
+// custom-label subtitle under the name; per request the row is edge-to-edge (no left/right
+// border), left-aligned, and only the country name is written.
 @Composable
 private fun ServerRow(
     title: String,
@@ -3452,48 +3407,27 @@ private fun ServerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = ListPad, vertical = RowGap / 2)
-            .clip(RoundedCornerShape(RowCorner))
-            // The mockup has no selected state; the active server gets a faint accent-blue
-            // wash, and its title goes bold. There used to be a teal dot beside the name as
-            // well; it is gone, along with the row's `dotColor` parameter — with a tint and a
-            // weight already saying "this is the one", a third marker was just a speck. The
-            // wash is blue rather than plain white so the selection reads on-brand rather than
-            // as a generic highlight, and stays restrained enough not to compete with the row.
-            // Non-active rows get a faint lifted surface ([RefElev1]) instead of the old
-            // hairline, so cards read as separate without a bright line between them.
+            .padding(vertical = RowGap / 2)
+            // Active server keeps a faint accent-blue wash and a bold name; other rows sit
+            // on a faint lifted surface ([RefElev1]) — both now full-bleed, no side margin.
             .background(if (isActive) RefAccent.copy(alpha = 0.12f) else RefElev1.copy(alpha = 0.55f))
-            // The row is a full-width tap target and it keeps the platform's 48dp floor,
-            // which is the one dimension on this screen that is not a style decision. The
-            // compaction below takes the *padding* out and leaves the target alone: a 42dp
-            // list row would look tighter and be measurably harder to hit.
             .heightIn(min = 48.dp)
             .clickable(onClickLabel = "Use $title", onClick = onClick)
-            // 8dp of padding around a 27dp flag is 43dp of content, close enough to the 48dp
-            // floor that [heightIn] above still sets the row height, with a touch more air
-            // between rows than the old 6dp gave — see [heightIn] above.
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = ListPad, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CountryFlagBadge(countryCode, RowFlagSize)
-        Spacer(Modifier.width(12.dp))              // .server-row gap (snapped to the 4dp grid, was 11dp)
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontSize = TypeBody.first,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
-                color = RefTextHi,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                fontSize = TypeCaption.first,
-                color = RefTextLow,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title,
+            fontSize = TypeBody.first,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
+            color = RefTextHi,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.weight(1f),
+        )
         Spacer(Modifier.width(12.dp))
         LoadBars(pingMs)
     }
