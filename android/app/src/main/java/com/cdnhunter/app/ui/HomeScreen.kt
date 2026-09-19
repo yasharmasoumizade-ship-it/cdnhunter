@@ -2943,9 +2943,9 @@ private fun BrowseCard(
             pullState.endRefresh()
         }
     }
-    val density = LocalDensity.current
-    val fade = remember(density) { panelTopFade(with(density) { PanelFade.toPx() }) }
-    val frost = remember(density) { panelFrost(with(density) { PanelFrostFade.toPx() }) }
+    // [LocalDensity] used to feed a fade/frost gradient here; both are gone (see the
+    // Column's own background comment below — the card is a flat fill now), so nothing in
+    // this function needs it any more.
     val listState = rememberLazyListState()
     // Favorites: [AppSettings] already persists a bare set of server ids — this is that
     // store finally surfaced in the row itself, via the heart. Loaded once per composition
@@ -2967,13 +2967,9 @@ private fun BrowseCard(
         animationSpec = motionSpec(reduce, 500),
         label = "cardPhaseColor",
     )
-    val phaseWash = remember(phaseColor) {
-        Brush.verticalGradient(
-            0.00f to phaseColor.copy(alpha = 0.10f),
-            0.35f to phaseColor.copy(alpha = 0.03f),
-            1.00f to Color.Transparent,
-        )
-    }
+    // phaseColor still drives the thin top-edge highlight ([drawPanelTopEdge]) below; the
+    // full-card colour wash it used to also drive ([phaseWash]) is gone along with the
+    // fade/frost fill — see the Column's background comment.
     // Scroll elevation: the divider under the card's head brightens and casts a soft shadow once
     // the list has scrolled off its first row — the standard "there is content under this edge"
     // cue. Read off [rememberLazyListState] and animated (honouring reduced motion).
@@ -2991,22 +2987,13 @@ private fun BrowseCard(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = PanelCorner, topEnd = PanelCorner))
-            // The card's own fill is a gradient now, not [RefBg] flat: translucent at its
-            // top edge and opaque by [PanelFade] down. That is what merges it with the
-            // hero. The backdrop above is drawn [HeroBleed] taller than the hero's rows, so
-            // what is behind that first [PanelFade] is the flag and its horizon light — and
-            // because the fill lets them through, the card's edge sits *in* the artwork
-            // instead of starting below it. There is no gap and no visible join: the
-            // brightest part of the transition is the light itself.
-            .background(fade)
-            // ...and the frost sits *over* that fill rather than replacing it, so the flag is
-            // still what is behind the tab row — now behind cold glass instead of behind plain
-            // dark. Order matters: fill, then wash, then the lit edges over both.
-            .background(frost)
-            // The soft phase tint: a gentle colour wash over the frost, animated with
-            // [phaseColor] — this is what shifts the card's colour through the connect
-            // sequence rather than leaving it a fixed neutral.
-            .background(phaseWash)
+            // Flat, single-colour fill top to bottom, on request: the fade/frost/phase-tint
+            // gradient that used to live here assumed the flag showed through the card's top
+            // edge (see the old docs on [panelTopFade]/[panelFrost]), which stopped being true
+            // once the flag became its own separate floating card with a gap to this one —
+            // nothing colourful sits behind this card's top edge any more, so the gradient
+            // was just a stray tinted band that didn't match the rest of the list.
+            .background(RefPanelBg)
             // A very fine noise-like grain, drawn as two overlapping low-alpha radial washes
             // offset from centre, gives the panel a touch of material texture instead of a flat
             // colour fill -- cheap to draw and reads as quality at a glance without costing a
@@ -3185,17 +3172,11 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * How far down the browse card the hero's artwork and light are still allowed through.
- *
- * 30dp, down from 84 — this is the number that fixed the "card sits too low" complaint that two
- * rounds of spacer tightening could not. A card whose first 84dp are translucent, starting at 62%
- * opacity, has no visible top edge: the eye reads the card as beginning wherever the paint finally
- * looks solid, some 80dp below the actual edge. The spacers were already tight; the *edge* was
- * missing. 30dp still dissolves the join over a hairline rather than over a chunk of layout, and
- * starts at 0.78 — see [panelTopFade] and [drawPanelTopEdge].
- */
-private val PanelFade = 30.dp
+// PanelFade removed: it sized the fade/frost gradient that used to let the flag show
+// through the browse card's top edge. That gradient is gone (see [BrowseCard]'s Column
+// background — flat [RefPanelBg] fill now), since the flag stopped being behind this card
+// at all once it became its own separate floating card. [drawPanelTopEdge] no longer
+// depends on this value; its own comment still mentions the old 0.78 stop for history.
 
 /**
  * Height of the card's masthead band (the search-toggle row) — no longer reserved for the
@@ -3204,16 +3185,9 @@ private val PanelFade = 30.dp
  */
 private val CardTopRoom = 56.dp
 
-/**
- * How deep the icy wash over the card runs — a good deal further than [PanelFade].
- *
- * The two describe different things and are deliberately not the same number. [PanelFade] is
- * where the artwork behind the card stops coming through; this is how far the glass itself
- * appears to extend. Frost that ended exactly where the artwork does would draw a line across
- * the card at the one place the card is trying not to have one, so the wash carries on past
- * it, into the rows, and is under a hundredth of alpha by the time it gets there.
- */
-private val PanelFrostFade = 340.dp
+// PanelFrostFade removed alongside [panelFrost] itself — the icy-glass wash it sized is
+// gone now that the card is a flat fill; see the note above [CardTopRoom].
+
 
 /** How far down the card's top edge the specular sweep in [drawPanelSheen] reaches.
  *
@@ -3222,76 +3196,12 @@ private val PanelFrostFade = 340.dp
  *  gradient in the list instead. */
 private val PanelSheenDepth = 48.dp
 
-/**
- * The browse card's fill: translucent [RefBg] at its top edge, nearly opaque by [heightPx]
- * down — and *nearly* is deliberate.
- *
- * Anchored in pixels with an explicit `startY`/`endY` rather than in fractions, because the
- * card's height is whatever is left of the screen after the hero — a fractional stop would
- * put the fade at a different place on every device and inside the list on a tall one.
- * [TileMode.Clamp] is what holds the end value all the way to the foot.
- *
- * It starts at 0.78 rather than at nothing, and rather than at the 0.62 it started at before.
- * Fully transparent would be a prettier merge and a card with no visible beginning — which is
- * exactly the bug this round is fixing: at 0.62 over 84dp the top edge could not be located by
- * eye, so the tab row above it looked like it was floating in open artwork instead of sitting
- * on the card. 0.78 over [PanelFade]'s 30dp reads as an edge on the first pixel and still lets
- * the flag through it.
- *
- * It ends at 0.94 rather than at 1.0 because the flag is the whole screen's background now
- * (see [HeroBackdrop]) and an opaque card would be a lid over the bottom two thirds of it —
- * the artwork would still technically reach every edge and the user would still see it stop
- * at the top of the list. 0.94 over the flag's own artwork is a hint of
- * the country's colour behind the rows, worth a percent or two of luminance: every row's own
- * fill and every label on it are unchanged in contrast terms, and the page no longer has a
- * horizon across it.
- *
- * The base is [RefPanelBg], a colder near-black than the page's [RefBg], which is the first
- * half of the frost — see [panelFrost] for the rest, and for why none of this is a blur.
- */
-private fun panelTopFade(heightPx: Float): Brush = Brush.verticalGradient(
-    // Starts near-transparent so the flag shows through the card's top edge,
-    // then ramps quickly to opaque so the effect stays contained to the top band.
-    0.00f to RefPanelBg.copy(alpha = 0.10f),
-    0.18f to RefPanelBg.copy(alpha = 0.55f),
-    0.38f to RefPanelBg.copy(alpha = 0.88f),
-    0.55f to RefPanelBg.copy(alpha = 0.97f),
-    1.00f to RefPanelBg.copy(alpha = 1.00f),
-    startY = 0f,
-    endY = heightPx,
-    tileMode = TileMode.Clamp,
-)
-
-/**
- * The frosted-glass wash over the browse card: an icy blue at its strongest along the card's
- * top edge, gone by [heightPx] down.
- *
- * There is no blur here, and that is a decision rather than a limitation.
- * [androidx.compose.ui.draw.blur] is a per-frame offscreen render pass; this card is the
- * thing the user scrolls a list inside; and what it would blur is flag artwork already dimmed
- * to a few percent of luminance behind it — a lot of GPU work for an effect nothing behind
- * the glass is sharp enough to show. What reads as frost at this scale is the *colour*: cold
- * light collecting at the edge of the pane and falling off into its body. So the card gets a
- * colder base ([RefPanelBg], under [panelTopFade]), this wash, and the specular sweep in
- * [drawPanelSheen] — which together look like a frosted pane and cost three gradients.
- *
- * Six eased stops for a fall-off spanning about 0.15 of alpha: on a near-black panel at 8-bit
- * depth a three-stop version of this bands visibly, and the bands land across the tab row
- * where they are hardest to miss. The last two are deliberately close together — the tail is
- * where a linear ramp shows its seam against the flat panel below it.
- *
- * Anchored in pixels like [panelTopFade] and for the same reason: the card's height is
- * whatever the hero leaves it, so a fractional stop would put the frost's edge somewhere
- * different on every device.
- */
-private fun panelFrost(heightPx: Float): Brush = Brush.verticalGradient(
-    0.00f to RefFrost.copy(alpha = 0.04f),
-    0.30f to RefFrost.copy(alpha = 0.02f),
-    1.00f to Color.Transparent,
-    startY = 0f,
-    endY = heightPx,
-    tileMode = TileMode.Clamp,
-)
+// panelTopFade / panelFrost removed: both built the gradient that used to let the flag
+// show through the browse card's top edge (translucent [RefPanelBg] fading to opaque, plus
+// an icy [RefFrost] wash over it). Gone along with the fill they backed — see the comment
+// on [BrowseCard]'s Column background — now that the flag is its own separate floating
+// card rather than something sitting behind this one. [drawPanelSheen] and
+// [drawPanelTopEdge] below still carry the card's top-edge highlight on their own.
 
 /**
  * The highlight along the top of the frosted pane: a faint white bloom under the card's own
