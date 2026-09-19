@@ -44,10 +44,11 @@ package com.cdnhunter.app.ui
 // sources onto the power control at a few percent, as static gradient brushes rather than
 // [Modifier.blur], white idle and blue connected.
 //
-// There is no green here. Connected is one colour, [RefLive], stated in four places: the
-// headline ink, the power ring, the power mark and the usage ring's accent. No ON/OFF pill and no
-// pending state — the screen is either connected or it isn't. That teal is the header's ink and
-// nothing below it; the top bar's glyphs are navigation, not state, and stay white either way.
+// Connected is one colour, [RefLive] — now a refined green rather than the teal this
+// comment used to describe — stated in four places: the headline ink, the power ring, the
+// power mark and the usage ring's accent. No ON/OFF pill and no pending state — the screen
+// is either connected or it isn't. That green is the header's ink and nothing below it;
+// the top bar's glyphs are navigation, not state, and stay white either way.
 //
 // All motion respects the system's "remove animations" setting (see [rememberReduceMotion]).
 
@@ -225,8 +226,13 @@ private val TypeSubtitle = 16.sp   to FontWeight.SemiBold  // usage card title, 
 private val TypeTitle = 20.sp      to FontWeight.SemiBold  // dialog/sheet titles
 private val TypeHeadline = 26.sp   to FontWeight.Bold      // the country name
 
-// ── Palette — the mockup's :root custom properties, verbatim ───────────────────
-private val RefBg = Color(0xFF0A0B0F)          // --bg (canonical, matches Auth)
+// ── Palette — navy/blue/green, our own tokens, Windscribe-directed ─────────────
+// Shifted off the old neutral-grey slate toward the dark-navy + saturated-blue + green
+// language actual Windscribe (github.com/Windscribe/Android-App, mobile module) uses —
+// midnightNavy/primaryBlue/mintGreen in their AppColors.kt — but re-tuned as our own
+// values rather than their literal hex, and kept inside this file's own token names so
+// the rest of the file (which reasons about "RefBg", "RefAccent" etc.) needs no rewiring.
+private val RefBg = Color(0xFF070B12)          // was a neutral #0A0B0F; now navy-black
 
 /**
  * The browse card's own base: the same luminance as [RefBg], a degree or two colder.
@@ -236,7 +242,7 @@ private val RefBg = Color(0xFF0A0B0F)          // --bg (canonical, matches Auth)
  * over the whole of its height — and at this distance from [RefBg] nothing about it is
  * nameable as a colour, which is the point.
  */
-private val RefPanelBg = Color(0xFF020305)
+private val RefPanelBg = Color(0xFF01030A)
 
 /**
  * The frost's colour: a pale icy blue, used only in [panelFrost] and never at any real
@@ -289,9 +295,9 @@ private val heroEdge = Brush.verticalGradient(
     0.62f to Color.White.copy(alpha = 0.03f),
     1.00f to Color.Black.copy(alpha = 0.10f),
 )
-private val RefElev1 = Color(0xFF0F1116)       // --bg-elev-1
-private val RefElev2 = Color(0xFF15171E)       // --bg-elev-2
-private val RefBorder = Color(0xFF23262F)      // --border
+private val RefElev1 = Color(0xFF0D131F)       // --bg-elev-1 (navy-tinted, was neutral #0F1116)
+private val RefElev2 = Color(0xFF121A28)       // --bg-elev-2 (navy-tinted, was neutral #15171E)
+private val RefBorder = Color(0xFF232C3D)      // --border (navy-tinted, was neutral #23262F)
 private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
 private val RefTextMid = Color(0xFF9BA0AC)     // --text-mid
 private val RefTextLow = Color(0xFF7A8090)     // --text-low (bumped from #656B78 for contrast)
@@ -325,20 +331,16 @@ private val HeadlineInkShadow = Shadow(
     offset = Offset(0f, 3f),
     blurRadius = 14f,
 )
-private val RefAccent = Color(0xFF3B82F6)      // --accent (canonical, matches Auth)
-private val RefTeal = Color(0xFF35D6B8)        // --teal
+private val RefAccent = Color(0xFF1E74FF)      // --accent — more saturated blue, Windscribe-directed (was #3B82F6)
 /**
- * The connected colour: a deep, refined teal. There is no green on this screen.
- *
- * The mockup's `--green` (#34D17A) is gone entirely — at 118dp of lit ring plus a crown
- * wash it read as a highlighter rather than as a state, and against a
- * flag it turned every country into a swamp. This is [RefTeal]'s hue held a little deeper
- * and a shade less bright, which still clears 4.5:1 on [RefBg] for the ring and the
- * caption but sits back into the page instead of shouting off it. Deliberately the same
- * family as the usage ring's accent, so "live" is one colour everywhere on the screen
- * rather than two.
+ * The connected/"good" colour: green, on request — a reversal of this file's earlier
+ * "no green here" rule (see the note this replaces). Real Windscribe uses a neon green
+ * (mintGreen/neonGreen, ~#55FF8A) for exactly this state; this is our own, deliberately
+ * a shade deeper and less saturated than that, so it still clears contrast on [RefBg]
+ * without the "highlighter on a flag" problem the earlier teal was chosen to avoid —
+ * same worry, different colour, tuned down rather than avoided outright this time.
  */
-private val RefLive = Color(0xFF22B9A2)
+private val RefLive = Color(0xFF34C77A)
 /**
  * The room's light when the tunnel is up: blue, not the state's own teal.
  *
@@ -348,19 +350,19 @@ private val RefLive = Color(0xFF22B9A2)
  * one light in the app allowed to be theatrical. It is thrown by [drawHeroAtmosphere]
  * across the whole backdrop; there is no longer a halo around the button itself.
  */
-private val RefGlowOn = Color(0xFF2563EB)
+private val RefGlowOn = Color(0xFF1560E8)      // room light, moved with [RefAccent] (was #2563EB)
 // The connecting state carries no colour of its own any more: the working spinner, the disc
 // mark and the room's light are all monochrome (see [PowerRing], [phaseLight]). What used to be
 // a yellow-orange "working" hue (RefWorking) and its on-white ink (RefWorkingInk) are gone.
 
 /**
- * The same teal, dark enough to read *on* white — used for the power button's mark.
+ * The same green, dark enough to read *on* white — used for the power button's mark.
  *
  * [RefLive] is tuned to glow on near-black; on the button's white face it is a pale,
  * thin mark that fails contrast. This is the same hue at roughly a third of the
  * lightness, which clears 4.5:1 on the disc's lightest stop.
  */
-private val RefLiveInk = Color(0xFF07786B)
+private val RefLiveInk = Color(0xFF116B36)     // dark-on-white ink for [RefLive]'s new green (was teal #07786B)
 private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 // The mockup only illustrates low and medium load, but the app measures a third
 // tier (>180ms, see [LoadBars]); one step hotter in the same 0xE0 family.
@@ -391,8 +393,8 @@ private val ConnectedBoltColor = Color(0xFF1F6E64)
 //   OFF        — white, wide and low: the room is lit, nothing is happening.
 //   CONNECTING — white, tighter and stronger than idle, and the power ring's comet turns.
 //   CONNECTED  — [RefGlowOn] blue, stronger again, with the crown wash over the top edge
-//                at full strength. Blue rather than teal because the ring and the mark
-//                already carry [RefLive]: state is teal, light is blue.
+//                at full strength. Blue rather than green because the ring and the mark
+//                already carry [RefLive]: state is green, light is blue.
 //
 // The old *hairline* along the very top edge is gone. It was one 1.5dp line of
 // near-full-strength colour across the whole screen with two more running down the sides,
@@ -442,8 +444,10 @@ private const val SPINNER_FADE_MS = 220
 // — nothing painted over the connect bar's flag, so the flag's own colours are the
 // real ones whether the tunnel is up or down.
 //
-// [RefTeal] is used at full strength in the one place the mockup uses it and the flag
-// isn't underneath: the usage ring's `conic-gradient(var(--teal) …)`.
+// [RefLive] (green, on request — see its own doc comment) is used at full strength in the
+// one place the mockup's teal used to live and the flag isn't underneath: the usage ring's
+// `conic-gradient(...)`. The separate [RefTeal] token this used to point at is gone —
+// one name for "the connected colour" instead of two.
 
 // ── Dimensions — CSS px read as dp (the mockup's device is 390px wide) ─────────
 private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
@@ -459,7 +463,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * built to be read in.
  */
 private val PowerSize = 72.dp   // shrunk from 140dp — still clears the 48dp touch-target floor
-private val PanelCorner = 24.dp      // .browse-card border-radius (was 28dp — closer to CardCorner for harmony)
+private val PanelCorner = 12.dp      // .browse-card border-radius — tightened toward Windscribe's own ~8dp panel radius (was 24dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
  * The server list's own flag, smaller than the connect bar's.
@@ -475,7 +479,7 @@ private val RowFlagSize = 27.dp
 // RowCorner / RowGap removed: rows are back to a hairline-divided list (Windscribe-style),
 // not individual rounded cards with a gap between them — see [ServerRow].
 
-private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
+private val CardCorner = 10.dp       // --radius-lg on .bottom-card — tightened alongside [PanelCorner] (was 18dp)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
@@ -702,11 +706,11 @@ private val HeroShadowAmbient = Color.Black.copy(alpha = 0.62f)
 private val HeroShadowSpot = Color.Black.copy(alpha = 0.85f)
 
 /** A lighter pair for cards that float over content rather than sit on it like a button —
- *  [UsageCard]. Same two-colour split as [HeroShadowAmbient]/[HeroShadowSpot], just dialled
- *  down: a card should read as gently lifted, not as casting the same deep well a pressable
- *  control does. */
-private val CardShadowAmbient = Color.Black.copy(alpha = 0.30f)
-private val CardShadowSpot = Color.Black.copy(alpha = 0.42f)
+ *  [UsageCard]. Cut further, on request, to move toward real Windscribe's own home screen,
+ *  which uses no [Modifier.shadow] at all — this keeps a whisper of lift rather than going
+ *  fully flat, since "our own design system" doesn't have to be a literal, shadow-free clone. */
+private val CardShadowAmbient = Color.Black.copy(alpha = 0.14f)
+private val CardShadowSpot = Color.Black.copy(alpha = 0.20f)
 
 
 /**
@@ -2323,7 +2327,7 @@ private fun DigitReel(digit: Int, reduce: Boolean, index: Int) {
 //                teal halo that breathes slowly around it. The face never fills with colour in any
 //                state: a filled disc reads as "press me" in exactly the state where pressing
 //                disconnects. What reports "lit" is the ring and its halo, in the groomx teal
-//                [ConnectTeal]; the room still washes [RefGlowOn] blue behind the hero.
+//                [ConnectTeal] (green); the room still washes [RefGlowOn] blue behind the hero.
 //
 // It carries one gesture besides the tap: a vertical drag switches Smart / Manual, as do its two
 // named accessibility actions. Settings' "Server choice" row is the drawn control for the same
@@ -2349,10 +2353,11 @@ private val PowerDiscSize = PowerSize
 private val PowerRingStroke = 6.dp
 private val PowerRingGap = 3.dp
 
-/** The groomx teal, used for every animated part of the connect ring — the connecting arc, the
- *  connected ring and its halo. Matches the wordmark; scoped to this control so it never leaks into
- *  the blue room light ([RefGlowOn]) behind the hero. */
-private val ConnectTeal = Color(0xFF4DB6AC)
+/** Used for every animated part of the connect ring — the connecting arc, the
+ *  connected ring and its halo. Same green family as [RefLive] now (was a separate teal);
+ *  scoped to this control so it never leaks into the blue room light ([RefGlowOn]) behind
+ *  the hero. */
+private val ConnectTeal = Color(0xFF4AD98A)
 
 /** One full turn of the connecting arc. Slow and even — a premium sweep, not a busy spinner. This
  *  is the app's only indeterminate progress and the only motion that runs unasked. */
@@ -2665,7 +2670,7 @@ private fun PowerGlyph(
  * crossfaded on [PHASE_FADE_MS]:
  *
  *   OFF        — the bare track only. Nothing moves.
- *   CONNECTING — one soft teal comet ([ConnectTeal]) sweeps smoothly around the track: a
+ *   CONNECTING — one soft green comet ([ConnectTeal]) sweeps smoothly around the track: a
  *                [CONNECT_ARC_SWEEP]° arc that fades from a bright head to a transparent tail,
  *                turning at a steady [CONNECT_SPIN_MS] per revolution. Motion alone says "working".
  *   CONNECTED  — the arc resolves to a solid teal ring, and a wide, soft teal halo fades in and
@@ -3499,12 +3504,12 @@ private fun ServerRow(
 }
 
 /**
- * .load-bars — three 3dp bars, 6/9/12dp tall. The mockup paints the best tier green,
- * which this screen never uses, so the fast tier is the accent blue [RefAccent] instead —
- * the same accent that marks the selected row, so "good" reads as on-brand rather than as a
- * stray colour. How many light up follows the app's own ping tiers (<80ms, <180ms, worse), so
- * the row still says how good the server is, not just what colour it is. The two degraded
- * tiers keep their amber/red as semantic warning colours.
+ * .load-bars — three 3dp bars, 6/9/12dp tall. Fast tier is [RefLive] (green) now, on
+ * request — matching real Windscribe's convention of a green "best" tier, and reusing the
+ * same green the rest of the screen already spends on "good"/"connected" rather than
+ * spending a third hue on it. How many light up follows the app's own ping tiers (<80ms,
+ * <180ms, worse), so the row still says how good the server is, not just what colour it is.
+ * The two degraded tiers keep their amber/red as semantic warning colours.
  */
 @Composable
 private fun LoadBars(pingMs: Int) {
@@ -3516,7 +3521,7 @@ private fun LoadBars(pingMs: Int) {
     }
     val color = when {
         pingMs < 0 -> RefBorder
-        filled == 3 -> RefAccent
+        filled == 3 -> RefLive
         filled == 2 -> RefLoadMed
         else -> RefLoadHigh
     }
@@ -3601,7 +3606,7 @@ private fun UsageCard(
             // The hard [RefBorder] outline is gone, in step with the rest of the app: this card
             // is now separated by its own lift and its lit rim ([Modifier.embossed]) rather than
             // by a drawn line. Deeper than the buttons — it floats over a scrolling list.
-            .embossed(shape, UsageCardFill, 10.dp, pressed, CardShadowAmbient, CardShadowSpot)
+            .embossed(shape, UsageCardFill, 4.dp, pressed, CardShadowAmbient, CardShadowSpot)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -3616,7 +3621,7 @@ private fun UsageCard(
             // Teal while the tunnel is up; a plain grey the rest of the time, so the card
             // never announces a state of its own. The ring measures today's running total
             // against [USAGE_DAILY_CAP_BYTES], not the current session.
-            accent = if (state.connected) RefTeal else RefTextMid,
+            accent = if (state.connected) RefLive else RefTextMid,
         )
         Spacer(Modifier.width(16.dp))              // .bottom-card gap (snapped to the 4dp grid, was 14dp)
         Column(Modifier.weight(1f)) {
