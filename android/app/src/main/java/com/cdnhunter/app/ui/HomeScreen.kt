@@ -190,9 +190,6 @@ import com.cdnhunter.app.R
 import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeChild
 import dev.chrisbanes.haze.haze
 
 // ── Typography ───────────────────────────────────────────────────────────────
@@ -419,8 +416,12 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 64.dp   // bumped from 40dp — the masthead glass band (see [CardTopRoom])
-                                 // needs real flag drawn behind it too, not just the seam.
+private val HeroBleed = 20.dp   // cut way down on request — its old justification (giving the
+                                 // masthead's haze-blur real flag artwork behind it) is gone
+                                 // now that the masthead is a plain fill, not a blur (see
+                                 // [BrowseCard]'s masthead Box); a shorter bleed also means a
+                                 // shorter flag box, which crops less of the flag's own aspect
+                                 // ratio — closer to its true shape, not just shorter.
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -1452,7 +1453,6 @@ internal fun HomeScreen(
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
-                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -2915,7 +2915,6 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     onRetryIp: () -> Unit,
-    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -3023,30 +3022,26 @@ private fun BrowseCard(
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
         // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
-        // been removed. Now real glass ([CardTopRoom] tall) rather than the card's own
-        // fake fade/frost fill: a low-blur, near-untinted haze layer (see the tintAlpha/
-        // blurRadius below — deliberately much lighter than the connect button's) real-
-        // blurring the flag behind it, which is why [HeroBleed] was bumped to reach this
-        // far down. Same colour as the rest of the card, just blurred, not recoloured.
+        // been removed. Used to be real glass here (a haze blur of the flag behind it), but
+        // the flag stopped being behind this card at all once it became its own separate
+        // floating card (see [HeroBackdrop]'s section comment) — a blur with nothing behind
+        // it to blur is just an expensive no-op, so this is a plain, slightly lighter fill
+        // ([RefElev2] over the rest of the card's [RefPanelBg]) plus its own bottom hairline,
+        // which is what actually reads as "a header" regardless of what, if anything, sits
+        // behind the card.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(CardTopRoom)
-                .then(
-                    if (hazeState != null) {
-                        Modifier.hazeChild(
-                            state = hazeState,
-                            style = HazeStyle(
-                                backgroundColor = RefPanelBg,
-                                tints = listOf(HazeTint(Color.Black.copy(alpha = 0.03f))),
-                                blurRadius = 6.dp,
-                                noiseFactor = 0.08f,
-                            ),
-                        )
-                    } else {
-                        Modifier
-                    },
-                ),
+                .background(RefElev2)
+                .drawBehind {
+                    drawLine(
+                        color = RefBorder,
+                        start = Offset(0f, size.height),
+                        end = Offset(size.width, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                },
         ) {
             Row(
                 Modifier
