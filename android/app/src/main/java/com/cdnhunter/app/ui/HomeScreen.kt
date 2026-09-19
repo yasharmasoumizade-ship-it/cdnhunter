@@ -2966,9 +2966,12 @@ private fun BrowseCard(
         animationSpec = motionSpec(reduce, 500),
         label = "cardPhaseColor",
     )
-    // phaseColor still drives the thin top-edge highlight ([drawPanelTopEdge]) below; the
-    // full-card colour wash it used to also drive ([phaseWash]) is gone along with the
-    // fade/frost fill — see the Column's background comment.
+    // phaseColor drives the thin top-edge highlight ([drawPanelTopEdge]) and, on request,
+    // a soft tint across the *whole* card again — brought back as a flat, uniform-alpha
+    // wash rather than the old top-heavy gradient, so the colour still shifts with
+    // connection state but the card reads as one colour top to bottom, not a tinted band
+    // that fades into a different one.
+    val phaseWash = phaseColor.copy(alpha = 0.06f)
     // Scroll elevation: the divider under the card's head brightens and casts a soft shadow once
     // the list has scrolled off its first row — the standard "there is content under this edge"
     // cue. Read off [rememberLazyListState] and animated (honouring reduced motion).
@@ -2986,13 +2989,14 @@ private fun BrowseCard(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = PanelCorner, topEnd = PanelCorner))
-            // Flat, single-colour fill top to bottom, on request: the fade/frost/phase-tint
-            // gradient that used to live here assumed the flag showed through the card's top
-            // edge (see the old docs on [panelTopFade]/[panelFrost]), which stopped being true
-            // once the flag became its own separate floating card with a gap to this one —
-            // nothing colourful sits behind this card's top edge any more, so the gradient
-            // was just a stray tinted band that didn't match the rest of the list.
+            // Flat, single-colour fill top to bottom — no fade/frost gradient (that used to
+            // assume the flag showed through the card's top edge, which stopped being true
+            // once the flag became its own separate floating card) — plus [phaseWash], the
+            // connection-state tint, applied at the same uniform strength everywhere on the
+            // card rather than only at the top, so "the colour changes when connecting" and
+            // "the top matches the bottom" are both true at once.
             .background(RefPanelBg)
+            .background(phaseWash)
             // A very fine noise-like grain, drawn as two overlapping low-alpha radial washes
             // offset from centre, gives the panel a touch of material texture instead of a flat
             // colour fill -- cheap to draw and reads as quality at a glance without costing a
