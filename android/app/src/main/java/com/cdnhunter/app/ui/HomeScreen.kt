@@ -458,7 +458,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * leaves the headline above it as the largest *text*, which is the order the hero is
  * built to be read in.
  */
-private val PowerSize = 72.dp   // shrunk from 140dp — still clears the 48dp touch-target floor
+private val PowerSize = 96.dp   // bumped from 72dp on request — still well clear of the 48dp floor
 private val PanelCorner = 24.dp      // .browse-card border-radius (was 28dp — closer to CardCorner for harmony)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -1419,7 +1419,11 @@ internal fun HomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(horizontal = CardMargin)
-                .clip(RoundedCornerShape(CardCorner))
+                // Bottom corners only: the card's real, new edge — its floating foot. The top
+                // corners stay square and flush with the status bar; rounding them too cut a
+                // curved notch right where the clock and system icons sit, which read as a
+                // rendering glitch rather than a corner.
+                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner))
                 .haze(hazeState),
         )
         Column(Modifier.fillMaxSize()) {
