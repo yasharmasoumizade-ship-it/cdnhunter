@@ -477,6 +477,14 @@ private val RowFlagSize = 27.dp
 
 private val CardCorner = 18.dp       // --radius-lg on .bottom-card (was 20dp — nudged toward PanelCorner)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
+/**
+ * The gap between the hero's flag card and the browse card below it, now that the hero is a
+ * free-standing card rather than fused into the browse card's top edge (see [HeroBackdrop]'s
+ * section comment). Has to clear [HeroBleed] — the flag card's own real bottom sits
+ * [HeroBleed] past the hero content's foot — plus enough on top of that to read as an actual
+ * gap rather than the two cards' corners touching.
+ */
+private val HeroFloatGap = HeroBleed + 20.dp
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
@@ -1401,20 +1409,29 @@ internal fun HomeScreen(
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // Behind everything: the flag under dark glass, and the light.
+        // Behind everything: the flag under dark glass, and the light — now a free-standing
+        // card (margin on both sides, rounded on all four corners) rather than fused edge-to-
+        // edge into the browse card below it. See [HeroBackdrop]'s section comment.
         HeroBackdrop(
             state = state,
             heroHeight = heroHeight,
-            modifier = Modifier.fillMaxSize().haze(hazeState),
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .padding(horizontal = CardMargin)
+                .clip(RoundedCornerShape(CardCorner))
+                .haze(hazeState),
         )
         Column(Modifier.fillMaxSize()) {
-            // The hero: hamburger, country, address. Its measured height is where the card
-            // begins and where the connect disc docks — the card rises to meet the disc's foot.
+            // The hero: hamburger, country, address. Its measured height is where the flag
+            // card's own content ends; the card's real foot is [HeroBleed] further down
+            // (see [HeroFloatGap]), which is where the browse card now begins.
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
+            Spacer(Modifier.height(HeroFloatGap))
             BrowseCard(
                 state = state,
                 servers = servers,
@@ -1435,10 +1452,11 @@ internal fun HomeScreen(
         // The public IP and the list's add/search controls all live in the card's own top row now
         // (see [BrowseCard]) — the IP on the left where the "+" button used to be, search on the right.
 
-        // The connect disc, docked on the seam: its centre sits on [heroHeight] — the Header's
-        // foot, which is the browse card's top edge — so its lower half rests on the card's head
-        // (a dock well, [CardTopRoom]) and its upper half floats over the flag. Drawn after the
-        // card, so it is the topmost layer. The mode is still switched by a vertical drag on it
+        // The connect disc, docked on the flag card's own foot now (heroHeight + HeroBleed —
+        // the card's real bottom edge, [HeroFloatGap] above where the browse card begins),
+        // rather than on the old fused seam at heroHeight. Its lower half rests in the gap
+        // between the two cards, its upper half floats over the flag. Drawn after both cards,
+        // so it is the topmost layer. The mode is still switched by a vertical drag on it
         // (up = Smart, down = Manual), plus the two named accessibility actions.
         PowerCircle(
             mode = state.mode,
@@ -1450,7 +1468,7 @@ internal fun HomeScreen(
             hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = (heroHeight - PowerSize / 2).coerceAtLeast(0.dp)),
+                .padding(top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp)),
         )
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
@@ -1472,22 +1490,24 @@ internal fun HomeScreen(
 
 // ── Hero backdrop ─────────────────────────────────────────────────────────────
 // The artwork and the light, and nothing else. Drawn as a sibling *behind* everything rather
-// than as the hero's background, at the size of the whole screen. Two heights are at work:
+// than as the hero's background — sized to wrap its own content (bandHeight tall) rather than
+// the whole screen, so [HomeScreen]'s clip + margin around it actually bounds real artwork,
+// not empty space. Two heights are at work:
 //
-//   the flag          — edge to edge, and vertically from under the status bar to [FlagFootRise]
-//                       *short of* the hero's last row. Height is zoom here, so a shorter box is
-//                       a less cropped flag; its last 14% dissolves rather than stopping.
+//   the flag          — edge to edge *within the card's own margin*, and vertically from the
+//                       card's top to [FlagFootRise] *short of* the hero's last row. Height is
+//                       zoom here, so a shorter box is a less cropped flag; its last 14%
+//                       dissolves rather than stopping.
 //   the light + floor — a band [bandHeight] tall at the top: the hero's rows plus [HeroBleed].
-//                       The atmosphere's geometry is written in fractions of its own size (the
-//                       horizon bloom sits at `size.height`, on the hero's foot, which is what
-//                       fuses hero and card), so letting it fill the screen would drop that
-//                       bloom to the bottom of the page.
+//                       [HeroBleed] is what the card's own foot rests [HeroFloatGap] above the
+//                       browse card for now (see [HomeScreen]) — it no longer positions a
+//                       fused-seam bloom, since [drawHeroAtmosphere] is unused here.
 //
-// No clip, no border, no shadow — a rounded foot, a hairline and a cast shadow are what a card
-// is, and this is not one. The layers stack, from the back: [ChromeBg] over the top band (so the
-// artwork is never composited against nothing mid-crossfade, while the band's foot stays
-// translucent for the card to sit over) → the flag → [drawHeroAtmosphere] over the band. The flag
-// crossfades on [PHASE_FADE_MS], as does the light's colour.
+// This IS now a card: [HomeScreen] gives it [CardMargin] on both sides and clips it to
+// [RoundedCornerShape] on all four corners, floating [HeroFloatGap] above the browse card
+// rather than fusing into it. The layers inside still stack the same way, from the back:
+// [ChromeBg] over the top band → the flag → [drawHeroAtmosphere] over the band (unused). The
+// flag crossfades on [PHASE_FADE_MS], as does the light's colour.
 @Composable
 private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier = Modifier) {
     // The two heights this composable is made of, and they now run in opposite directions —
