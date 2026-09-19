@@ -189,8 +189,9 @@ import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
 import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.haze
+// dev.chrisbanes.haze imports removed — the haze/glass-blur system they supported is gone
+// from this file now that the connect button and the browse-card masthead are solid,
+// card-matching fills rather than real-blurred glass over the flag.
 
 // ── Typography ───────────────────────────────────────────────────────────────
 // Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
@@ -464,7 +465,7 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * built to be read in.
  */
 private val PowerSize = 96.dp   // bumped from 72dp on request — still well clear of the 48dp floor
-private val PanelCorner = 12.dp      // .browse-card border-radius — tightened toward Windscribe's own ~8dp panel radius (was 24dp)
+private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
  * The server list's own flag, smaller than the connect bar's.
@@ -480,7 +481,7 @@ private val RowFlagSize = 27.dp
 // RowCorner / RowGap removed: rows are back to a hairline-divided list (Windscribe-style),
 // not individual rounded cards with a gap between them — see [ServerRow].
 
-private val CardCorner = 10.dp       // --radius-lg on .bottom-card — tightened alongside [PanelCorner] (was 18dp)
+private val CardCorner = 16.dp       // --radius-lg on .bottom-card — curved further on request (was 10dp)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
 /**
  * The gap between the hero's flag card and the browse card below it, now that the hero is a
@@ -1407,11 +1408,6 @@ internal fun HomeScreen(
         if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
     }
 
-    // Blur source for the connect button's glass fill: the flag artwork
-    // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the button
-    // can real-blur it, exactly the technique [Glass.glassSurface] uses on the auth screens.
-    val hazeState = remember { HazeState() }
-
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
         // Behind everything: the flag under dark glass, and the light — now a free-standing
@@ -1428,8 +1424,7 @@ internal fun HomeScreen(
                 // corners stay square and flush with the status bar; rounding them too cut a
                 // curved notch right where the clock and system icons sit, which read as a
                 // rendering glitch rather than a corner.
-                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner))
-                .haze(hazeState),
+                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its measured height is where the flag
@@ -1473,7 +1468,6 @@ internal fun HomeScreen(
             onClick = onTogglePower,
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
             onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-            hazeState = hazeState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp)),
@@ -2413,7 +2407,6 @@ private fun PowerCircle(
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit,
-    hazeState: HazeState?,
     modifier: Modifier = Modifier,
 ) {
     val connected = phase == ConnPhase.CONNECTED
@@ -2507,11 +2500,14 @@ private fun PowerCircle(
                     ambientColor = HeroShadowAmbient,
                     spotColor = HeroShadowSpot,
                 )
-                // The whole button is one real-blurred glass layer now — no solid teal
-                // core underneath — reusing [Glass.glassSurface] (same brush, border and
-                // inset-shadow as the auth screens), lighter-tinted than the auth default
-                // so it reads as clear glass over the flag rather than a muddy tint.
-                .let { with(Glass) { it.glassSurface(shape = CircleShape, hazeState = hazeState, tintAlpha = 0.12f) } }
+                // Solid fill matching the server card's own material now, on request —
+                // no more real-blurred glass picking up whatever colour the flag happens
+                // to be behind it. [RefElev2] is the same tone the browse card's own header
+                // uses, plus a [heroEdge] rim for definition, so the button reads as part of
+                // the same card family as the list rather than a separate glass object.
+                .clip(CircleShape)
+                .background(RefElev2)
+                .border(1.dp, heroEdge, CircleShape)
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -3026,26 +3022,22 @@ private fun BrowseCard(
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
         // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
-        // been removed. Used to be real glass here (a haze blur of the flag behind it), but
-        // the flag stopped being behind this card at all once it became its own separate
-        // floating card (see [HeroBackdrop]'s section comment) — a blur with nothing behind
-        // it to blur is just an expensive no-op, so this is a plain, slightly lighter fill
-        // ([RefElev2] over the rest of the card's [RefPanelBg]) plus its own bottom hairline,
-        // which is what actually reads as "a header" regardless of what, if anything, sits
-        // behind the card.
+        // been removed. Redesigned again, on request: a soft vertical gradient from
+        // [RefElev2] down into the card's own [RefPanelBg] reads as a proper header shelf
+        // without the hard seam a flat fill + hairline used to draw — the eye still finds
+        // "this is the top band" from the tone shift alone, and the fade means there is no
+        // single pixel row where the header visibly stops.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(CardTopRoom)
-                .background(RefElev2)
-                .drawBehind {
-                    drawLine(
-                        color = RefBorder,
-                        start = Offset(0f, size.height),
-                        end = Offset(size.width, size.height),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                },
+                .background(
+                    Brush.verticalGradient(
+                        0.00f to RefElev2,
+                        0.72f to RefElev2.copy(alpha = 0.55f),
+                        1.00f to RefElev2.copy(alpha = 0.0f),
+                    ),
+                ),
         ) {
             Row(
                 Modifier
