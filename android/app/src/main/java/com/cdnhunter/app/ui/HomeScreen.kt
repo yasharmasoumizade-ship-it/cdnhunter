@@ -2226,7 +2226,6 @@ private fun IpCheckingDots() {
 }
 
 /**
-/**
  * The public IP, in a pill that visually grows out of the connect disc rather than sitting
  * in the browse card's masthead — same border colour as the disc's own ring ([ringColorFor]),
  * same [RefElev2] fill. Slides out from under the disc once the button is tapped (hidden at
