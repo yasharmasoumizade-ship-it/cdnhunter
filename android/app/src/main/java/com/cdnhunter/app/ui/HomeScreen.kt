@@ -476,6 +476,8 @@ private val PowerSize = 116.dp  // bumped from 96dp on request — bigger, still
  *  left — on request, so the flag card's right side has room to breathe and the disc reads
  *  as a corner action rather than the exact middle of the artwork. */
 private val PowerLeftInset = 8.dp
+/** Height of the IP pill that visually grows out of the connect disc — see [IpMergedPill]. */
+private val PowerPillHeight = 40.dp
 private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -1463,15 +1465,29 @@ internal fun HomeScreen(
             )
         }
 
-        // The public IP and the list's add/search controls all live in the card's own top row now
-        // (see [BrowseCard]) — the IP on the left where the "+" button used to be, search on the right.
+        // The public IP, now in a pill that visually grows out of the connect disc (see
+        // [IpMergedPill]) instead of sitting in the browse card's masthead — drawn *before*
+        // the disc below so the disc's left half overlaps and hides the pill's own left cap.
+        IpMergedPill(
+            state = state,
+            phase = state.phase,
+            onRetryIp = onRetryIp,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(
+                    start = CardMargin + PowerLeftInset + PowerSize / 2,
+                    top = (heroHeight + HeroBleed - PowerPillHeight / 2).coerceAtLeast(0.dp),
+                ),
+        )
 
         // The connect disc, docked on the flag card's own foot now (heroHeight + HeroBleed —
         // the card's real bottom edge, [HeroFloatGap] above where the browse card begins),
         // rather than on the old fused seam at heroHeight. Its lower half rests in the gap
-        // between the two cards, its upper half floats over the flag. Drawn after both cards,
-        // so it is the topmost layer. The mode is still switched by a vertical drag on it
-        // (up = Smart, down = Manual), plus the two named accessibility actions.
+        // between the two cards, its upper half floats over the flag. Drawn after both cards
+        // AND after [IpMergedPill], so it is the topmost layer and its left half covers the
+        // pill's own left cap — that overlap is what reads as one merged shape. The mode is
+        // still switched by a vertical drag on it (up = Smart, down = Manual), plus the two
+        // named accessibility actions.
         PowerCircle(
             mode = state.mode,
             phase = state.phase,
@@ -1487,10 +1503,10 @@ internal fun HomeScreen(
                 ),
         )
 
-        // The status word beside the disc, now that it has room to its right instead of sitting
-        // dead-centre: "Connecting…" while a tunnel is coming up, "Connected" once it is —
-        // nothing at all at rest, since an idle disc needs no caption. Vertically centred on
-        // the disc itself, same anchor math as [PowerCircle] just offset past its width.
+        // The status word, now underneath the disc rather than beside it — the IP pill
+        // ([IpMergedPill]) took the space to the disc's right, so this moved below to avoid
+        // colliding with it. "Connecting…" while a tunnel is coming up, "Connected" once it
+        // is — nothing at all at rest, since an idle disc needs no caption.
         if (state.phase != ConnPhase.OFF) {
             Text(
                 if (state.phase == ConnPhase.CONNECTED) "Connected" else "Connecting…",
@@ -1501,8 +1517,8 @@ internal fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(
-                        start = CardMargin + PowerLeftInset + PowerSize + 14.dp,
-                        top = (heroHeight + HeroBleed).coerceAtLeast(0.dp) - PowerSize / 4,
+                        start = CardMargin + PowerLeftInset,
+                        top = (heroHeight + HeroBleed + PowerSize / 2 + 8.dp).coerceAtLeast(0.dp),
                     ),
             )
         }
@@ -2152,6 +2168,42 @@ private enum class IpKind { READY, CHECKING, UNAVAILABLE }
 private val IpValueSize = 15.sp
 private val IpPlaceholderSize = 13.sp
 
+/**
+ * The public IP, in a pill that visually grows out of the connect disc rather than sitting
+ * in the browse card's masthead — same border colour as the disc's own ring ([ringColorFor]),
+ * same [RefElev2] fill. Drawn *before* [PowerCircle] in the parent [Box] so the disc's left
+ * half overlaps and covers this pill's own left cap, which is what reads as one continuous
+ * merged shape instead of two bordered shapes touching.
+ */
+@Composable
+private fun IpMergedPill(
+    state: HomeUiState,
+    phase: ConnPhase,
+    onRetryIp: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val ringColor by animateColorAsState(
+        targetValue = ringColorFor(phase),
+        animationSpec = motionSpec(rememberReduceMotion(), 400),
+        label = "ipPillRingColor",
+    )
+    val shape = RoundedCornerShape(PowerPillHeight / 2)
+    Box(
+        modifier
+            .height(PowerPillHeight)
+            .clip(shape)
+            .background(RefElev2)
+            .border(2.dp, ringColor.copy(alpha = 0.75f), shape)
+            // Half the disc's width plus a little air -- the disc (drawn after this, same
+            // centre line) covers everything left of that, so the IP text itself only ever
+            // starts in the part of the pill that stays visible.
+            .padding(start = PowerSize / 2 + 12.dp, end = 16.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        IpCard(state = state, onRetryIp = onRetryIp)
+    }
+}
+
 @Composable
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -2433,34 +2485,12 @@ private val PowerPressElevation = 9.dp
 /** The hairline on the disc's own edge. See [PowerDiscRim]. */
 private val PowerRimStroke = 1.dp
 
-/** One full grow-and-fade cycle of the connected pulse, in ms. Two rings run half a cycle
- *  apart (see the [Canvas] call in [PowerCircle]), so a new one is always arriving as the last
- *  one fades — this is the spacing that makes that read as continuous. */
-private const val POWER_PULSE_MS = 1800
-
-/** How far past the disc's own edge the ring travels, as a fraction of the disc's radius —
- *  a ring that only reached the disc's own rim would just look like the border thickening. */
-private const val PULSE_MAX_REACH = 0.55f
-
-/** One pass of the connected pulse: a ring starting right at the disc's edge, growing outward
- *  by [PULSE_MAX_REACH] of the disc's own radius, its stroke thinning and its alpha falling to
- *  nothing as it goes — the classic "radar" fade, so it reads as a signal leaving the disc
- *  rather than a shape that pops in and snaps out. */
-private fun DrawScope.drawPulseRing(progress: Float, color: Color) {
-    if (progress <= 0f) return
-    val discRadius = (PowerDiscSize.toPx()) / 2f
-    val radius = discRadius * (1f + PULSE_MAX_REACH * progress)
-    val alpha = (1f - progress).coerceIn(0f, 1f) * 0.55f
-    val strokeStartPx = 2.5.dp.toPx()
-    val strokeEndPx = 0.5.dp.toPx()
-    val stroke = strokeStartPx + (strokeEndPx - strokeStartPx) * progress
-    if (alpha <= 0.01f) return
-    drawCircle(
-        color = color.copy(alpha = alpha),
-        radius = radius,
-        center = center,
-        style = Stroke(width = stroke),
-    )
+/** The disc's/pill's state colour: [RefAccent] at rest, the phase's own bolt colour
+ *  otherwise. Shared by [PowerCircle] and [IpMergedPill] so their borders always agree. */
+private fun ringColorFor(phase: ConnPhase): Color = when (phase) {
+    ConnPhase.OFF -> RefAccent
+    ConnPhase.CONNECTING -> ConnectingBoltColor
+    ConnPhase.CONNECTED -> ConnectedBoltColor
 }
 
 @Composable
@@ -2553,47 +2583,16 @@ private fun PowerCircle(
     // The disc's own state colour — the one thing that makes it read as *the* button rather
     // than another dark card. [RefAccent] (the app's own blue) at rest, so it is never a bare
     // grey circle sitting on the flag; the same phase colours the glyph already crossfades
-    // through while connecting/connected, so the ring and the mark always agree.
+    // through while connecting/connected, so the ring and the mark always agree. Shared with
+    // [IpMergedPill] via [ringColorFor] so the disc and the IP pill it merges into always
+    // agree on colour too.
     val ringColor by animateColorAsState(
-        targetValue = when (phase) {
-            ConnPhase.OFF -> RefAccent
-            ConnPhase.CONNECTING -> ConnectingBoltColor
-            ConnPhase.CONNECTED -> ConnectedBoltColor
-        },
+        targetValue = ringColorFor(phase),
         animationSpec = motionSpec(reduce, 400),
         label = "powerRingColor",
     )
 
-    // The one thing that keeps moving once the tunnel is up: a ring that grows outward from
-    // the disc's own edge and fades as it goes, on a loop — the "signal" pulse most VPN apps
-    // use for "connected and live" instead of a static glow. Two copies half a cycle apart
-    // (see the [Canvas] call below) read as a continuous pulse rather than one ring blinking
-    // on and off. Runs only while connected, and not at all under reduced motion.
-    val pulseInfinite = rememberInfiniteTransition(label = "powerPulse")
-    val pulseProgress by if (reduce || !connected) {
-        remember { mutableStateOf(0f) }
-    } else {
-        pulseInfinite.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(POWER_PULSE_MS, easing = LinearOutSlowInEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "powerPulseVal",
-        )
-    }
-
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // Drawn on the OUTER box, not inside the disc's own clipped circle below — the pulse
-        // has to bleed past the disc's own edge to read as an expanding ring rather than a
-        // glow trapped under the glass. Only drawn while connected.
-        if (connected) {
-            Canvas(Modifier.matchParentSize()) {
-                drawPulseRing(pulseProgress, ringColor)
-                drawPulseRing((pulseProgress + 0.5f) % 1f, ringColor)
-            }
-        }
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
         Box(
@@ -3134,16 +3133,15 @@ private fun BrowseCard(
             }
     ) {
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
-        // edge — the Kill Switch / Ad Blocker status glyphs that used to sit on the left have
-        // been removed. Redesigned again, on request: a soft vertical gradient from
-        // [RefElev2] down into the card's own [RefPanelBg] reads as a proper header shelf
-        // without the hard seam a flat fill + hairline used to draw — the eye still finds
-        // "this is the top band" from the tone shift alone, and the fade means there is no
-        // single pixel row where the header visibly stops.
+        // edge. The public IP moved out to [IpMergedPill] (a pill growing out of the connect
+        // disc, drawn in the parent [Box]), so this band is just the toggle now. Curved on
+        // its own top corners ([MastheadCurve]) to match the disc/pill it sits under, instead
+        // of the flat-topped rectangle it was.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(CardTopRoom)
+                .clip(RoundedCornerShape(topStart = MastheadCurve, topEnd = MastheadCurve))
                 .background(
                     Brush.verticalGradient(
                         0.00f to RefElev2,
@@ -3158,12 +3156,9 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                // The public IP fills the band's left side — it used to be dead space once
-                // the disc moved off centre — and the search toggle keeps the trailing edge.
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IpCard(state = state, onRetryIp = onRetryIp, modifier = Modifier.padding(start = 12.dp))
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
@@ -3289,6 +3284,11 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
  * has a defined area to apply real glass to (see [BrowseCard]'s masthead Box).
  */
 private val CardTopRoom = 56.dp
+
+/** How much the masthead band's own top corners curve — a "matching" curved header per
+ *  request, echoing the disc/pill shape it sits under rather than [PanelCorner]'s flatter
+ *  card-corner radius. */
+private val MastheadCurve = 32.dp
 
 // PanelFrostFade removed alongside [panelFrost] itself — the icy-glass wash it sized is
 // gone now that the card is a flat fill; see the note above [CardTopRoom].
