@@ -427,12 +427,10 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 20.dp   // cut way down on request — its old justification (giving the
-                                 // masthead's haze-blur real flag artwork behind it) is gone
-                                 // now that the masthead is a plain fill, not a blur (see
-                                 // [BrowseCard]'s masthead Box); a shorter bleed also means a
-                                 // shorter flag box, which crops less of the flag's own aspect
-                                 // ratio — closer to its true shape, not just shorter.
+private val HeroBleed = 8.dp    // cut down further on request — shorter still, and per the
+                                 // note above a shorter bleed also crops less of the flag's
+                                 // own aspect (closer to its true shape), so this serves both
+                                 // "less height" and "less zoom" at once.
 
 /**
  * What the backdrop measures on the first frame only, before the header's rows have been
@@ -855,7 +853,7 @@ private val FlagCardBleed = 32.dp
  * On top of the box's own Crop (see [HeroBackdrop]), this crops in tighter still. 1f is no
  * extra zoom; > 1f zooms in further.
  */
-private const val FlagZoom = 1.05f
+private const val FlagZoom = 1.0f  // brought back down to no-extra-zoom on request
 
 /**
  * The single flag layer's bottom taper, applied inside its own box.
@@ -1481,8 +1479,12 @@ internal fun HomeScreen(
 
         // The public IP, now in a pill that grows out of the connect disc (see
         // [IpMergedPill]) instead of sitting in the browse card's masthead — its flat left
-        // edge starts exactly at [PillJoinX], the disc's own tangent point for this pill
-        // height, so the two borders meet rather than cross.
+        // edge starts exactly at the disc's centre plus [PillJoinX], the disc's own tangent
+        // point for this pill height, so the two borders meet rather than cross. (PillJoinX is
+        // measured from the disc's CENTRE, not its left edge — the centre term below was
+        // missing before, which put the pill's start point ~PowerSize/2 too far left, inside
+        // the disc itself, hiding the first several characters of a real IP behind it. Only
+        // showed up once real addresses replaced the three short bouncing dots.)
         IpMergedPill(
             state = state,
             phase = state.phase,
@@ -1490,7 +1492,7 @@ internal fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(
-                    start = CardMargin + PowerLeftInset + PillJoinX,
+                    start = CardMargin + PowerLeftInset + PowerSize / 2 + PillJoinX,
                     top = (heroHeight + HeroBleed - PowerPillHeight / 2).coerceAtLeast(0.dp),
                 ),
         )
@@ -1517,26 +1519,6 @@ internal fun HomeScreen(
                     top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp),
                 ),
         )
-
-        // The status word, now underneath the disc rather than beside it — the IP pill
-        // ([IpMergedPill]) took the space to the disc's right, so this moved below to avoid
-        // colliding with it. "Connecting…" while a tunnel is coming up, "Connected" once it
-        // is — nothing at all at rest, since an idle disc needs no caption.
-        if (state.phase != ConnPhase.OFF) {
-            Text(
-                if (state.phase == ConnPhase.CONNECTED) "Connected" else "Connecting…",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                style = TextStyle(shadow = HeroInkShadow),
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(
-                        start = CardMargin + PowerLeftInset,
-                        top = (heroHeight + HeroBleed + PowerSize / 2 + 8.dp).coerceAtLeast(0.dp),
-                    ),
-            )
-        }
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
         // on the left where the "+" add-server button used to be (see [BrowseCard]).
