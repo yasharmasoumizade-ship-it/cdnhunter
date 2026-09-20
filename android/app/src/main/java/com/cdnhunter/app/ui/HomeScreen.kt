@@ -66,6 +66,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -81,6 +82,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
@@ -189,6 +192,7 @@ import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
 import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
+import kotlin.math.sqrt
 // dev.chrisbanes.haze imports removed — the haze/glass-blur system they supported is gone
 // from this file now that the connect button and the browse-card masthead are solid,
 // card-matching fills rather than real-blurred glass over the flag.
@@ -478,6 +482,16 @@ private val PowerSize = 116.dp  // bumped from 96dp on request — bigger, still
 private val PowerLeftInset = 8.dp
 /** Height of the IP pill that visually grows out of the connect disc — see [IpMergedPill]. */
 private val PowerPillHeight = 40.dp
+
+/** The exact x-offset (from the disc's own centre) where the disc's circular edge is precisely
+ *  [PowerPillHeight] tall — i.e. where a flat-edged pill of that height touches the circle
+ *  exactly at its own top-left and bottom-left corners, with no gap and no overlap needed.
+ *  See [IpMergedPill]'s tangent-join note. */
+private val PillJoinX: Dp = run {
+    val r = (PowerSize / 2).value
+    val h = (PowerPillHeight / 2).value
+    sqrt(r * r - h * h).dp
+}
 private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -1465,9 +1479,10 @@ internal fun HomeScreen(
             )
         }
 
-        // The public IP, now in a pill that visually grows out of the connect disc (see
-        // [IpMergedPill]) instead of sitting in the browse card's masthead — drawn *before*
-        // the disc below so the disc's left half overlaps and hides the pill's own left cap.
+        // The public IP, now in a pill that grows out of the connect disc (see
+        // [IpMergedPill]) instead of sitting in the browse card's masthead — its flat left
+        // edge starts exactly at [PillJoinX], the disc's own tangent point for this pill
+        // height, so the two borders meet rather than cross.
         IpMergedPill(
             state = state,
             phase = state.phase,
@@ -1475,7 +1490,7 @@ internal fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(
-                    start = CardMargin + PowerLeftInset + PowerSize / 2,
+                    start = CardMargin + PowerLeftInset + PillJoinX,
                     top = (heroHeight + HeroBleed - PowerPillHeight / 2).coerceAtLeast(0.dp),
                 ),
         )
@@ -2168,12 +2183,62 @@ private enum class IpKind { READY, CHECKING, UNAVAILABLE }
 private val IpValueSize = 15.sp
 private val IpPlaceholderSize = 13.sp
 
+/** One full up-down cycle of a single dot, in ms — see [IpCheckingDots]. */
+private const val DOT_BOUNCE_MS = 600
+/** How far each dot travels, up and back down. */
+private val DotBounceHeight = 5.dp
+
+/**
+ * Three bold dots bouncing up and down in sequence while the IP lookup is in flight — replaces
+ * the old "Checking…" text. Each dot runs the same up-down tween on an infinite loop, offset
+ * from the next by a third of the cycle, which is what reads as a wave running left to right
+ * rather than three dots bobbing in place together. Off (dots sit flat) under reduced motion.
+ */
+@Composable
+private fun IpCheckingDots() {
+    val reduce = rememberReduceMotion()
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            val infinite = rememberInfiniteTransition(label = "ipDot$i")
+            val offsetY by if (reduce) {
+                remember { mutableStateOf(0f) }
+            } else {
+                infinite.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(DOT_BOUNCE_MS, easing = EaseInOutSine),
+                        repeatMode = RepeatMode.Reverse,
+                        initialStartOffset = StartOffset((DOT_BOUNCE_MS / 3) * i),
+                    ),
+                    label = "ipDotVal$i",
+                )
+            }
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .offset(y = -DotBounceHeight * offsetY)
+                    .clip(CircleShape)
+                    .background(RefTextHi),
+            )
+        }
+    }
+}
+
+/**
 /**
  * The public IP, in a pill that visually grows out of the connect disc rather than sitting
  * in the browse card's masthead — same border colour as the disc's own ring ([ringColorFor]),
- * same [RefElev2] fill. Drawn *before* [PowerCircle] in the parent [Box] so the disc's left
- * half overlaps and covers this pill's own left cap, which is what reads as one continuous
- * merged shape instead of two bordered shapes touching.
+ * same [RefElev2] fill. Slides out from under the disc once the button is tapped (hidden at
+ * [ConnPhase.OFF], where there is no IP to show yet), and stays hidden with reduced motion off
+ * only in the sense that it snaps rather than slides.
+ *
+ * The join with the disc is a real tangent, not an overlap-and-hope: the pill's left edge is
+ * flat (no rounded cap at all) and starts at [PillJoinX] — the exact x where the disc's own
+ * circular edge is precisely [PowerPillHeight] tall — so the pill's top-left and bottom-left
+ * corners land exactly on the disc's border instead of poking past it or leaving a gap. That
+ * is what stops the two borders from crossing each other. [PowerCircle] still draws after this
+ * (same z-order as before) as a small safety margin, not as the thing doing the hiding.
  */
 @Composable
 private fun IpMergedPill(
@@ -2182,25 +2247,36 @@ private fun IpMergedPill(
     onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val reduce = rememberReduceMotion()
     val ringColor by animateColorAsState(
         targetValue = ringColorFor(phase),
-        animationSpec = motionSpec(rememberReduceMotion(), 400),
+        animationSpec = motionSpec(reduce, 400),
         label = "ipPillRingColor",
     )
-    val shape = RoundedCornerShape(PowerPillHeight / 2)
-    Box(
-        modifier
-            .height(PowerPillHeight)
-            .clip(shape)
-            .background(RefElev2)
-            .border(2.dp, ringColor.copy(alpha = 0.75f), shape)
-            // Half the disc's width plus a little air -- the disc (drawn after this, same
-            // centre line) covers everything left of that, so the IP text itself only ever
-            // starts in the part of the pill that stays visible.
-            .padding(start = PowerSize / 2 + 12.dp, end = 16.dp),
-        contentAlignment = Alignment.CenterStart,
+    // No cap on the left at all -- see the tangent-join note above. Only the right end rounds.
+    val shape = RoundedCornerShape(
+        topStart = 0.dp,
+        bottomStart = 0.dp,
+        topEnd = PowerPillHeight / 2,
+        bottomEnd = PowerPillHeight / 2,
+    )
+    AnimatedVisibility(
+        visible = phase != ConnPhase.OFF,
+        enter = slideInHorizontally(motionSpec(reduce, 320)) { -it / 2 } + fadeIn(motionSpec(reduce, 320)),
+        exit = slideOutHorizontally(motionSpec(reduce, 220)) { -it / 2 } + fadeOut(motionSpec(reduce, 180)),
+        modifier = modifier,
     ) {
-        IpCard(state = state, onRetryIp = onRetryIp)
+        Box(
+            Modifier
+                .height(PowerPillHeight)
+                .clip(shape)
+                .background(RefElev2)
+                .border(2.dp, ringColor.copy(alpha = 0.75f), shape)
+                .padding(start = 16.dp, end = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            IpCard(state = state, onRetryIp = onRetryIp)
+        }
     }
 }
 
@@ -2271,16 +2347,11 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                         softWrap = false,
                         style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                     )
-                    // In flight: a simple, quiet loading word — never digits. The value is not known
-                    // yet, so nothing that could look like a malformed address is drawn.
-                    IpKind.CHECKING -> Text(
-                        "Checking…",
-                        fontSize = IpPlaceholderSize,
-                        fontWeight = FontWeight.Medium,
-                        color = RefTextMid,
-                        maxLines = 1,
-                        style = TextStyle(shadow = HeroInkShadow),
-                    )
+                    // In flight: three bold dots bouncing up and down, not a "Checking…" word —
+                    // the value is not known yet, so nothing that could look like a malformed
+                    // address is drawn either way, but three dots read as the pill itself
+                    // "thinking" rather than needing to be read.
+                    IpKind.CHECKING -> IpCheckingDots()
                     // Lookup finished with nothing: a dash and a retry glyph the tap handler wires.
                     IpKind.UNAVAILABLE -> {
                         Text(
