@@ -199,6 +199,7 @@ import com.cdnhunter.app.R
 import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
 import kotlin.math.sqrt
+import kotlin.random.Random
 // dev.chrisbanes.haze imports removed — the haze/glass-blur system they supported is gone
 // from this file now that the connect button and the browse-card masthead are solid,
 // card-matching fills rather than real-blurred glass over the flag.
@@ -2286,6 +2287,47 @@ private fun IpMergedPill(
  * known ahead of layout, so this is placed with [RightAnchoredBox] rather than the plain
  * `offset` the IP pill uses, which only works for a left-anchored child.
  */
+/**
+ * Three dots for [StatusMergedPill]'s "Connecting…" state, replacing the plain text — a wave
+ * like [IpCheckingDots]'s (each dot still lags the last), but with a random per-dot jitter on
+ * duration, start delay, and jump height, so the three don't read as one mechanical, identical
+ * stagger — closer to dots hopping on their own than a metronome. The randomisation is rolled
+ * once per dot ([remember], not re-rolled every frame) — a fixed personality per dot, not noise.
+ */
+@Composable
+private fun ConnectingDots() {
+    val reduce = rememberReduceMotion()
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            val durationMs = remember { Random.nextInt(420, 640) }
+            val startDelayMs = remember { Random.nextInt(0, DOT_BOUNCE_MS) }
+            val heightFactor = remember { Random.nextFloat() * 0.7f + 0.75f } // ~0.75x .. 1.45x
+            val infinite = rememberInfiniteTransition(label = "connDot$i")
+            val offsetY by if (reduce) {
+                remember { mutableStateOf(0f) }
+            } else {
+                infinite.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMs, easing = EaseInOutSine),
+                        repeatMode = RepeatMode.Reverse,
+                        initialStartOffset = StartOffset(startDelayMs),
+                    ),
+                    label = "connDotVal$i",
+                )
+            }
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .offset(y = -DotBounceHeight * heightFactor * offsetY)
+                    .clip(CircleShape)
+                    .background(RefTextHi),
+            )
+        }
+    }
+}
+
 @Composable
 private fun StatusMergedPill(phase: ConnPhase, modifier: Modifier = Modifier) {
     val reduce = rememberReduceMotion()
@@ -2315,15 +2357,19 @@ private fun StatusMergedPill(phase: ConnPhase, modifier: Modifier = Modifier) {
                 .padding(start = 16.dp, end = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                if (phase == ConnPhase.CONNECTED) "Connected" else "Connecting…",
-                color = Color.White,
-                fontSize = IpValueSize,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                softWrap = false,
-                style = TextStyle(shadow = HeroInkShadow),
-            )
+            if (phase == ConnPhase.CONNECTED) {
+                Text(
+                    "Connected",
+                    color = Color.White,
+                    fontSize = IpValueSize,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    style = TextStyle(shadow = HeroInkShadow),
+                )
+            } else {
+                ConnectingDots()
+            }
         }
     }
 }
