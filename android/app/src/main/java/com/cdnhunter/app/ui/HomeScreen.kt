@@ -575,7 +575,10 @@ private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to
  * just at init time instead of layout time).
  */
 private val CradleNotchCenterX = CardMargin + PowerLeftInset + PowerSize / 2
-private val CradleNotchRadius = PowerDiscSize / 2
+private val CradleNotchRadius = PowerSize / 2  // PowerDiscSize == PowerSize, but that's declared
+                                                // later in the file — see the note above about
+                                                // forward references at init time. Same value,
+                                                // no ordering risk.
 
 /**
  * The gap between the hero's flag card and the browse card below it, now that the hero is a
