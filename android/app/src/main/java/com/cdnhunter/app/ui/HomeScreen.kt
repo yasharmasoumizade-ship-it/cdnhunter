@@ -166,6 +166,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -479,10 +480,6 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  */
 private val PowerSize = 116.dp  // bumped from 96dp on request — bigger, still one thumb-sized target
 
-/** How far past the card's own margin the disc sits, now that it has moved off-centre to the
- *  left — on request, so the flag card's right side has room to breathe and the disc reads
- *  as a corner action rather than the exact middle of the artwork. */
-private val PowerLeftInset = 8.dp
 /** Height of the IP pill that visually grows out of the connect disc — see [IpMergedPill]. */
 private val PowerPillHeight = 40.dp
 
@@ -495,6 +492,12 @@ private val PillJoinX: Dp = run {
     val h = (PowerPillHeight / 2).value
     sqrt(r * r - h * h).dp
 }
+
+/** Extra slack pulled into [PillJoinX], on top of the exact tangent point — the disc shrinks a
+ *  few percent on press ([POWER_PRESS_SCALE]), and an *exact* tangent computed for its full
+ *  size then uncovers a sliver of the pill's own join edge for as long as it's held down. This
+ *  is what keeps that edge hidden through the press, not just at rest. */
+private val PillSafetyOverlap = 4.dp
 
 
 private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
@@ -1485,48 +1488,52 @@ internal fun HomeScreen(
             )
         }
 
-        // The public IP, now in a pill that grows out of the connect disc (see
-        // [IpMergedPill]) instead of sitting in the browse card's masthead — its flat left
-        // edge starts exactly at the disc's centre plus [PillJoinX], the disc's own tangent
-        // point for this pill height, so the two borders meet rather than cross. (PillJoinX is
-        // measured from the disc's CENTRE, not its left edge — the centre term below was
-        // missing before, which put the pill's start point ~PowerSize/2 too far left, inside
-        // the disc itself, hiding the first several characters of a real IP behind it. Only
-        // showed up once real addresses replaced the three short bouncing dots.)
-        IpMergedPill(
-            state = state,
-            phase = state.phase,
-            onRetryIp = onRetryIp,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(
-                    start = CardMargin + PowerLeftInset + PowerSize / 2 + PillJoinX,
-                    top = (heroHeight + HeroBleed - PowerPillHeight / 2).coerceAtLeast(0.dp),
-                ),
-        )
-
-        // The connect disc, docked on the flag card's own foot now (heroHeight + HeroBleed —
-        // the card's real bottom edge, [HeroFloatGap] above where the browse card begins),
-        // rather than on the old fused seam at heroHeight. Its lower half rests in the gap
-        // between the two cards, its upper half floats over the flag. Drawn after both cards
-        // AND after [IpMergedPill], so it is the topmost layer and its left half covers the
-        // pill's own left cap — that overlap is what reads as one merged shape. The mode is
-        // still switched by a vertical drag on it (up = Smart, down = Manual), plus the two
-        // named accessibility actions.
-        PowerCircle(
-            mode = state.mode,
-            phase = state.phase,
-            enabled = state.activeConfig != null,
-            onClick = onTogglePower,
-            onSwipeUp = { onSetMode(ConnectMode.SMART) },
-            onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(
-                    start = CardMargin + PowerLeftInset,
-                    top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp),
-                ),
-        )
+        // The connect dock: the disc, centred on the flag card's own foot now (heroHeight +
+        // HeroBleed — the card's real bottom edge, [HeroFloatGap] above where the browse card
+        // begins) — on request, back from the earlier off-centre-left position — plus its two
+        // merged pills, one on each side. Both pills are positioned in this Box's own LOCAL
+        // coordinate space (the disc's own top-left is this Box's origin), which is what lets
+        // a plain [Alignment.TopCenter] on the Box itself centre the whole dock: the pills
+        // overflow left and right of the Box's own PowerSize-wide measured bounds via
+        // [Modifier.offset]/[RightAnchoredBox], which — same as everywhere else on this
+        // screen — is never clipped by an ancestor, so the overflow simply renders.
+        //
+        // The IP pill (right) only appears once the address has actually resolved — see
+        // [IpMergedPill] — and the status pill (left) appears for "Connecting…"/"Connected"
+        // the moment the tunnel starts coming up. [PowerCircle] is drawn last of the three, so
+        // its own circle is what hides each pill's tucked-under join edge; [PillSafetyOverlap]
+        // is the extra slack that keeps that edge covered even while the disc is scaled down
+        // for a press, not just at rest.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp)),
+        ) {
+            IpMergedPill(
+                state = state,
+                onRetryIp = onRetryIp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(
+                        x = PowerSize / 2 + PillJoinX - PillSafetyOverlap,
+                        y = PowerSize / 2 - PowerPillHeight / 2,
+                    ),
+            )
+            RightAnchoredBox(
+                rightEdge = PowerSize / 2 - PillJoinX + PillSafetyOverlap,
+                top = PowerSize / 2 - PowerPillHeight / 2,
+            ) {
+                StatusMergedPill(phase = state.phase)
+            }
+            PowerCircle(
+                mode = state.mode,
+                phase = state.phase,
+                enabled = state.activeConfig != null,
+                onClick = onTogglePower,
+                onSwipeUp = { onSetMode(ConnectMode.SMART) },
+                onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            )
+        }
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
         // on the left where the "+" add-server button used to be (see [BrowseCard]).
@@ -2218,30 +2225,29 @@ private fun IpCheckingDots() {
 /**
  * The public IP, in a pill that visually grows out of the connect disc rather than sitting
  * in the browse card's masthead — same border colour as the disc's own ring ([ringColorFor]),
- * same [RefElev2] fill. Slides out from under the disc once the button is tapped (hidden at
- * [ConnPhase.OFF], where there is no IP to show yet), and stays hidden with reduced motion off
- * only in the sense that it snaps rather than slides.
+ * same [RefElev2] fill. Shown only once the address has actually resolved to a real literal
+ * ([IpSlot.ready]) — not while still checking, and not at [ConnPhase.OFF] where there is
+ * nothing to show yet — so nothing ever slides out just to display "Checking…".
  *
  * The join with the disc is a real tangent, not an overlap-and-hope: the pill's left edge is
- * flat (no rounded cap at all) and starts at [PillJoinX] — the exact x where the disc's own
- * circular edge is precisely [PowerPillHeight] tall — so the pill's top-left and bottom-left
- * corners land exactly on the disc's border instead of poking past it or leaving a gap. That
- * is what stops the two borders from crossing each other. [PowerCircle] still draws after this
- * (same z-order as before) as a small safety margin, not as the thing doing the hiding.
+ * flat (no rounded cap at all) and starts at [PillJoinX] minus [PillSafetyOverlap] — a touch
+ * inside the exact x where the disc's own circular edge is precisely [PowerPillHeight] tall —
+ * so the pill's top-left and bottom-left corners land just past the disc's border rather than
+ * exactly on it, with enough slack that a press-scaled disc still fully covers the seam.
  */
 @Composable
 private fun IpMergedPill(
     state: HomeUiState,
-    phase: ConnPhase,
     onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val reduce = rememberReduceMotion()
     val ringColor by animateColorAsState(
-        targetValue = ringColorFor(phase),
+        targetValue = ringColorFor(state.phase),
         animationSpec = motionSpec(reduce, 400),
         label = "ipPillRingColor",
     )
+    val ready = IpSlot(state.displayIp, state.ipLookupPending).ready
     // No cap on the left at all -- see the tangent-join note above. Only the right end rounds.
     val shape = RoundedCornerShape(
         topStart = 0.dp,
@@ -2250,7 +2256,7 @@ private fun IpMergedPill(
         bottomEnd = PowerPillHeight / 2,
     )
     AnimatedVisibility(
-        visible = phase != ConnPhase.OFF,
+        visible = ready,
         enter = slideInHorizontally(motionSpec(reduce, 320)) { -it / 2 } + fadeIn(motionSpec(reduce, 320)),
         exit = slideOutHorizontally(motionSpec(reduce, 220)) { -it / 2 } + fadeOut(motionSpec(reduce, 180)),
         modifier = modifier,
@@ -2265,6 +2271,78 @@ private fun IpMergedPill(
             contentAlignment = Alignment.CenterStart,
         ) {
             IpCard(state = state, onRetryIp = onRetryIp)
+        }
+    }
+}
+
+/**
+ * The mirror image of [IpMergedPill] on the disc's other side: "Connecting…" while a tunnel is
+ * coming up, "Connected" once it is, hidden entirely at [ConnPhase.OFF]. Rounded cap on the
+ * LEFT (its outer end) and a flat right edge that tangent-joins the disc, the exact reverse of
+ * the IP pill's own shape — the two together read as one continuous capsule with the disc as
+ * its centre, not two unrelated badges that happen to flank it.
+ *
+ * The flat edge is positioned by its own RIGHT edge, not its left — the text's width isn't
+ * known ahead of layout, so this is placed with [RightAnchoredBox] rather than the plain
+ * `offset` the IP pill uses, which only works for a left-anchored child.
+ */
+@Composable
+private fun StatusMergedPill(phase: ConnPhase, modifier: Modifier = Modifier) {
+    val reduce = rememberReduceMotion()
+    val ringColor by animateColorAsState(
+        targetValue = ringColorFor(phase),
+        animationSpec = motionSpec(reduce, 400),
+        label = "statusPillRingColor",
+    )
+    val shape = RoundedCornerShape(
+        topStart = PowerPillHeight / 2,
+        bottomStart = PowerPillHeight / 2,
+        topEnd = 0.dp,
+        bottomEnd = 0.dp,
+    )
+    AnimatedVisibility(
+        visible = phase != ConnPhase.OFF,
+        enter = slideInHorizontally(motionSpec(reduce, 320)) { it / 2 } + fadeIn(motionSpec(reduce, 320)),
+        exit = slideOutHorizontally(motionSpec(reduce, 220)) { it / 2 } + fadeOut(motionSpec(reduce, 180)),
+        modifier = modifier,
+    ) {
+        Box(
+            Modifier
+                .height(PowerPillHeight)
+                .clip(shape)
+                .background(RefElev2)
+                .border(2.dp, ringColor.copy(alpha = 0.75f), shape)
+                .padding(start = 16.dp, end = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (phase == ConnPhase.CONNECTED) "Connected" else "Connecting…",
+                color = Color.White,
+                fontSize = IpValueSize,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                style = TextStyle(shadow = HeroInkShadow),
+            )
+        }
+    }
+}
+
+/**
+ * Places [content] so its own RIGHT edge lands at [rightEdge] and its top at [top] — both
+ * measured from this box's own origin — regardless of how wide [content] measures out to be.
+ * [StatusMergedPill] needs exactly this: it grows leftward from a fixed point on the disc, and
+ * a plain `Modifier.offset` can only anchor a child by its left edge, not its right.
+ */
+@Composable
+private fun RightAnchoredBox(rightEdge: Dp, top: Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val placeable = measurables.firstOrNull()?.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val rightPx = rightEdge.roundToPx()
+        val topPx = top.roundToPx()
+        val w = placeable?.width ?: 0
+        layout(rightPx.coerceAtLeast(0), topPx + (placeable?.height ?: 0)) {
+            placeable?.placeRelative(rightPx - w, topPx)
         }
     }
 }
@@ -3419,12 +3497,13 @@ private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
             size = size,
         )
     }
-    // The rim itself: bright near-white at the very top, easing toward the state colour —
-    // a lit bevel rather than a flat painted line.
+    // The rim itself: brightest at the very top, easing toward the dimmer edge colour — a lit
+    // bevel rather than a flat painted line. No white in the mix any more (it used to lerp
+    // toward Color.White at the peak) — the rim is the state colour throughout, on request.
     clipRect(top = 0f, bottom = radius + rimWidth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to lerp(Color.White, edgeColor, 0.25f).copy(alpha = 0.85f),
+                0.00f to edgeColor.copy(alpha = 0.85f),
                 0.50f to edgeColor.copy(alpha = 0.55f),
                 1.00f to edgeColor.copy(alpha = 0.18f),
             ),
