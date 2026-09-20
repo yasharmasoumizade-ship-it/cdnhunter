@@ -562,20 +562,20 @@ private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to
 
 /**
  * The circular cutout in the browse card's top edge that the connect disc actually rests in —
- * a real Material-style FAB cradle, not just an overlap. Concentric with the disc itself (same
- * centre, [CradleClearance] bigger radius) so the gap between the disc's own edge and the cut
- * edge is a constant ring all the way around, rather than deep under the disc and pinched at
- * the sides the way a notch centred only on x would be. Center Y is negative — above the card's
- * own top edge, same as the disc's real centre — which is what [NotchedTopCardShape] expects.
+ * a real Material-style FAB cradle, not just an overlap. Concentric with the disc AND the exact
+ * same radius as it (no clearance ring) — zero gap is the point: the card's own border, drawn
+ * with this same shape (see [BrowseCard]), and the disc's border are then literally the same
+ * circle for the arc they share, so the two read as one continuous outline rather than two
+ * borders a few dp apart. Center Y is negative — above the card's own top edge, same as the
+ * disc's real centre — which is what [NotchedTopCardShape] expects.
  *
  * Declared after [CardMargin] deliberately: top-level `val`s in the same file initialise in
  * declaration order, and this reads [CardMargin]'s value — a forward reference here would
  * silently pick up Dp's zero default instead (the same class of bug [PillJoinX] had before,
  * just at init time instead of layout time).
  */
-private val CradleClearance = 6.dp
 private val CradleNotchCenterX = CardMargin + PowerLeftInset + PowerSize / 2
-private val CradleNotchRadius = PowerSize / 2 + CradleClearance
+private val CradleNotchRadius = PowerDiscSize / 2
 
 /**
  * The gap between the hero's flag card and the browse card below it, now that the hero is a
@@ -3219,6 +3219,23 @@ private fun BrowseCard(
             .fillMaxWidth()
             .clip(
                 NotchedTopCardShape(
+                    topStart = PanelCorner,
+                    topEnd = PanelCorner,
+                    notchCenterX = CradleNotchCenterX,
+                    notchCenterY = -HeroFloatGap,
+                    notchRadius = CradleNotchRadius,
+                ),
+            )
+            // Traces the exact same cut-out outline as the clip above, in the same colour and
+            // width as the disc's own border (2dp, [phaseColor] at 75%) — since the notch's
+            // radius is exactly the disc's own radius (see [CradleNotchRadius]), this stroke
+            // and the disc's stroke are the same circle along the arc they share. Drawing both
+            // is what makes the card and the disc read as one continuous outline instead of
+            // the disc just sitting on top of a separately-bordered card.
+            .border(
+                width = 2.dp,
+                color = phaseColor.copy(alpha = 0.75f),
+                shape = NotchedTopCardShape(
                     topStart = PanelCorner,
                     topEnd = PanelCorner,
                     notchCenterX = CradleNotchCenterX,
