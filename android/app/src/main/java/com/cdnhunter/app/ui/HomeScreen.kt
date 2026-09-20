@@ -130,6 +130,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -139,6 +140,11 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
@@ -490,6 +496,51 @@ private val PillJoinX: Dp = run {
     val h = (PowerPillHeight / 2).value
     sqrt(r * r - h * h).dp
 }
+
+
+/**
+ * A rounded-top rect with a circular bite taken out of the top edge — the browse card's real
+ * shape now, built with [Path.op] ([PathOperation.Difference]) rather than drawing the disc
+ * merely on top of a plain rounded rect. [notchCenterY] is allowed to sit above the shape's own
+ * bounds (negative), which is exactly the disc's situation: only the bottom slice of the notch
+ * circle actually falls inside the card, and that slice is what shows as the dip.
+ */
+private class NotchedTopCardShape(
+    private val topStart: Dp,
+    private val topEnd: Dp,
+    private val notchCenterX: Dp,
+    private val notchCenterY: Dp,
+    private val notchRadius: Dp,
+) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val base = Path().apply {
+            addRoundRect(
+                RoundRect(
+                    rect = Rect(Offset.Zero, size),
+                    topLeft = CornerRadius(with(density) { topStart.toPx() }),
+                    topRight = CornerRadius(with(density) { topEnd.toPx() }),
+                    bottomLeft = CornerRadius.Zero,
+                    bottomRight = CornerRadius.Zero,
+                ),
+            )
+        }
+        val notch = Path().apply {
+            addOval(
+                Rect(
+                    center = Offset(
+                        with(density) { notchCenterX.toPx() },
+                        with(density) { notchCenterY.toPx() },
+                    ),
+                    radius = with(density) { notchRadius.toPx() },
+                ),
+            )
+        }
+        val cut = Path()
+        val ok = cut.op(base, notch, PathOperation.Difference)
+        return Outline.Generic(if (ok) cut else base)
+    }
+}
+
 private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -508,6 +559,24 @@ private val RowFlagSize = 27.dp
 
 private val CardCorner = 16.dp       // --radius-lg on .bottom-card — curved further on request (was 10dp)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
+
+/**
+ * The circular cutout in the browse card's top edge that the connect disc actually rests in —
+ * a real Material-style FAB cradle, not just an overlap. Concentric with the disc itself (same
+ * centre, [CradleClearance] bigger radius) so the gap between the disc's own edge and the cut
+ * edge is a constant ring all the way around, rather than deep under the disc and pinched at
+ * the sides the way a notch centred only on x would be. Center Y is negative — above the card's
+ * own top edge, same as the disc's real centre — which is what [NotchedTopCardShape] expects.
+ *
+ * Declared after [CardMargin] deliberately: top-level `val`s in the same file initialise in
+ * declaration order, and this reads [CardMargin]'s value — a forward reference here would
+ * silently pick up Dp's zero default instead (the same class of bug [PillJoinX] had before,
+ * just at init time instead of layout time).
+ */
+private val CradleClearance = 6.dp
+private val CradleNotchCenterX = CardMargin + PowerLeftInset + PowerSize / 2
+private val CradleNotchRadius = PowerSize / 2 + CradleClearance
+
 /**
  * The gap between the hero's flag card and the browse card below it, now that the hero is a
  * free-standing card rather than fused into the browse card's top edge (see [HeroBackdrop]'s
@@ -3148,7 +3217,15 @@ private fun BrowseCard(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = PanelCorner, topEnd = PanelCorner))
+            .clip(
+                NotchedTopCardShape(
+                    topStart = PanelCorner,
+                    topEnd = PanelCorner,
+                    notchCenterX = CradleNotchCenterX,
+                    notchCenterY = -HeroFloatGap,
+                    notchRadius = CradleNotchRadius,
+                ),
+            )
             // Flat, single-colour fill top to bottom — no fade/frost gradient (that used to
             // assume the flag showed through the card's top edge, which stopped being true
             // once the flag became its own separate floating card) — plus [phaseWash], the
