@@ -367,6 +367,12 @@ private val RefLoadMed = Color(0xFFE0B23B)     // .load-med bars
 private val RefLoadHigh = Color(0xFFE0563B)
 private val PowerInk = Color(0xFF0C0E14)       // .power-btn svg colour
 private val PowerGlyphInk = Color(0xFF0A0A0A)       // always-black power glyph, no phase colour
+/** The OFF-state glyph ink. Pure black ([PowerGlyphInk]) read invisible against the button's
+ *  own dark [RefElev2] fill — a black icon on a near-black disc gave no sense the button was
+ *  even there, let alone tappable. This is a light, slightly cool ink instead: enough contrast
+ *  to read as a struck (unlit) bolt at rest without borrowing the bright phase colours the
+ *  connecting/connected states use. */
+private val PowerGlyphOffInk = Color(0xFFC9D2E3)
 
 /** Darker teal for the bolt glyph once CONNECTED — deeper than [ConnectTeal] so it reads as a
  *  settled, confident colour rather than the brighter, more energetic connecting tone. */
@@ -2486,6 +2492,20 @@ private fun PowerCircle(
     }
     val ambientDepth = if (connected) breathe * 0.25f else 0f
 
+    // The disc's own state colour — the one thing that makes it read as *the* button rather
+    // than another dark card. [RefAccent] (the app's own blue) at rest, so it is never a bare
+    // grey circle sitting on the flag; the same phase colours the glyph already crossfades
+    // through while connecting/connected, so the ring and the mark always agree.
+    val ringColor by animateColorAsState(
+        targetValue = when (phase) {
+            ConnPhase.OFF -> RefAccent
+            ConnPhase.CONNECTING -> ConnectingBoltColor
+            ConnPhase.CONNECTED -> ConnectedBoltColor
+        },
+        animationSpec = motionSpec(reduce, 400),
+        label = "powerRingColor",
+    )
+
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
@@ -2498,16 +2518,21 @@ private fun PowerCircle(
                     shape = CircleShape,
                     clip = false,
                     ambientColor = HeroShadowAmbient,
-                    spotColor = HeroShadowSpot,
+                    // A soft glow in the disc's own state colour instead of a flat black spot —
+                    // this is what reads as the button lifting off the flag rather than just
+                    // casting an ordinary shadow onto it.
+                    spotColor = lerp(HeroShadowSpot, ringColor, 0.35f),
                 )
                 // Solid fill matching the server card's own material now, on request —
                 // no more real-blurred glass picking up whatever colour the flag happens
                 // to be behind it. [RefElev2] is the same tone the browse card's own header
-                // uses, plus a [heroEdge] rim for definition, so the button reads as part of
-                // the same card family as the list rather than a separate glass object.
+                // uses. The visible edge is now [ringColor] — the app's own accent at rest,
+                // the connecting/connected phase colour otherwise — so the button reads as
+                // the primary action on the screen instead of blending into the flag.
                 .clip(CircleShape)
                 .background(RefElev2)
-                .border(1.dp, heroEdge, CircleShape)
+                .background(EmbossCrown)
+                .border(2.dp, ringColor.copy(alpha = 0.75f), CircleShape)
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2547,7 +2572,7 @@ private fun PowerCircle(
                     val depth = (0.65f + sink * 0.35f + ambientDepth * 0.10f).coerceIn(0f, 1f)
                     val darkArc = Brush.radialGradient(
                         0.72f to Color.Transparent,
-                        1.00f to Color.Black.copy(alpha = 0.50f * depth),
+                        1.00f to Color.Black.copy(alpha = 0.32f * depth),
                         center = Offset(size.width * 0.30f, size.height * 0.28f),
                         radius = size.minDimension * 0.92f,
                     )
@@ -2559,7 +2584,7 @@ private fun PowerCircle(
                     )
                     val innerRim = Brush.radialGradient(
                         0.90f to Color.Transparent,
-                        1.00f to Color.Black.copy(alpha = 0.35f * depth),
+                        1.00f to Color.Black.copy(alpha = 0.22f * depth),
                         center = Offset(size.width / 2f, size.height / 2f),
                         radius = size.minDimension * 0.5f,
                     )
@@ -2656,9 +2681,10 @@ private fun PowerGlyph(
         )
     }
 
-    // OFF: plain black. CONNECTING: pulsing orange/red. CONNECTED: a settled, darker teal.
+    // OFF: light, visible ink (see PowerGlyphOffInk) — not black, which vanished against the
+    // disc's own dark fill. CONNECTING: pulsing orange/red. CONNECTED: a settled, darker teal.
     val boltColor = when (phase) {
-        ConnPhase.OFF -> PowerGlyphInk
+        ConnPhase.OFF -> PowerGlyphOffInk
         ConnPhase.CONNECTING -> ConnectingBoltColor.copy(alpha = pulse)
         ConnPhase.CONNECTED -> ConnectedBoltColor
     }
