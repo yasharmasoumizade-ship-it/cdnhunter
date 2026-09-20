@@ -470,7 +470,12 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  * leaves the headline above it as the largest *text*, which is the order the hero is
  * built to be read in.
  */
-private val PowerSize = 96.dp   // bumped from 72dp on request — still well clear of the 48dp floor
+private val PowerSize = 116.dp  // bumped from 96dp on request — bigger, still one thumb-sized target
+
+/** How far past the card's own margin the disc sits, now that it has moved off-centre to the
+ *  left — on request, so the flag card's right side has room to breathe and the disc reads
+ *  as a corner action rather than the exact middle of the artwork. */
+private val PowerLeftInset = 8.dp
 private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
@@ -1475,9 +1480,32 @@ internal fun HomeScreen(
             onSwipeUp = { onSetMode(ConnectMode.SMART) },
             onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp)),
+                .align(Alignment.TopStart)
+                .padding(
+                    start = CardMargin + PowerLeftInset,
+                    top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp),
+                ),
         )
+
+        // The status word beside the disc, now that it has room to its right instead of sitting
+        // dead-centre: "Connecting…" while a tunnel is coming up, "Connected" once it is —
+        // nothing at all at rest, since an idle disc needs no caption. Vertically centred on
+        // the disc itself, same anchor math as [PowerCircle] just offset past its width.
+        if (state.phase != ConnPhase.OFF) {
+            Text(
+                if (state.phase == ConnPhase.CONNECTED) "Connected" else "Connecting…",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                style = TextStyle(shadow = HeroInkShadow),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(
+                        start = CardMargin + PowerLeftInset + PowerSize + 14.dp,
+                        top = (heroHeight + HeroBleed).coerceAtLeast(0.dp) - PowerSize / 4,
+                    ),
+            )
+        }
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
         // on the left where the "+" add-server button used to be (see [BrowseCard]).
@@ -2405,6 +2433,36 @@ private val PowerPressElevation = 9.dp
 /** The hairline on the disc's own edge. See [PowerDiscRim]. */
 private val PowerRimStroke = 1.dp
 
+/** One full grow-and-fade cycle of the connected pulse, in ms. Two rings run half a cycle
+ *  apart (see the [Canvas] call in [PowerCircle]), so a new one is always arriving as the last
+ *  one fades — this is the spacing that makes that read as continuous. */
+private const val POWER_PULSE_MS = 1800
+
+/** How far past the disc's own edge the ring travels, as a fraction of the disc's radius —
+ *  a ring that only reached the disc's own rim would just look like the border thickening. */
+private const val PULSE_MAX_REACH = 0.55f
+
+/** One pass of the connected pulse: a ring starting right at the disc's edge, growing outward
+ *  by [PULSE_MAX_REACH] of the disc's own radius, its stroke thinning and its alpha falling to
+ *  nothing as it goes — the classic "radar" fade, so it reads as a signal leaving the disc
+ *  rather than a shape that pops in and snaps out. */
+private fun DrawScope.drawPulseRing(progress: Float, color: Color) {
+    if (progress <= 0f) return
+    val discRadius = (PowerDiscSize.toPx()) / 2f
+    val radius = discRadius * (1f + PULSE_MAX_REACH * progress)
+    val alpha = (1f - progress).coerceIn(0f, 1f) * 0.55f
+    val strokeStartPx = 2.5.dp.toPx()
+    val strokeEndPx = 0.5.dp.toPx()
+    val stroke = strokeStartPx + (strokeEndPx - strokeStartPx) * progress
+    if (alpha <= 0.01f) return
+    drawCircle(
+        color = color.copy(alpha = alpha),
+        radius = radius,
+        center = center,
+        style = Stroke(width = stroke),
+    )
+}
+
 @Composable
 private fun PowerCircle(
     mode: ConnectMode,
@@ -2506,7 +2564,36 @@ private fun PowerCircle(
         label = "powerRingColor",
     )
 
+    // The one thing that keeps moving once the tunnel is up: a ring that grows outward from
+    // the disc's own edge and fades as it goes, on a loop — the "signal" pulse most VPN apps
+    // use for "connected and live" instead of a static glow. Two copies half a cycle apart
+    // (see the [Canvas] call below) read as a continuous pulse rather than one ring blinking
+    // on and off. Runs only while connected, and not at all under reduced motion.
+    val pulseInfinite = rememberInfiniteTransition(label = "powerPulse")
+    val pulseProgress by if (reduce || !connected) {
+        remember { mutableStateOf(0f) }
+    } else {
+        pulseInfinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(POWER_PULSE_MS, easing = LinearOutSlowInEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "powerPulseVal",
+        )
+    }
+
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
+        // Drawn on the OUTER box, not inside the disc's own clipped circle below — the pulse
+        // has to bleed past the disc's own edge to read as an expanding ring rather than a
+        // glow trapped under the glass. Only drawn while connected.
+        if (connected) {
+            Canvas(Modifier.matchParentSize()) {
+                drawPulseRing(pulseProgress, ringColor)
+                drawPulseRing((pulseProgress + 0.5f) % 1f, ringColor)
+            }
+        }
         // No ring, no glow, no spinner in any phase now — the disc shows the plain black
         // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
         Box(
@@ -3071,11 +3158,12 @@ private fun BrowseCard(
                     .align(Alignment.TopCenter)
                     .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
                     .padding(top = 4.dp),
-                // Only the search toggle lives in this band now — pinned to the trailing
-                // (right) edge, clear of the disc that docks in the centre.
-                horizontalArrangement = Arrangement.End,
+                // The public IP fills the band's left side — it used to be dead space once
+                // the disc moved off centre — and the search toggle keeps the trailing edge.
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IpCard(state = state, onRetryIp = onRetryIp, modifier = Modifier.padding(start = 12.dp))
                 SearchToggle(open = searchOpen, onClick = onToggleSearch)
             }
         }
