@@ -100,6 +100,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
@@ -151,6 +152,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -198,6 +200,7 @@ import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
 import com.cdnhunter.app.vpn.AppSettings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 // dev.chrisbanes.haze imports removed — the haze/glass-blur system they supported is gone
 // from this file now that the connect button and the browse-card masthead are solid,
@@ -2656,6 +2659,51 @@ private fun PowerCircle(
         label = "powerPress",
     )
 
+    // The "liquid" loading morph while connecting: four independent corner-size percentages
+    // that keep re-targeting to a new, gently asymmetric set on a fixed cadence, tweened
+    // smoothly between them — an organic wobble rather than a mechanical spin. Settles back
+    // to a perfect circle (50/50/50/50) the moment the phase leaves CONNECTING, from wherever
+    // in the cycle it happened to be, rather than snapping or waiting for a "clean" frame.
+    val blobTopStart = remember { Animatable(50f) }
+    val blobTopEnd = remember { Animatable(50f) }
+    val blobBottomEnd = remember { Animatable(50f) }
+    val blobBottomStart = remember { Animatable(50f) }
+    LaunchedEffect(phase, reduce) {
+        if (phase == ConnPhase.CONNECTING && !reduce) {
+            val shapes = listOf(
+                listOf(46f, 60f, 40f, 55f),
+                listOf(60f, 45f, 55f, 40f),
+                listOf(40f, 55f, 60f, 45f),
+                listOf(55f, 40f, 45f, 60f),
+            )
+            var i = 0
+            while (true) {
+                i = (i + 1) % shapes.size
+                val (ts, te, be, bs) = shapes[i]
+                launch { blobTopStart.animateTo(ts, tween(550, easing = FastOutSlowInEasing)) }
+                launch { blobTopEnd.animateTo(te, tween(550, easing = FastOutSlowInEasing)) }
+                launch { blobBottomEnd.animateTo(be, tween(550, easing = FastOutSlowInEasing)) }
+                launch { blobBottomStart.animateTo(bs, tween(550, easing = FastOutSlowInEasing)) }
+                delay(550)
+            }
+        } else {
+            launch { blobTopStart.animateTo(50f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { blobTopEnd.animateTo(50f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { blobBottomEnd.animateTo(50f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { blobBottomStart.animateTo(50f, tween(400, easing = FastOutSlowInEasing)) }
+        }
+    }
+    val discShape = remember(
+        blobTopStart.value, blobTopEnd.value, blobBottomEnd.value, blobBottomStart.value,
+    ) {
+        RoundedCornerShape(
+            topStart = CornerSize(percent = blobTopStart.value.toInt().coerceIn(0, 50)),
+            topEnd = CornerSize(percent = blobTopEnd.value.toInt().coerceIn(0, 50)),
+            bottomEnd = CornerSize(percent = blobBottomEnd.value.toInt().coerceIn(0, 50)),
+            bottomStart = CornerSize(percent = blobBottomStart.value.toInt().coerceIn(0, 50)),
+        )
+    }
+
     val fillTarget = when (phase) {
         ConnPhase.OFF -> 0f
         ConnPhase.CONNECTING -> 1f
@@ -2717,8 +2765,9 @@ private fun PowerCircle(
     )
 
     Box(modifier.size(PowerSize), contentAlignment = Alignment.Center) {
-        // No ring, no glow, no spinner in any phase now — the disc shows the plain black
-        // bolt glyph only, in OFF, CONNECTING and CONNECTED alike. See [PowerGlyph].
+        // No ring, no glow, no spinner — the disc shows the bolt glyph while OFF/CONNECTING,
+        // morphing into a checkmark once CONNECTED. The disc's own outline also liquid-morphs
+        // through a soft asymmetric blob while CONNECTING. See [PowerGlyph] and [discShape].
         Box(
             Modifier
                 .size(PowerDiscSize)
@@ -2739,10 +2788,10 @@ private fun PowerCircle(
                 // uses. The visible edge is now [ringColor] — the app's own accent at rest,
                 // the connecting/connected phase colour otherwise — so the button reads as
                 // the primary action on the screen instead of blending into the flag.
-                .clip(CircleShape)
+                .clip(discShape)
                 .background(RefElev2)
                 .background(EmbossCrown)
-                .border(2.dp, ringColor.copy(alpha = 0.75f), CircleShape)
+                .border(2.dp, ringColor.copy(alpha = 0.75f), discShape)
                 .pointerInput(mode, threshold) {
                     var travel = 0f
                     detectVerticalDragGestures(
@@ -2900,18 +2949,52 @@ private fun PowerGlyph(
     }
     val boltPath = remember { ConnectBoltPath }
 
-    Canvas(modifier) {
-        val bounds = boltPath.getBounds()
-        val boltScale = (size.minDimension * 0.82f) / maxOf(bounds.width, bounds.height)
-        val offsetX = (size.width - bounds.width * boltScale) / 2f - bounds.left * boltScale
-        val offsetY = (size.height - bounds.height * boltScale) / 2f - bounds.top * boltScale
+    // The bolt morphs into a checkmark on connect, rather than staying a bolt in every phase —
+    // a scale+fade crossfade between the two rather than an abrupt swap, so it reads as one
+    // mark changing shape. Reduce-motion just cuts straight to the end state.
+    val checkIn by animateFloatAsState(
+        targetValue = if (phase == ConnPhase.CONNECTED) 1f else 0f,
+        animationSpec = if (reduce) snap() else tween(360, easing = FastOutSlowInEasing),
+        label = "checkIn",
+    )
 
-        translate(left = offsetX, top = offsetY) {
-            scale(scale = boltScale, pivot = Offset.Zero) {
+    Canvas(modifier) {
+        if (checkIn < 0.999f) {
+            val bounds = boltPath.getBounds()
+            val boltScale = (size.minDimension * 0.82f) / maxOf(bounds.width, bounds.height) *
+                (1f - checkIn * 0.35f)
+            val offsetX = (size.width - bounds.width * boltScale) / 2f - bounds.left * boltScale
+            val offsetY = (size.height - bounds.height * boltScale) / 2f - bounds.top * boltScale
+
+            translate(left = offsetX, top = offsetY) {
+                scale(scale = boltScale, pivot = Offset.Zero) {
+                    drawPath(
+                        path = boltPath,
+                        color = boltColor.copy(alpha = boltColor.alpha * (1f - checkIn)),
+                        style = Fill,
+                    )
+                }
+            }
+        }
+        if (checkIn > 0.001f) {
+            // A simple two-segment checkmark, drawn directly rather than parsed from path
+            // data — no separate asset needed for one shape this plain. Coordinates are
+            // fractions of the glyph's own box so it scales with everything else here.
+            val w = size.width
+            val h = size.height
+            val checkScale = 0.55f + 0.45f * checkIn
+            val cx = w / 2f
+            val cy = h / 2f
+            scale(scale = checkScale, pivot = Offset(cx, cy)) {
+                val path = Path().apply {
+                    moveTo(w * 0.24f, h * 0.53f)
+                    lineTo(w * 0.42f, h * 0.70f)
+                    lineTo(w * 0.78f, h * 0.32f)
+                }
                 drawPath(
-                    path = boltPath,
-                    color = boltColor,
-                    style = Fill,
+                    path = path,
+                    color = ConnectedBoltColor.copy(alpha = checkIn),
+                    style = Stroke(width = size.minDimension * 0.10f, cap = StrokeCap.Round, join = StrokeJoin.Round),
                 )
             }
         }
