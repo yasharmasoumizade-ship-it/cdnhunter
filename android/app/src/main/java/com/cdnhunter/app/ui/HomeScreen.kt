@@ -202,9 +202,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 import kotlin.random.Random
-// dev.chrisbanes.haze imports removed — the haze/glass-blur system they supported is gone
-// from this file now that the connect button and the browse-card masthead are solid,
-// card-matching fills rather than real-blurred glass over the flag.
+// Re-added on request: a real, low-blur glass layer over the browse card's masthead, so
+// the flag (extended further down, see HeroBleed) shows through it blurred rather than
+// being hidden behind a solid fill.
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.haze
 
 // ── Typography ───────────────────────────────────────────────────────────────
 // Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
@@ -436,10 +441,11 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 8.dp    // cut down further on request — shorter still, and per the
-                                 // note above a shorter bleed also crops less of the flag's
-                                 // own aspect (closer to its true shape), so this serves both
-                                 // "less height" and "less zoom" at once.
+private val HeroBleed = 88.dp   // extended on request so the flag reaches behind the browse
+                                 // card's masthead ([CardTopRoom], 48dp) with room to spare —
+                                 // see [HeroFloatGap] (now decoupled from this) for why the
+                                 // two cards still sit [HeroFloatGap] apart in *layout* even
+                                 // though the artwork now visually overlaps that gap.
 
 /** How long the phase crossfade takes — the ink, the light, and every surface. */
 private const val PHASE_FADE_MS = 520
@@ -517,11 +523,13 @@ private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to
 /**
  * The gap between the hero's flag card and the browse card below it, now that the hero is a
  * free-standing card rather than fused into the browse card's top edge (see [HeroBackdrop]'s
- * section comment). Has to clear [HeroBleed] — the flag card's own real bottom sits
- * [HeroBleed] past the hero content's foot — plus enough on top of that to read as an actual
- * gap rather than the two cards' corners touching.
+ * section comment). Fixed on its own now (used to be [HeroBleed] + 20dp, which meant the two
+ * could never overlap no matter how far [HeroBleed] grew) — [HeroBleed] is deliberately much
+ * taller than this now, so the flag card's own artwork extends *past* this gap and behind the
+ * browse card's masthead, which is real glass now (see [BrowseCard]) rather than a solid fill,
+ * so that overlap actually shows through, blurred.
  */
-private val HeroFloatGap = HeroBleed + 20.dp
+private val HeroFloatGap = 20.dp
 private val RingSize = 50.dp         // .usage-ring
 private val RingStroke = 5.dp        // (50px ring − 40px inner disc) / 2
 private val TapTarget = 48.dp        // touch floor; the mockup's boxes are 40px
@@ -1448,8 +1456,22 @@ internal fun HomeScreen(
         WindowInsets.statusBars.getTop(this).toDp()
     } + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
 
+    // Where the flag's own visible body starts (right under the menu/country row) and ends
+    // ([bandHeight] in [HeroBackdrop], recomputed the same way here since it is not otherwise
+    // exposed) — the disc now docks at the midpoint of that span on request, not at the
+    // card's foot, so it reads as sitting *in* the flag rather than bridging two cards.
+    val flagBodyTop = with(LocalDensity.current) {
+        WindowInsets.statusBars.getTop(this).toDp()
+    } + HeroTopGap + HeroTopRowHeight
+    val flagBodyBottom = heroHeight + HeroBleed
+    val powerDockTop = ((flagBodyTop + flagBodyBottom) / 2 - PowerSize / 2).coerceAtLeast(0.dp)
+
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
+        // Blur source for the browse card's masthead glass (see [BrowseCard]) — the flag
+        // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the
+        // masthead can real-blur it now that it reaches behind there ([HeroBleed]).
+        val hazeState = remember { HazeState() }
         // Behind everything: the flag under dark glass, and the light — now a free-standing
         // card (margin on both sides, rounded on all four corners) rather than fused edge-to-
         // edge into the browse card below it. See [HeroBackdrop]'s section comment.
@@ -1460,6 +1482,7 @@ internal fun HomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(horizontal = CardMargin)
+                .haze(hazeState)
                 // Bottom corners only: the card's real, new edge — its floating foot. The top
                 // corners stay square and flush with the status bar; rounding them too cut a
                 // curved notch right where the clock and system icons sit, which read as a
@@ -1487,14 +1510,15 @@ internal fun HomeScreen(
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
+                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        // The connect dock: the disc, centred on the flag card's own foot now (heroHeight +
-        // HeroBleed — the card's real bottom edge, [HeroFloatGap] above where the browse card
-        // begins) — on request, back from the earlier off-centre-left position — plus its two
-        // merged pills, one on each side. Both pills are positioned in this Box's own LOCAL
+        // The connect dock: the disc, now centred on the flag's own body (the midpoint of
+        // [flagBodyTop]..[flagBodyBottom], see [powerDockTop]) rather than docked on the
+        // card's foot — on request, "in the middle of the flag" rather than bridging the two
+        // cards. Its two merged pills, one on each side, are positioned in this Box's own LOCAL
         // coordinate space (the disc's own top-left is this Box's origin), which is what lets
         // a plain [Alignment.TopCenter] on the Box itself centre the whole dock: the pills
         // overflow left and right of the Box's own PowerSize-wide measured bounds via
@@ -1510,7 +1534,7 @@ internal fun HomeScreen(
         Box(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = (heroHeight + HeroBleed - PowerSize / 2).coerceAtLeast(0.dp)),
+                .padding(top = powerDockTop),
         ) {
             IpMergedPill(
                 state = state,
@@ -3303,6 +3327,7 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     onRetryIp: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -3420,19 +3445,37 @@ private fun BrowseCard(
         // The card's masthead: just the search magnifier now, pinned to the trailing (right)
         // edge. The public IP moved out to [IpMergedPill] (a pill growing out of the connect
         // disc, drawn in the parent [Box]), so this band is just the toggle now. Curved on
-        // its own top corners ([MastheadCurve]) to match the disc/pill it sits under, instead
-        // of the flat-topped rectangle it was.
+        // its own top corners ([MastheadCurve]) to match the disc/pill it sits under.
+        //
+        // Real glass again, on request: the flag now reaches down behind this band (see
+        // [HeroBleed]), so a low-blur haze layer — [RefElev2] fallback fill, a near-zero
+        // tint, and a much lighter blur than the connect dock ever used — lets it show
+        // through blurred instead of being hidden behind a solid gradient fill.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(CardTopRoom)
                 .clip(RoundedCornerShape(topStart = MastheadCurve, topEnd = MastheadCurve))
-                .background(
-                    Brush.verticalGradient(
-                        0.00f to RefElev2,
-                        0.72f to RefElev2.copy(alpha = 0.55f),
-                        1.00f to RefElev2.copy(alpha = 0.0f),
-                    ),
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeChild(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = RefElev2,
+                                tints = listOf(HazeTint(RefElev2.copy(alpha = 0.35f))),
+                                blurRadius = 8.dp,
+                                noiseFactor = 0.08f,
+                            ),
+                        )
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                0.00f to RefElev2,
+                                0.72f to RefElev2.copy(alpha = 0.55f),
+                                1.00f to RefElev2.copy(alpha = 0.0f),
+                            ),
+                        )
+                    },
                 ),
         ) {
             Row(
