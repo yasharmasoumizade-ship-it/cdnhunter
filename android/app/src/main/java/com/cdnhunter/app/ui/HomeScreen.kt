@@ -1608,46 +1608,39 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
     val lit = phase == ConnPhase.CONNECTED
 
-    // Real black behind the status bar and the menu/country row now, on request — not the flag.
-    // The row itself still measures and reports [heroHeight] exactly as before (see [Header]),
-    // so nothing downstream (the disc's dock point, the browse card's seam) moves; only how
-    // this backdrop paints within that same footprint changes. [blackStripHeight] is the
-    // system's own status-bar inset plus the row's own [HeroTopGap] and an estimate of the
-    // row's height ([HeroTopRowHeight]) — an estimate because this composable doesn't see the
-    // row's real measured size (that lives in [Header], a separate composable) and re-plumbing
-    // that through for a few dp of precision isn't worth it for a background rectangle.
+    // Real black behind the status bar and the menu/country row, on request — drawn as an
+    // overlay ON TOP of the flag's own top edge now, not by shrinking and pushing the flag
+    // down. The first version did the latter and cropped the flag artwork itself (visibly
+    // cut off compared to before); painting over it instead leaves the flag exactly as it
+    // was — same box, same crop, same zoom, same bandHeight — with just its very top few
+    // dp covered by solid black. [blackStripHeight] is the system's own status-bar inset
+    // plus the row's own [HeroTopGap] and an estimate of the row's height
+    // ([HeroTopRowHeight]) — an estimate because this composable doesn't see the row's real
+    // measured size (that lives in [Header], a separate composable) and re-plumbing that
+    // through for a few dp of precision isn't worth it for a background rectangle.
     val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
     val blackStripHeight = statusBarHeight + HeroTopGap + HeroTopRowHeight
-    val flagHeight = (bandHeight - blackStripHeight).coerceAtLeast(140.dp)
 
     Box(modifier) {
-        // The black strip: flat, no gradient — this is chrome, not artwork, so it should read
-        // as a solid bar the status bar and the top row sit on, not as another lit surface.
-        Box(Modifier.fillMaxWidth().height(blackStripHeight).background(Color.Black))
-        // The floor under the artwork, over the (now shorter, lower) flag band only: it fades
-        // out across the bleed so the card's own translucent top is not backed by opaque
-        // chrome. Without it, a flag crossfading at 40% alpha would show the page gradient
-        // through itself.
-        Box(
-            Modifier
-                .align(Alignment.TopStart)
-                .padding(top = blackStripHeight)
-                .fillMaxWidth()
-                .height(flagHeight)
-                .background(HeroFloor),
-        )
+        // The floor under the artwork, over the band only: it fades out across the bleed so
+        // the card's own translucent top is not backed by opaque chrome. Without it, a flag
+        // crossfading at 40% alpha would show the page gradient through itself.
+        Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(top = blackStripHeight)
                     .fillMaxWidth()
-                    .height(flagHeight)
+                    .height(bandHeight)
                     .alpha(flagAlpha)
                     .scale(FlagZoom),
             )
         }
+        // The black strip: painted last, over the flag's own top edge, so the status bar and
+        // the menu/country row sit on real black without the flag's own box, crop or zoom
+        // changing at all underneath it.
+        Box(Modifier.fillMaxWidth().height(blackStripHeight).background(Color.Black))
         // drawHeroAtmosphere's crown/key-light/rim/horizon/vignette stack removed entirely
         // (not just dimmed) -- the flag shows at its own true colours with nothing drawn over
         // it, in both idle and connected states. `ambient`/`lit` above are now only used by
@@ -3595,7 +3588,11 @@ private val CardTopRoom = 56.dp
 /** How much the masthead band's own top corners curve — a "matching" curved header per
  *  request, echoing the disc/pill shape it sits under rather than [PanelCorner]'s flatter
  *  card-corner radius. */
-private val MastheadCurve = 32.dp
+private val MastheadCurve = PanelCorner  // was its own, larger 32dp — mismatched with the
+                                          // card's own PanelCorner clip and showed as a second,
+                                          // visible edge peeking out around the masthead's own
+                                          // tighter curve. Same radius as the card now, so the
+                                          // two curves coincide and read as one edge.
 
 // PanelFrostFade removed alongside [panelFrost] itself — the icy-glass wash it sized is
 // gone now that the card is a flat fill; see the note above [CardTopRoom].
