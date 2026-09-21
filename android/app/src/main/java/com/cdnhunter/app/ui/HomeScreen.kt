@@ -1608,18 +1608,42 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
     val lit = phase == ConnPhase.CONNECTED
 
+    // Real black behind the status bar and the menu/country row now, on request — not the flag.
+    // The row itself still measures and reports [heroHeight] exactly as before (see [Header]),
+    // so nothing downstream (the disc's dock point, the browse card's seam) moves; only how
+    // this backdrop paints within that same footprint changes. [blackStripHeight] is the
+    // system's own status-bar inset plus the row's own [HeroTopGap] and an estimate of the
+    // row's height ([HeroTopRowHeight]) — an estimate because this composable doesn't see the
+    // row's real measured size (that lives in [Header], a separate composable) and re-plumbing
+    // that through for a few dp of precision isn't worth it for a background rectangle.
+    val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
+    val blackStripHeight = statusBarHeight + HeroTopGap + HeroTopRowHeight
+    val flagHeight = (bandHeight - blackStripHeight).coerceAtLeast(140.dp)
+
     Box(modifier) {
-        // The floor under the artwork, over the band only: it fades out across the bleed so
-        // the card's own translucent top is not backed by opaque chrome. Without it, a flag
-        // crossfading at 40% alpha would show the page gradient through itself.
-        Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
+        // The black strip: flat, no gradient — this is chrome, not artwork, so it should read
+        // as a solid bar the status bar and the top row sit on, not as another lit surface.
+        Box(Modifier.fillMaxWidth().height(blackStripHeight).background(Color.Black))
+        // The floor under the artwork, over the (now shorter, lower) flag band only: it fades
+        // out across the bleed so the card's own translucent top is not backed by opaque
+        // chrome. Without it, a flag crossfading at 40% alpha would show the page gradient
+        // through itself.
+        Box(
+            Modifier
+                .align(Alignment.TopStart)
+                .padding(top = blackStripHeight)
+                .fillMaxWidth()
+                .height(flagHeight)
+                .background(HeroFloor),
+        )
         if (flagAlpha > 0.01f) {
             HeaderFlag(
                 countryCode = lastFlagCountry,
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .padding(top = blackStripHeight)
                     .fillMaxWidth()
-                    .height(bandHeight)
+                    .height(flagHeight)
                     .alpha(flagAlpha)
                     .scale(FlagZoom),
             )
@@ -1779,8 +1803,16 @@ private val HeroVignetteStops = listOf(
 private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
- *  comfortable step below the system clock/battery rather than flush against them. */
-private val HeroTopGap = 12.dp       // snapped to the 4dp grid, was 10dp
+ *  comfortable step below the system clock/battery rather than flush against them. Cut down
+ *  on request, along with the row moving onto its own black strip (see [HeroBackdrop]) —
+ *  both are what pull the menu/country row up higher. */
+private val HeroTopGap = 5.dp
+
+/** An estimate of the menu+country row's own real height (never separately measured — see the
+ *  note in [HeroBackdrop]) — enough to cover [CountryHeadline]'s 34sp line plus its own
+ *  padding with a little to spare, so the black strip never runs a hair short and shows a
+ *  sliver of flag peeking out from behind the headline's own descender. */
+private val HeroTopRowHeight = 46.dp
 
 /**
  * The flag the hero reserves below the top row for the docked connect disc's *upper half*.
