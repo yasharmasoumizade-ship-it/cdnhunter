@@ -169,7 +169,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -442,14 +441,6 @@ private val HeroBleed = 8.dp    // cut down further on request — shorter still
                                  // own aspect (closer to its true shape), so this serves both
                                  // "less height" and "less zoom" at once.
 
-/**
- * What the backdrop measures on the first frame only, before the header's rows have been
- * measured once (see [HomeScreen]'s `heroContentPx`). Within a few dp of the real value on
- * a normal phone at default font scale, so nothing visibly moves when the measurement
- * lands.
- */
-private val HeroBackdropFallback = 340.dp
-
 /** How long the phase crossfade takes — the ink, the light, and every surface. */
 private const val PHASE_FADE_MS = 520
 
@@ -504,7 +495,7 @@ private val PillJoinX: Dp = run {
 private val PillSafetyOverlap = 4.dp
 
 
-private val PanelCorner = 18.dp      // .browse-card border-radius — curved further on request (was 12dp)
+private val PanelCorner = 22.dp      // .browse-card border-radius — curved further on request (was 18dp)
 private val ListPad = 16.dp          // .server-row / .tab-row horizontal padding
 /**
  * The server list's own flag, smaller than the connect bar's.
@@ -1114,11 +1105,14 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
 /**
  * The one drawn copy of the flag, filling whatever box [modifier] gives it.
  *
- * One rule for both sources: scale uniformly until the box is covered, clip the overhang.
- * [ContentScale.Crop], centred — no forced ratio, no unbounded width. The flag's own
- * proportions are what get drawn,
- * whatever the source's are (a square bundled asset, a 5:3 German flagcdn SVG, a 19:10
- * American one) and whatever the box's are on this particular phone.
+ * One rule for both sources: scale uniformly until the box's WIDTH is filled, no cropping.
+ * [ContentScale.Fit], centred — no forced ratio, no unbounded width. The flag's own
+ * proportions are what get drawn, whatever the source's are (a square bundled asset, a 5:3
+ * German flagcdn SVG, a 19:10 American one) — on request, the whole flag now always shows;
+ * whatever doesn't fill the fixed hero box on a given aspect ratio just letterboxes onto
+ * [HeroFloor] instead of being cut off. This used to be [ContentScale.Crop]: consistent
+ * geometry across every country at the cost of never showing 100% of any one flag, which is
+ * exactly what changed here.
  *
  * This is deliberately not FillBounds into a fixed box, which is what it was: that stretched
  * every source to one 4:3 rectangle, so the German bands were squeezed ~7% vertically and the
@@ -1155,7 +1149,7 @@ private fun FlagLayer(
             .build(),
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
-        contentScale = ContentScale.Crop,
+        contentScale = ContentScale.Fit,
         alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
@@ -1441,12 +1435,18 @@ internal fun HomeScreen(
     }
     val activeId = state.activeConfig?.id
 
-    // How tall the hero measured, in px. The backdrop behind it is drawn [HeroBleed] taller
-    // (see [HeroBackdrop]); the connect disc is docked on the hero's foot at this height.
-    var heroContentPx by remember { mutableStateOf(0) }
+    // The hero's height used to be *measured*, live, off Header's own layout
+    // (Modifier.onSizeChanged) — and the connect disc's dock point was computed from that
+    // number every recomposition. Two composables agreeing on a number by both re-deriving it
+    // independently, one measuring and one consuming a frame later, is exactly the kind of
+    // thing that reads as "jitter" even when each individual value is correct: a font metrics
+    // change, an inset arriving a frame late, anything. Fixed now, on request: the same rows
+    // Header itself lays out (see there), just as compile-time constants added up instead of
+    // a runtime measurement, plus the one genuinely external, but session-stable, number —
+    // the status bar's own inset.
     val heroHeight = with(LocalDensity.current) {
-        if (heroContentPx > 0) heroContentPx.toDp() else HeroBackdropFallback
-    }
+        WindowInsets.statusBars.getTop(this).toDp()
+    } + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
@@ -1467,13 +1467,12 @@ internal fun HomeScreen(
                 .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
         )
         Column(Modifier.fillMaxSize()) {
-            // The hero: hamburger, country, address. Its measured height is where the flag
-            // card's own content ends; the card's real foot is [HeroBleed] further down
-            // (see [HeroFloatGap]), which is where the browse card now begins.
+            // The hero: hamburger, country, address. Its own real layout — this is no longer
+            // measured (see [heroHeight] above), so nothing here reads back into that number;
+            // it is free to lay out however Header itself needs to.
             Header(
                 state = state,
                 onOpenSettings = onOpenSettings,
-                modifier = Modifier.onSizeChanged { heroContentPx = it.height },
             )
             Spacer(Modifier.height(HeroFloatGap))
             BrowseCard(
@@ -1582,12 +1581,12 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    // Fixed box, [ContentScale.Crop]: every country's flag scales uniformly to cover this
-    // exact box and gets clipped to it, so there is never a gap on any side for any aspect
-    // ratio — a wide flag (2:1 British) crops its sides, a narrow one (5:3 German is close
-    // to square by comparison) crops less. This is the Windscribe-style fixed-frame look:
-    // consistent geometry across every country, at the cost of never showing 100% of any
-    // one flag. See [HeroBleed] for the one knob that tunes how tight that crop is.
+    // Fixed box, [ContentScale.Fit]: every country's flag scales uniformly to fit inside this
+    // exact box with nothing cropped off, at the cost of not always covering it — a flag whose
+    // aspect ratio doesn't match the box's letterboxes onto [HeroFloor] instead. This used to
+    // be [ContentScale.Crop] (the Windscribe-style fixed-frame look: consistent geometry across
+    // every country, never showing 100% of any one flag) — switched on request, so the whole
+    // flag always shows. See [HeroBleed] for the one knob that tunes the box's own height.
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1608,23 +1607,12 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // on the ring is the sole "working" cue, so there is no glow while an attempt is in flight.
     val lit = phase == ConnPhase.CONNECTED
 
-    // Real black behind the status bar and the menu/country row, on request — drawn as an
-    // overlay ON TOP of the flag's own top edge now, not by shrinking and pushing the flag
-    // down. The first version did the latter and cropped the flag artwork itself (visibly
-    // cut off compared to before); painting over it instead leaves the flag exactly as it
-    // was — same box, same crop, same zoom, same bandHeight — with just its very top few
-    // dp covered by solid black. [blackStripHeight] is the system's own status-bar inset
-    // plus the row's own [HeroTopGap] and an estimate of the row's height
-    // ([HeroTopRowHeight]) — an estimate because this composable doesn't see the row's real
-    // measured size (that lives in [Header], a separate composable) and re-plumbing that
-    // through for a few dp of precision isn't worth it for a background rectangle.
-    val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
-    val blackStripHeight = statusBarHeight + HeroTopGap + HeroTopRowHeight
-
     Box(modifier) {
         // The floor under the artwork, over the band only: it fades out across the bleed so
         // the card's own translucent top is not backed by opaque chrome. Without it, a flag
-        // crossfading at 40% alpha would show the page gradient through itself.
+        // crossfading at 40% alpha would show the page gradient through itself. It also backs
+        // whatever letterboxing [ContentScale.Fit] leaves on the sides/top now that the flag
+        // is no longer cropped to fill this box (see [FlagLayer]).
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
             HeaderFlag(
@@ -1637,10 +1625,8 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .scale(FlagZoom),
             )
         }
-        // The black strip: painted last, over the flag's own top edge, so the status bar and
-        // the menu/country row sit on real black without the flag's own box, crop or zoom
-        // changing at all underneath it.
-        Box(Modifier.fillMaxWidth().height(blackStripHeight).background(Color.Black))
+        // The black strip behind the menu/country row is gone again, on request — the flag
+        // shows in full behind them now, same as it did before that experiment.
         // drawHeroAtmosphere's crown/key-light/rim/horizon/vignette stack removed entirely
         // (not just dimmed) -- the flag shows at its own true colours with nothing drawn over
         // it, in both idle and connected states. `ambient`/`lit` above are now only used by
@@ -1796,15 +1782,14 @@ private val HeroVignetteStops = listOf(
 private val HeroFlagSpace = 40.dp
 
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
- *  comfortable step below the system clock/battery rather than flush against them. Cut down
- *  on request, along with the row moving onto its own black strip (see [HeroBackdrop]) —
- *  both are what pull the menu/country row up higher. */
-private val HeroTopGap = 5.dp
+ *  comfortable step below the system clock/battery rather than flush against them. Back to a
+ *  normal gap — the black-strip experiment that pulled this down to 5dp was reverted. */
+private val HeroTopGap = 10.dp
 
-/** An estimate of the menu+country row's own real height (never separately measured — see the
- *  note in [HeroBackdrop]) — enough to cover [CountryHeadline]'s 34sp line plus its own
- *  padding with a little to spare, so the black strip never runs a hair short and shows a
- *  sliver of flag peeking out from behind the headline's own descender. */
+/** An estimate of the menu+country row's own real height, used only to keep [HomeScreen]'s
+ *  fixed [heroHeight] in the right neighbourhood of Header's real layout (see the note there)
+ *  — enough to cover [CountryHeadline]'s 34sp line plus its own padding with a little to
+ *  spare. */
 private val HeroTopRowHeight = 46.dp
 
 /**
@@ -3583,7 +3568,7 @@ private fun ListScrollEdge(elevation: Float, modifier: Modifier = Modifier) {
  * connect disc's overlap (it's 72dp now, doesn't need one), but kept as a fixed band so it
  * has a defined area to apply real glass to (see [BrowseCard]'s masthead Box).
  */
-private val CardTopRoom = 56.dp
+private val CardTopRoom = 48.dp
 
 /** How much the masthead band's own top corners curve — a "matching" curved header per
  *  request, echoing the disc/pill shape it sits under rather than [PanelCorner]'s flatter
