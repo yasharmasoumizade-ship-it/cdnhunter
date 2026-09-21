@@ -2251,7 +2251,10 @@ private fun IpMergedPill(
         animationSpec = motionSpec(reduce, 400),
         label = "ipPillRingColor",
     )
-    val ready = IpSlot(state.displayIp, state.ipLookupPending).ready
+    // "Resolved" alone isn't enough to show this — displayIp holds the device's real, non-VPN
+    // address just as readily as a tunnel's, so at OFF it would show the wrong thing at the
+    // wrong time. The pill only has a reason to exist once the tunnel is actually up.
+    val ready = state.phase == ConnPhase.CONNECTED && IpSlot(state.displayIp, state.ipLookupPending).ready
     // No cap on the left at all -- see the tangent-join note above. Only the right end rounds.
     val shape = RoundedCornerShape(
         topStart = 0.dp,
@@ -3598,26 +3601,28 @@ private fun DrawScope.drawPanelSheen() {
 }
 
 /**
- * The card's top edge and its two corner arcs — a raised, lit rim rather than a recessed
- * shadow. No dark inward band anymore: the edge reads as *catching* light, not as a lip
- * carved into the page.
+ * The card's top edge and its two corner arcs — a real embossed bevel now, not a flat painted
+ * line: a soft dark undershadow, a top-lit body in [edgeColor], and a bright sheen riding the
+ * very top of the stroke. Three passes stacked in that order is what reads as polished metal
+ * catching light rather than a coloured hairline sitting on the surface.
  *
- * The colour is [edgeColor], animated in [BrowseCard] off [HomeUiState.phase] — idle blue,
- * [ConnectingBoltColor] while connecting, [ConnectedBoltColor] once connected — so the one
- * edge does double duty as a status cue as well as the card's finish.
+ * The sheen is a *lightened tint of [edgeColor]*, not plain white — glossy without going back
+ * to the flat white peak this rim used to have (removed on an earlier request). The colour is
+ * animated in [BrowseCard] off [HomeUiState.phase] — idle blue, [ConnectingBoltColor] while
+ * connecting, [ConnectedBoltColor] once connected — so the one edge still doubles as a status
+ * cue as well as the card's finish.
  */
 private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
     val radius = PanelCorner.toPx()
-    val rimWidth = 1.4.dp.toPx()
-    // A soft glow just inside the rim, in the state colour, is what sells "raised" without
-    // a shadow: a highlight needs something slightly dimmer under it to read as depth, and
-    // a colour wash reads as light bouncing off the edge rather than as a shading trick.
-    val glowDepth = radius * 1.1f
+    val rimWidth = 2.dp.toPx()
+    // A soft glow just inside the rim is what sells "raised" before the bevel passes even
+    // start: a highlight needs something slightly dimmer under it to read as depth.
+    val glowDepth = radius * 1.15f
     clipRect(top = 0f, bottom = glowDepth) {
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to edgeColor.copy(alpha = 0.20f),
-                0.35f to edgeColor.copy(alpha = 0.08f),
+                0.00f to edgeColor.copy(alpha = 0.22f),
+                0.35f to edgeColor.copy(alpha = 0.09f),
                 1.00f to Color.Transparent,
                 startY = 0f,
                 endY = glowDepth,
@@ -3626,21 +3631,44 @@ private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
             size = size,
         )
     }
-    // The rim itself: brightest at the very top, easing toward the dimmer edge colour — a lit
-    // bevel rather than a flat painted line. No white in the mix any more (it used to lerp
-    // toward Color.White at the peak) — the rim is the state colour throughout, on request.
-    clipRect(top = 0f, bottom = radius + rimWidth) {
+    val strokeSize = Size(size.width - rimWidth, size.height - rimWidth)
+    val strokeTopLeft = Offset(rimWidth / 2f, rimWidth / 2f)
+    clipRect(top = 0f, bottom = radius + rimWidth * 2f) {
+        // 1) The bevel's underside: a soft dark stroke nudged down-and-right, so the coloured
+        //    body above reads as sitting slightly proud of the card rather than flush with it.
+        translate(left = 0.5.dp.toPx(), top = 0.8.dp.toPx()) {
+            drawRoundRect(
+                color = Color.Black.copy(alpha = 0.34f),
+                topLeft = strokeTopLeft,
+                size = strokeSize,
+                cornerRadius = CornerRadius(radius),
+                style = Stroke(width = rimWidth * 0.9f),
+            )
+        }
+        // 2) The body of the bevel itself: brightest at the very top, easing down to the dim
+        //    edge colour — the lit face of the metal, not a flat tone.
         drawRoundRect(
             brush = Brush.verticalGradient(
-                0.00f to edgeColor.copy(alpha = 0.85f),
-                0.50f to edgeColor.copy(alpha = 0.55f),
-                1.00f to edgeColor.copy(alpha = 0.18f),
+                0.00f to lerp(edgeColor, Color.White, 0.40f).copy(alpha = 0.95f),
+                0.45f to edgeColor.copy(alpha = 0.70f),
+                1.00f to edgeColor.copy(alpha = 0.22f),
             ),
-            topLeft = Offset(rimWidth / 2f, rimWidth / 2f),
-            size = Size(size.width - rimWidth, size.height - rimWidth),
+            topLeft = strokeTopLeft,
+            size = strokeSize,
             cornerRadius = CornerRadius(radius),
             style = Stroke(width = rimWidth),
         )
+        // 3) The sheen: a thin, tinted-bright hairline nudged up-and-left, riding the very peak
+        //    of the bevel — the glint that reads as polished/glossy rather than painted.
+        translate(left = -0.35.dp.toPx(), top = -0.35.dp.toPx()) {
+            drawRoundRect(
+                color = lerp(edgeColor, Color.White, 0.65f).copy(alpha = 0.55f),
+                topLeft = strokeTopLeft,
+                size = strokeSize,
+                cornerRadius = CornerRadius(radius),
+                style = Stroke(width = rimWidth * 0.32f),
+            )
+        }
     }
 }
 
@@ -3651,11 +3679,19 @@ private fun DrawScope.drawPanelTopEdge(edgeColor: Color) {
  * same as the clip shape itself), just a single hairline the width of the card.
  */
 private fun DrawScope.drawPanelBottomEdge(edgeColor: Color) {
-    val rimWidth = 1.4.dp.toPx()
+    val rimWidth = 1.6.dp.toPx()
+    // A faint dark undershadow first, nudged up a hair, then the tinted line on top — the same
+    // two-pass emboss as the top rim, just flattened out for a straight edge with no corners.
+    drawLine(
+        color = Color.Black.copy(alpha = 0.30f),
+        start = Offset(0f, size.height - rimWidth / 2f - 0.6.dp.toPx()),
+        end = Offset(size.width, size.height - rimWidth / 2f - 0.6.dp.toPx()),
+        strokeWidth = rimWidth * 0.85f,
+    )
     drawLine(
         brush = Brush.horizontalGradient(
             0.00f to edgeColor.copy(alpha = 0.10f),
-            0.50f to edgeColor.copy(alpha = 0.55f),
+            0.50f to lerp(edgeColor, Color.White, 0.30f).copy(alpha = 0.55f),
             1.00f to edgeColor.copy(alpha = 0.10f),
         ),
         start = Offset(0f, size.height - rimWidth / 2f),
