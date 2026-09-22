@@ -108,6 +108,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -3489,6 +3490,9 @@ private fun BrowseCard(
                         onClick = { onSelectConfig(cfg) },
                     )
                 }
+                item(key = "add-config") {
+                    AddConfigRow(onClick = onAddServer)
+                }
             }
             // The spinner, in the panel's own colours rather than the Material default's
             // — on this near-black list a container coloured from the light scheme is a
@@ -3931,6 +3935,47 @@ private fun ServerRow(
             modifier = Modifier
                 .size(22.dp)
                 .clickable(onClickLabel = "Toggle favorite", onClick = onToggleFavorite),
+        )
+    }
+}
+
+/**
+ * A trailing row at the very end of the server list — "Add config", always there rather than
+ * only showing up when the list is empty ([EmptyHint]'s own add affordance still covers that
+ * case). Same row shape as [ServerRow] (same height, padding, flag-sized leading icon) so it
+ * reads as one more row in the list rather than a bolted-on button, just with a "+" badge and
+ * muted ink instead of a flag and a name.
+ */
+@Composable
+private fun AddConfigRow(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(onClickLabel = "Add a config", onClick = onClick)
+            .padding(horizontal = ListPad, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(RowFlagSize)
+                .clip(CircleShape)
+                .background(RefElev2),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Add,
+                contentDescription = null,
+                tint = RefAccent,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "Add config",
+            fontSize = TypeBody.first,
+            fontWeight = FontWeight.SemiBold,
+            color = RefAccent,
         )
     }
 }
