@@ -108,6 +108,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -202,14 +203,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 import kotlin.random.Random
-// Re-added on request: a real, low-blur glass layer over the browse card's masthead, so
-// the flag (extended further down, see HeroBleed) shows through it blurred rather than
-// being hidden behind a solid fill.
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeChild
-import dev.chrisbanes.haze.haze
+// dev.chrisbanes.haze removed again -- the masthead is a flat, card-matching fill now
+// (on request), not real-blurred glass, so nothing in this file needs it any more.
 
 // ── Typography ───────────────────────────────────────────────────────────────
 // Manrope (OFL-licensed, bundled as a variable font in res/font/manrope.ttf) replaces the
@@ -1456,22 +1451,8 @@ internal fun HomeScreen(
         WindowInsets.statusBars.getTop(this).toDp()
     } + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
 
-    // Where the flag's own visible body starts (right under the menu/country row) and ends
-    // ([bandHeight] in [HeroBackdrop], recomputed the same way here since it is not otherwise
-    // exposed) — the disc now docks at the midpoint of that span on request, not at the
-    // card's foot, so it reads as sitting *in* the flag rather than bridging two cards.
-    val flagBodyTop = with(LocalDensity.current) {
-        WindowInsets.statusBars.getTop(this).toDp()
-    } + HeroTopGap + HeroTopRowHeight
-    val flagBodyBottom = heroHeight + HeroBleed
-    val powerDockTop = ((flagBodyTop + flagBodyBottom) / 2 - PowerSize / 2).coerceAtLeast(0.dp)
-
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // Blur source for the browse card's masthead glass (see [BrowseCard]) — the flag
-        // drawn by [HeroBackdrop] below is marked with [dev.chrisbanes.haze.haze] so the
-        // masthead can real-blur it now that it reaches behind there ([HeroBleed]).
-        val hazeState = remember { HazeState() }
         // Behind everything: the flag under dark glass, and the light — now a free-standing
         // card (margin on both sides, rounded on all four corners) rather than fused edge-to-
         // edge into the browse card below it. See [HeroBackdrop]'s section comment.
@@ -1482,7 +1463,6 @@ internal fun HomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(horizontal = CardMargin)
-                .haze(hazeState)
                 // Bottom corners only: the card's real, new edge — its floating foot. The top
                 // corners stay square and flush with the status bar; rounding them too cut a
                 // curved notch right where the clock and system icons sit, which read as a
@@ -1510,20 +1490,18 @@ internal fun HomeScreen(
                 onToggleSearch = toggleSearch,
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
-                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        // The connect dock: the disc, now centred on the flag's own body (the midpoint of
-        // [flagBodyTop]..[flagBodyBottom], see [powerDockTop]) rather than docked on the
-        // card's foot — on request, "in the middle of the flag" rather than bridging the two
-        // cards. Its two merged pills, one on each side, are positioned in this Box's own LOCAL
-        // coordinate space (the disc's own top-left is this Box's origin), which is what lets
-        // a plain [Alignment.TopCenter] on the Box itself centre the whole dock: the pills
-        // overflow left and right of the Box's own PowerSize-wide measured bounds via
-        // [Modifier.offset]/[RightAnchoredBox], which — same as everywhere else on this
-        // screen — is never clipped by an ancestor, so the overflow simply renders.
+        // The connect dock: the disc, now at the foot of the screen where [UsageCard] used to
+        // sit (removed on request) — off the flag entirely. Its two merged pills, one on each
+        // side, are positioned in this Box's own LOCAL coordinate space (the disc's own
+        // top-left is this Box's origin), which is what lets a plain [Alignment.BottomCenter]
+        // on the Box itself centre the whole dock: the pills overflow left and right of the
+        // Box's own PowerSize-wide measured bounds via [Modifier.offset]/[RightAnchoredBox],
+        // which — same as everywhere else on this screen — is never clipped by an ancestor,
+        // so the overflow simply renders.
         //
         // The IP pill (right) only appears once the address has actually resolved — see
         // [IpMergedPill] — and the status pill (left) appears for "Connecting…"/"Connected"
@@ -1531,10 +1509,13 @@ internal fun HomeScreen(
         // its own circle is what hides each pill's tucked-under join edge; [PillSafetyOverlap]
         // is the extra slack that keeps that edge covered even while the disc is scaled down
         // for a press, not just at rest.
+        // Moved to the foot of the screen on request, where [UsageCard] used to sit (now
+        // removed) — same anchor/inset it used (BottomCenter, nav-bar padding, CardMargin).
         Box(
             Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = powerDockTop),
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = CardMargin),
         ) {
             IpMergedPill(
                 state = state,
@@ -1565,16 +1546,8 @@ internal fun HomeScreen(
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
         // on the left where the "+" add-server button used to be (see [BrowseCard]).
 
-        // .bottom-card: sticky at the foot of the scroller, over the list
-        UsageCard(
-            state = state,
-            onClick = onOpenLocations,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = CardMargin)
-                .padding(bottom = CardMargin),
-        )
+        // UsageCard removed on request -- the connect dock (disc + pills, above) now sits in
+        // its old spot at the foot of the screen instead.
     }
     }
 }
@@ -3327,7 +3300,6 @@ private fun BrowseCard(
     onToggleSearch: () -> Unit,
     onRefreshPings: (List<SavedConfig>) -> Unit,
     onRetryIp: () -> Unit,
-    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val pullState = rememberPullToRefreshState()
@@ -3442,55 +3414,30 @@ private fun BrowseCard(
                 drawPanelBottomEdge(phaseColor)
             }
     ) {
-        // The card's masthead: just the search magnifier now, pinned to the trailing (right)
-        // edge. The public IP moved out to [IpMergedPill] (a pill growing out of the connect
-        // disc, drawn in the parent [Box]), so this band is just the toggle now. Curved on
-        // its own top corners ([MastheadCurve]) to match the disc/pill it sits under.
-        //
-        // Real glass again, on request: the flag now reaches down behind this band (see
-        // [HeroBleed]), so a low-blur haze layer — [RefElev2] fallback fill, a near-zero
-        // tint, and a much lighter blur than the connect dock ever used — lets it show
-        // through blurred instead of being hidden behind a solid gradient fill.
+        // The card's masthead — no longer its own distinct glass/gradient surface; on request
+        // it now just sits on the Column's own flat fill ([RefPanelBg] + [phaseWash]), so the
+        // masthead is genuinely the same colour as the rest of the card rather than merely a
+        // close match. [MastheadCurve] still curves its own top corners to match the disc.
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(CardTopRoom)
-                .clip(RoundedCornerShape(topStart = MastheadCurve, topEnd = MastheadCurve))
-                .then(
-                    if (hazeState != null) {
-                        Modifier.hazeChild(
-                            state = hazeState,
-                            style = HazeStyle(
-                                backgroundColor = RefElev2,
-                                tints = listOf(HazeTint(RefElev2.copy(alpha = 0.35f))),
-                                blurRadius = 8.dp,
-                                noiseFactor = 0.08f,
-                            ),
-                        )
-                    } else {
-                        Modifier.background(
-                            Brush.verticalGradient(
-                                0.00f to RefElev2,
-                                0.72f to RefElev2.copy(alpha = 0.55f),
-                                1.00f to RefElev2.copy(alpha = 0.0f),
-                            ),
-                        )
-                    },
-                ),
+                .clip(RoundedCornerShape(topStart = MastheadCurve, topEnd = MastheadCurve)),
         ) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .padding(start = ScreenPad - 12.dp, end = ScreenPad - 12.dp)
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.End,
+                    .align(Alignment.Center)
+                    .padding(start = ScreenPad - 4.dp, end = ScreenPad - 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SearchToggle(open = searchOpen, onClick = onToggleSearch)
+                SearchBarChip(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
-        SearchField(visible = searchOpen, query = query, onQueryChange = onQueryChange)
         // The divider between the card's head and the list, brightening on scroll ([listElevation]).
         ListScrollEdge(elevation = listElevation)
         Box(
@@ -3755,6 +3702,66 @@ private fun DrawScope.drawPanelBottomEdge(edgeColor: Color) {
         end = Offset(size.width, size.height - rimWidth / 2f),
         strokeWidth = rimWidth,
     )
+}
+
+/**
+ * A persistent, always-editable search bar filling the masthead — replaces the old bare
+ * magnifier + toggle-reveal field with something that reads as an actual search bar on
+ * sight, on request ("a modern search bar instead of the empty icon"). Same pill styling
+ * [SearchField] used to reveal underneath (rounded 50%, faint white fill, [heroEdge]
+ * border) — just inline and always there instead of expand/collapse.
+ */
+@Composable
+private fun SearchBarChip(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.045f))
+            .border(1.dp, heroEdge, RoundedCornerShape(50))
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Rounded.Search,
+            contentDescription = null,
+            tint = RefTextMid,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) {
+                Text(
+                    "Search location or server",
+                    style = SearchFieldStyle,
+                    color = RefTextLow,
+                    maxLines = 1,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = SearchFieldStyle,
+                cursorBrush = SolidColor(RefAccent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = "Clear search",
+                tint = RefTextMid,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clickable(onClickLabel = "Clear search") { onQueryChange("") },
+            )
+        }
+    }
 }
 
 /** The magnifier in the card's header row: white ink, accent-blue while the field is open. */
