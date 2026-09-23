@@ -110,8 +110,12 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -1415,26 +1419,20 @@ internal fun HomeScreen(
     onRefreshPings: (List<SavedConfig>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var searchOpen by remember { mutableStateOf(false) }
+    // Redesigned per the approved mockup (minimal header + a country dropdown, feature
+    // toggles, favorites/full list, a card-shaped connect footer instead of a disc) —
+    // the flag hero, the circular connect dock and everything that positioned itself off
+    // [heroHeight] are gone from this screen. Those composables (HeroBackdrop, Header,
+    // PowerCircle, IpMergedPill, StatusMergedPill, RightAnchoredBox and the constants that
+    // sized them) are still further down in this file, unused now rather than deleted —
+    // ripping out ~1500 lines of tightly cross-referenced layout math in the same pass as
+    // this redesign was more risk than the win was worth; a follow-up pass can remove them
+    // once this screen has been through a real device test.
     var query by remember { mutableStateOf("") }
-    // The search toggle lives in the card's own header row now (opposite the public-IP readout),
-    // so its action is defined here and handed down to [BrowseCard].
-    val toggleSearch: () -> Unit = {
-        searchOpen = !searchOpen
-        if (!searchOpen) query = ""
-    }
 
-    // Every server the app knows about, filtered by the search box and sorted by latency.
-    // The Main/Custom tab selector is gone, so there is one list and it is all of them.
-    //
-    // The ORDER is frozen per (set of servers, query) rather than recomputed on every
-    // change to `allConfigs`. The live ping monitor replaces the whole configs list
-    // every few seconds (a new list identity even though only pingMs changed); sorting
-    // on that identity re-sorted the rows on each sample, so a server whose ping ticked
-    // up would jump position under the user's finger. Here the latency sort runs once
-    // for a given id-set + query, yielding a fixed id order; each recomposition then
-    // just re-projects the latest config objects (with fresh ping values) onto that
-    // frozen order. Adding/removing a server or changing the query recomputes it.
+    // Same ordering logic the old screen used — see the note that used to sit here on
+    // [orderedIds] about why the sort is frozen per (id-set, query) rather than
+    // recomputed on every ping sample.
     val serverIds = state.allConfigs.map { it.id }.toSet()
     val orderedIds = remember(serverIds, query) {
         state.allConfigs.matching(query).byLatency().map { it.id }
@@ -1445,117 +1443,246 @@ internal fun HomeScreen(
     }
     val activeId = state.activeConfig?.id
 
-    // The hero's height used to be *measured*, live, off Header's own layout
-    // (Modifier.onSizeChanged) — and the connect disc's dock point was computed from that
-    // number every recomposition. Two composables agreeing on a number by both re-deriving it
-    // independently, one measuring and one consuming a frame later, is exactly the kind of
-    // thing that reads as "jitter" even when each individual value is correct: a font metrics
-    // change, an inset arriving a frame late, anything. Fixed now, on request: the same rows
-    // Header itself lays out (see there), just as compile-time constants added up instead of
-    // a runtime measurement, plus the one genuinely external, but session-stable, number —
-    // the status bar's own inset.
-    val heroHeight = with(LocalDensity.current) {
-        WindowInsets.statusBars.getTop(this).toDp()
-    } + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
+    // The header's own country chip: the active server's country if connected/selected,
+    // else just the first server in the (already latency-sorted) list, else a plain dash.
+    val headerConfig = state.activeConfig ?: servers.firstOrNull()
+    val headerCountryCode = headerConfig?.let { state.countryCodeFor(it) } ?: ""
+    val headerCountryName = headerConfig?.let { state.rowTitle(it) } ?: "—"
+
+    val settingsCtx = LocalContext.current
+    var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(settingsCtx)) }
+    var autoReconnect by remember { mutableStateOf(AppSettings.autoReconnectEnabled(settingsCtx)) }
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
-    Box(modifier.fillMaxSize().background(PageGradient)) {
-        // Behind everything: the flag under dark glass, and the light — now a free-standing
-        // card (margin on both sides, rounded on all four corners) rather than fused edge-to-
-        // edge into the browse card below it. See [HeroBackdrop]'s section comment.
-        HeroBackdrop(
-            state = state,
-            heroHeight = heroHeight,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .padding(horizontal = CardMargin)
-                // Bottom corners only: the card's real, new edge — its floating foot. The top
-                // corners stay square and flush with the status bar; rounding them too cut a
-                // curved notch right where the clock and system icons sit, which read as a
-                // rendering glitch rather than a corner.
-                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
-        )
+    Box(modifier.fillMaxSize().background(PageBgNavy)) {
         Column(Modifier.fillMaxSize()) {
-            // The hero: hamburger, country, address. Its own real layout — this is no longer
-            // measured (see [heroHeight] above), so nothing here reads back into that number;
-            // it is free to lay out however Header itself needs to.
-            Header(
+            MinimalHeader(
+                countryCode = headerCountryCode,
+                countryName = headerCountryName,
+                servers = servers,
                 state = state,
+                onSelectConfig = onSelectConfig,
                 onOpenSettings = onOpenSettings,
             )
-            Spacer(Modifier.height(HeroFloatGap))
+            Column(Modifier.padding(horizontal = ScreenPad, vertical = 14.dp)) {
+                FeatureToggleCard(
+                    title = "Kill switch",
+                    subtitle = "Block traffic if the tunnel drops",
+                    checked = killSwitch,
+                    onCheckedChange = {
+                        killSwitch = it
+                        AppSettings.setKillSwitchEnabled(settingsCtx, it)
+                    },
+                )
+                Spacer(Modifier.height(10.dp))
+                FeatureToggleCard(
+                    title = "Auto-reconnect",
+                    subtitle = "Reconnect automatically if dropped",
+                    checked = autoReconnect,
+                    onCheckedChange = {
+                        autoReconnect = it
+                        AppSettings.setAutoReconnectEnabled(settingsCtx, it)
+                    },
+                )
+            }
             BrowseCard(
                 state = state,
                 servers = servers,
                 activeId = activeId,
                 query = query,
-                searchOpen = searchOpen,
+                searchOpen = true,
                 onQueryChange = { query = it },
                 onSelectConfig = onSelectConfig,
                 onAddServer = onAddServer,
-                onToggleSearch = toggleSearch,
+                onToggleSearch = {},
                 onRefreshPings = onRefreshPings,
                 onRetryIp = onRetryIp,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(bottom = ConnectFooterHeight + CardMargin),
             )
         }
+        ConnectFooterCard(
+            phase = state.phase,
+            countryName = headerCountryName,
+            onClick = onTogglePower,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = CardMargin, vertical = CardMargin)
+                .fillMaxWidth(),
+        )
+    }
+    }
+}
 
-        // The connect dock: the disc, docked back on the flag card's own seam (on request,
-        // matching the reference mockup's proportions exactly — only [PowerHeroOverlap] of the
-        // disc's own top tucks up into the hero card, the rest of it and both merged pills sit
-        // below the seam, rather than the disc centring exactly on the line at 50/50 overlap,
-        // or living at the very foot of the screen where [UsageCard] briefly sat before being
-        // removed). Its two merged pills are positioned in this Box's own LOCAL coordinate
-        // space (the disc's own top-left is this Box's origin), which is what lets a plain
-        // [Alignment.TopCenter] on the Box itself centre the whole dock: the pills overflow
-        // left and right of the Box's own PowerSize-wide measured bounds via
-        // [Modifier.offset]/[RightAnchoredBox], which — same as everywhere else on this
-        // screen — is never clipped by an ancestor, so the overflow simply renders.
-        //
-        // The IP pill (right) only appears once the address has actually resolved — see
-        // [IpMergedPill] — and the status pill (left) appears for "Connecting…"/"Connected"
-        // the moment the tunnel starts coming up. [PowerCircle] is drawn last of the three, so
-        // its own circle is what hides each pill's tucked-under join edge; [PillSafetyOverlap]
-        // is the extra slack that keeps that edge covered even while the disc is scaled down
-        // for a press, not just at rest.
+/** Page background for the redesigned home screen — distinct from [MinimalHeader]'s own
+ *  near-black fill, on request ("header this colour, everything below something else"). */
+private val PageBgNavy = Color(0xFF10213D)
+
+/** Fixed height reserved at the list's own foot so the last row (or [AddConfigRow]) never
+ *  sits behind [ConnectFooterCard]; kept in sync with that card's own measured height by
+ *  simply being a bit taller than it needs to be rather than measuring live. */
+private val ConnectFooterHeight = 78.dp
+
+/**
+ * The new top bar: a hand-drawn hamburger (opens Settings, same as the old flag hero's did)
+ * and a country pill on the trailing edge — flag, name, chevron — that opens a dropdown of
+ * every distinct country currently in the list. Picking one calls [onSelectConfig] with that
+ * country's own (already best-latency-sorted) first server. Flat [RefPanelBg] fill, no flag
+ * artwork behind it at all — the "Windscribe minimal" direction from the mockups.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MinimalHeader(
+    countryCode: String,
+    countryName: String,
+    servers: List<SavedConfig>,
+    state: HomeUiState,
+    onSelectConfig: (SavedConfig) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(RefPanelBg)
+            .statusBarsPadding()
+            .padding(horizontal = ScreenPad, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MenuButton(onClick = onOpenSettings)
+        Spacer(Modifier.weight(1f))
+        Box {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .clickable(onClickLabel = "Choose a country") { menuOpen = true }
+                    .padding(start = 6.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CountryFlagBadge(countryCode, 20.dp)
+                Spacer(Modifier.width(7.dp))
+                Text(countryName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                val distinctCountries = remember(servers) { servers.distinctBy { state.countryCodeFor(it) } }
+                distinctCountries.forEach { cfg ->
+                    DropdownMenuItem(
+                        text = { Text(state.rowTitle(cfg), color = RefTextHi) },
+                        leadingIcon = { CountryFlagBadge(state.countryCodeFor(cfg), 22.dp) },
+                        onClick = {
+                            onSelectConfig(cfg)
+                            menuOpen = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One feature row — title, a one-line explanation of what it actually does, and a switch.
+ *  Both rows on this screen (Kill switch, Auto-reconnect) are real, persisted [AppSettings]
+ *  values, not decorative toggles. */
+@Composable
+private fun FeatureToggleCard(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(RefElev2)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = RefTextHi, fontSize = TypeBody.first, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, color = RefTextMid, fontSize = TypeCaption.first)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = RefAccent,
+                checkedThumbColor = Color.White,
+                uncheckedTrackColor = RefElev1,
+                uncheckedThumbColor = RefTextMid,
+            ),
+        )
+    }
+}
+
+/**
+ * The connect button, redesigned as a card rather than a disc, on request — pinned to the
+ * screen's foot. Reuses [PowerGlyph] (the same bolt-morphs-to-checkmark glyph the old disc
+ * drew) and [ringColorFor] (the same OFF/CONNECTING/CONNECTED colour the old disc's ring
+ * used), so the phase language is identical, just in a rectangle now.
+ */
+@Composable
+private fun ConnectFooterCard(
+    phase: ConnPhase,
+    countryName: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reduce = rememberReduceMotion()
+    val accent by animateColorAsState(
+        targetValue = ringColorFor(phase),
+        animationSpec = motionSpec(reduce, 400),
+        label = "footerAccent",
+    )
+    val statusText = when (phase) {
+        ConnPhase.OFF -> "Not connected"
+        ConnPhase.CONNECTING -> "Connecting…"
+        ConnPhase.CONNECTED -> "Connected"
+    }
+    Row(
+        modifier
+            .height(ConnectFooterHeight)
+            .clip(RoundedCornerShape(18.dp))
+            .background(RefElev2)
+            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+            .clickable(onClickLabel = statusText, onClick = onClick)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(statusText, color = RefTextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(3.dp))
+            Text("Tap to connect · $countryName", color = RefTextMid, fontSize = TypeCaption.first, maxLines = 1)
+        }
         Box(
             Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = (heroHeight + HeroBleed - PowerHeroOverlap).coerceAtLeast(0.dp)),
+                .size(46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accent),
+            contentAlignment = Alignment.Center,
         ) {
-            IpMergedPill(
-                state = state,
-                onRetryIp = onRetryIp,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = PowerSize / 2 + PillJoinX - PillSafetyOverlap,
-                        y = PowerSize / 2 - PowerPillHeight / 2,
-                    ),
-            )
-            RightAnchoredBox(
-                rightEdge = PowerSize / 2 - PillJoinX + PillSafetyOverlap,
-                top = PowerSize / 2 - PowerPillHeight / 2,
-            ) {
-                StatusMergedPill(phase = state.phase)
-            }
-            PowerCircle(
-                mode = state.mode,
-                phase = state.phase,
-                enabled = state.activeConfig != null,
-                onClick = onTogglePower,
-                onSwipeUp = { onSetMode(ConnectMode.SMART) },
-                onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+            PowerGlyph(
+                trackColor = Color.White.copy(alpha = 0.4f),
+                fillColor = Color.White,
+                fill = 1f,
+                phase = phase,
+                modifier = Modifier.size(24.dp),
             )
         }
-
-        // The public IP no longer rides the flag. It now lives in the browse card's own top row,
-        // on the left where the "+" add-server button used to be (see [BrowseCard]).
-
-        // UsageCard removed on request -- the connect dock (disc + pills, above) now sits in
-        // its old spot at the foot of the screen instead.
-    }
     }
 }
 
