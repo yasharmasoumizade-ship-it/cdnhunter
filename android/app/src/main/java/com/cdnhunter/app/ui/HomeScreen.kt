@@ -518,7 +518,8 @@ private val RowFlagSize = 27.dp
 // RowCorner / RowGap removed: rows are back to a hairline-divided list (Windscribe-style),
 // not individual rounded cards with a gap between them — see [ServerRow].
 
-private val CardCorner = 16.dp       // --radius-lg on .bottom-card — curved further on request (was 10dp)
+private val CardCorner = 22.dp       // --radius-lg on .bottom-card — matched to the reference
+                                      // mockup's exact 22px hero radius (was 16dp)
 private val CardMargin = 16.dp       // .bottom-card margin / bottom (snapped to the 4dp grid, was 14dp)
 
 /**
@@ -3770,90 +3771,7 @@ private fun SearchBarChip(
     }
 }
 
-/** The magnifier in the card's header row: white ink, accent-blue while the field is open. */
-@Composable
-private fun SearchToggle(open: Boolean, onClick: () -> Unit) {
-    // Muted white@22% off-state, same as the rest of this masthead's ink; open state lights to
-    // the accent.
-    val ink by animateColorAsState(if (open) RefAccent else Color.White.copy(alpha = 0.22f), tween(180), label = "searchInk")
-    Box(
-        Modifier
-            .size(TapTarget)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Rounded.Search,
-            contentDescription = if (open) "Close search" else "Search servers",
-            tint = ink,
-            modifier = Modifier.size(26.dp),
-        )
-    }
-}
-
-/** .search-bar-wrap — hidden until the circle is toggled, then expands downward. */
-@Composable
-private fun SearchField(visible: Boolean, query: String, onQueryChange: (String) -> Unit) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = expandVertically(tween(280)) + fadeIn(tween(220)),
-        exit = shrinkVertically(tween(280)) + fadeOut(tween(220)),
-    ) {
-        val focus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ListPad)
-                .padding(bottom = 8.dp)            // .search-bar margin (snapped to the 4dp grid, was 9dp)
-                .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.045f))
-                // [heroEdge], the same graded hairline as the glyph chips beside it — the
-                // field opens in that row and the two should not disagree about the light.
-                .border(1.dp, heroEdge, RoundedCornerShape(50))
-                .padding(horizontal = 16.dp, vertical = 12.dp),  // 15/10 snapped to the 4dp grid
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Rounded.Search,
-                contentDescription = null,
-                tint = RefTextMid,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.width(12.dp))          // .search-bar gap (snapped to the 4dp grid, was 10dp)
-            // One style for the field and its placeholder, and it is what fixes the caret.
-            // [BasicTextField] sizes its cursor to the *line box*, and by default that box
-            // carries the font's own ascent/descent padding on top of the glyphs — so the
-            // caret was drawn taller than the text and sitting a couple of dp high in it.
-            // Turning the font padding off and centring the line inside an explicit
-            // lineHeight makes the caret exactly the text's own height, on the text's own
-            // baseline. The placeholder shares the style so it cannot land anywhere else
-            // than where the real value will.
-            val fieldStyle = SearchFieldStyle
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                if (query.isEmpty()) {
-                    Text(
-                        "Search location or server",
-                        style = fieldStyle,
-                        color = RefTextLow,
-                        maxLines = 1,
-                    )
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    textStyle = fieldStyle,
-                    cursorBrush = SolidColor(RefAccent),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                )
-            }
-        }
-    }
-}
-
-/** The search field's type, shared by the input and its placeholder — see [SearchField]. */
+/** The search field's type, shared by the input and its placeholder — see [SearchBarChip]. */
 private val SearchFieldStyle = TextStyle(
     color = RefTextHi,
     fontSize = TypeBody.first,
