@@ -476,12 +476,6 @@ private val ScreenPad = 20.dp        // .header padding: 4px 20px 14px
  */
 private val PowerSize = 116.dp  // bumped from 96dp on request — bigger, still one thumb-sized target
 
-/** How much of the disc's own top tucks up into the hero card — on request, matching the
- *  reference mockup exactly (16px there, out of a 112px disc — the same ~14% ratio scaled to
- *  this disc's real [PowerSize]). Far short of half the disc (which is what centring it on the
- *  seam gives): most of the disc, and both merged pills, sit below the card's own foot now. */
-private val PowerHeroOverlap = 16.dp
-
 /** Height of the IP pill that visually grows out of the connect disc — see [IpMergedPill]. */
 private val PowerPillHeight = 40.dp
 
@@ -1470,11 +1464,27 @@ internal fun HomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(horizontal = CardMargin)
+                // The mockup's own floating-card look: a real shadow so the card visibly
+                // lifts off the page instead of blending into it (this was missing entirely
+                // before — no .shadow() at all, so against a near-black PageGradient the
+                // rounded corners and the side margins read as barely-there). Shadow first,
+                // clip=false so it isn't cut off by the rounded-corner clip that follows.
+                .shadow(
+                    elevation = 20.dp,
+                    shape = RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner),
+                    clip = false,
+                    ambientColor = Color.Black.copy(alpha = 0.6f),
+                    spotColor = Color.Black.copy(alpha = 0.7f),
+                )
                 // Bottom corners only: the card's real, new edge — its floating foot. The top
                 // corners stay square and flush with the status bar; rounding them too cut a
                 // curved notch right where the clock and system icons sit, which read as a
                 // rendering glitch rather than a corner.
-                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
+                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner))
+                // A hairline so the card's own edge is legible even where the shadow is thin
+                // (the sides) — without this the dark flag against a dark page can still read
+                // edge-to-edge in a compressed screenshot even with the shadow present.
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its own real layout — this is no longer
@@ -1501,17 +1511,15 @@ internal fun HomeScreen(
             )
         }
 
-        // The connect dock: the disc, docked back on the flag card's own seam (on request,
-        // matching the reference mockup's proportions exactly — only [PowerHeroOverlap] of the
-        // disc's own top tucks up into the hero card, the rest of it and both merged pills sit
-        // below the seam, rather than the disc centring exactly on the line at 50/50 overlap,
-        // or living at the very foot of the screen where [UsageCard] briefly sat before being
-        // removed). Its two merged pills are positioned in this Box's own LOCAL coordinate
-        // space (the disc's own top-left is this Box's origin), which is what lets a plain
-        // [Alignment.TopCenter] on the Box itself centre the whole dock: the pills overflow
-        // left and right of the Box's own PowerSize-wide measured bounds via
-        // [Modifier.offset]/[RightAnchoredBox], which — same as everywhere else on this
-        // screen — is never clipped by an ancestor, so the overflow simply renders.
+        // The connect dock: the disc, moved all the way to the foot of the screen now (on
+        // explicit request — the seam-docked position, however closely it matched the
+        // mockup's own overlap ratio, wasn't what was actually wanted). Its two merged pills
+        // are positioned in this Box's own LOCAL coordinate space (the disc's own top-left is
+        // this Box's origin), which is what lets a plain [Alignment.BottomCenter] on the Box
+        // itself centre the whole dock: the pills overflow left and right of the Box's own
+        // PowerSize-wide measured bounds via [Modifier.offset]/[RightAnchoredBox], which —
+        // same as everywhere else on this screen — is never clipped by an ancestor, so the
+        // overflow simply renders.
         //
         // The IP pill (right) only appears once the address has actually resolved — see
         // [IpMergedPill] — and the status pill (left) appears for "Connecting…"/"Connected"
@@ -1521,8 +1529,9 @@ internal fun HomeScreen(
         // for a press, not just at rest.
         Box(
             Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = (heroHeight + HeroBleed - PowerHeroOverlap).coerceAtLeast(0.dp)),
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = CardMargin),
         ) {
             IpMergedPill(
                 state = state,
