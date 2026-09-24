@@ -338,9 +338,9 @@ private val HeroInkShadow = Shadow(
  *  card, no wash. Deeper offset and wider blur than [HeroInkShadow] so the country/city
  *  headline stays legible over even a bright band of the flag artwork. */
 private val HeadlineInkShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.75f),
-    offset = Offset(0f, 3f),
-    blurRadius = 14f,
+    color = Color.Black.copy(alpha = 0.70f),  // matched to the reference mockup exactly (was .75)
+    offset = Offset(0f, 2f),                  // matched to the reference mockup exactly (was 3f)
+    blurRadius = 10f,                         // matched to the reference mockup exactly (was 14f)
 )
 private val RefAccent = Color(0xFF1E74FF)      // --accent — more saturated blue, Windscribe-directed (was #3B82F6)
 /**
@@ -1628,6 +1628,23 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
                     .alpha(flagAlpha)
                     .scale(FlagZoom),
             )
+            // The reference mockup's own flag scrim, matched exactly: a top-to-bottom
+            // darkening from 5% to 40% black. Brought back on explicit request — the flag
+            // had shown at its own true colours with nothing over it since an earlier pass
+            // (see the note below); this is deliberately reversing that for an exact match.
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .height(bandHeight)
+                    .alpha(flagAlpha)
+                    .background(
+                        Brush.verticalGradient(
+                            0.00f to Color.Black.copy(alpha = 0.05f),
+                            1.00f to Color.Black.copy(alpha = 0.40f),
+                        ),
+                    ),
+            )
         }
         // The black strip behind the menu/country row is gone again, on request — the flag
         // shows in full behind them now, same as it did before that experiment.
@@ -1868,19 +1885,24 @@ private fun Header(
 // under-stroke sits a pixel below each white line, so the whole thing holds its edge on a bright
 // stripe of an arbitrary flag without needing a chip or a plate under it.
 
-/** The hamburger's drawn size, inside a [TapTarget] touch area. Larger than the old glyph. */
-private val MenuGlyphSize = 27.dp
+/** The hamburger's drawn size, inside a [TapTarget] touch area. Matched to the reference
+ *  mockup's exact 26px lines (was 27dp, close but not exact). */
+private val MenuGlyphSize = 26.dp
 
-/** Line weight, and the gap from the mark's centre to its outer lines. */
-private val MenuStroke = 2.5.dp
-private val MenuLineGap = 6.5.dp
+/** Line weight, and the gap from the mark's centre to its outer lines. Matched to the
+ *  reference mockup exactly: 3px line height, 7px pitch between adjacent lines (was
+ *  2.5dp/6.5dp). */
+private val MenuStroke = 3.dp
+private val MenuLineGap = 7.dp
 
 /** How far the shadow line sits below its white line, and its colour. */
 private val MenuShadowDrop = 1.dp
 private val MenuShadow = Color.Black.copy(alpha = 0.30f)
 
-/** The three line widths as fractions of the mark's width: full, then shorter, then shortest. */
-private val MenuLineRatios = listOf(1.0f, 0.72f, 0.48f)
+/** The three line widths as fractions of the mark's width: full, then shorter, then shortest.
+ *  Matched to the reference mockup's exact 26/19/13px widths against a 26px mark (was
+ *  0.72f/0.48f, which gave 19.4px/13px against the old 27px mark — close but not exact). */
+private val MenuLineRatios = listOf(1.0f, 19f / 26f, 13f / 26f)
 
 /** How far the mark sinks while held — a touch deeper than a plate button since it has no
  *  fill or shadow of its own to lose, so the scale carries the whole press on its own. */
@@ -2038,7 +2060,7 @@ private val HeadlinePlateHeight = 84.dp
  *  city both read larger now — so each step is a few sp above the old ramp; it still steps down for
  *  a long pairing so the fixed plate is never overrun (the backstop past that is ellipsis). */
 private fun headlineFontFor(label: String): TextUnit = when {
-    label.length <= 13 -> 24.sp
+    label.length <= 13 -> 26.sp   // matched to the reference mockup's exact 26px (was 24.sp)
     label.length <= 19 -> 20.sp
     label.length <= 26 -> 17.sp
     else -> 14.sp
@@ -2135,7 +2157,7 @@ private fun CountryHeadline(state: HomeUiState, modifier: Modifier = Modifier) {
                 name.ifBlank { city },
                 fontSize = labelSize,
                 fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.4).sp,
+                letterSpacing = (-0.2).sp,  // matched to the reference mockup's exact -0.2px (was -0.4sp)
                 textAlign = TextAlign.End,
                 color = Color.White,
                 maxLines = 1,
