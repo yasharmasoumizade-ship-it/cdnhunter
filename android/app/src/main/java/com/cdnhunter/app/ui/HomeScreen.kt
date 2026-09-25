@@ -1464,27 +1464,30 @@ internal fun HomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(horizontal = CardMargin)
-                // The mockup's own floating-card look: a real shadow so the card visibly
-                // lifts off the page instead of blending into it (this was missing entirely
-                // before — no .shadow() at all, so against a near-black PageGradient the
-                // rounded corners and the side margins read as barely-there). Shadow first,
-                // clip=false so it isn't cut off by the rounded-corner clip that follows.
+                // A dark shadow here is the wrong tool: PageGradient is itself near-black
+                // (#0D0E12), so a black shadow cast onto it has almost no contrast to show —
+                // this is *why* the previous attempt at this looked like no change at all,
+                // even though the modifier was genuinely there. A light glow the same
+                // elevation system, just with a light colour instead of a dark one — reads
+                // clearly against a dark page the same way the disc's own shadow reads
+                // clearly against the flag/list (light or contrasting colour against a
+                // *different* colour, not dark against near-black).
                 .shadow(
                     elevation = 20.dp,
                     shape = RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner),
                     clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.6f),
-                    spotColor = Color.Black.copy(alpha = 0.7f),
+                    ambientColor = Color.White.copy(alpha = 0.10f),
+                    spotColor = Color.White.copy(alpha = 0.16f),
                 )
                 // Bottom corners only: the card's real, new edge — its floating foot. The top
                 // corners stay square and flush with the status bar; rounding them too cut a
                 // curved notch right where the clock and system icons sit, which read as a
                 // rendering glitch rather than a corner.
                 .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner))
-                // A hairline so the card's own edge is legible even where the shadow is thin
-                // (the sides) — without this the dark flag against a dark page can still read
-                // edge-to-edge in a compressed screenshot even with the shadow present.
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
+                // A clearly visible hairline now (was 8% white — same dark-on-near-black
+                // contrast problem as the shadow, just barely legible at best). 20% reads
+                // unmistakably as a card edge regardless of what's behind it.
+                .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its own real layout — this is no longer
