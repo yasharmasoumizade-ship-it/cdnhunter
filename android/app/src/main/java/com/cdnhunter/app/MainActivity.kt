@@ -96,6 +96,14 @@ class MainActivity : ComponentActivity() {
 
 private enum class RootScreen { ONBOARDING, AUTH, ENTERING, HOME }
 
+/**
+ * Temporary bypass, on request: skips straight past onboarding/auth into the app on every
+ * launch, regardless of sign-in state. AuthScreen/OnboardingScreen are untouched -- this is
+ * the only thing routing around them -- so flipping this back to false restores the normal
+ * flow exactly as it was.
+ */
+private const val TEMP_SKIP_AUTH = true
+
 @Composable
 fun MainContent(activity: MainActivity) {
     val auth = remember { FirebaseAuth.getInstance() }
@@ -106,6 +114,7 @@ fun MainContent(activity: MainActivity) {
     var screen by remember {
         mutableStateOf(
             when {
+                TEMP_SKIP_AUTH -> RootScreen.ENTERING
                 auth.currentUser != null -> RootScreen.ENTERING
                 !onboardingSeen -> RootScreen.ONBOARDING
                 else -> RootScreen.AUTH
@@ -158,7 +167,7 @@ fun MainContent(activity: MainActivity) {
                 com.cdnhunter.app.vpn.CdnVpnService.stop(context)
                 auth.signOut()
                 com.cdnhunter.app.vpn.GroomxAuthClient.signOut(context)
-                screen = RootScreen.AUTH
+                screen = if (TEMP_SKIP_AUTH) RootScreen.ENTERING else RootScreen.AUTH
             })
         }
     }
