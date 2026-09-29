@@ -1109,14 +1109,12 @@ private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
 /**
  * The one drawn copy of the flag, filling whatever box [modifier] gives it.
  *
- * One rule for both sources: scale uniformly until the box's WIDTH is filled, no cropping.
- * [ContentScale.Fit], centred — no forced ratio, no unbounded width. The flag's own
- * proportions are what get drawn, whatever the source's are (a square bundled asset, a 5:3
- * German flagcdn SVG, a 19:10 American one) — on request, the whole flag now always shows;
- * whatever doesn't fill the fixed hero box on a given aspect ratio just letterboxes onto
- * [HeroFloor] instead of being cut off. This used to be [ContentScale.Crop]: consistent
- * geometry across every country at the cost of never showing 100% of any one flag, which is
- * exactly what changed here.
+ * One rule for both sources: scale uniformly until the box is covered, clip the overhang.
+ * [ContentScale.Crop], centred — no forced ratio, no unbounded width. This guarantees the
+ * fixed hero box is always fully covered, never a letterbox gap showing [HeroFloor]'s own
+ * near-black colour behind an under-filled area. [ContentScale.Fit] ('no crop') was tried
+ * on request; it left exactly that gap for any flag wider-than-tall, which read as a broken
+ * black bar rather than a design choice, so it was reverted.
  *
  * This is deliberately not FillBounds into a fixed box, which is what it was: that stretched
  * every source to one 4:3 rectangle, so the German bands were squeezed ~7% vertically and the
@@ -1153,7 +1151,15 @@ private fun FlagLayer(
             .build(),
         imageLoader = getFlagImageLoader(context),
         contentDescription = null,
-        contentScale = ContentScale.Fit,
+        // Back to Crop, on request — Fit ('no crop') left a real, visible letterbox gap at
+        // the top of this fixed-height box for any flag wider-than-tall (most of them): the
+        // image only fills the box's WIDTH, so its Fit-scaled height came out shorter than
+        // the box, and the leftover gap showed HeroFloor's own near-black colour behind it —
+        // exactly the solid "black bar at the top, menu and country name sitting on it"
+        // reported. Crop guarantees the box is always fully covered, no gap possible; the
+        // trade-off (going back to not always showing 100% of every flag) is the one this
+        // reverts.
+        contentScale = ContentScale.Crop,
         alignment = alignment,
         alpha = alpha,
         colorFilter = chroma,
@@ -1597,12 +1603,13 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     // see the section comment. The light's band reaches [HeroBleed] *past* the hero's rows;
     // the flag stops [FlagFootRise] *short* of them, which is what un-zooms it.
     val bandHeight = heroHeight + HeroBleed
-    // Fixed box, [ContentScale.Fit]: every country's flag scales uniformly to fit inside this
-    // exact box with nothing cropped off, at the cost of not always covering it — a flag whose
-    // aspect ratio doesn't match the box's letterboxes onto [HeroFloor] instead. This used to
-    // be [ContentScale.Crop] (the Windscribe-style fixed-frame look: consistent geometry across
-    // every country, never showing 100% of any one flag) — switched on request, so the whole
-    // flag always shows. See [HeroBleed] for the one knob that tunes the box's own height.
+    // Fixed box, [ContentScale.Crop]: every country's flag scales uniformly to cover this
+    // exact box and gets clipped to it, so there is never a gap on any side for any aspect
+    // ratio. This is the Windscribe-style fixed-frame look: consistent geometry across every
+    // country, at the cost of never showing 100% of any one flag. [ContentScale.Fit] was tried
+    // (on request, "no crop") but left a real letterbox gap showing [HeroFloor]'s near-black
+    // colour for any wider-than-tall flag — reverted. See [HeroBleed] for the one knob that
+    // tunes the box's own height.
     val reduce = rememberReduceMotion()
     val phase = state.phase
     // The wash is gated on there being a country to draw, not on the phase — see
@@ -1626,9 +1633,9 @@ private fun HeroBackdrop(state: HomeUiState, heroHeight: Dp, modifier: Modifier 
     Box(modifier) {
         // The floor under the artwork, over the band only: it fades out across the bleed so
         // the card's own translucent top is not backed by opaque chrome. Without it, a flag
-        // crossfading at 40% alpha would show the page gradient through itself. It also backs
-        // whatever letterboxing [ContentScale.Fit] leaves on the sides/top now that the flag
-        // is no longer cropped to fill this box (see [FlagLayer]).
+        // crossfading at 40% alpha would show the page gradient through itself. With
+        // [ContentScale.Crop] this floor never shows behind the flag itself — only through
+        // the alpha crossfade and the fade-to-transparent zone near the very bottom.
         Box(Modifier.fillMaxWidth().height(bandHeight).background(HeroFloor))
         if (flagAlpha > 0.01f) {
             HeaderFlag(
