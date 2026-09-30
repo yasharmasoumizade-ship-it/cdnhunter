@@ -189,25 +189,18 @@ import kotlin.random.Random
 // code asks for [FontWeight.Bold] rather than the platform faking it by skewing Medium.
 // On API < 26 (this app's floor is 24) the OS ignores the variation axis and falls back to
 // the font's own default instance — a readable, if less differentiated, degradation.
-@OptIn(ExperimentalTextApi::class)
-private val LuxuryFont = FontFamily(
-    Font(R.font.manrope, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(R.font.manrope, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
-    Font(R.font.manrope, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
-    Font(R.font.manrope, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
-    Font(R.font.manrope, weight = FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
-)
+private val LuxuryFont = AppFont  // shared with Settings/Profile — see DesignSystem.kt
 
 /**
  * Home's type scale, replacing the ad hoc half-point sizes each composable used to pick for
  * itself (11.5/12.5/13.5/14.5/15.5sp...). Five steps, each with the weight it is always used
  * at, so a size implies a weight instead of the two being chosen separately at each call site.
  */
-private val TypeCaption = 12.sp    to FontWeight.Medium    // ping/city/timestamp captions
-private val TypeBody = 14.sp       to FontWeight.SemiBold  // list rows, chips, buttons
-private val TypeSubtitle = 16.sp   to FontWeight.SemiBold  // usage card title, section heads
-private val TypeTitle = 20.sp      to FontWeight.SemiBold  // dialog/sheet titles
-private val TypeHeadline = 26.sp   to FontWeight.Bold      // the country name
+private val TypeCaption = AppType.Caption    // ping/city/timestamp captions
+private val TypeBody = AppType.Body          // list rows, chips, buttons
+private val TypeSubtitle = AppType.Subtitle  // usage card title, section heads
+private val TypeTitle = AppType.Title        // dialog/sheet titles
+private val TypeHeadline = AppType.Headline   // the country name
 
 // ── Palette — navy/blue/green, our own tokens, Windscribe-directed ─────────────
 // Shifted off the old neutral-grey slate toward the dark-navy + saturated-blue + green
@@ -314,7 +307,7 @@ private val HeadlineInkShadow = Shadow(
     offset = Offset(0f, 2f),                  // matched to the reference mockup exactly (was 3f)
     blurRadius = 10f,                         // matched to the reference mockup exactly (was 14f)
 )
-private val RefAccent = Color(0xFF3D8BFF)      // --accent — more saturated blue, Windscribe-directed (was #3B82F6)
+private val RefAccent = AppDs.Accent      // --accent — more saturated blue, Windscribe-directed (was #3B82F6)
 /**
  * The connected/"good" colour: green, on request — a reversal of this file's earlier
  * "no green here" rule (see the note this replaces). Real Windscribe uses a neon green
@@ -715,10 +708,7 @@ private const val USAGE_DAILY_CAP_BYTES = 5L * 1024 * 1024 * 1024
 
 // .device background — more stops than the mockup's four so the ramp has no
 // visible banding on an OLED panel at these near-black values.
-private val PageGradient = Brush.verticalGradient(
-    0.00f to Color(0xFF0C0C0F),
-    1.00f to RefBg,
-)
+private val PageGradient = AppDs.PageGradient
 // ── Header flag panel ─────────────────────────────────────────────────────────
 // The flag is the top of the screen: one image, edge to edge, behind everything the
 // header draws. See the file header for why it is Crop and what the three
@@ -2592,50 +2582,50 @@ private fun PlusGlyph(color: Color, modifier: Modifier = Modifier) {
 //   States      rest → pressed (surface steps lighter, buttons sink 2.5%) → active (accent hairline).
 private object Ds {
     // Colour
-    val Bg = Color(0xFF0A0A0C)
-    val Surface = Color(0xFF111114)
-    val SurfaceRaised = Color(0xFF17171B)
-    val SurfacePressed = Color(0xFF1F1F24)
+    val Bg = AppDs.Bg
+    val Surface = AppDs.Surface
+    val SurfaceRaised = AppDs.SurfaceRaised
+    val SurfacePressed = AppDs.SurfacePressed
     val PanelFill = Color(0xFF0E0E11)
-    val Hairline = Color(0x12FFFFFF)      // white @ 7%
-    val Border = Color(0x1AFFFFFF)        // white @ 10%
-    val TextHi = Color(0xFFF2F3F5)
-    val TextMid = Color(0xFF9A9CA6)
-    val TextLow = Color(0xFF6C6F7A)
-    val Accent = Color(0xFF3D8BFF)
-    val ShadowAmbient = Color.Black.copy(alpha = 0.35f)
-    val ShadowSpot = Color.Black.copy(alpha = 0.45f)
+    val Hairline = AppDs.Hairline
+    val Border = AppDs.Border
+    val TextHi = AppDs.TextHi
+    val TextMid = AppDs.TextMid
+    val TextLow = AppDs.TextLow
+    val Accent = AppDs.Accent
+    val ShadowAmbient = AppDs.ShadowAmbient
+    val ShadowSpot = AppDs.ShadowSpot
 
     // Spacing
-    val S1 = 4.dp
-    val S2 = 8.dp
-    val S3 = 12.dp
-    val S4 = 16.dp
-    val S5 = 20.dp
-    val S6 = 24.dp
+    val S1 = AppDs.S1
+    val S2 = AppDs.S2
+    val S3 = AppDs.S3
+    val S4 = AppDs.S4
+    val S5 = AppDs.S5
+    val S6 = AppDs.S6
 
     // Radius
-    val RMd = 16.dp
-    val RLg = 22.dp
-    val RXl = 28.dp
+    val RMd = AppDs.RMd
+    val RLg = AppDs.RLg
+    val RXl = AppDs.RXl
 
     // Icons
-    val IconSm = 16.dp
-    val IconMd = 20.dp
+    val IconSm = AppDs.IconSm
+    val IconMd = AppDs.IconMd
 
     // Components
-    val Control = 48.dp          // touch floor
-    val ClearTap = 36.dp
-    val SearchHeight = 48.dp
-    val ServerRowHeight = 64.dp
-    val ServerFlag = 36.dp
-    val PingWidth = 52.dp
-    val ConnectHeight = 68.dp
-    val ConnectWell = 48.dp
+    val Control = AppDs.Control
+    val ClearTap = AppDs.ClearTap
+    val SearchHeight = AppDs.SearchHeight
+    val ServerRowHeight = AppDs.ServerRowHeight
+    val ServerFlag = AppDs.ServerFlag
+    val PingWidth = AppDs.PingWidth
+    val ConnectHeight = AppDs.ConnectHeight
+    val ConnectWell = AppDs.ConnectWell
 
     // Elevation
-    val ElevHero = 12.dp
-    val ElevPanel = 16.dp
+    val ElevHero = AppDs.ElevHero
+    val ElevPanel = AppDs.ElevPanel
 }
 
 /** The four states the connect control and status chip draw. [ConnPhase] has no disconnecting

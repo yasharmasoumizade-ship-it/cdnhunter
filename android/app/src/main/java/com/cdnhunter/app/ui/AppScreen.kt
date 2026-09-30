@@ -83,44 +83,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import androidx.core.graphics.drawable.toBitmap
 
-// ── ANANAS Home/Connected reference palette ──────────────────────────────────
-// The one palette. A separate dark/light pair (DarkBg/CardBg/AccentBlue…,
-// LightBg/LightCardBg/LightBorder…) used to sit above this block from before the
-// app settled on a single dark treatment; nothing read any of it, so it is gone
-// rather than sitting here looking like a theme someone could switch to.
-// Retargeted to the canonical flat "Windscribe-style" spec: near-black bg, hairline
-// borders, single BLUE accent (no glass, no green). Symbol names are kept so the
-// retint propagates through Settings/Profile/Locations/AccountCard/SheetScreen in place.
-val AnanasBg       = Color(0xFF0A0B0F)   // App background (canonical, matches Auth)
-val AnanasScreenBg = Color(0xFF0A0B0F)   // Slightly lighter page wash
-val AnanasCard     = Color(0xFF131316)   // Card surface
-val AnanasCard2    = Color(0xFF1A1B22)   // Raised element
-val AnanasBorder   = Color(0xFF23262F)   // Hairline border
-val AnanasBorder2  = Color(0xFF2A2E38)   // Alternative (raised) border
-val AnanasDivider  = Color(0xFF1C1F27)   // Divider
-val AnanasAccent   = Color(0xFF3B82F6)   // Blue accent (canonical, matches Auth)
-val AnanasAccentLight = Color(0xFF60A5FA)
-// Teal accent for the Settings/Profile subtree only — echoes the groomx wordmark's teal on the
-// login screen. Applied via sheet-exclusive composables/tokens (IconTile, AnanasToggleOn, the
-// Sheet* accent brushes) so it never leaks into Home/Locations/My Configs, which stay on the
-// canonical blue AnanasAccent.
-val AnanasTeal      = Color(0xFF4DB6AC)  // groomx teal — sheet accent
-val AnanasTealLight = Color(0xFF7FD4CB)  // lighter teal for selected-segment ink
-val AnanasSettingsIcon = Color(0xFF9BA0AC)   // text-mid, soft gray for settings row icons
-val AnanasAmber    = Color(0xFFE0B23B)   // Warm amber (premium/warn)
-val AnanasRed      = Color(0xFFEF4444)   // Error red
-val AnanasBlue     = Color(0xFF3B82F6)   // Unified to the blue accent
-val AnanasPurple   = Color(0xFF3B82F6)   // Unified to the blue accent (no off-palette purple)
-// The "on / active / selected" indicator color for controls (MinimalToggle track,
-// SegmentedControl selected segment, SelectDot). Deliberately NOT the green accent:
-// a green "on" state on a VPN app reads as a status/connection light, which these
-// controls are not. Blue keeps the active state legible and on-theme without that
-// false connotation.
-val AnanasToggleOn = AnanasTeal   // Settings/Profile toggles, segments & select-dots — groomx teal
-val AnanasTextHi   = Color(0xFFF6F7F9)   // Primary text
-val AnanasText     = Color(0xFFE3E6EC)   // Secondary text
-val AnanasMuted    = Color(0xFF9BA0AC)   // Muted / caption text (text-mid)
-val AnanasFaint    = Color(0xFF656B78)   // Faint text (text-low)
+// Legacy token names, now thin aliases of the shared design system (DesignSystem.kt, [AppDs]).
+// Home, Settings, Profile and Locations therefore read one palette; nothing here defines a colour.
+val AnanasBg       = AppDs.Bg
+val AnanasScreenBg = AppDs.Bg
+val AnanasCard     = AppDs.Surface
+val AnanasCard2    = AppDs.SurfaceRaised
+val AnanasBorder   = AppDs.Border
+val AnanasBorder2  = AppDs.Border
+val AnanasDivider  = AppDs.Hairline
+val AnanasAccent   = AppDs.Accent
+val AnanasAccentLight = AppDs.AccentSoft
+val AnanasAmber    = AppDs.Warning
+val AnanasRed      = AppDs.Error
+val AnanasBlue     = AppDs.Accent
+val AnanasPurple   = AppDs.Accent
+val AnanasTextHi   = AppDs.TextHi
+val AnanasText     = AppDs.TextHi.copy(alpha = 0.88f)
+val AnanasMuted    = AppDs.TextMid
+val AnanasFaint    = AppDs.TextLow
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 val LocalThemeMode = androidx.compose.runtime.compositionLocalOf { ThemeMode.SYSTEM }
@@ -390,7 +371,6 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
         ) {
             Icon(
                 Icons.Rounded.Public, null,
-                tint = AnanasFaint,
                 modifier = Modifier.size(size * 0.55f)
             )
         }
@@ -2159,27 +2139,15 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
     }
 }
 
-// ── Sheet design system ───────────────────────────────────────────────────────
-// The material the secondary screens share — Settings, Profile, split tunneling. Home has its
-// own language because it draws over a flag; these screens are a flat near-black page, so the
-// grid carries them: one gutter, one card corner, one row height, one tinted icon tile.
-
-/** Page gutter (spec: screen horizontal padding 16.dp). */
-private val SheetPad = 16.dp
-
-/** Card corner (spec: card/row 14.dp). */
-private val SheetCardCorner = 14.dp
-
-/** Row floor: fits a two-line row, and keeps one-line rows in a group the same height. */
-private val SheetRowHeight = 58.dp
+// ── Sheet material (Locations / add sheet / QR dialog) ─────────────────────────
+// Settings, Profile and their sub-screens no longer use this: they are built from the shared
+// Premium* components in DesignSystem.kt. What remains here serves the Locations list and its
+// sheets, and now draws from the same [AppDs] colours.
 
 // ── Depth, in place of borders ────────────────────────────────────────────────
 // These surfaces used to be drawn with a 1dp hairline each; nine outlines on one scroll is nine
 // competing rectangles, and on a page this dark the line is the loudest thing in frame. What
 // replaces them is Home's light model — gradient fill, lit top edge, shaded foot, real shadow.
-
-/** Pure black: the page is near-black already, so a tinted shadow only muddies it. */
-private val SheetShadow = Color(0xFF000000)
 
 /** Depth of the specular band and the foot shade — absolute dp, so a 58dp row and a 300dp
  *  card are lit by the same size of highlight. */
@@ -2279,38 +2247,10 @@ private val SheetFieldRuleDepth = 1.5.dp
 /** The accent rule down the leading edge of an informational note. */
 private val SheetNoteRuleWidth = 3.dp
 
-/** The accent tint over a lit segment in a [SegmentedControl]. */
-private val SheetSegmentTint = Brush.verticalGradient(
-    listOf(AnanasTeal.copy(alpha = 0.20f), AnanasTeal.copy(alpha = 0.11f)),
-)
-
-/** An accent [PillButton]'s material — flat teal fill, pressed a shade darker. */
-private val SheetAccentFill = Brush.verticalGradient(listOf(AnanasTeal, AnanasTeal))
-private val SheetAccentPressedFill = Brush.verticalGradient(listOf(Color(0xFF3C9488), Color(0xFF3C9488)))
-
-/** A tile riding inside [SheetScreen]'s header — flat raised surface. */
-private val SheetGlassTileFill = Brush.verticalGradient(
-    listOf(AnanasCard2, AnanasCard2),
-)
-
-/** The avatar's ring, and the disc it sits behind — see [AvatarRing]. The ring is brightest
- *  at the top left, so the avatar catches the same light as everything else. Teal, so the
- *  hero on Settings/Profile echoes the groomx wordmark on the login screen. */
-private val SheetAvatarRing = Brush.linearGradient(
-    listOf(AnanasTeal.copy(alpha = 0.85f), AnanasTeal.copy(alpha = 0.14f)),
-)
-private val SheetAvatarWell = Brush.verticalGradient(
-    listOf(Color(0xFF14151B), Color(0xFF14151B)),
-)
-
-/** Profile's plan card: the one warm surface in the app, flat per the spec. */
-private val SheetPlanFill = Brush.verticalGradient(
-    listOf(Color(0xFF1B1712), Color(0xFF1B1712)),
-)
-
-/** [MinimalToggle]'s thumb, lit from above so it reads as a bead in a groove, not a flat dot. */
-private val SheetThumbFill = Brush.verticalGradient(
-    listOf(Color(0xFFFFFFFF), Color(0xFFDDE0E6)),
+/** An accent control's material — flat accent fill, pressed a shade darker. */
+private val SheetAccentFill = Brush.verticalGradient(listOf(AppDs.Accent, AppDs.Accent))
+private val SheetAccentPressedFill = Brush.verticalGradient(
+    listOf(AppDs.Accent.copy(alpha = 0.82f), AppDs.Accent.copy(alpha = 0.82f)),
 )
 
 /**
@@ -2327,6 +2267,7 @@ private val SheetThumbFill = Brush.verticalGradient(
  * octet is typed.
  */
 private val SheetFieldStyle = TextStyle(
+    fontFamily = AppFont,
     fontSize = 14.sp,
     lineHeight = 19.sp,
     fontWeight = FontWeight.Medium,
@@ -2342,6 +2283,7 @@ private val SheetFieldStyle = TextStyle(
 /** [SheetFieldStyle] for a search field: text rather than figures, so no `tnum`, and a shade
  *  smaller since it sits next to a 16dp glyph rather than in a box of its own. */
 private val SheetSearchStyle = TextStyle(
+    fontFamily = AppFont,
     fontSize = 13.5.sp,
     lineHeight = 18.sp,
     color = AnanasText,
@@ -2351,96 +2293,6 @@ private val SheetSearchStyle = TextStyle(
         trim = LineHeightStyle.Trim.None,
     ),
 )
-
-/** How tall the soft ambient glow pooling along the hero's bottom edge is (see
- *  [Modifier.sheetHeaderPanel]'s `glow` parameter). */
-private val SheetHeaderGlowDepth = 44.dp
-
-/** How much air is left between the panel's last row and its bottom edge. */
-private val SheetHeaderFootRoom = 22.dp
-
-/**
- * The hero wash every secondary screen (Settings/Profile/SplitTunnel/PaymentHistory) opens with.
- *
- * It is deliberately NOT a panel: no bottom rounding, no lit rim, no opaque fill — those together
- * rendered as a rounded-bottom card silhouette sitting on the page, a "box shape" breaking up the
- * hero. Instead the tint is drawn straight over the page: a teal→blue wash strongest under the
- * status bar that fades to nothing by the panel's own foot, so the header melts seamlessly into the
- * page at any content height. (The old version clipped a [RoundedCornerShape] and filled it with a
- * fixed-560px linear gradient, which left a tinted rounded band on panels shorter than 560px.)
- *
- * The status-bar inset is applied *after* the wash, so the tint reaches under the clock while the
- * content stays clear of it. Shared by [SheetScreen] and [SplitTunnelScreen].
- */
-private val SheetHeaderShape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
-
-private fun Modifier.sheetHeaderPanel(glow: Float = 0f): Modifier = this
-    .fillMaxWidth()
-    // A raised card again: clipped to a rounded-bottom shape and lifted off the page with a
-    // real shadow, so the hero reads as a distinct panel sitting above the background rather
-    // than a wash bleeding into it.
-    .shadow(
-        elevation = 20.dp,
-        shape = SheetHeaderShape,
-        ambientColor = AnanasTeal.copy(alpha = 0.22f),
-        spotColor = AnanasTeal.copy(alpha = 0.35f),
-    )
-    .clip(SheetHeaderShape)
-    .background(AnanasBg)
-    .border(
-        width = 0.8.dp,
-        brush = Brush.verticalGradient(
-            0.0f to AnanasTeal.copy(alpha = 0.0f),
-            0.55f to AnanasTeal.copy(alpha = 0.30f),
-            0.85f to AnanasAccent.copy(alpha = 0.70f),
-            1.0f to AnanasTeal.copy(alpha = 0.85f),
-        ),
-        shape = SheetHeaderShape,
-    )
-    .drawBehind {
-        // The hero tint, straight over the page: teal→blue at the top, gone by the foot, anchored
-        // to real pixel height so it always resolves to the page colour (no residual band, no edge).
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    AnanasTeal.copy(alpha = 0.26f),
-                    AnanasAccent.copy(alpha = 0.15f),
-                    Color.Transparent,
-                ),
-                startY = 0f,
-                endY = size.height,
-            ),
-        )
-        // Soft radial bloom, upper-left, echoing the light source used elsewhere (power button,
-        // hero flag). Pixel-real center/radius since fractional Offset/Float doesn't map to the area.
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(AnanasTealLight.copy(alpha = 0.20f), Color.Transparent),
-                center = Offset(size.width * 0.15f, size.height * 0.10f),
-                radius = size.width * 0.9f,
-            ),
-        )
-        // Optional ambient blue pooled along the foot, caller-driven ([glow]); off by default, so
-        // the seamless screens are unchanged and only an opting-in caller gets the pooled light.
-        if (glow > 0f) {
-            val band = SheetHeaderGlowDepth.toPx()
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, AnanasAccent.copy(alpha = 0.16f * glow)),
-                    startY = size.height - band,
-                    endY = size.height,
-                ),
-                topLeft = Offset(0f, size.height - band),
-                size = Size(size.width, band),
-            )
-        }
-        // The lit bottom rim: a bright teal-to-blue edge along the panel's own foot, the one
-        // border meant to be seen -- this is what makes the raised card read as having a
-        // definite, glowing edge instead of just fading out.
-        // rim is now drawn by the border() modifier above, not here
-    }
-    .statusBarsPadding()
-    .padding(horizontal = SheetPad)
 
 /** True when the system "remove animations" setting is on, so ambient motion can be held static. */
 @Composable
@@ -2455,186 +2307,12 @@ private fun rememberReduceMotion(): Boolean {
     }
 }
 
-/**
- * The frame every secondary screen sits in: the page wash, the glass header panel, and a scroll.
- *
- * The title is 30sp ExtraBold on its own line rather than 16sp beside the chevron — the same
- * move the hero makes with its country name. The screen states what it is once, in the largest
- * ink on the page, and everything under it can then be quiet.
- *
- * [headerContent] is whatever else belongs *inside* the glass: Settings puts its account row
- * there, Profile its avatar block. Anything passed here shares the panel with the title instead
- * of becoming another card on the page — see [sheetHeaderPanel].
- */
-@Composable
-private fun SheetScreen(
-    title: String,
-    onBack: () -> Unit,
-    headerContent: (@Composable ColumnScope.() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(AnanasScreenBg)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(AnanasTeal.copy(alpha = 0.16f), Color.Transparent),
-                    center = Offset(0.15f, 0.05f),
-                    radius = 900f,
-                ),
-            )
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(AnanasPurple.copy(alpha = 0.14f), Color.Transparent),
-                    center = Offset(0.9f, 0.4f),
-                    radius = 900f,
-                ),
-            ),
-    ) {
-        // No ambient blue glow band on this header. The sheet header's background is the SAME
-        // color as the page (flat spec), so unlike Home's hero — where the glow pools against a
-        // distinct solid panel — here the rounded-bottom blue band had nothing to sit on and
-        // floated free below the header, reading as a stray shadow / ghost card border above the
-        // first section. SplitTunnelScreen already calls sheetHeaderPanel() with no glow and shows
-        // no such artifact; Settings/Profile now match it. The lit rim inside the clip is the one
-        // edge meant to be seen. (The old full-width SheetPageWash box was removed for the same
-        // reason — a square rectangle behind a round-bottomed header poked its corners out.)
-        // The header (title/back-row + the account card passed as headerContent) is now
-        // OUTSIDE the scroll container, so it stays pinned while only the settings groups
-        // below it scroll -- previously the whole page, header included, scrolled as one
-        // Column, which meant "Settings" and the profile card slid off the top with the rest.
-        Column(Modifier.fillMaxSize()) {
-            Column(Modifier.sheetHeaderPanel()) {
-                // Title on the SAME row as the back chevron. The chevron is a plain icon
-                // (no disc/border) so the two read as one line: "‹ Settings".
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = if (headerContent == null) 4.dp else 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlainBackButton(onClick = onBack)
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.3).sp,
-                        color = AnanasTextHi,
-                    )
-                }
-                headerContent?.invoke(this)
-                Spacer(Modifier.height(SheetHeaderFootRoom))
-            }
-            Column(
-                Modifier.fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .navigationBarsPadding()
-                    .padding(horizontal = SheetPad),
-            ) {
-                content()
-                Spacer(Modifier.height(44.dp))
-            }
-        }
-    }
-}
 
-/**
- * A group heading: "CONNECTION", "NETWORK", "DNS". 11sp Bold at 1.6sp of tracking — the same
- * ratio Home's phase eyebrow uses. The top space belongs to the composable, not to the call
- * site, so groups on this page are always separated by the same amount.
- */
-@Composable
-private fun SectionLabel(text: String, top: Dp = 26.dp) {
-    Text(
-        text,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 1.6.sp,
-        color = AnanasMuted,
-        modifier = Modifier.padding(top = top, bottom = 10.dp, start = 4.dp),
-    )
-}
 
-/** A logical group of rows on the settings list. Flat and borderless: no card fill, no outline,
- *  no elevation, no rounded clip — the section reads as a plain list on the page wash, grouped
- *  only by the [SectionLabel] above it and the whitespace to the next group, and split internally
- *  by [RowDivider] hairlines. This is the iOS/Windscribe flat-list treatment the Home screen uses;
- *  the one real bordered/elevated card left on this screen is [AccountCard] in the glass header.
- *  Rows keep their own 14dp horizontal padding, so nothing shifts sideways when the chrome goes. */
-@Composable
-private fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    // Each settings group is its own frosted glass card (falls back to a plain translucent
-    // surface here since this screen sits over a flat color background, not the video/haze
-    // backdrop used on Auth/Onboarding -- there's nothing behind it worth a real blur).
-    Column(
-        with(Glass) {
-            modifier
-                .fillMaxWidth()
-                .glassSurface(shape = Glass.CardShape)
-                .padding(vertical = 4.dp)
-        },
-        content = content,
-    )
-}
 
-/** The line between two rows in a [CardGroup], inset to where the row's text begins so the
- *  icons read as one column. 62dp = [SheetPad] shy of the card edge, plus the tile and its gap. */
-@Composable
-private fun RowDivider() {
-    // Inset to where the row's text begins (row pad 14 + tile 34 + gap 14 = 62), so the icon
-    // column reads as one continuous edge and the hairline never cuts through a tile. Runs to
-    // the card's inner right edge — the Windscribe/iOS "aligned-under-text" divider.
-    Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(AnanasBorder))
-}
 
-/** A row's icon: a flat glyph in the Settings/Profile teal accent, no tile, no card behind it —
- *  a lighter, more modern treatment than the old colour-coded rounded squares. The `tint`
- *  parameter is kept in the signature so every call site is unchanged, but it is intentionally
- *  ignored: the whole point is one accent colour across Settings and Profile, not a per-row hue.
- *  The 34dp box is retained (not the background) so the icon column keeps its exact width and the
- *  row divider still lands under the text. */
-@Composable
-private fun IconTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
-    IconTileBadge(modifier) {
-        Icon(icon, null, tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(18.dp))
-    }
-}
 
-/** Same badge, for a Lucide vector drawable instead of a Material [ImageVector]. `tint` is
- *  accepted for call-site parity with [IconTile] and, likewise, ignored. */
-@Composable
-private fun IconTileRes(@androidx.annotation.DrawableRes icon: Int, tint: Color, modifier: Modifier = Modifier) {
-    IconTileBadge(modifier) {
-        Icon(
-            painterResource(id = icon),
-            null,
-            tint = Color.White.copy(alpha = 0.92f),
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
 
-/** A dark rounded badge behind each row's icon (Figma-style settings list treatment), rather
- *  than a bare flat glyph. Shared by [IconTile] and [IconTileRes] so both icon sources render
- *  in the exact same badge. */
-@Composable
-private fun IconTileBadge(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // Higher-contrast badge than the first pass: more opaque fill and a brighter, crisper
-    // border so the circle reads clearly against the now-brighter glass cards instead of
-    // washing out into them, plus a soft shadow to lift it off the card like a real raised
-    // chip rather than a flat tint.
-    Box(
-        modifier
-            .size(34.dp)
-            .shadow(2.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.14f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape),
-        contentAlignment = Alignment.Center,
-        content = { content() },
-    )
-}
 
 /**
  * A text input, built out of [BasicTextField] rather than Material's `TextField` — the stock
@@ -2659,34 +2337,31 @@ private fun InlineField(
     error: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = remember { RoundedCornerShape(12.dp) }
-    val underline by animateColorAsState(
+    val shape = remember { RoundedCornerShape(AppDs.RMd) }
+    val edge by animateColorAsState(
         targetValue = when {
-            error != null -> AnanasRed
-            focused -> AnanasTeal
-            else -> Color.Transparent
+            error != null -> AppDs.Error.copy(alpha = 0.70f)
+            focused -> AppDs.Accent.copy(alpha = 0.70f)
+            else -> AppDs.Border
         },
         animationSpec = tween(160),
         label = "fieldEdge",
     )
     Column(modifier.fillMaxWidth()) {
-        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = AnanasMuted)
-        Spacer(Modifier.height(7.dp))
+        Text(
+            label,
+            fontSize = AppType.Caption.first,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.2.sp,
+            color = AppDs.TextMid,
+        )
+        Spacer(Modifier.height(AppDs.S2))
         Box(
             Modifier.fillMaxWidth()
                 .clip(shape)
-                .background(SheetWellFill)
-                .drawBehind {
-                    val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
-                    drawRect(brush = SheetWellShade, size = Size(size.width, band))
-                    val rule = SheetFieldRuleDepth.toPx()
-                    drawRect(
-                        color = underline,
-                        topLeft = Offset(0f, size.height - rule),
-                        size = Size(size.width, rule),
-                    )
-                }
-                .padding(horizontal = 12.dp, vertical = 11.dp),
+                .background(AppDs.Bg)
+                .border(1.dp, edge, shape)
+                .padding(horizontal = AppDs.S4, vertical = AppDs.S3),
             // Centres the caret, not just the text: see [SheetFieldStyle].
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -2706,256 +2381,23 @@ private fun InlineField(
                 onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = SheetFieldStyle,
-                cursorBrush = SolidColor(AnanasTeal),
+                cursorBrush = SolidColor(AppDs.Accent),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
             )
         }
         if (error != null) {
-            Spacer(Modifier.height(5.dp))
-            Text(error, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = AnanasRed)
+            Spacer(Modifier.height(AppDs.S1))
+            Text(error, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.Error)
         }
     }
 }
 
-/**
- * A two-or-three way choice as one control: a recessed track with a single lit thumb that glides
- * to the selected segment, rather than the fill snapping segment-to-segment. The thumb is measured
- * to each segment's real bounds ([onGloballyPositioned]), so it fits whether the segments are
- * content-sized (Server choice, MTU) or share the row equally ([equalWeight], the split-tunnel
- * mode picker). Flat accent tint per the spec — no glass.
- *
- * `options` is (stored value, shown label) — the key is what goes to [AppSettings] — so the
- * control cannot drift from the persisted value. Presentation only: [onSelect] fires as before.
- */
-@Composable
-private fun SegmentedControl(
-    options: List<Pair<String, String>>,
-    selected: String,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    // Off by default so the MTU / Server-choice control stays as wide as its two short words.
-    // On, each segment takes an equal share of the row — for a full-width control whose labels
-    // are sentences rather than words.
-    equalWeight: Boolean = false,
-) {
-    val trackShape = remember { RoundedCornerShape(12.dp) }
-    val segShape = remember { RoundedCornerShape(10.dp) }
-    val density = LocalDensity.current
 
-    // The measured (x, width) of every segment, so the lit thumb can be placed on the selected one
-    // regardless of how the row laid the segments out. Segment height is uniform, tracked once.
-    val segX = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
-    val segW = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
-    var segH by remember { mutableStateOf(0f) }
 
-    val selIdx = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
-    val targetX = segX.getOrElse(selIdx) { 0f }
-    val targetW = segW.getOrElse(selIdx) { 0f }
 
-    val thumbX = remember { Animatable(0f) }
-    val thumbW = remember { Animatable(0f) }
-    var settled by remember { mutableStateOf(false) }
-    LaunchedEffect(targetX, targetW) {
-        if (targetW <= 0f) return@LaunchedEffect
-        if (!settled) {
-            // First real measurement: seat the thumb without a grow-from-zero flash on entry.
-            thumbX.snapTo(targetX)
-            thumbW.snapTo(targetW)
-            settled = true
-        } else {
-            launch { thumbX.animateTo(targetX, tween(220, easing = FastOutSlowInEasing)) }
-            launch { thumbW.animateTo(targetW, tween(220, easing = FastOutSlowInEasing)) }
-        }
-    }
 
-    Box(
-        modifier
-            .clip(trackShape)
-            .background(Color(0xFF0D0E12))
-            // Shaded at the top like the toggle track and the field wells, so the track reads as a
-            // groove and the lit thumb reads as an object standing in it, not a flat swatch.
-            .drawBehind { drawRect(brush = SheetWellShade, size = Size(size.width, size.height / 2f)) }
-            .border(1.dp, AnanasBorder, trackShape)
-            .padding(3.dp),
-    ) {
-        // The lit thumb, drawn under the labels: accent-tinted fill plus a faint accent ring,
-        // flat per the no-glass spec, sliding between segments as the selection changes.
-        if (settled && thumbW.value > 0f && segH > 0f) {
-            Box(
-                Modifier
-                    .offset { IntOffset(thumbX.value.roundToInt(), 0) }
-                    .width(with(density) { thumbW.value.toDp() })
-                    .height(with(density) { segH.toDp() })
-                    .clip(segShape)
-                    .background(AnanasToggleOn.copy(alpha = 0.16f))
-                    .border(1.dp, AnanasToggleOn.copy(alpha = 0.30f), segShape),
-            )
-        }
-        Row(
-            (if (equalWeight) Modifier.fillMaxWidth() else Modifier),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            options.forEachIndexed { i, (key, label) ->
-                val on = key == selected
-                val interaction = remember { MutableInteractionSource() }
-                val ink by animateColorAsState(
-                    targetValue = if (on) AnanasTealLight else AnanasMuted,
-                    animationSpec = tween(200), label = "segInk",
-                )
-                Box(
-                    (if (equalWeight) Modifier.weight(1f) else Modifier)
-                        .onGloballyPositioned { c ->
-                            // Record this segment's place in the track so the thumb can find it.
-                            val nx = c.positionInParent().x
-                            val nw = c.size.width.toFloat()
-                            val nh = c.size.height.toFloat()
-                            if (segX[i] != nx) segX[i] = nx
-                            if (segW[i] != nw) segW[i] = nw
-                            if (segH != nh) segH = nh
-                        }
-                        .clip(segShape)
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                        ) { onSelect(key) }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        label,
-                        fontSize = 12.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        color = ink,
-                    )
-                }
-            }
-        }
-    }
-}
 
-/**
- * A small text action inside a row — "Copy", "Clear". `accent = true` fills it and inverts the
- * ink, for the one action that is the point of the row. Both are raised objects that sink on
- * press ([sheetRaised]); the lift replaces the outline the neutral one used to wear.
- */
-@Composable
-private fun PillButton(text: String, onClick: () -> Unit, accent: Boolean = false) {
-    val shape = remember { RoundedCornerShape(10.dp) }
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Box(
-        Modifier
-            .sheetRaised(
-                shape = shape,
-                pressed = pressed,
-                fill = if (accent) SheetAccentFill else SheetControlFill,
-                pressedFill = if (accent) SheetAccentPressedFill else SheetControlPressedFill,
-                elevation = if (accent) 8.dp else 5.dp,
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 8.dp),
-    ) {
-        Text(
-            text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (accent) Color.White else AnanasText,
-        )
-    }
-}
-
-/**
- * The account block at the top of Settings: avatar, name, plan, chevron. It rides inside
- * [SheetScreen]'s glass header rather than sitting on the page as a card of its own, and is
- * separated by a lift rather than an outline.
- */
-@Composable
-private fun AccountCard(account: AccountUiState, onClick: () -> Unit) {
-    val shape = remember { RoundedCornerShape(SheetCardCorner) }
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Row(
-        Modifier.fillMaxWidth()
-            .sheetRaised(shape, pressed, fill = SheetGlassTileFill, elevation = 8.dp)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AvatarRing(size = 46.dp, initials = account.initials, initialsSize = 15.sp)
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Text(account.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                PlanBadge(account.plan)
-                Text(accountStatusShort(account), fontSize = 11.5.sp, color = AnanasMuted)
-            }
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
-    }
-}
-
-/**
- * The small plan pill ("FREE" / "PRO"). Colour follows the tier — amber for Pro (the premium
- * accent used across the app), a calm neutral for Free — so the badge alone tells the tier apart.
- * Driven by [AccountUiState.plan]; there is no hardcoded tier string anywhere anymore.
- */
-@Composable
-private fun PlanBadge(plan: PlanTier, modifier: Modifier = Modifier) {
-    val (bg, fg) = when (plan) {
-        PlanTier.PRO -> AnanasAmber.copy(alpha = 0.16f) to AnanasAmber
-        PlanTier.FREE -> AnanasSettingsIcon.copy(alpha = 0.14f) to AnanasText
-    }
-    Box(
-        modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 7.dp, vertical = 2.dp),
-    ) {
-        Text(plan.label.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = fg, letterSpacing = 0.6.sp)
-    }
-}
-
-/** Short one-liner shown next to the plan badge on Settings' [AccountCard]. Honest about the
- *  neutral (no-billing-backend) state instead of a fake expiry date. */
-private fun accountStatusShort(account: AccountUiState): String = when (val s = account.subscription) {
-    is SubscriptionState.Active -> "Expires in ${s.daysRemaining} days"
-    SubscriptionState.None -> if (account.isPro) "Subscription active" else "Free plan"
-}
-
-/**
- * The avatar, at whatever size is asked for: a gradient ring with a dark disc and the initials
- * inside it. One composable so Settings' 46dp version and Profile's larger one cannot drift.
- */
-@Composable
-private fun AvatarRing(size: Dp, initials: String, initialsSize: TextUnit, ringWidth: Dp = 1.5.dp) {
-    Box(
-        // A soft teal halo pooled behind the ring gives the hero a lit, premium focal point that
-        // echoes the login screen's glow — drawn behind the disc so it reads as ambient light, not
-        // a second ring. Radius scales with the avatar so Settings' 46dp and Profile's 62dp match.
-        Modifier
-            .size(size)
-            .drawBehind {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(AnanasTeal.copy(alpha = 0.22f), Color.Transparent),
-                        center = center,
-                        radius = size.toPx() * 0.72f,
-                    ),
-                    radius = size.toPx() * 0.72f,
-                )
-            }
-            .clip(CircleShape)
-            .background(SheetAvatarRing)
-            .padding(ringWidth),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier.fillMaxSize().clip(CircleShape).background(SheetAvatarWell),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AnanasTeal)
-        }
-    }
-}
 
 // ── Settings — ANANAS reference (replaces old Tools/ScannerTab entirely) ───────
 
@@ -2969,41 +2411,21 @@ private fun AvatarRing(size: Dp, initials: String, initialsSize: TextUnit, ringW
  */
 @Composable
 private fun ModeChoiceRow(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            IconTile(Icons.Rounded.AutoAwesome, AnanasAccent)
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text(
-                    "Server choice",
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.1).sp,
-                    color = AnanasTextHi,
-                )
-                Text(
-                    when (mode) {
-                        ConnectMode.SMART -> "Best-measuring server, picked for you"
-                        ConnectMode.MANUAL -> "The one you tap in the list"
-                    },
-                    fontSize = 11.5.sp,
-                    color = AnanasMuted,
-                    maxLines = 2,
-                    modifier = Modifier.padding(top = 2.dp, end = 8.dp),
-                )
-            }
-        }
-        SegmentedControl(
-            options = ConnectMode.values().map { it.name to it.label },
-            selected = mode.name,
-            onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
-        )
-    }
+    PremiumRow(
+        title = "Server choice",
+        subtitle = when (mode) {
+            ConnectMode.SMART -> "Best-measuring server, picked for you"
+            ConnectMode.MANUAL -> "The one you tap in the list"
+        },
+        leading = { PremiumIconContainer(Icons.Rounded.AutoAwesome) },
+        trailing = {
+            PremiumSegmentedControl(
+                options = ConnectMode.values().map { it.name to it.label },
+                selected = mode.name,
+                onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
+            )
+        },
+    )
 }
 
 @Composable
@@ -3025,39 +2447,37 @@ private fun SettingsScreen(
     // switch for that behavior, not a decorative local-only state.
     var killSwitch by remember { mutableStateOf(AppSettings.killSwitchEnabled(context)) }
 
-    SheetScreen(
+    PremiumScreen(
         title = "Settings",
         onBack = onBack,
-        headerContent = { AccountCard(account = account, onClick = onProfileClick) },
     ) {
-        SectionLabel("CONNECTION", top = 8.dp)
-        CardGroup {
+        AccountSummaryCard(account = account, onClick = onProfileClick)
+        SectionHeader("CONNECTION")
+        PremiumCardGroup {
             // Server choice, first in the group because it decides what every other row here
             // applies to. This is the only visible entry point to Smart mode: the hero's mode
             // pill was removed in the redesign, which left the horizontal swipe on the power
             // disc as the sole way to change it — discoverable by nobody.
             ModeChoiceRow(mode = mode, onSetMode = onSetMode)
-            RowDivider()
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS", AnanasBlue, showChevron = true)
-            RowDivider()
+            PremiumDivider()
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS", showChevron = true)
+            PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_refresh, "Auto-reconnect", "Reconnect if connection drops",
                 autoReconnect, {
                     autoReconnect = it
                     AppSettings.setAutoReconnectEnabled(context, it)
                 },
-                tint = AnanasAccent,
             )
-            RowDivider()
+            PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_wifi_off, "Kill switch", "Block traffic on disconnect",
                 killSwitch, {
                     killSwitch = it
                     AppSettings.setKillSwitchEnabled(context, it)
                 },
-                tint = AnanasAmber,
             )
-            RowDivider()
+            PremiumDivider()
             run {
                 val splitApps = AppSettings.splitTunnelApps(context)
                 val splitMode = AppSettings.splitTunnelMode(context)
@@ -3067,11 +2487,11 @@ private fun SettingsScreen(
                     else -> "${splitApps.size} app${if (splitApps.size == 1) "" else "s"} excluded"
                 }
                 SettingsRow(
-                    com.cdnhunter.app.R.drawable.ic_lucide_split, "Split tunneling", summary, AnanasPurple,
+                    com.cdnhunter.app.R.drawable.ic_lucide_split, "Split tunneling", summary,
                     showChevron = true, onClick = onSplitTunnelClick,
                 )
             }
-            RowDivider()
+            PremiumDivider()
             run {
                 var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
                 SettingsToggleRow(
@@ -3080,10 +2500,9 @@ private fun SettingsScreen(
                         adBlockEnabled = it
                         AppSettings.setAdBlockerEnabled(context, it)
                     },
-                    tint = AnanasRed,
                 )
             }
-            RowDivider()
+            PremiumDivider()
             run {
                 // Malware blocker: its OWN independent toggle, deliberately separate from the
                 // Ad blocker above. Ads and malware are different threat models — a user may
@@ -3096,13 +2515,12 @@ private fun SettingsScreen(
                         malwareBlockEnabled = it
                         AppSettings.setMalwareBlockerEnabled(context, it)
                     },
-                    tint = AnanasRed,
                 )
             }
         }
 
-        SectionLabel("NETWORK")
-        CardGroup {
+        SectionHeader("NETWORK")
+        PremiumCardGroup {
             var mtuMode by remember { mutableStateOf(AppSettings.mtuPreset(context)) }
             var customMtuText by remember { mutableStateOf(AppSettings.mtu(context).toString()) }
             var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
@@ -3114,50 +2532,31 @@ private fun SettingsScreen(
             // it carries a segmented control where the others carry a toggle. Everything
             // else about the row — tile, label column, height — is the same, which is what
             // lets a group hold two kinds of control without looking assembled.
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    IconTile(Icons.Rounded.Tune, AnanasBlue)
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            "MTU",
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.1).sp,
-                            color = AnanasTextHi,
-                        )
-                        Text(
-                            if (mtuMode == "auto") "Automatic · 1500 bytes" else "$customMtuText bytes",
-                            fontSize = 11.5.sp,
-                            color = AnanasMuted,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-                SegmentedControl(
-                    options = listOf("auto" to "Auto", "custom" to "Custom"),
-                    selected = mtuMode,
-                    onSelect = { key ->
-                        if (key == "auto") {
-                            mtuMode = "auto"
-                            showCustomInput = false
-                            AppSettings.setMtu(context, 1500)
-                            AppSettings.setMtuPreset(context, "auto")
-                        } else {
-                            mtuMode = "custom"
-                            showCustomInput = true
-                        }
-                    },
-                )
-            }
+            PremiumRow(
+                title = "MTU",
+                subtitle = if (mtuMode == "auto") "Automatic · 1500 bytes" else "$customMtuText bytes",
+                leading = { PremiumIconContainer(Icons.Rounded.Tune) },
+                trailing = {
+                    PremiumSegmentedControl(
+                        options = listOf("auto" to "Auto", "custom" to "Custom"),
+                        selected = mtuMode,
+                        onSelect = { key ->
+                            if (key == "auto") {
+                                mtuMode = "auto"
+                                showCustomInput = false
+                                AppSettings.setMtu(context, 1500)
+                                AppSettings.setMtuPreset(context, "auto")
+                            } else {
+                                mtuMode = "custom"
+                                showCustomInput = true
+                            }
+                        },
+                    )
+                },
+            )
 
             if (showCustomInput) {
-                RowDivider()
+                PremiumDivider()
                 InlineField(
                     value = customMtuText,
                     onValueChange = {
@@ -3171,7 +2570,7 @@ private fun SettingsScreen(
                     },
                     label = "MTU (576–9000)",
                     placeholder = "1500",
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = AppDs.S4, vertical = AppDs.S3),
                     keyboardType = KeyboardType.Number,
                     // Only complains once there is something to complain about: an empty
                     // field mid-edit is not an error, a number outside the range is. The
@@ -3185,25 +2584,23 @@ private fun SettingsScreen(
                 )
             }
 
-            RowDivider()
+            PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_router, "Allow LAN", "Access local network devices",
                 allowLan, {
                     allowLan = it
                     AppSettings.setAllowLan(context, it)
                 },
-                tint = AnanasSettingsIcon,
             )
-            RowDivider()
+            PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_globe, "IPv6", "Route IPv6 traffic through VPN",
                 ipv6Enabled, {
                     ipv6Enabled = it
                     AppSettings.setIpv6Enabled(context, it)
                 },
-                tint = AnanasBlue,
             )
-            RowDivider()
+            PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_lock, "DNS over HTTPS", "Encrypt DNS queries with DoH",
                 useDoh, {
@@ -3216,12 +2613,11 @@ private fun SettingsScreen(
                         android.widget.Toast.LENGTH_SHORT,
                     ).show()
                 },
-                tint = AnanasAccent,
             )
         }
 
-        SectionLabel("DNS")
-        CardGroup {
+        SectionHeader("DNS")
+        PremiumCardGroup {
             var customDnsEnabled by remember { mutableStateOf(AppSettings.customDnsEnabled(context)) }
             var primaryDns by remember { mutableStateOf(AppSettings.primaryDns(context)) }
             var secondaryDns by remember { mutableStateOf(AppSettings.secondaryDns(context)) }
@@ -3234,14 +2630,13 @@ private fun SettingsScreen(
                     showDnsInputs = it
                     AppSettings.setCustomDnsEnabled(context, it)
                 },
-                tint = AnanasPurple,
             )
 
             // The resolvers, only once the toggle is on: two fields and a note, in the same
             // card as the switch that revealed them rather than in a card of their own.
             if (showDnsInputs) {
-                RowDivider()
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 14.dp)) {
+                PremiumDivider()
+                Column(Modifier.padding(horizontal = AppDs.S4, vertical = AppDs.S4)) {
                     val isPrimaryValid = AppSettings.isValidDnsServer(primaryDns)
                     InlineField(
                         value = primaryDns,
@@ -3279,24 +2674,24 @@ private fun SettingsScreen(
                     // another control the user is meant to be able to change.
                     Spacer(Modifier.height(14.dp))
                     Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                            .background(AnanasTeal.copy(alpha = 0.07f))
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(AppDs.RMd))
+                            .background(AppDs.Accent.copy(alpha = 0.07f))
                             .drawBehind {
                                 drawRect(
-                                    color = AnanasTeal.copy(alpha = 0.55f),
+                                    color = AppDs.Accent.copy(alpha = 0.55f),
                                     size = Size(SheetNoteRuleWidth.toPx(), size.height),
                                 )
                             }
                             .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Icon(Icons.Rounded.Shield, null, tint = AnanasTeal, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Rounded.Shield, null, tint = AppDs.Accent, modifier = Modifier.size(14.dp))
                             Text(
                                 "DNS leak protection",
-                                fontSize = 11.5.sp,
+                                fontSize = AppType.Caption.first,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.2.sp,
-                                color = AnanasTeal,
+                                color = AppDs.Accent,
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -3307,9 +2702,9 @@ private fun SettingsScreen(
                         ).forEach { line ->
                             Text(
                                 "· $line",
-                                fontSize = 10.5.sp,
-                                lineHeight = 15.sp,
-                                color = AnanasMuted,
+                                fontSize = AppType.Caption.first,
+                                lineHeight = 17.sp,
+                                color = AppDs.TextMid,
                             )
                         }
                     }
@@ -3319,49 +2714,28 @@ private fun SettingsScreen(
 
         val clip = LocalClipboardManager.current
 
-        SectionLabel("DIAGNOSTICS")
-        CardGroup {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    IconTile(Icons.Rounded.Terminal, AnanasAccent)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Connection log",
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.1).sp,
-                            color = AnanasTextHi,
-                        )
-                        Text(
-                            if (CdnVpnService.lastError.isNotBlank()) {
-                                "Last error: ${CdnVpnService.lastError.take(40)}"
-                            } else {
-                                "No errors on last connect"
-                            },
-                            fontSize = 11.5.sp,
-                            color = if (CdnVpnService.lastError.isNotBlank()) AnanasRed else AnanasMuted,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(10.dp))
-                PillButton(
-                    "Copy",
-                    onClick = {
-                        val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}\n\nprotectLog:\n${MihomoBridge.protectLog()}\n\ncoreLog:\n${MihomoBridge.coreLog()}"
-                        clip.setText(AnnotatedString(text))
-                        android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                )
-            }
+        SectionHeader("DIAGNOSTICS")
+        PremiumCardGroup {
+            PremiumRow(
+                title = "Connection log",
+                subtitle = if (CdnVpnService.lastError.isNotBlank()) {
+                    "Last error: ${CdnVpnService.lastError.take(40)}"
+                } else {
+                    "No errors on last connect"
+                },
+                subtitleColor = if (CdnVpnService.lastError.isNotBlank()) AppDs.Error else AppDs.TextMid,
+                leading = { PremiumIconContainer(Icons.Rounded.Terminal) },
+                trailing = {
+                    PremiumButton(
+                        "Copy",
+                        onClick = {
+                            val text = "lastError:\n${CdnVpnService.lastError}\n\ndebugLog:\n${CdnVpnService.debugLog}\n\nprotectLog:\n${MihomoBridge.protectLog()}\n\ncoreLog:\n${MihomoBridge.coreLog()}"
+                            clip.setText(AnnotatedString(text))
+                            android.widget.Toast.makeText(context, "Connection log copied", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                },
+            )
 
             val crashFile = remember { File(context.filesDir, com.cdnhunter.app.CdnHunterApp.CRASH_LOG_FILE) }
             // Whether the file is there is read once into state, so "Clear" actually makes
@@ -3369,266 +2743,67 @@ private fun SettingsScreen(
             // Compose can observe, so the old row stayed on screen after deleting it.
             var hasCrashLog by remember { mutableStateOf(crashFile.exists()) }
             if (hasCrashLog) {
-                RowDivider()
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = SheetRowHeight)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                        IconTile(Icons.Rounded.BugReport, AnanasRed)
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "Last crash log",
-                                fontSize = 14.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = (-0.1).sp,
-                                color = AnanasTextHi,
+                PremiumDivider()
+                PremiumRow(
+                    title = "Last crash log",
+                    subtitle = "A saved report is on the device",
+                    leading = { PremiumIconContainer(Icons.Rounded.BugReport, tone = AppDs.Error) },
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppDs.S2)) {
+                            PremiumButton(
+                                "Copy",
+                                onClick = {
+                                    val text = runCatching { crashFile.readText() }.getOrDefault("")
+                                    clip.setText(AnnotatedString(text))
+                                    android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                accent = true,
                             )
-                            Text(
-                                "A saved report is on the device",
-                                fontSize = 11.5.sp,
-                                color = AnanasMuted,
-                                modifier = Modifier.padding(top = 2.dp),
+                            PremiumButton(
+                                "Clear",
+                                onClick = {
+                                    runCatching { crashFile.delete() }
+                                    hasCrashLog = crashFile.exists()
+                                },
                             )
                         }
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PillButton(
-                            "Copy",
-                            onClick = {
-                                val text = runCatching { crashFile.readText() }.getOrDefault("")
-                                clip.setText(AnnotatedString(text))
-                                android.widget.Toast.makeText(context, "Crash log copied", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            accent = true,
-                        )
-                        PillButton(
-                            "Clear",
-                            onClick = {
-                                runCatching { crashFile.delete() }
-                                hasCrashLog = crashFile.exists()
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** A row that opens something, or just states a value: tile, label, optional value under it,
- *  optional chevron. */
-@Composable
-private fun SettingsRow(
-    @androidx.annotation.DrawableRes iconRes: Int,
-    label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null,
-) {
-    SettingsRowContent(
-        tile = { IconTileRes(iconRes, iconTint) },
-        label = label, value = value, showChevron = showChevron, onClick = onClick,
-    )
-}
-
-@Composable
-private fun SettingsRow(icon: ImageVector, label: String, value: String?, iconTint: Color, showChevron: Boolean, onClick: (() -> Unit)? = null) {
-    SettingsRowContent(
-        tile = { IconTile(icon, iconTint) },
-        label = label, value = value, showChevron = showChevron, onClick = onClick,
-    )
-}
-
-@Composable
-private fun SettingsRowContent(tile: @Composable () -> Unit, label: String, value: String?, showChevron: Boolean, onClick: (() -> Unit)? = null) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .let { if (onClick != null) it.clickable { onClick() } else it }
-            .heightIn(min = SheetRowHeight)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f),
-        ) {
-            tile()
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    label,
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.1).sp,
-                    color = AnanasTextHi,
-                )
-                if (value != null) {
-                    Text(
-                        value,
-                        fontSize = 11.5.sp,
-                        color = AnanasMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-            }
-        }
-        if (showChevron) {
-            Icon(Icons.Rounded.ChevronRight, null, tint = AnanasFaint, modifier = Modifier.size(18.dp))
-        }
-    }
-}
-
-/** The same row with a switch on the right instead of a chevron. `tint` is the colour of the
- *  thing being switched, so a group of five switches can be scanned rather than read. */
-@Composable
-private fun SettingsToggleRow(
-    @androidx.annotation.DrawableRes iconRes: Int,
-    label: String,
-    desc: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    tint: Color = AnanasSettingsIcon,
-) {
-    SettingsToggleRowContent(
-        tile = { IconTileRes(iconRes, tint) },
-        label = label, desc = desc, checked = checked, onCheckedChange = onCheckedChange,
-    )
-}
-
-@Composable
-private fun SettingsToggleRow(
-    icon: ImageVector,
-    label: String,
-    desc: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    tint: Color = AnanasSettingsIcon,
-) {
-    SettingsToggleRowContent(
-        tile = { IconTile(icon, tint) },
-        label = label, desc = desc, checked = checked, onCheckedChange = onCheckedChange,
-    )
-}
-
-@Composable
-private fun SettingsToggleRowContent(
-    tile: @Composable () -> Unit,
-    label: String,
-    desc: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = SheetRowHeight)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f),
-        ) {
-            tile()
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    label,
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.1).sp,
-                    color = AnanasTextHi,
-                )
-                Text(
-                    desc,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp,
-                    color = AnanasMuted,
-                    modifier = Modifier.padding(top = 2.dp),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    },
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
-        // Bespoke toggle — narrower capsule, soft drop shadow under the thumb,
-        // no Material ripple halo on tap. See MinimalToggle() below.
-        MinimalToggle(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-        )
     }
 }
 
-// Hand-built toggle instead of Material3's Switch: a narrower capsule track
-// (44x24 vs Material's wider default), a thumb that reads as a lit object sitting
-// in a groove, smooth 180ms slide + color crossfade, and — critically — no ripple
-// halo on tap (Switch always draws one, which read as a stray flash on this dark
-// background).
-@Composable
-private fun MinimalToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    // Wide pill track with a thumb close to half its width (reference: a light/dark toggle
-    // component with a big white thumb sliding across a short track), white when on instead
-    // of the old teal accent -- this control is now colour-neutral, unlike the tinted icon
-    // badges next to it.
-    val trackColor by animateColorAsState(
-        targetValue = if (checked) Color.White.copy(alpha = 0.9f) else AnanasCard2,
-        animationSpec = tween(180), label = "toggleTrack"
-    )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 24.dp else 3.dp,
-        animationSpec = tween(180, easing = FastOutSlowInEasing), label = "toggleThumb"
-    )
-    Box(
-        modifier
-            .width(50.dp)
-            .height(28.dp)
-            .clip(RoundedCornerShape(50))
-            .background(trackColor)
-            .drawBehind { drawRect(brush = SheetWellShade, size = Size(size.width, size.height / 2f)) }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onCheckedChange(!checked) }
-    ) {
-        Box(
-            Modifier
-                .padding(start = thumbOffset, top = 3.dp)
-                .size(22.dp)
-                .shadow(5.dp, CircleShape, clip = false, ambientColor = SheetShadow, spotColor = SheetShadow)
-                .clip(CircleShape)
-                .background(if (checked) SolidColor(Color.White) else SheetThumbFill)
-        )
-    }
-}
 
-// ── Profile — visual reference screen (static placeholder, wired later) ────────
+
+
+
+
+
+
+// ── Profile ───────────────────────────────────────────────────────────────────
+// Built from the same Premium* components as Home and Settings: one header card, matte cards
+// with hairline borders, one accent. Pro is the only warm surface, and only a controlled amount
+// of it — a hairline, a tinted icon container and the upgrade button.
+
 /**
- * Verified / Not-verified pill for the account email. Real state: reads
- * [AccountUiState.emailVerified], which comes from `FirebaseUser.isEmailVerified`. Uses the
- * Settings/Profile teal accent for verified (matching the login wordmark) and amber for the
- * "needs attention" unverified state.
+ * Verified / Not-verified label for the account email. Real state: reads
+ * [AccountUiState.emailVerified], which comes from `FirebaseUser.isEmailVerified`. Verified takes
+ * the accent; the "needs attention" unverified state takes the warning tone.
  */
 @Composable
 private fun VerificationBadge(verified: Boolean) {
     val icon = if (verified) Icons.Rounded.Verified else Icons.Rounded.ErrorOutline
-    val color = if (verified) AnanasTeal else AnanasAmber
+    val color = if (verified) AppDs.Accent else AppDs.Warning
     val label = if (verified) "Verified" else "Not verified"
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
-        Text(label, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = color)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppDs.S1)) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(AppDs.IconSm))
+        Text(label, fontSize = AppType.Caption.first, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
 
 /**
- * The email row on Profile: the account email, its verification badge, and — when unverified — a
+ * The email card on Profile: the account email, its verification state, and — when unverified — a
  * live "Resend verification" action wired to FirebaseAuth's real `sendEmailVerification()`. This
  * is NOT mock: the email address and verified flag come from the signed-in Firebase user, and the
  * resend actually dispatches Firebase's verification email.
@@ -3641,55 +2816,63 @@ private fun EmailVerificationCard(account: AccountUiState) {
     val context = LocalContext.current
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
-    Column(
-        with(Glass) {
-            Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
-        },
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconTileRes(com.cdnhunter.app.R.drawable.ic_lucide_mail, AnanasAccent)
+    PremiumCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PremiumIconContainer(com.cdnhunter.app.R.drawable.ic_lucide_mail)
+            Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
-                Text(account.email, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(3.dp))
+                Text(
+                    account.email,
+                    fontSize = AppType.Subtitle.first,
+                    fontWeight = AppType.Subtitle.second,
+                    color = AppDs.TextHi,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(AppDs.S1))
                 VerificationBadge(account.emailVerified)
             }
         }
         if (!account.emailVerified) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(AppDs.S4))
             Text(
                 "Verify your email to secure your account and enable password recovery.",
-                fontSize = 12.sp, color = AnanasMuted, lineHeight = 17.sp,
+                fontSize = AppType.Caption.first,
+                fontWeight = AppType.Caption.second,
+                color = AppDs.TextMid,
+                lineHeight = 17.sp,
             )
-            Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier.clip(RoundedCornerShape(10.dp)).background(AnanasTeal.copy(alpha = 0.14f))
-                    .clickable(enabled = !sending) {
-                        val user = FirebaseAuth.getInstance().currentUser
-                        if (user != null && !sending) {
-                            sending = true
-                            user.sendEmailVerification().addOnCompleteListener { task ->
-                                sending = false
-                                if (task.isSuccessful) sent = true
-                                Toast.makeText(
-                                    context,
-                                    if (task.isSuccessful) "Verification email sent to ${account.email}"
-                                    else "Couldn't send verification email. Please try again.",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
+            Spacer(Modifier.height(AppDs.S3))
+            PremiumButton(
+                text = if (sent) "Verification sent" else "Resend verification",
+                enabled = !sending,
+                onClick = {
+                    val user = FirebaseAuth.getInstance().currentUser
+                    if (user != null && !sending) {
+                        sending = true
+                        user.sendEmailVerification().addOnCompleteListener { task ->
+                            sending = false
+                            if (task.isSuccessful) sent = true
+                            Toast.makeText(
+                                context,
+                                if (task.isSuccessful) "Verification email sent to ${account.email}"
+                                else "Couldn't send verification email. Please try again.",
+                                Toast.LENGTH_LONG,
+                            ).show()
                         }
                     }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                },
+                leading = {
                     if (sending) {
-                        CircularProgressIndicator(Modifier.size(14.dp), color = AnanasTeal, strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(AppDs.IconSm), color = AppDs.Accent, strokeWidth = 2.dp)
                     } else {
-                        Icon(if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send, null, tint = AnanasTeal, modifier = Modifier.size(14.dp))
+                        Icon(
+                            if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send,
+                            null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm),
+                        )
                     }
-                    Text(if (sent) "Verification sent" else "Resend verification", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = AnanasTeal)
-                }
-            }
+                },
+            )
         }
     }
 }
@@ -3707,20 +2890,27 @@ private fun showComingSoon(context: Context) {
  */
 @Composable
 private fun UpgradeCard(onUpgrade: () -> Unit) {
-    Column(
-        with(Glass) {
-            Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
-        },
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            IconTile(Icons.Rounded.WorkspacePremium, AnanasAmber)
+    PremiumCard(borderColor = AppDs.Warning.copy(alpha = 0.30f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Warning)
+            Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
-                Text("Upgrade to Pro", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp, color = AnanasTextHi)
+                Text(
+                    "Upgrade to Pro",
+                    fontSize = AppType.Subtitle.first,
+                    fontWeight = FontWeight.Bold,
+                    color = AppDs.TextHi,
+                )
                 Spacer(Modifier.height(2.dp))
-                Text("Unlock everything Ananas offers", fontSize = 12.sp, color = AnanasMuted)
+                Text(
+                    "Unlock everything Ananas offers",
+                    fontSize = AppType.Caption.first,
+                    fontWeight = AppType.Caption.second,
+                    color = AppDs.TextMid,
+                )
             }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(AppDs.S4))
         listOf(
             "Every server location, worldwide",
             "Maximum speed — no daily data cap",
@@ -3728,161 +2918,126 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
             "Priority support",
         ).forEach { benefit ->
             Row(
-                Modifier.padding(vertical = 4.dp),
+                Modifier.padding(vertical = AppDs.S1),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
             ) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = AnanasAmber, modifier = Modifier.size(16.dp))
-                Text(benefit, fontSize = 12.5.sp, color = AnanasText)
+                Icon(Icons.Rounded.CheckCircle, null, tint = AppDs.Warning, modifier = Modifier.size(AppDs.IconMd))
+                Text(benefit, fontSize = AppType.Body.first, fontWeight = FontWeight.Medium, color = AnanasText)
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.92f), AnanasAmber)))
-                .clickable(onClick = onUpgrade).padding(vertical = 13.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Upgrade to Pro", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B1712))
-        }
+        Spacer(Modifier.height(AppDs.S5))
+        PrimaryActionButton(
+            text = "Upgrade to Pro",
+            onClick = onUpgrade,
+            tone = AppDs.Warning,
+            contentColor = AppDs.WarmInk,
+        )
     }
 }
 
-// The same frame as Settings, and for the same reason: the person lives in the glass header
-// (see [SheetScreen]'s headerContent), so both screens open with one panel and continue into
-// the same gutter, card corner and section labels. Contents are still placeholder; wiring
-// this to a real account is separate work.
 @Composable
 private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut: () -> Unit, onPaymentHistory: () -> Unit) {
     val context = LocalContext.current
     var showSignOutDialog by remember { mutableStateOf(false) }
     if (showSignOutDialog) {
-        AlertDialog(
-            onDismissRequest = { showSignOutDialog = false },
-            title = { Text("Sign out?") },
-            text = { Text("You'll be disconnected from VPN and need to sign in again.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSignOutDialog = false
-                    onSignOut()
-                }) { Text("Sign out", color = AnanasRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
-            },
-        )
+        ProvideTextStyle(TextStyle(fontFamily = AppFont)) {
+            AlertDialog(
+                onDismissRequest = { showSignOutDialog = false },
+                containerColor = AppDs.SurfaceRaised,
+                shape = RoundedCornerShape(AppDs.RLg),
+                titleContentColor = AppDs.TextHi,
+                textContentColor = AppDs.TextMid,
+                title = { Text("Sign out?", fontSize = AppType.Title.first, fontWeight = AppType.Title.second) },
+                text = { Text("You'll be disconnected from VPN and need to sign in again.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSignOutDialog = false
+                        onSignOut()
+                    }) { Text("Sign out", color = AppDs.Error, fontWeight = FontWeight.SemiBold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutDialog = false }) {
+                        Text("Cancel", color = AppDs.TextMid, fontWeight = FontWeight.SemiBold)
+                    }
+                },
+            )
+        }
     }
-    SheetScreen(
-        title = "Profile",
-        onBack = onBack,
-        headerContent = {
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                AvatarRing(size = 62.dp, initials = account.initials, initialsSize = 20.sp, ringWidth = 2.dp)
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        account.displayName,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.4).sp,
-                        color = AnanasTextHi,
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(account.email, fontSize = 12.5.sp, color = AnanasMuted, maxLines = 1)
-                }
-            }
-        },
-    ) {
-        SectionLabel("EMAIL", top = 8.dp)
+    PremiumScreen(title = "Profile", onBack = onBack) {
+        ProfileHeader(account)
+
+        SectionHeader("EMAIL")
         EmailVerificationCard(account)
 
-        SectionLabel("SUBSCRIPTION")
-        Column(
-            with(Glass) {
-                Modifier.fillMaxWidth().glassSurface(shape = RoundedCornerShape(SheetCardCorner)).padding(16.dp)
-            },
+        SectionHeader("SUBSCRIPTION")
+        PremiumCard(
+            borderColor = if (account.isPro) AppDs.Warning.copy(alpha = 0.30f) else AppDs.Border,
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconTile(
-                        if (account.isPro) Icons.Rounded.WorkspacePremium else Icons.Rounded.Shield,
-                        if (account.isPro) AnanasAmber else AnanasAccent,
-                    )
-                    Text(
-                        "${account.plan.label} plan",
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.1).sp,
-                        color = if (account.isPro) AnanasAmber else AnanasTextHi,
-                    )
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PremiumIconContainer(
+                    if (account.isPro) Icons.Rounded.WorkspacePremium else Icons.Rounded.Shield,
+                    tone = if (account.isPro) AppDs.Warning else null,
+                )
+                Spacer(Modifier.width(AppDs.S3))
+                Text(
+                    "${account.plan.label} plan",
+                    fontSize = AppType.Subtitle.first,
+                    fontWeight = FontWeight.Bold,
+                    color = if (account.isPro) AppDs.Warning else AppDs.TextHi,
+                    modifier = Modifier.weight(1f),
+                )
                 PlanBadge(account.plan)
             }
             when (val s = account.subscription) {
                 is SubscriptionState.Active -> {
-                    Spacer(Modifier.height(14.dp))
-                    Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0E0C0A))) {
+                    Spacer(Modifier.height(AppDs.S4))
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(AppDs.SurfaceRaised)) {
                         Box(
-                            Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(RoundedCornerShape(8.dp))
-                                .background(Brush.horizontalGradient(listOf(AnanasAmber.copy(alpha = 0.75f), AnanasAmber))),
+                            Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(CircleShape)
+                                .background(AppDs.Warning),
                         )
                     }
-                    Spacer(Modifier.height(9.dp))
+                    Spacer(Modifier.height(AppDs.S2))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(s.daysRemainingLabel, fontSize = 11.5.sp, color = AnanasMuted)
-                        Text(s.renewalLabel, fontSize = 11.5.sp, color = AnanasMuted)
+                        Text(s.daysRemainingLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
+                        Text(s.renewalLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
                     }
                 }
                 SubscriptionState.None -> {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(AppDs.S3))
                     Text(
                         if (account.isPro) "Your subscription is active."
                         else "You're on the free plan — no active subscription.",
-                        fontSize = 12.sp, color = AnanasMuted, lineHeight = 17.sp,
+                        fontSize = AppType.Caption.first,
+                        fontWeight = AppType.Caption.second,
+                        color = AppDs.TextMid,
+                        lineHeight = 17.sp,
                     )
                 }
             }
         }
 
         if (!account.isPro) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(AppDs.S3))
             UpgradeCard(onUpgrade = { showComingSoon(context) })
         }
 
-        SectionLabel("ACCOUNT")
-        CardGroup {
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, AnanasAmber, showChevron = true, onClick = { showComingSoon(context) })
-            RowDivider()
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, AnanasBlue, showChevron = true, onClick = onPaymentHistory)
-            RowDivider()
-            // The one destructive row in the app, so it is the one row whose label is not
-            // [AnanasTextHi] — the tile alone would not be enough to slow a thumb down.
-            // Sign-out is wired through an onSignOut lambda from AppScreen → MainActivity,
-            // which calls FirebaseAuth.signOut() and flips `signedIn` back to false so the
-            // app returns to AuthScreen.
-            Row(
-                Modifier.fillMaxWidth().clickable { showSignOutDialog = true }.heightIn(min = SheetRowHeight)
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                IconTileRes(com.cdnhunter.app.R.drawable.ic_lucide_log_out, AnanasRed)
-                Text(
-                    "Sign out",
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.1).sp,
-                    color = AnanasRed,
-                )
-            }
+        SectionHeader("ACCOUNT")
+        PremiumCardGroup {
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Warning, onClick = { showComingSoon(context) })
+            PremiumDivider()
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, showChevron = true, onClick = onPaymentHistory)
+            PremiumDivider()
+            // The one destructive row in the app, so it is the one row whose label is not the
+            // primary text colour. Sign-out is wired through an onSignOut lambda from
+            // AppScreen → MainActivity, which calls FirebaseAuth.signOut() and flips `signedIn`
+            // back to false so the app returns to AuthScreen.
+            SettingsRow(
+                com.cdnhunter.app.R.drawable.ic_lucide_log_out, "Sign out",
+                tone = AppDs.Error, titleColor = AppDs.Error,
+                onClick = { showSignOutDialog = true },
+            )
         }
     }
 }
@@ -3895,7 +3050,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
  */
 @Composable
 private fun PaymentHistoryScreen(onBack: () -> Unit, account: AccountUiState) {
-    SheetScreen(title = "Payment history", onBack = onBack) {
+    PremiumScreen(title = "Payment history", onBack = onBack) {
         if (account.payments.isEmpty()) {
             EmptyState(
                 icon = Icons.Rounded.ReceiptLong,
@@ -3903,10 +3058,10 @@ private fun PaymentHistoryScreen(onBack: () -> Unit, account: AccountUiState) {
                 subtitle = "Your transactions will appear here once billing is available.",
             )
         } else {
-            SectionLabel("TRANSACTIONS", top = 8.dp)
-            CardGroup {
+            SectionHeader("TRANSACTIONS", top = AppDs.S2)
+            PremiumCardGroup {
                 account.payments.forEachIndexed { i, record ->
-                    if (i > 0) RowDivider()
+                    if (i > 0) PremiumDivider()
                     PaymentRow(record)
                 }
             }
@@ -3921,16 +3076,21 @@ private fun EmptyState(icon: ImageVector, title: String, subtitle: String) {
         Modifier.fillMaxWidth().padding(top = 56.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(64.dp).clip(CircleShape).background(AnanasCard2), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = AnanasFaint, modifier = Modifier.size(30.dp))
+        Box(
+            Modifier.size(64.dp).clip(CircleShape).background(AppDs.SurfaceRaised)
+                .border(1.dp, AppDs.Border, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, tint = AppDs.TextLow, modifier = Modifier.size(28.dp))
         }
-        Spacer(Modifier.height(18.dp))
-        Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(AppDs.S5))
+        Text(title, fontSize = AppType.Subtitle.first, fontWeight = AppType.Subtitle.second, color = AppDs.TextHi)
+        Spacer(Modifier.height(AppDs.S2))
         Text(
             subtitle,
-            fontSize = 12.5.sp,
-            color = AnanasMuted,
+            fontSize = AppType.Caption.first,
+            fontWeight = AppType.Caption.second,
+            color = AppDs.TextMid,
             lineHeight = 18.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 24.dp),
@@ -3942,19 +3102,19 @@ private fun EmptyState(icon: ImageVector, title: String, subtitle: String) {
  *  [AccountUiState.payments]; the shape is ready so no layout work is needed when billing lands. */
 @Composable
 private fun PaymentRow(record: PaymentRecord) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = SheetRowHeight).padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        IconTile(Icons.Rounded.ReceiptLong, AnanasAccent)
-        Column(Modifier.weight(1f)) {
-            Text(record.description, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(2.dp))
-            Text(record.dateLabel, fontSize = 11.5.sp, color = AnanasMuted)
-        }
-        Text(record.amountLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi)
-    }
+    PremiumRow(
+        title = record.description,
+        subtitle = record.dateLabel,
+        leading = { PremiumIconContainer(Icons.Rounded.ReceiptLong) },
+        trailing = {
+            Text(
+                record.amountLabel,
+                fontSize = AppType.Body.first,
+                fontWeight = AppType.Body.second,
+                color = AppDs.TextHi,
+            )
+        },
+    )
 }
 
 private data class InstalledAppInfo(val packageName: String, val label: String, val icon: android.graphics.drawable.Drawable?)
@@ -3998,62 +3158,39 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
         AppSettings.setSplitTunnelMode(context, newMode)
     }
 
-    // Deliberately not built on SheetScreen, even though it wears the same clothes:
-    // SheetScreen scrolls its whole body, and an app list is a LazyColumn that has to
-    // own the leftover height itself (this device may have 200 apps installed). So the
-    // header is laid out fixed and the list takes weight(1f) — but the panel itself is
-    // the shared [Modifier.sheetHeaderPanel], so it is the same glass as the other screens.
-    Box(Modifier.fillMaxSize().background(AnanasScreenBg)) {
-        // (No stray SheetPageWash box here either — see the note in SheetScreen. The
-        // header panel's own glass + rim provide the top light without a square-cornered
-        // rectangle poking out behind the rounded header.)
-        // The status-bar inset lives inside the glass panel, so only the bottom inset is
-        // taken here — the list must end above the navigation bar, not under it.
-        Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-            Column(Modifier.sheetHeaderPanel()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlainBackButton(onClick = onBack)
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        "Split tunneling",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.3).sp,
-                        color = AnanasTextHi,
-                    )
-                }
+    // Not built on PremiumScreen: that frame scrolls its whole body, and an app list is a
+    // LazyColumn that has to own the leftover height itself (this device may have 200 apps
+    // installed). So the header is laid out fixed and the list takes weight(1f) — but the page
+    // frame, top bar, card, rows and controls are the same Premium* components as Settings.
+    PremiumPage {
+        Column(Modifier.fillMaxWidth().weight(1f).navigationBarsPadding()) {
+            PremiumTopBar(title = "Split tunneling", onBack = onBack)
+            Column(Modifier.padding(horizontal = AppDs.S4)) {
                 // The two modes are easy to invert in your head, so the screen says which
                 // one is live in a sentence instead of leaving it to the labels.
                 Text(
                     if (mode == "include") "The VPN carries only the apps you pick. Everything else goes direct."
                     else "The apps you pick go direct. Everything else goes through the VPN.",
-                    fontSize = 12.5.sp,
+                    fontSize = AppType.Caption.first,
+                    fontWeight = AppType.Caption.second,
                     lineHeight = 17.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = AnanasMuted,
-                    modifier = Modifier.padding(top = 8.dp, end = 8.dp),
+                    color = AppDs.TextMid,
+                    modifier = Modifier.padding(start = AppDs.S1, end = AppDs.S2),
                 )
                 // Switching modes doesn't clear the selection -- the same app list just
                 // gets reinterpreted under the new mode, matching how most VPN apps with
                 // this feature behave (Windscribe included).
-                SectionLabel("MODE", top = 20.dp)
-                SegmentedControl(
+                SectionHeader("MODE", top = AppDs.S5)
+                PremiumSegmentedControl(
                     options = listOf("exclude" to "Exclude selected", "include" to "Only selected"),
                     selected = mode,
                     onSelect = { persist(selected, it) },
                     modifier = Modifier.fillMaxWidth(),
                     equalWeight = true,
                 )
-                Spacer(Modifier.height(SheetHeaderFootRoom))
-            }
-
-            Column(Modifier.padding(horizontal = SheetPad)) {
-                SectionLabel(
+                SectionHeader(
                     if (selected.isEmpty()) "APPS" else "APPS · ${selected.size} SELECTED",
-                    top = 20.dp,
+                    top = AppDs.S5,
                 )
                 InlineField(
                     value = search,
@@ -4061,75 +3198,59 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     label = "SEARCH",
                     placeholder = "App name",
                 )
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(AppDs.S3))
             }
 
             if (apps == null) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AnanasAccent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                    CircularProgressIndicator(color = AppDs.Accent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
                 }
             } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(
                         if (search.isBlank()) "No apps found on this device" else "No app matches “$search”",
-                        fontSize = 13.sp,
+                        fontSize = AppType.Body.first,
                         fontWeight = FontWeight.Medium,
-                        color = AnanasFaint,
+                        color = AppDs.TextLow,
                     )
                 }
             } else {
-                // One card holding the whole list, the way CardGroup holds a settings
-                // group — the rows scroll inside the frame rather than the frame
-                // scrolling with them.
+                // One card holding the whole list, the way PremiumCardGroup holds a settings
+                // group — the rows scroll inside the frame rather than the frame scrolling
+                // with them.
+                val listShape = RoundedCornerShape(AppDs.RLg)
                 LazyColumn(
-                    Modifier.weight(1f).padding(horizontal = SheetPad)
-                        .sheetSurface(RoundedCornerShape(SheetCardCorner)),
+                    Modifier.weight(1f).padding(horizontal = AppDs.S4)
+                        .clip(listShape)
+                        .background(AppDs.Surface)
+                        .border(1.dp, AppDs.Border, listShape),
                 ) {
                     itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
                         val isChecked = selected.contains(app.packageName)
-                        if (index > 0) RowDivider()
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable {
-                                    persist(if (isChecked) selected - app.packageName else selected + app.packageName, mode)
+                        if (index > 0) PremiumDivider()
+                        PremiumRow(
+                            title = app.label,
+                            subtitle = app.packageName,
+                            leading = {
+                                val iconShape = RoundedCornerShape(12.dp)
+                                if (app.icon != null) {
+                                    Image(
+                                        bitmap = app.icon.toBitmap(width = 96, height = 96).asImageBitmap(),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(AppDs.IconContainer).clip(iconShape),
+                                    )
+                                } else {
+                                    Box(Modifier.size(AppDs.IconContainer).clip(iconShape).background(AppDs.SurfaceRaised))
                                 }
-                                .padding(horizontal = 14.dp)
-                                .heightIn(min = SheetRowHeight),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            if (app.icon != null) {
-                                Image(
-                                    bitmap = app.icon.toBitmap(width = 84, height = 84).asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)),
-                                )
-                            } else {
-                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(AnanasCard2))
-                            }
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    app.label,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = AnanasTextHi,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    app.packageName,
-                                    fontSize = 11.5.sp,
-                                    color = AnanasMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            SelectDot(selected = isChecked)
-                        }
+                            },
+                            trailing = { SelectDot(selected = isChecked) },
+                            onClick = {
+                                persist(if (isChecked) selected - app.packageName else selected + app.packageName, mode)
+                            },
+                        )
                     }
-                    item { Spacer(Modifier.height(8.dp)) }
                 }
-                Spacer(Modifier.height(SheetPad))
+                Spacer(Modifier.height(AppDs.S4))
             }
         }
     }
@@ -4144,11 +3265,11 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
 @Composable
 private fun SelectDot(selected: Boolean) {
     val fill by animateColorAsState(
-        targetValue = if (selected) AnanasToggleOn else Color.Transparent,
+        targetValue = if (selected) AppDs.Accent else Color.Transparent,
         animationSpec = tween(140), label = "dotFill",
     )
     val edge by animateColorAsState(
-        targetValue = if (selected) AnanasToggleOn else AnanasBorder2,
+        targetValue = if (selected) AppDs.Accent else AnanasBorder2,
         animationSpec = tween(140), label = "dotEdge",
     )
     Box(
@@ -4175,32 +3296,6 @@ private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, o
     ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
 }
 
-// A back affordance with no chip/disc/border around it — just the chevron itself, so the
-// screen title can sit flush beside it. Keeps a full 40dp touch target (via the Box size)
-// even though nothing is drawn behind the glyph, and dims briefly on press for feedback.
-@Composable
-private fun PlainBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val alpha by animateFloatAsState(if (pressed) 0.55f else 1f, tween(120), label = "backPress")
-    Box(
-        modifier
-            .size(44.dp)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClickLabel = "Back",
-            ) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Rounded.ChevronLeft,
-            contentDescription = "Back",
-            tint = AnanasText.copy(alpha = alpha),
-            modifier = Modifier.size(28.dp),
-        )
-    }
-}
 
 // Home's own composables — power circle, connect bar, server list, usage card —
 // all live in HomeScreen.kt.
