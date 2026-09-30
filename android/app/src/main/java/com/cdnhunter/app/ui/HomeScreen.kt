@@ -10,7 +10,7 @@ package com.cdnhunter.app.ui
 //   • connect panel— inset floating panel holding the connect button (DISCONNECTED / CONNECTING /
 //                    CONNECTED / DISCONNECTING) and, once connected, the public-IP row
 //
-// Every size, colour, radius and shadow comes from [Ds] (the design system, further down).
+// Every size, colour, radius and shadow comes from [AppDs] (the design system, further down).
 //
 // HomeScreen() stays stateless about the VPN: one HomeUiState snapshot plus event lambdas, so
 // VpnTab() remains the single owner of connection state. Smart / Manual is switched by swiping
@@ -640,35 +640,6 @@ private fun DrawScope.drawHeroAtmosphere(color: Color, lit: Boolean) {
 }
 
 
-/**
- * Whether the device has animations turned off — developer options' "Animation off",
- * Battery Saver, or Settings → Accessibility → "Remove animations" all set the same
- * animator duration scale to zero.
- *
- * Every animation on this screen reads this and collapses to [snap] when it is true:
- * an ambient light that fades, a mode word that swaps and a chevron that brightens
- * are all decoration, and decoration is exactly what that setting turns off.
- */
-@Composable
-private fun rememberReduceMotion(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            !android.animation.ValueAnimator.areAnimatorsEnabled()
-        } else {
-            android.provider.Settings.Global.getFloat(
-                context.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            ) == 0f
-        }
-    }
-}
-
-/** [tween] normally, an instant cut when the device has animations off. */
-private fun <T> motionSpec(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
-    if (reduce) snap() else tween(durationMs)
-
 // `headerInk` — the phase's colour as a single [Color], crossfaded on [PHASE_FADE_MS] — used to
 // live here. Its last caller was the country headline, which now takes a [Brush] instead so it
 // can carry the flag's own hues ([headlineBrush]), and a brush is not something a Color helper
@@ -909,7 +880,7 @@ private val HeaderFlagFallback = Brush.linearGradient(
  */
 @Composable
 private fun HeaderFlag(countryCode: String, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val context = LocalContext.current
     // Saturation and contrast in one matrix: chroma just over full so the colours read as the
     // country's own and confident, then a mild contrast expansion around mid-grey so the bands
@@ -1547,10 +1518,6 @@ private val MenuShadow = Color.Black.copy(alpha = 0.30f)
  *  0.72f/0.48f, which gave 19.4px/13px against the old 27px mark — close but not exact). */
 private val MenuLineRatios = listOf(1.0f, 19f / 26f, 13f / 26f)
 
-/** How far the mark sinks while held — a touch deeper than a plate button since it has no
- *  fill or shadow of its own to lose, so the scale carries the whole press on its own. */
-private const val MenuPressScale = 0.94f
-
 
 // ── Mode pill ─────────────────────────────────────────────────────────────────
 // Gone. The badge that used to sit on the seam between the hero and the browse card — glass,
@@ -1706,7 +1673,7 @@ private val DotBounceHeight = 5.dp
  */
 @Composable
 private fun IpCheckingDots() {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(3) { i ->
             val infinite = rememberInfiniteTransition(label = "ipDot$i")
@@ -1756,7 +1723,7 @@ private fun IpCheckingDots() {
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val slot = IpSlot(state.displayIp, state.ipLookupPending)
     // Tapping copies a real value, or retries a failed lookup; while a lookup is still in flight
     // there is nothing to do, so the readout is not tappable in that one state.
@@ -1798,7 +1765,7 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
             targetState = kind,
             transitionSpec = {
                 (
-                    fadeIn(motionSpec(reduce, 260)) togetherWith fadeOut(motionSpec(reduce, 140))
+                    fadeIn(appMotion(reduce, 260)) togetherWith fadeOut(appMotion(reduce, 140))
                     ).using(SizeTransform(clip = false))
             },
             label = "publicIp",
@@ -2399,11 +2366,11 @@ private fun UsageCard(
 @Composable
 private fun UsageRing(bytes: Long, accent: Color) {
     val (value, unit) = ringLabel(bytes)
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val fraction = (bytes.toFloat() / USAGE_DAILY_CAP_BYTES.toFloat()).coerceIn(0f, 1f)
     val sweep by animateFloatAsState(
         targetValue = fraction,
-        animationSpec = motionSpec(reduce, 600),
+        animationSpec = appMotion(reduce, 600),
         label = "usageSweep",
     )
     Box(Modifier.size(RingSize), contentAlignment = Alignment.Center) {
@@ -2573,60 +2540,15 @@ private fun PlusGlyph(color: Color, modifier: Modifier = Modifier) {
 //
 //   Colour      matte black surfaces, ONE blue accent. Green/amber/red exist only as signal
 //               semantics (bars, status dot) — never as decoration.
-//   Type        Manrope (LuxuryFont) on the Type* scale above; the hero name has its own size ramp.
+//   Type        Manrope (AppFont) on the AppType scale; the hero name has its own size ramp.
 //   Spacing     4dp grid: S1 4 · S2 8 · S3 12 · S4 16 · S5 20 · S6 24.
 //   Radius      RMd 16 (rows, chips) · RLg 22 (connect button) · RXl 28 (hero, panel) · pill (search).
 //   Elevation   two soft, low-alpha shadows only — hero and bottom panel. Everything else is a
 //               hairline border on a slightly lighter surface.
 //   Icons       IconSm 16 · IconMd 20, one stroke weight (2dp) for hand-drawn marks.
 //   States      rest → pressed (surface steps lighter, buttons sink 2.5%) → active (accent hairline).
-private object Ds {
-    // Colour
-    val Bg = AppDs.Bg
-    val Surface = AppDs.Surface
-    val SurfaceRaised = AppDs.SurfaceRaised
-    val SurfacePressed = AppDs.SurfacePressed
-    val PanelFill = Color(0xFF0E0E11)
-    val Hairline = AppDs.Hairline
-    val Border = AppDs.Border
-    val TextHi = AppDs.TextHi
-    val TextMid = AppDs.TextMid
-    val TextLow = AppDs.TextLow
-    val Accent = AppDs.Accent
-    val ShadowAmbient = AppDs.ShadowAmbient
-    val ShadowSpot = AppDs.ShadowSpot
-
-    // Spacing
-    val S1 = AppDs.S1
-    val S2 = AppDs.S2
-    val S3 = AppDs.S3
-    val S4 = AppDs.S4
-    val S5 = AppDs.S5
-    val S6 = AppDs.S6
-
-    // Radius
-    val RMd = AppDs.RMd
-    val RLg = AppDs.RLg
-    val RXl = AppDs.RXl
-
-    // Icons
-    val IconSm = AppDs.IconSm
-    val IconMd = AppDs.IconMd
-
-    // Components
-    val Control = AppDs.Control
-    val ClearTap = AppDs.ClearTap
-    val SearchHeight = AppDs.SearchHeight
-    val ServerRowHeight = AppDs.ServerRowHeight
-    val ServerFlag = AppDs.ServerFlag
-    val PingWidth = AppDs.PingWidth
-    val ConnectHeight = AppDs.ConnectHeight
-    val ConnectWell = AppDs.ConnectWell
-
-    // Elevation
-    val ElevHero = AppDs.ElevHero
-    val ElevPanel = AppDs.ElevPanel
-}
+/** The bottom panel sits a shade darker than the page, so it reads as recessed. */
+private val PanelFill = Color(0xFF0E0E11)
 
 /** The four states the connect control and status chip draw. [ConnPhase] has no disconnecting
  *  phase — the service tears down and reports OFF — so HomeScreen holds DISCONNECTING for the
@@ -2653,8 +2575,6 @@ private const val DISCONNECT_HOLD_MS = 500L
 /** Give up on DISCONNECTING if the tunnel never reports down (the tap did not take). */
 private const val DISCONNECT_TIMEOUT_MS = 6_000L
 
-private const val CONNECT_PRESS_SCALE = 0.975f
-
 private val HeroMinHeight = 168.dp
 private val HeroMaxHeight = 232.dp
 
@@ -2665,12 +2585,6 @@ private val HeroScrim = Brush.verticalGradient(
     0.50f to Color.Transparent,
     0.78f to Color.Black.copy(alpha = 0.38f),
     1.00f to Color.Black.copy(alpha = 0.80f),
-)
-
-/** A whisper of light across the connect button's top half — soft depth without a gradient fill. */
-private val ButtonTopLight = Brush.verticalGradient(
-    0.00f to Color.White.copy(alpha = 0.05f),
-    1.00f to Color.Transparent,
 )
 
 private fun heroNameSize(name: String): TextUnit = when {
@@ -2739,16 +2653,16 @@ internal fun HomeScreen(
                     visual = visual,
                     onOpenSettings = onOpenSettings,
                     modifier = Modifier
-                        .padding(start = Ds.S4, end = Ds.S4, top = Ds.S2)
+                        .padding(start = AppDs.S4, end = AppDs.S4, top = AppDs.S2)
                         .height(heroHeight),
                 )
-                Spacer(Modifier.height(Ds.S3))
+                Spacer(Modifier.height(AppDs.S3))
                 ServerSearchField(
                     query = query,
                     onQueryChange = { query = it },
-                    modifier = Modifier.padding(horizontal = Ds.S4),
+                    modifier = Modifier.padding(horizontal = AppDs.S4),
                 )
-                Spacer(Modifier.height(Ds.S2))
+                Spacer(Modifier.height(AppDs.S2))
                 ServerList(
                     state = state,
                     servers = servers,
@@ -2772,7 +2686,7 @@ internal fun HomeScreen(
                     onRetryIp = onRetryIp,
                     modifier = Modifier
                         .navigationBarsPadding()
-                        .padding(start = Ds.S3, end = Ds.S3, top = Ds.S2, bottom = Ds.S2),
+                        .padding(start = AppDs.S3, end = AppDs.S3, top = AppDs.S2, bottom = AppDs.S2),
                 )
             }
         }
@@ -2790,8 +2704,8 @@ private fun HeroCard(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val reduce = rememberReduceMotion()
-    val shape = RoundedCornerShape(Ds.RXl)
+    val reduce = appReduceMotion()
+    val shape = RoundedCornerShape(AppDs.RXl)
 
     val cfg = state.activeConfig
     val liveCountry = countryCodeToName(state.headerCountryCode)
@@ -2823,7 +2737,7 @@ private fun HeroCard(
     if (flagCountry.isNotBlank()) lastFlagCountry = flagCountry
     val flagAlpha by animateFloatAsState(
         targetValue = if (flagCountry.isNotBlank()) 1f else 0f,
-        animationSpec = motionSpec(reduce, PHASE_FADE_MS),
+        animationSpec = appMotion(reduce, PHASE_FADE_MS),
         label = "heroFlag",
     )
 
@@ -2831,14 +2745,14 @@ private fun HeroCard(
         modifier
             .fillMaxWidth()
             .shadow(
-                elevation = Ds.ElevHero,
+                elevation = AppDs.ElevHero,
                 shape = shape,
                 clip = false,
-                ambientColor = Ds.ShadowAmbient,
-                spotColor = Ds.ShadowSpot,
+                ambientColor = AppDs.ShadowAmbient,
+                spotColor = AppDs.ShadowSpot,
             )
             .clip(shape)
-            .background(Ds.Surface),
+            .background(AppDs.Surface),
     ) {
         if (flagAlpha > 0.01f) {
             HeaderFlag(
@@ -2851,7 +2765,7 @@ private fun HeroCard(
         Box(Modifier.fillMaxSize().border(1.dp, heroEdge, shape))
 
         Row(
-            Modifier.fillMaxWidth().align(Alignment.TopStart).padding(Ds.S3),
+            Modifier.fillMaxWidth().align(Alignment.TopStart).padding(AppDs.S3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MenuButton(onClick = onOpenSettings)
@@ -2872,7 +2786,7 @@ private fun HeroCard(
             label = "heroHeadline",
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = Ds.S5, end = Ds.S5, bottom = Ds.S4),
+                .padding(start = AppDs.S5, end = AppDs.S5, bottom = AppDs.S4),
         ) { (n, c) ->
             Column {
                 Text(
@@ -2904,35 +2818,35 @@ private fun HeroCard(
 /** Connection state as a small glass chip on the flag: a dot and one word. */
 @Composable
 private fun HeroStatusChip(visual: ConnVisual, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val shape = RoundedCornerShape(50)
     val dot by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> Ds.TextMid
-            ConnVisual.CONNECTING -> Ds.Accent
+            ConnVisual.DISCONNECTED -> AppDs.TextMid
+            ConnVisual.CONNECTING -> AppDs.Accent
             ConnVisual.CONNECTED -> RefLive
-            ConnVisual.DISCONNECTING -> Ds.TextMid
+            ConnVisual.DISCONNECTING -> AppDs.TextMid
         },
-        animationSpec = motionSpec(reduce, 260),
+        animationSpec = appMotion(reduce, 260),
         label = "statusDot",
     )
     Row(
         modifier
             .clip(shape)
             .background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, Ds.Border, shape)
-            .padding(horizontal = Ds.S3, vertical = Ds.S2),
+            .border(1.dp, AppDs.Border, shape)
+            .padding(horizontal = AppDs.S3, vertical = AppDs.S2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
-        Spacer(Modifier.width(Ds.S2))
+        Spacer(Modifier.width(AppDs.S2))
         AnimatedContent(
             targetState = when (visual) {
                 ConnVisual.DISCONNECTED -> "Not connected"
                 else -> visual.title()
             },
             transitionSpec = {
-                fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 100))
+                fadeIn(appMotion(reduce, 160)) togetherWith fadeOut(appMotion(reduce, 100))
             },
             label = "statusLabel",
         ) { label ->
@@ -2953,28 +2867,17 @@ private fun HeroStatusChip(visual: ConnVisual, modifier: Modifier = Modifier) {
 // under-stroke. Same press language as the rest of Home: no ripple, a quick sink and a soft return.
 @Composable
 private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val reduce = rememberReduceMotion()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) MenuPressScale else 1f,
-        animationSpec = if (reduce) {
-            snap()
-        } else if (pressed) {
-            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
-        } else {
-            spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
-        },
-        label = "menuPress",
-    )
-    val shape = RoundedCornerShape(Ds.RMd)
+    val scale = animatePressScale(pressed, AppDs.PressScaleSmall)
+    val shape = RoundedCornerShape(AppDs.RMd)
     Box(
         modifier
-            .size(Ds.Control)
+            .size(AppDs.Control)
             .scale(scale)
             .clip(shape)
             .background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, Ds.Border, shape)
+            .border(1.dp, AppDs.Border, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -3009,42 +2912,42 @@ private fun ServerSearchField(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = RoundedCornerShape(50)
     val fill by animateColorAsState(
-        if (focused) Ds.SurfaceRaised else Ds.Surface, motionSpec(reduce, 180), label = "searchFill",
+        if (focused) AppDs.SurfaceRaised else AppDs.Surface, appMotion(reduce, 180), label = "searchFill",
     )
     val border by animateColorAsState(
-        if (focused) Ds.Accent.copy(alpha = 0.55f) else Ds.Border, motionSpec(reduce, 180), label = "searchBorder",
+        if (focused) AppDs.Accent.copy(alpha = 0.55f) else AppDs.Border, appMotion(reduce, 180), label = "searchBorder",
     )
     val iconTint by animateColorAsState(
-        if (focused) Ds.Accent else Ds.TextMid, motionSpec(reduce, 180), label = "searchIcon",
+        if (focused) AppDs.Accent else AppDs.TextMid, appMotion(reduce, 180), label = "searchIcon",
     )
     Row(
         modifier
             .fillMaxWidth()
-            .height(Ds.SearchHeight)
+            .height(AppDs.SearchHeight)
             .clip(shape)
             .background(fill)
             .border(1.dp, border, shape)
-            .padding(start = Ds.S4, end = if (query.isEmpty()) Ds.S4 else Ds.S2),
+            .padding(start = AppDs.S4, end = if (query.isEmpty()) AppDs.S4 else AppDs.S2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Rounded.Search,
             contentDescription = null,
             tint = iconTint,
-            modifier = Modifier.size(Ds.IconMd),
+            modifier = Modifier.size(AppDs.IconMd),
         )
-        Spacer(Modifier.width(Ds.S3))
+        Spacer(Modifier.width(AppDs.S3))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (query.isEmpty()) {
                 Text(
                     "Search location or server",
                     style = SearchFieldStyle,
-                    color = Ds.TextLow,
+                    color = AppDs.TextLow,
                     maxLines = 1,
                 )
             }
@@ -3053,7 +2956,7 @@ private fun ServerSearchField(
                 onValueChange = onQueryChange,
                 singleLine = true,
                 textStyle = SearchFieldStyle,
-                cursorBrush = SolidColor(Ds.Accent),
+                cursorBrush = SolidColor(AppDs.Accent),
                 interactionSource = interaction,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -3061,7 +2964,7 @@ private fun ServerSearchField(
         if (query.isNotEmpty()) {
             Box(
                 Modifier
-                    .size(Ds.ClearTap)
+                    .size(AppDs.ClearTap)
                     .clip(CircleShape)
                     .clickable(onClickLabel = "Clear search") { onQueryChange("") },
                 contentAlignment = Alignment.Center,
@@ -3069,8 +2972,8 @@ private fun ServerSearchField(
                 Icon(
                     Icons.Rounded.Close,
                     contentDescription = "Clear search",
-                    tint = Ds.TextMid,
-                    modifier = Modifier.size(Ds.IconSm),
+                    tint = AppDs.TextMid,
+                    modifier = Modifier.size(AppDs.IconSm),
                 )
             }
         }
@@ -3122,7 +3025,7 @@ private fun ServerList(
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(top = Ds.S1, bottom = Ds.S6),
+            contentPadding = PaddingValues(top = AppDs.S1, bottom = AppDs.S6),
         ) {
             if (servers.isEmpty()) {
                 item(key = "empty") {
@@ -3161,8 +3064,8 @@ private fun ServerList(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(Ds.S6)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Ds.Bg))),
+                .height(AppDs.S6)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, AppDs.Bg))),
         )
     }
 }
@@ -3183,30 +3086,30 @@ private fun ServerRow(
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val shape = RoundedCornerShape(Ds.RMd)
+    val shape = RoundedCornerShape(AppDs.RMd)
     // Same RGB at alpha 0 rather than Color.Transparent, so the fade does not pass through black.
     val fill by animateColorAsState(
         targetValue = when {
-            pressed -> Ds.SurfacePressed
-            isActive -> Ds.Surface
-            else -> Ds.Surface.copy(alpha = 0f)
+            pressed -> AppDs.SurfacePressed
+            isActive -> AppDs.Surface
+            else -> AppDs.Surface.copy(alpha = 0f)
         },
-        animationSpec = motionSpec(reduce, 120),
+        animationSpec = appMotion(reduce, 120),
         label = "rowFill",
     )
     val edge by animateColorAsState(
-        targetValue = Ds.Accent.copy(alpha = if (isActive) 0.40f else 0f),
-        animationSpec = motionSpec(reduce, 220),
+        targetValue = AppDs.Accent.copy(alpha = if (isActive) 0.40f else 0f),
+        animationSpec = appMotion(reduce, 220),
         label = "rowEdge",
     )
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = Ds.S3)
-            .heightIn(min = Ds.ServerRowHeight)
+            .padding(horizontal = AppDs.S3)
+            .heightIn(min = AppDs.ServerRowHeight)
             .clip(shape)
             .background(fill)
             .border(1.dp, edge, shape)
@@ -3218,44 +3121,44 @@ private fun ServerRow(
             )
             .drawBehind {
                 if (!isActive) {
-                    val start = (Ds.S3 + Ds.ServerFlag + Ds.S3).toPx()
+                    val start = (AppDs.S3 + AppDs.ServerFlag + AppDs.S3).toPx()
                     val y = size.height - 0.5.dp.toPx()
                     drawLine(
-                        color = Ds.Hairline,
+                        color = AppDs.Hairline,
                         start = Offset(start, y),
-                        end = Offset(size.width - Ds.S3.toPx(), y),
+                        end = Offset(size.width - AppDs.S3.toPx(), y),
                         strokeWidth = 1.dp.toPx(),
                     )
                 }
             }
-            .padding(start = Ds.S3, end = Ds.S1),
+            .padding(start = AppDs.S3, end = AppDs.S1),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CountryFlagBadge(countryCode, Ds.ServerFlag, Modifier.border(1.dp, Ds.Border, CircleShape))
-        Spacer(Modifier.width(Ds.S3))
+        CountryFlagBadge(countryCode, AppDs.ServerFlag, Modifier.border(1.dp, AppDs.Border, CircleShape))
+        Spacer(Modifier.width(AppDs.S3))
         Text(
             title,
             fontSize = TypeSubtitle.first,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
-            color = Ds.TextHi,
+            color = AppDs.TextHi,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.width(Ds.S3))
+        Spacer(Modifier.width(AppDs.S3))
         Text(
             if (pingMs >= 0) "$pingMs ms" else "—",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = Ds.TextMid,
+            color = AppDs.TextMid,
             textAlign = TextAlign.End,
             maxLines = 1,
             style = TextStyle(fontFeatureSettings = "tnum"),
-            modifier = Modifier.width(Ds.PingWidth),
+            modifier = Modifier.width(AppDs.PingWidth),
         )
-        Spacer(Modifier.width(Ds.S3))
+        Spacer(Modifier.width(AppDs.S3))
         PingSignalBars(pingMs)
-        Spacer(Modifier.width(Ds.S1))
+        Spacer(Modifier.width(AppDs.S1))
         FavoriteButton(title = title, isFavorite = isFavorite, onToggle = onToggleFavorite)
     }
 }
@@ -3274,7 +3177,7 @@ private fun PingSignalBars(pingMs: Int, modifier: Modifier = Modifier) {
         else -> 1
     }
     val on = when {
-        pingMs < 0 -> Ds.TextLow
+        pingMs < 0 -> AppDs.TextLow
         filled >= 3 -> RefLive
         filled == 2 -> RefLoadMed
         else -> RefLoadHigh
@@ -3300,7 +3203,7 @@ private fun PingSignalBars(pingMs: Int, modifier: Modifier = Modifier) {
 
 @Composable
 private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> Unit) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val pop = remember { Animatable(1f) }
     var previous by remember { mutableStateOf(isFavorite) }
     LaunchedEffect(isFavorite) {
@@ -3313,11 +3216,11 @@ private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> U
         }
     }
     val tint by animateColorAsState(
-        if (isFavorite) Ds.Accent else Ds.TextLow, motionSpec(reduce, 160), label = "favTint",
+        if (isFavorite) AppDs.Accent else AppDs.TextLow, appMotion(reduce, 160), label = "favTint",
     )
     Box(
         Modifier
-            .size(Ds.Control)
+            .size(AppDs.Control)
             .clip(CircleShape)
             .clickable(onClickLabel = "Toggle favorite", onClick = onToggle),
         contentAlignment = Alignment.Center,
@@ -3327,7 +3230,7 @@ private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> U
             contentDescription = if (isFavorite) "Remove $title from favorites" else "Add $title to favorites",
             tint = tint,
             modifier = Modifier
-                .size(Ds.IconMd)
+                .size(AppDs.IconMd)
                 .graphicsLayer {
                     scaleX = pop.value
                     scaleY = pop.value
@@ -3352,31 +3255,31 @@ private fun ConnectPanel(
     onRetryIp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val reduce = rememberReduceMotion()
-    val shape = RoundedCornerShape(Ds.RXl)
+    val reduce = appReduceMotion()
+    val shape = RoundedCornerShape(AppDs.RXl)
     val edge by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.CONNECTED -> Ds.Accent.copy(alpha = 0.28f)
-            ConnVisual.CONNECTING -> Ds.Accent.copy(alpha = 0.18f)
-            else -> Ds.Hairline
+            ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.28f)
+            ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0.18f)
+            else -> AppDs.Hairline
         },
-        animationSpec = motionSpec(reduce, 320),
+        animationSpec = appMotion(reduce, 320),
         label = "panelEdge",
     )
     Column(
         modifier
             .fillMaxWidth()
             .shadow(
-                elevation = Ds.ElevPanel,
+                elevation = AppDs.ElevPanel,
                 shape = shape,
                 clip = false,
-                ambientColor = Ds.ShadowAmbient,
-                spotColor = Ds.ShadowSpot,
+                ambientColor = AppDs.ShadowAmbient,
+                spotColor = AppDs.ShadowSpot,
             )
             .clip(shape)
-            .background(Ds.PanelFill)
+            .background(PanelFill)
             .border(1.dp, edge, shape)
-            .padding(Ds.S3),
+            .padding(AppDs.S3),
     ) {
         ConnectButton(
             visual = visual,
@@ -3387,20 +3290,20 @@ private fun ConnectPanel(
         )
         AnimatedVisibility(
             visible = visual == ConnVisual.CONNECTED,
-            enter = expandVertically(motionSpec(reduce, 260)) + fadeIn(motionSpec(reduce, 260)),
-            exit = shrinkVertically(motionSpec(reduce, 200)) + fadeOut(motionSpec(reduce, 140)),
+            enter = expandVertically(appMotion(reduce, 260)) + fadeIn(appMotion(reduce, 260)),
+            exit = shrinkVertically(appMotion(reduce, 200)) + fadeOut(appMotion(reduce, 140)),
         ) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = Ds.S2, end = Ds.S2, top = Ds.S3, bottom = Ds.S1),
+                    .padding(start = AppDs.S2, end = AppDs.S2, top = AppDs.S3, bottom = AppDs.S1),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "IP address",
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
-                    color = Ds.TextLow,
+                    color = AppDs.TextLow,
                 )
                 Spacer(Modifier.weight(1f))
                 IpCard(state = state, onRetryIp = onRetryIp)
@@ -3432,51 +3335,41 @@ private fun ConnectButton(
     onSwipeDown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val reduce = rememberReduceMotion()
+    val reduce = appReduceMotion()
     val haptics = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val shape = RoundedCornerShape(Ds.RLg)
+    val shape = RoundedCornerShape(AppDs.RLg)
     val busy = visual == ConnVisual.CONNECTING || visual == ConnVisual.DISCONNECTING
 
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) CONNECT_PRESS_SCALE else 1f,
-        animationSpec = if (reduce) {
-            snap()
-        } else if (pressed) {
-            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
-        } else {
-            spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
-        },
-        label = "connectPress",
-    )
+    val scale = animatePressScale(pressed)
     val live by animateFloatAsState(
-        if (visual == ConnVisual.CONNECTED) 1f else 0f, motionSpec(reduce, 280), label = "connectLive",
+        if (visual == ConnVisual.CONNECTED) 1f else 0f, appMotion(reduce, 280), label = "connectLive",
     )
     val working by animateFloatAsState(
-        if (busy) 1f else 0f, motionSpec(reduce, 200), label = "connectBusy",
+        if (busy) 1f else 0f, appMotion(reduce, 200), label = "connectBusy",
     )
     val fill by animateColorAsState(
-        if (pressed) Ds.SurfacePressed else Ds.SurfaceRaised, motionSpec(reduce, 100), label = "connectFill",
+        if (pressed) AppDs.SurfacePressed else AppDs.SurfaceRaised, appMotion(reduce, 100), label = "connectFill",
     )
     val edge by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> Ds.Border
-            ConnVisual.CONNECTING -> Ds.Accent.copy(alpha = 0.55f)
-            ConnVisual.CONNECTED -> Ds.Accent.copy(alpha = 0.70f)
-            ConnVisual.DISCONNECTING -> Ds.Border
+            ConnVisual.DISCONNECTED -> AppDs.Border
+            ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0.55f)
+            ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.70f)
+            ConnVisual.DISCONNECTING -> AppDs.Border
         },
-        animationSpec = motionSpec(reduce, 260),
+        animationSpec = appMotion(reduce, 260),
         label = "connectEdge",
     )
     val boltColor by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> Ds.TextHi
-            ConnVisual.CONNECTING -> Ds.Accent
+            ConnVisual.DISCONNECTED -> AppDs.TextHi
+            ConnVisual.CONNECTING -> AppDs.Accent
             ConnVisual.CONNECTED -> Color.White
-            ConnVisual.DISCONNECTING -> Ds.TextMid
+            ConnVisual.DISCONNECTING -> AppDs.TextMid
         },
-        animationSpec = motionSpec(reduce, 220),
+        animationSpec = appMotion(reduce, 220),
         label = "connectBolt",
     )
 
@@ -3506,12 +3399,12 @@ private fun ConnectButton(
     Row(
         modifier
             .fillMaxWidth()
-            .height(Ds.ConnectHeight)
+            .height(AppDs.ConnectHeight)
             .scale(scale)
             .clip(shape)
             .background(fill)
-            .background(ButtonTopLight)
-            .background(Ds.Accent.copy(alpha = 0.10f * live))
+            .background(AppDs.ButtonTopLight)
+            .background(AppDs.Accent.copy(alpha = 0.10f * live))
             .border(
                 1.dp,
                 Brush.verticalGradient(listOf(edge, edge.copy(alpha = edge.alpha * 0.45f))),
@@ -3548,7 +3441,7 @@ private fun ConnectButton(
                     CustomAccessibilityAction("Switch to Manual mode") { swipeDown(); true },
                 )
             }
-            .padding(horizontal = Ds.S4),
+            .padding(horizontal = AppDs.S4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ConnectWell(
@@ -3558,11 +3451,11 @@ private fun ConnectButton(
             boltColor = boltColor,
             spinDegrees = { spin.value },
         )
-        Spacer(Modifier.width(Ds.S4))
+        Spacer(Modifier.width(AppDs.S4))
         AnimatedContent(
             targetState = visual,
             transitionSpec = {
-                fadeIn(motionSpec(reduce, 160)) togetherWith fadeOut(motionSpec(reduce, 100))
+                fadeIn(appMotion(reduce, 160)) togetherWith fadeOut(appMotion(reduce, 100))
             },
             label = "connectLabel",
             modifier = Modifier.weight(1f),
@@ -3572,14 +3465,14 @@ private fun ConnectButton(
                     v.title(),
                     fontSize = TypeTitle.first,
                     fontWeight = TypeTitle.second,
-                    color = Ds.TextHi,
+                    color = AppDs.TextHi,
                     maxLines = 1,
                 )
                 Text(
                     v.caption(),
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
-                    color = Ds.TextMid,
+                    color = AppDs.TextMid,
                     maxLines = 1,
                 )
             }
@@ -3597,17 +3490,17 @@ private fun ConnectWell(
     spinDegrees: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier.size(Ds.ConnectWell)) {
+    Canvas(modifier.size(AppDs.ConnectWell)) {
         val stroke = 2.dp.toPx()
         val radius = size.minDimension / 2f
-        drawCircle(Ds.SurfacePressed)
-        drawCircle(Ds.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
+        drawCircle(AppDs.SurfacePressed)
+        drawCircle(AppDs.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
         if (live > 0.01f) {
-            drawCircle(Ds.Accent.copy(alpha = live), radius = radius * (0.88f + 0.12f * live))
+            drawCircle(AppDs.Accent.copy(alpha = live), radius = radius * (0.88f + 0.12f * live))
         }
         if (working > 0.01f) {
             val turn = if (visual == ConnVisual.DISCONNECTING) -spinDegrees() else spinDegrees()
-            val arc = if (visual == ConnVisual.DISCONNECTING) Ds.TextMid else Ds.Accent
+            val arc = if (visual == ConnVisual.DISCONNECTING) AppDs.TextMid else AppDs.Accent
             rotate(degrees = turn, pivot = center) {
                 drawArc(
                     color = arc.copy(alpha = working),

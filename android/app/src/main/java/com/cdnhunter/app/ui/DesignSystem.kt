@@ -202,16 +202,22 @@ internal object AppDs {
 @Composable
 internal fun appReduceMotion(): Boolean {
     val context = LocalContext.current
-    return remember {
-        android.provider.Settings.Global.getFloat(
-            context.contentResolver,
-            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) == 0f
+    return remember(context) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            // Covers developer options, Battery Saver and Accessibility → Remove animations.
+            !android.animation.ValueAnimator.areAnimatorsEnabled()
+        } else {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }
     }
 }
 
-private fun <T> appMotion(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
+/** [tween] normally, an instant cut when the device has animations off. */
+internal fun <T> appMotion(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
     if (reduce) snap() else tween(durationMs)
 
 /** The one press animation: a quick sink while held, a soft spring back on release. */

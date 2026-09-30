@@ -2165,16 +2165,16 @@ private val SheetFoot = Brush.verticalGradient(
     1.00f to Color.Transparent,
 )
 
-/** A card's material: flat [AnanasCard] per the spec CARD recipe. */
-private val SheetCardFill = Brush.verticalGradient(listOf(AnanasCard, AnanasCard))
+/** A card's material: flat [AppDs.Surface] per the spec CARD recipe. */
+private val SheetCardFill = Brush.verticalGradient(listOf(AppDs.Surface, AppDs.Surface))
 
-/** A control's material — flat raised surface ([AnanasCard2]). */
+/** A control's material — flat raised surface ([AppDs.SurfaceRaised]). */
 private val SheetControlFill = Brush.verticalGradient(
-    listOf(AnanasCard2, AnanasCard2),
+    listOf(AppDs.SurfaceRaised, AppDs.SurfaceRaised),
 )
 
 private val SheetControlPressedFill = Brush.verticalGradient(
-    listOf(AnanasCard, AnanasCard),
+    listOf(AppDs.Surface, AppDs.Surface),
 )
 
 /** Shallower than Home's 0.955: a big scale on a 34dp target reads as a glitch. */
@@ -2202,7 +2202,7 @@ private fun Modifier.sheetSurface(
     .background(fill)
     // Hairline border per the spec CARD recipe — the flat surfaces read by their edge now
     // that the glass light model (crown/foot) is gone.
-    .border(1.dp, AnanasBorder, shape)
+    .border(1.dp, AppDs.Border, shape)
     .drawBehind {
         val band = SheetCrownDepth.toPx().coerceAtMost(size.height / 2f)
         drawRect(brush = SheetCrown, size = Size(size.width, band))
@@ -2231,7 +2231,7 @@ private fun Modifier.sheetRaised(
 
 /** A well's material — flat, darker than the card it is cut into. */
 private val SheetWellFill = Brush.verticalGradient(
-    listOf(Color(0xFF0D0E12), Color(0xFF0D0E12)),
+    listOf(AppDs.Bg, AppDs.Bg),
 )
 
 /** The shade cast *into* a well by its own top edge, which is what makes it read as a hole. */
@@ -2271,7 +2271,7 @@ private val SheetFieldStyle = TextStyle(
     fontSize = 14.sp,
     lineHeight = 19.sp,
     fontWeight = FontWeight.Medium,
-    color = AnanasTextHi,
+    color = AppDs.TextHi,
     fontFeatureSettings = "tnum",
     platformStyle = PlatformTextStyle(includeFontPadding = false),
     lineHeightStyle = LineHeightStyle(
@@ -2286,33 +2286,13 @@ private val SheetSearchStyle = TextStyle(
     fontFamily = AppFont,
     fontSize = 13.5.sp,
     lineHeight = 18.sp,
-    color = AnanasText,
+    color = AppDs.TextHi,
     platformStyle = PlatformTextStyle(includeFontPadding = false),
     lineHeightStyle = LineHeightStyle(
         alignment = LineHeightStyle.Alignment.Center,
         trim = LineHeightStyle.Trim.None,
     ),
 )
-
-/** True when the system "remove animations" setting is on, so ambient motion can be held static. */
-@Composable
-private fun rememberReduceMotion(): Boolean {
-    val context = LocalContext.current
-    return remember {
-        android.provider.Settings.Global.getFloat(
-            context.contentResolver,
-            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) == 0f
-    }
-}
-
-
-
-
-
-
-
 
 /**
  * A text input, built out of [BasicTextField] rather than Material's `TextField` — the stock
@@ -2371,7 +2351,7 @@ private fun InlineField(
                 Text(
                     placeholder,
                     style = SheetFieldStyle,
-                    color = AnanasFaint,
+                    color = AppDs.TextLow,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2651,7 +2631,7 @@ private fun SettingsScreen(
                         keyboardType = KeyboardType.Uri,
                         error = if (!isPrimaryValid && primaryDns.isNotBlank()) "Not a valid resolver" else null,
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(AppDs.S4))
 
                     val isSecondaryValid = secondaryDns.isBlank() || AppSettings.isValidDnsServer(secondaryDns)
                     InlineField(
@@ -2672,7 +2652,7 @@ private fun SettingsScreen(
                     // typed above. A tinted panel marked with an accent rule down its leading
                     // edge rather than ringed: it is a note, and a note that is boxed reads as
                     // another control the user is meant to be able to change.
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(AppDs.S4))
                     Column(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(AppDs.RMd))
                             .background(AppDs.Accent.copy(alpha = 0.07f))
@@ -2682,10 +2662,10 @@ private fun SettingsScreen(
                                     size = Size(SheetNoteRuleWidth.toPx(), size.height),
                                 )
                             }
-                            .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
+                            .padding(start = AppDs.S4, top = AppDs.S3, end = AppDs.S3, bottom = AppDs.S3),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Icon(Icons.Rounded.Shield, null, tint = AppDs.Accent, modifier = Modifier.size(14.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppDs.S2)) {
+                            Icon(Icons.Rounded.Shield, null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm))
                             Text(
                                 "DNS leak protection",
                                 fontSize = AppType.Caption.first,
@@ -2694,7 +2674,7 @@ private fun SettingsScreen(
                                 color = AppDs.Accent,
                             )
                         }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(AppDs.S2))
                         listOf(
                             "Every query is hijacked into the tunnel",
                             "DoH is the recommended transport",
@@ -2703,7 +2683,7 @@ private fun SettingsScreen(
                             Text(
                                 "· $line",
                                 fontSize = AppType.Caption.first,
-                                lineHeight = 17.sp,
+                                lineHeight = 16.sp,
                                 color = AppDs.TextMid,
                             )
                         }
@@ -2840,7 +2820,7 @@ private fun EmailVerificationCard(account: AccountUiState) {
                 fontSize = AppType.Caption.first,
                 fontWeight = AppType.Caption.second,
                 color = AppDs.TextMid,
-                lineHeight = 17.sp,
+                lineHeight = 16.sp,
             )
             Spacer(Modifier.height(AppDs.S3))
             PremiumButton(
@@ -2923,7 +2903,7 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
             ) {
                 Icon(Icons.Rounded.CheckCircle, null, tint = AppDs.Warning, modifier = Modifier.size(AppDs.IconMd))
-                Text(benefit, fontSize = AppType.Body.first, fontWeight = FontWeight.Medium, color = AnanasText)
+                Text(benefit, fontSize = AppType.Body.first, fontWeight = FontWeight.Medium, color = AppDs.TextHi)
             }
         }
         Spacer(Modifier.height(AppDs.S5))
@@ -3012,7 +2992,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
                         fontSize = AppType.Caption.first,
                         fontWeight = AppType.Caption.second,
                         color = AppDs.TextMid,
-                        lineHeight = 17.sp,
+                        lineHeight = 16.sp,
                     )
                 }
             }
@@ -3173,7 +3153,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     else "The apps you pick go direct. Everything else goes through the VPN.",
                     fontSize = AppType.Caption.first,
                     fontWeight = AppType.Caption.second,
-                    lineHeight = 17.sp,
+                    lineHeight = 16.sp,
                     color = AppDs.TextMid,
                     modifier = Modifier.padding(start = AppDs.S1, end = AppDs.S2),
                 )
@@ -3269,7 +3249,7 @@ private fun SelectDot(selected: Boolean) {
         animationSpec = tween(140), label = "dotFill",
     )
     val edge by animateColorAsState(
-        targetValue = if (selected) AppDs.Accent else AnanasBorder2,
+        targetValue = if (selected) AppDs.Accent else AppDs.Border,
         animationSpec = tween(140), label = "dotEdge",
     )
     Box(
@@ -3293,7 +3273,7 @@ private fun AnanasIconButton(icon: ImageVector, modifier: Modifier = Modifier, o
             .sheetRaised(CircleShape, pressed, elevation = 5.dp)
             .clickable(interactionSource = interaction, indication = null) { onClick() },
         contentAlignment = Alignment.Center
-    ) { Icon(icon, null, tint = AnanasText, modifier = Modifier.size(22.dp)) }
+    ) { Icon(icon, null, tint = AppDs.TextHi, modifier = Modifier.size(22.dp)) }
 }
 
 
