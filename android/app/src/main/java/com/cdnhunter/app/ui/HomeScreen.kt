@@ -170,6 +170,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -193,6 +194,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -436,7 +438,7 @@ private val ChromeBg = Color(0xFF0B0B0D)
  * the fade and the last few dp of the dissolve would have nothing behind them; set it much
  * longer and the bloom's centre ends up buried under opaque paint.
  */
-private val HeroBleed = 88.dp   // extended on request so the flag reaches behind the browse
+private val HeroBleed = 0.dp   // was 88dp (flag reached behind the browse card and hid its bottom corners); 0 now so the card ends where its rows end
                                  // card's masthead ([CardTopRoom], 48dp) with room to spare —
                                  // see [HeroFloatGap] (now decoupled from this) for why the
                                  // two cards still sit [HeroFloatGap] apart in *layout* even
@@ -1454,46 +1456,35 @@ internal fun HomeScreen(
     // Header itself lays out (see there), just as compile-time constants added up instead of
     // a runtime measurement, plus the one genuinely external, but session-stable, number —
     // the status bar's own inset.
-    val heroHeight = with(LocalDensity.current) {
-        WindowInsets.statusBars.getTop(this).toDp()
-    } + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
+    val statusInset = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
+    val heroHeight = statusInset + HeroTopGap + HeroTopRowHeight + HeroFlagSpace + HeroDockWell
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
     Box(modifier.fillMaxSize().background(PageGradient)) {
-        // Behind everything: the flag under dark glass, and the light — now a free-standing
-        // card (margin on both sides, rounded on all four corners) rather than fused edge-to-
-        // edge into the browse card below it. See [HeroBackdrop]'s section comment.
+        // The flag is a free-floating card now: empty space above it (below the status bar)
+        // and below it (before the browse card), rounded on all FOUR corners, and drawn
+        // fully inside the hero's own rows so its corners are never hidden behind the browse
+        // card (they used to be, because the backdrop ran HeroBleed past the card's top --
+        // which is why the rounding never showed). Germany's flag has a black top stripe on
+        // a near-black page, so the 20% hairline is what keeps the edge readable.
+        val heroShape = RoundedCornerShape(CardCorner)
         HeroBackdrop(
             state = state,
-            heroHeight = heroHeight,
+            heroHeight = heroHeight - statusInset - HeroCardTopGap,
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(horizontal = CardMargin)
-                // A dark shadow here is the wrong tool: PageGradient is itself near-black
-                // (#0D0E12), so a black shadow cast onto it has almost no contrast to show —
-                // this is *why* the previous attempt at this looked like no change at all,
-                // even though the modifier was genuinely there. A light glow the same
-                // elevation system, just with a light colour instead of a dark one — reads
-                // clearly against a dark page the same way the disc's own shadow reads
-                // clearly against the flag/list (light or contrasting colour against a
-                // *different* colour, not dark against near-black).
+                .statusBarsPadding()
+                .padding(top = HeroCardTopGap, start = CardMargin, end = CardMargin)
                 .shadow(
                     elevation = 20.dp,
-                    shape = RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner),
+                    shape = heroShape,
                     clip = false,
                     ambientColor = Color.White.copy(alpha = 0.10f),
                     spotColor = Color.White.copy(alpha = 0.16f),
                 )
-                // Bottom corners only: the card's real, new edge — its floating foot. The top
-                // corners stay square and flush with the status bar; rounding them too cut a
-                // curved notch right where the clock and system icons sit, which read as a
-                // rendering glitch rather than a corner.
-                .clip(RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner))
-                // A clearly visible hairline now (was 8% white — same dark-on-near-black
-                // contrast problem as the shadow, just barely legible at best). 20% reads
-                // unmistakably as a card edge regardless of what's behind it.
-                .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(bottomStart = CardCorner, bottomEnd = CardCorner)),
+                .clip(heroShape)
+                .border(1.dp, Color.White.copy(alpha = 0.20f), heroShape),
         )
         Column(Modifier.fillMaxSize()) {
             // The hero: hamburger, country, address. Its own real layout — this is no longer
@@ -1520,53 +1511,50 @@ internal fun HomeScreen(
             )
         }
 
-        // The connect dock: the disc, moved all the way to the foot of the screen now (on
-        // explicit request — the seam-docked position, however closely it matched the
-        // mockup's own overlap ratio, wasn't what was actually wanted). Its two merged pills
-        // are positioned in this Box's own LOCAL coordinate space (the disc's own top-left is
-        // this Box's origin), which is what lets a plain [Alignment.BottomCenter] on the Box
-        // itself centre the whole dock: the pills overflow left and right of the Box's own
-        // PowerSize-wide measured bounds via [Modifier.offset]/[RightAnchoredBox], which —
-        // same as everywhere else on this screen — is never clipped by an ancestor, so the
-        // overflow simply renders.
-        //
-        // The IP pill (right) only appears once the address has actually resolved — see
-        // [IpMergedPill] — and the status pill (left) appears for "Connecting…"/"Connected"
-        // the moment the tunnel starts coming up. [PowerCircle] is drawn last of the three, so
-        // its own circle is what hides each pill's tucked-under join edge; [PillSafetyOverlap]
-        // is the extra slack that keeps that edge covered even while the disc is scaled down
-        // for a press, not just at rest.
+        // Dense black shadow behind the connect dock: the list fades into solid black under
+        // the disc so the button reads clean over any row. No pointer input, so touches fall
+        // straight through to the list beneath it.
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(PowerSize + CardMargin * 2 + DockScrimExtra + 48.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0.00f to Color.Transparent,
+                        0.45f to Color.Black.copy(alpha = 0.78f),
+                        1.00f to Color.Black.copy(alpha = 0.97f),
+                    ),
+                ),
+        )
+
+        // The connect dock. Full width and exactly PowerSize tall, laid out by [ConnectDockLayout]
+        // so the disc is always at the horizontal centre no matter which pills are showing or
+        // how long the IP is. It used to be a wrap-content Box, which grew to the width of the
+        // IP pill when that appeared and, re-centred, pushed the disc sideways by a different
+        // amount for every address length — the button "moving with variables".
+        ConnectDockLayout(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = CardMargin),
-        ) {
-            IpMergedPill(
-                state = state,
-                onRetryIp = onRetryIp,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = PowerSize / 2 + PillJoinX - PillSafetyOverlap,
-                        y = PowerSize / 2 - PowerPillHeight / 2,
-                    ),
-            )
-            RightAnchoredBox(
-                rightEdge = PowerSize / 2 - PillJoinX + PillSafetyOverlap,
-                top = PowerSize / 2 - PowerPillHeight / 2,
-            ) {
+            ip = {
+                IpMergedPill(state = state, onRetryIp = onRetryIp)
+            },
+            status = {
                 StatusMergedPill(phase = state.phase)
-            }
-            PowerCircle(
-                mode = state.mode,
-                phase = state.phase,
-                enabled = state.activeConfig != null,
-                onClick = onTogglePower,
-                onSwipeUp = { onSetMode(ConnectMode.SMART) },
-                onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
-            )
-        }
+            },
+            disc = {
+                PowerCircle(
+                    mode = state.mode,
+                    phase = state.phase,
+                    enabled = state.activeConfig != null,
+                    onClick = onTogglePower,
+                    onSwipeUp = { onSetMode(ConnectMode.SMART) },
+                    onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+                )
+            },
+        )
 
         // The public IP no longer rides the flag. It now lives in the browse card's own top row,
         // on the left where the "+" add-server button used to be (see [BrowseCard]).
@@ -1824,7 +1812,13 @@ private val HeroFlagSpace = 40.dp
 /** The breathing room the hero holds under the status-bar inset, so the country plate sits a
  *  comfortable step below the system clock/battery rather than flush against them. Back to a
  *  normal gap — the black-strip experiment that pulled this down to 5dp was reverted. */
-private val HeroTopGap = 10.dp
+private val HeroTopGap = 22.dp
+
+/** Empty space between the status bar and the top of the floating flag card. */
+private val HeroCardTopGap = 8.dp
+
+/** Extra height of the black fade behind the connect dock, above the disc itself. */
+private val DockScrimExtra = 24.dp
 
 /** An estimate of the menu+country row's own real height, used only to keep [HomeScreen]'s
  *  fixed [heroHeight] in the right neighbourhood of Header's real layout (see the note there)
@@ -1860,9 +1854,9 @@ private fun Header(
             // status bar clock/battery — the plate is the topmost content and, flush to the inset,
             // its ink was crowding the system glyphs. This holds it a comfortable step below them.
             .padding(top = HeroTopGap)
-            // Left margin only. The right edge runs flush to the screen so the country plate's
-            // fade-from-right bleeds off the bezel rather than floating in an inset gutter.
-            .padding(start = ScreenPad),
+            // The flag is an inset card now (CardMargin each side), so the row sits ScreenPad
+            // inside the card's own edge rather than ScreenPad from the bezel.
+            .padding(start = ScreenPad + CardMargin, end = CardMargin),
     ) {
         // The top row of the flag: the menu held to the left, the country name to the right on
         // its own dark plate. Both ride the flag rather than a chrome bar. Aligned to the top so
@@ -2345,7 +2339,7 @@ private fun IpMergedPill(
  * its centre, not two unrelated badges that happen to flank it.
  *
  * The flat edge is positioned by its own RIGHT edge, not its left — the text's width isn't
- * known ahead of layout, so this is placed with [RightAnchoredBox] rather than the plain
+ * known ahead of layout, so [ConnectDockLayout] places it by its right edge rather than the plain
  * `offset` the IP pill uses, which only works for a left-anchored child.
  */
 /**
@@ -2435,24 +2429,52 @@ private fun StatusMergedPill(phase: ConnPhase, modifier: Modifier = Modifier) {
     }
 }
 
+private enum class DockSlot { Ip, Status, Disc }
+
 /**
- * Places [content] so its own RIGHT edge lands at [rightEdge] and its top at [top] — both
- * measured from this box's own origin — regardless of how wide [content] measures out to be.
- * [StatusMergedPill] needs exactly this: it grows leftward from a fixed point on the disc, and
- * a plain `Modifier.offset` can only anchor a child by its left edge, not its right.
+ * Lays the connect disc and its two merged pills out around a fixed centre. Full width and
+ * exactly [PowerSize] tall, so the disc is always at the horizontal centre and never moves —
+ * whichever pills are showing, however long the IP is. Pills are measured unbounded and
+ * placed relative to the disc's own edge: the IP pill's flat left edge starts at [PillJoinX]
+ * (minus [PillSafetyOverlap]) right of centre, the status pill's flat right edge the same
+ * distance left of it. The disc is placed last, so it draws on top and hides both joins.
  */
 @Composable
-private fun RightAnchoredBox(rightEdge: Dp, top: Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Layout(content = content, modifier = modifier) { measurables, constraints ->
-        val placeable = measurables.firstOrNull()?.measure(constraints.copy(minWidth = 0, minHeight = 0))
-        val rightPx = rightEdge.roundToPx()
-        val topPx = top.roundToPx()
-        val w = placeable?.width ?: 0
-        layout(rightPx.coerceAtLeast(0), topPx + (placeable?.height ?: 0)) {
-            placeable?.placeRelative(rightPx - w, topPx)
+private fun ConnectDockLayout(
+    modifier: Modifier = Modifier,
+    ip: @Composable () -> Unit,
+    status: @Composable () -> Unit,
+    disc: @Composable () -> Unit,
+) {
+    Layout(
+        content = {
+            Box(Modifier.layoutId(DockSlot.Ip)) { ip() }
+            Box(Modifier.layoutId(DockSlot.Status)) { status() }
+            Box(Modifier.layoutId(DockSlot.Disc)) { disc() }
+        },
+        modifier = modifier.fillMaxWidth(),
+    ) { measurables, constraints ->
+        val discPx = PowerSize.roundToPx()
+        val pillTop = ((PowerSize - PowerPillHeight) / 2).roundToPx()
+        // Distance from the disc's centre to each pill's flat, tucked-under edge.
+        val join = (PillJoinX - PillSafetyOverlap).roundToPx()
+        val unbounded = Constraints()
+
+        val ipP = measurables.first { it.layoutId == DockSlot.Ip }.measure(unbounded)
+        val statusP = measurables.first { it.layoutId == DockSlot.Status }.measure(unbounded)
+        val discP = measurables.first { it.layoutId == DockSlot.Disc }
+            .measure(Constraints.fixed(discPx, discPx))
+
+        val width = constraints.maxWidth
+        val cx = width / 2
+        layout(width, discPx) {
+            ipP.placeRelative(cx + join, pillTop)
+            statusP.placeRelative(cx - join - statusP.width, pillTop)
+            discP.placeRelative(cx - discPx / 2, 0)
         }
     }
 }
+
 
 @Composable
 private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier = Modifier) {
