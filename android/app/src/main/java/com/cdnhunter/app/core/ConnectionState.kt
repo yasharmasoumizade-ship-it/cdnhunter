@@ -95,6 +95,12 @@ data class ConnectionSnapshot(
     val tunnel: TunnelInfo? = null,
     /** True while the kill switch is holding the tunnel with traffic blocked after the core went away. */
     val killSwitchHolding: Boolean = false,
+    /**
+     * Only meaningful in [ConnectionState.ERROR]: true when the failure is about to be
+     * followed by an automatic reconnect attempt, so the UI can treat it as a transient
+     * hiccup (keep "connecting…", no error toast) rather than as the final outcome.
+     */
+    val willRetry: Boolean = false,
 ) {
     val isConnected: Boolean get() = state == ConnectionState.CONNECTED
 
@@ -157,6 +163,7 @@ class ConnectionStore(private val clock: () -> Long = { System.currentTimeMillis
         stage: String? = null,
         expectedConnectionId: String? = null,
         killSwitchHolding: Boolean? = null,
+        willRetry: Boolean = false,
     ): Boolean {
         val applied: ConnectionSnapshot
         synchronized(lock) {
@@ -195,6 +202,7 @@ class ConnectionStore(private val clock: () -> Long = { System.currentTimeMillis
                     else -> null
                 },
                 killSwitchHolding = killSwitchHolding ?: (to == ConnectionState.ERROR && cur.killSwitchHolding),
+                willRetry = to == ConnectionState.ERROR && willRetry,
             )
             snapshot = applied
         }

@@ -28,9 +28,33 @@ class GeoService {
             "\\b(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}" +
                 "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\b"
         )
+
+        private val SHARED_CLIENT: OkHttpClient by lazy { buildSharedClient() }
+
+        /**
+         * The client every lookup in this file goes through.
+         *
+         * It used to install an `X509TrustManager` whose `checkServerTrusted` was empty and a
+         * hostname verifier that returned true for everything, which meant every geo and
+         * public-IP lookup accepted any certificate from any host — including while proxied
+         * through the tunnel's mixed port, where the answer decides which flag and which exit
+         * country the app reports. Anything on the path could have answered.
+         *
+         * It is the platform's own validation now: no `sslSocketFactory`, no `hostnameVerifier`,
+         * so OkHttp uses the system trust store and RFC 2818 hostname matching. All of these
+         * providers serve valid public certificates, so nothing here needed the exemption.
+         */
+        private fun buildSharedClient(): OkHttpClient =
+            OkHttpClient.Builder()
+                .followRedirects(true)
+                .connectTimeout(java.time.Duration.ofSeconds(4))
+                .readTimeout(java.time.Duration.ofSeconds(4))
+                .build()
     }
 
-    private val client: OkHttpClient by lazy { buildClient() }
+    // One base client for the whole process. Every GeoService() used to build its own: a fresh
+    // connection pool and dispatcher threads each time, and callers create one per lookup.
+    private val client: OkHttpClient get() = SHARED_CLIENT
 
     data class GeoInfo(val cc: String, val lat: Double, val lon: Double, val city: String, val isp: String)
 
@@ -283,23 +307,4 @@ class GeoService {
         return GeoInfo(cc, lat, lon, city, isp)
     }
 
-    /**
-     * The client every lookup in this file goes through.
-     *
-     * It used to install an `X509TrustManager` whose `checkServerTrusted` was empty and a
-     * hostname verifier that returned true for everything, which meant every geo and
-     * public-IP lookup accepted any certificate from any host — including while proxied
-     * through the tunnel's mixed port, where the answer decides which flag and which exit
-     * country the app reports. Anything on the path could have answered.
-     *
-     * It is the platform's own validation now: no `sslSocketFactory`, no `hostnameVerifier`,
-     * so OkHttp uses the system trust store and RFC 2818 hostname matching. All of these
-     * providers serve valid public certificates, so nothing here needed the exemption.
-     */
-    private fun buildClient(): OkHttpClient =
-        OkHttpClient.Builder()
-            .followRedirects(true)
-            .connectTimeout(java.time.Duration.ofSeconds(4))
-            .readTimeout(java.time.Duration.ofSeconds(4))
-            .build()
 }

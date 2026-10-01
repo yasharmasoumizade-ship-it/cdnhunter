@@ -20,7 +20,7 @@ internal sealed class Adapted {
 /** Lenient, null-safe accessors. JSON configs in the wild write numbers as strings and booleans as "true". */
 internal fun JSONObject.str(key: String): String? {
     if (!has(key) || isNull(key)) return null
-    val v = opt(key)
+    val v = opt(key) ?: return null
     if (v is JSONObject || v is JSONArray) return null
     return v.toString().trim().takeIf { it.isNotEmpty() }
 }

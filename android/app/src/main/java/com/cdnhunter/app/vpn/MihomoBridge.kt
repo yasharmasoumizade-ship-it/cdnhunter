@@ -6,7 +6,7 @@ import com.cdnhunter.mihomo.mobile.Protector
 
 object MihomoBridge {
 
-    private var running = false
+    @Volatile private var running = false
 
     // The actual error string mihomo itself returned on the last failed start()
     // call (config validation errors, bind failures, etc.) — NOT just logcat.
@@ -36,6 +36,13 @@ object MihomoBridge {
     @Synchronized
     fun start(configYaml: String, homeDir: String): Boolean {
         return try {
+            // Go's Start() returns "" (success) without doing anything if a core is already
+            // running, so a leftover instance would silently keep its OLD config and fd.
+            // Never let a start become a no-op: stop whatever is there first.
+            if (!running && try { Mobile.isRunning() } catch (_: Throwable) { false }) {
+                android.util.Log.w("MihomoBridge", "stale core found before start; stopping it")
+                try { Mobile.stop() } catch (_: Throwable) {}
+            }
             val err = Mobile.start(configYaml, homeDir)
             if (err.isNullOrEmpty()) {
                 running = true
@@ -87,4 +94,14 @@ object MihomoBridge {
     fun version(): String = "mihomo-embedded"
 
     fun isRunning() = running
+
+    /**
+     * True only if both sides agree the core is up: our own flag and the Go side's.
+     * A mismatch means something stopped it behind our back (or never started it), and
+     * the caller should treat the connection as dead rather than trust the flag.
+     * Note this reports the core's lifecycle flag, not traffic health — for that, probe
+     * through the mixed port (see ProxyProbe).
+     */
+    fun isCoreAlive(): Boolean =
+        running && try { Mobile.isRunning() } catch (_: Throwable) { true }
 }

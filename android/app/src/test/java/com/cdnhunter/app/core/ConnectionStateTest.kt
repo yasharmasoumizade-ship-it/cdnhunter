@@ -135,4 +135,18 @@ class ConnectionStateTest {
         threads.forEach { it.join() }
         assertTrue(s.snapshot.state in ConnectionState.values())
     }
+
+    @Test fun willRetryOnlyLivesOnTheErrorItDescribes() {
+        val s = store()
+        s.transition(ConnectionState.PREPARING, connectionId = "c1")
+        s.transition(ConnectionState.CONNECTING)
+        s.transition(ConnectionState.ERROR, error = ConnectionError.TimeoutError("t"), willRetry = true)
+        assertTrue(s.snapshot.willRetry)
+        s.transition(ConnectionState.RECONNECTING, reconnectAttempt = 1)
+        assertFalse(s.snapshot.willRetry)
+        s.transition(ConnectionState.PREPARING)
+        s.transition(ConnectionState.CONNECTING)
+        s.transition(ConnectionState.ERROR, error = ConnectionError.TimeoutError("t"))
+        assertFalse(s.snapshot.willRetry) // a final error is not "about to retry"
+    }
 }

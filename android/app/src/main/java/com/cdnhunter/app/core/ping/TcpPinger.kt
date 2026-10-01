@@ -27,6 +27,8 @@ import java.util.concurrent.TimeoutException
 class TcpPinger(
     private val protect: (Socket) -> Unit = {},
     private val nanoClock: () -> Long = { System.nanoTime() },
+    /** Replaces the default system lookup, e.g. to resolve on a specific network. Still bounded by the timeout. */
+    private val resolver: ((String) -> InetAddress)? = null,
 ) : PingProber {
 
     override fun probe(host: String, port: Int, timeoutMs: Int): ProbeOutcome {
@@ -74,7 +76,8 @@ class TcpPinger(
         val h = host.trim().removePrefix("[").removeSuffix("]")
         // Literals need no lookup (and must not go through the resolver thread).
         if (h.isNotEmpty() && (h.contains(':') || h.all { it.isDigit() || it == '.' })) return InetAddress.getByName(h)
-        val future = RESOLVER.submit(Callable { InetAddress.getByName(h) })
+        val lookup = resolver
+        val future = RESOLVER.submit(Callable { if (lookup != null) lookup(h) else InetAddress.getByName(h) })
         try {
             return future.get(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
         } catch (e: java.util.concurrent.ExecutionException) {

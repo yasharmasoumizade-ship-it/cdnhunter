@@ -12,11 +12,74 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.*
+import com.cdnhunter.app.core.ConfigValidator
+import com.cdnhunter.app.core.ConnLog
+import com.cdnhunter.app.core.ConnectionError
+import com.cdnhunter.app.core.ConnectionSettings
+import com.cdnhunter.app.core.ConnectionState
+import com.cdnhunter.app.core.ConnectionStore
+import com.cdnhunter.app.core.ErrorCode
+import com.cdnhunter.app.core.InternalConnectionConfig
+import com.cdnhunter.app.core.ProbeResult
+import com.cdnhunter.app.core.ProxyProbe
+import com.cdnhunter.app.core.ReconnectPolicy
+import com.cdnhunter.app.core.SettingsValidator
+import com.cdnhunter.app.core.Stage
+import com.cdnhunter.app.core.TunnelInfo
+import com.cdnhunter.app.core.ValidatedConfig
+import com.cdnhunter.app.core.ValidationResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
+import kotlin.coroutines.coroutineContext
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * The VPN service: owns the tunnel interface and the embedded core, and is the ONLY
+ * writer of connection state.
+ *
+ * ## Shape
+ *
+ *  - [store] is the single source of truth for state. The UI observes it; nothing in the UI
+ *    decides whether the app is connected.
+ *  - Every request — connect, disconnect, "network came back", "an attempt ended" — is a
+ *    [Command] posted to one channel and handled one at a time by [commandLoop]. That
+ *    serialisation is what removes the races (double connect, disconnect while connecting,
+ *    switching server mid-connect): two commands can never run their bodies concurrently.
+ *  - A connection attempt ([runAttempt]) is a cancellable coroutine that walks the stages
+ *    PREPARING -> CONNECTING -> verification -> CONNECTED, then monitors health. It never
+ *    reconnects by calling itself; on failure it reports back to the loop, which decides.
+ *  - "Connected" is declared only after traffic has actually been carried through the
+ *    server (see [ProxyProbe]) — the core starting without an exception proves nothing.
+ *
+ * ## File descriptor ownership
+ *
+ * The service holds the TUN's original descriptor ([tunPfd]) for the life of the interface
+ * and gives the core a duplicate. The core closes its duplicate when it stops (so the app
+ * must not close that one); the service closes its own exactly once, and only when the
+ * interface should go away. This is what makes retries, the kill switch and teardown after
+ * a failed start safe — previously the single descriptor was handed to the core, closed by
+ * it on stop, and then reused or adopted again by Kotlin code.
+ */
 class CdnVpnService : VpnService() {
 
     companion object {
@@ -25,57 +88,51 @@ class CdnVpnService : VpnService() {
         const val CHANNEL_ID = "cdnhunter_vpn"
         const val NOTIFICATION_ID = 1
 
-        var isRunning = AtomicBoolean(false)
+        /** The address the TUN interface is given; also how its link is recognised afterwards. */
+        const val TUN_ADDRESS_V4 = "10.10.10.10"
+        const val MIXED_PORT = 10808
 
-        // True from the moment a connect attempt starts until the tunnel is either
-        // up (isRunning) or given up on. The notification has always said
-        // "Connecting..." for exactly this window; Home reads it too, so its hero
-        // card can show a connecting state rather than jumping straight from
-        // disconnected to connected. Also true while auto-reconnect is retrying,
-        // which is the same fact from the user's side: the app is trying to get a
-        // tunnel up and does not have one yet.
-        //
-        // Every path that ends an attempt clears it — success (isRunning.set(true)),
-        // each early return in startVpn(), and stopVpnInternal(), which every
-        // failure and every disconnect goes through. It is never true at the same
-        // time as isRunning.
-        var isConnecting = AtomicBoolean(false)
-        var uploadBytes = 0L
-        var downloadBytes = 0L
-        var lastError = ""
-        var debugLog = ""
+        private const val VERIFY_TIMEOUT_MS = 20_000L
+        private const val CORE_CHECK_INTERVAL_MS = 5_000L
+        private const val PROBE_INTERVAL_MS = 30_000L
+        private const val PROBE_INTERVAL_AFTER_FAILURE_MS = 5_000L
+        private const val PROBE_FAILURES_BEFORE_RECONNECT = 3
+        private const val ATTEMPT_JOIN_TIMEOUT_MS = 10_000L
 
-        // The server's REAL location, resolved by asking a geo-IP service
-        // "what IP am I connecting from" THROUGH the active tunnel (see
-        // GeoService.lookupCurrentExitGeoInfo), not by resolving the config's
-        // hostname directly. Populated once per successful connection by
-        // startVpn(); empty/blank until that lookup completes. The UI should
-        // prefer this over any pre-connect estimate once it's non-blank and
-        // exitGeoConfigId matches the currently active config, since domains
-        // behind a CDN report the CDN edge's location from a direct DNS
-        // lookup, not the real backend server's.
-        var exitCountryCode = ""
-        var exitCity = ""
-        var exitGeoConfigId = ""
+        /** The single source of truth for connection state. The UI reads or observes this and nothing else. */
+        val store = ConnectionStore()
 
-        var killSwitchBlocking = AtomicBoolean(false)
-        // The currently-running kill-switch drain coroutine, if any -- see
-        // stopVpnInternal(keepTunAlive = true) and startVpn(). Only ever one
-        // at a time; startVpn() joins this (with a timeout) before touching
-        // tunRawFd, so the drain loop is always the sole owner that closes
-        // its own fd and there's no window for both sides to close the same
-        // descriptor.
-        var killSwitchDrainJob: Job? = null
+        /**
+         * Read-only views of [store] for code that still asks "is it connected?". They are
+         * computed from the store on every call, never set — there is no second copy of the
+         * state to fall out of sync.
+         */
+        class StateFlag(private val read: () -> Boolean) {
+            fun get(): Boolean = read()
+        }
 
-        // Auto-reconnect: on an unexpected drop, retry this many times with
-        // exponential backoff (1s, 2s, 4s, capped at 15s) before giving up
-        // and falling back to the kill switch (if enabled) or a full
-        // disconnect (if not). Kept small and bounded rather than infinite —
-        // if the server/network is genuinely down, retrying forever just
-        // drains battery and delays the kill switch actually protecting the
-        // user, which is the more important guarantee once retries have
-        // clearly stopped helping.
-        const val MAX_RECONNECT_ATTEMPTS = 3
+        val isRunning = StateFlag { store.snapshot.isConnected }
+        val isConnecting = StateFlag { store.snapshot.isConnecting }
+
+        @Volatile var uploadBytes = 0L
+        @Volatile var downloadBytes = 0L
+
+        /** Last failure, redacted, for the Settings diagnostics row. */
+        @Volatile var lastError = ""
+
+        /** The connection log (already redacted), for the copyable diagnostics dump. */
+        val debugLog: String get() = ConnLog.dump()
+
+        // The server's REAL location, asked of a geo-IP service THROUGH the tunnel (see
+        // GeoService.lookupCurrentExitGeoInfo) rather than inferred from the config's
+        // hostname, which for CDN-fronted domains reports the CDN edge. Filled in once per
+        // successful connection; blank until then. Prefer it over any pre-connect estimate
+        // once non-blank and exitGeoConfigId matches the active config.
+        @Volatile var exitCountryCode = ""
+        @Volatile var exitCity = ""
+        @Volatile var exitGeoConfigId = ""
+
+        @Volatile var instance: CdnVpnService? = null
 
         fun start(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_START }
@@ -83,455 +140,797 @@ class CdnVpnService : VpnService() {
             else context.startService(intent)
         }
 
-        var instance: CdnVpnService? = null
-
         fun stop(context: Context) {
             val intent = Intent(context, CdnVpnService::class.java).apply { action = ACTION_STOP }
             context.startService(intent)
         }
     }
 
-    private var tunFd: ParcelFileDescriptor? = null
-    // The raw fd number after tunFd.detachFd() — this is what actually owns
-    // the descriptor now and must be closed directly (see stopVpnInternal()),
-    // since tunFd itself no longer holds anything to close once detached.
-    private var tunRawFd: Int? = null
-    private var job: Job? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // How many consecutive auto-reconnect attempts have happened for the
-    // current connection lifecycle. Reset to 0 on any deliberate stopVpn()
-    // (user-initiated disconnect) or once a connection actually succeeds
-    // (isRunning.set(true) in startVpn()) -- so a later, unrelated drop
-    // always gets its own fresh MAX_RECONNECT_ATTEMPTS budget rather than
-    // inheriting an exhausted count from a previous, already-recovered
-    // outage.
-    private var reconnectAttempt = 0
+    // ── commands ─────────────────────────────────────────────────────────────
 
-    override fun onCreate() {
-        super.onCreate()
-        instance = this
-        createNotificationChannel()
-        registerNetworkCallback()
+    private sealed class Command {
+        class Connect(val configId: String, val reuseTun: Boolean = false, val fromIntent: Boolean = false) : Command()
+        object Disconnect : Command()
+        object NetworkRestored : Command()
+        class AttemptFailed(
+            val serial: Int,
+            val connectionId: String,
+            val error: ConnectionError,
+            val wasConnected: Boolean,
+        ) : Command()
     }
 
-    // Tracks whether the underlying network (not the VPN interface itself)
-    // was available the last time we checked -- used to detect "network came
-    // back after being fully down" specifically, as opposed to every minor
-    // network change (switching Wi-Fi access points, etc.), which mihomo/the
-    // OS usually ride out on their own without our help.
+    /** Thrown inside an attempt to unwind with a typed error. */
+    private class AttemptFailure(val error: ConnectionError) : Exception(error.technical)
+
+    /** Everything one connection (including its reconnect attempts) is built from, captured once. */
+    private class Plan(
+        val connectionId: String,
+        val configId: String,
+        val uri: String,
+        val settings: ConnectionSettings,
+        val reuseTun: Boolean,
+    ) {
+        /** Set once a REALITY handshake has been seen to need support-x25519mlkem768. Sticks for the connection. */
+        @Volatile var forceX25519 = false
+
+        /**
+         * Whether this connection has ever reached CONNECTED. The kill switch protects a tunnel that
+         * was up; it must not blackhole the network because a first attempt failed.
+         */
+        @Volatile var everConnected = false
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val commands = Channel<Command>(Channel.UNLIMITED)
+
+    // Touched only from the command loop (and onDestroy after the loop is cancelled).
+    private var attemptJob: Job? = null
+    private var plan: Plan? = null
+    private val attemptSerial = AtomicInteger(0)
+
+    @Volatile private var lastStartId = 0
+
+    /**
+     * ACTION_START intents posted but not yet handled by the loop. While any are pending the
+     * service must not drop its foreground status: a disconnect immediately followed by a connect
+     * (switching server) would otherwise remove the notification the connect still needs.
+     */
+    private val pendingStarts = AtomicInteger(0)
+
+    // ── resources ────────────────────────────────────────────────────────────
+
+    private val resLock = Any()
+    /** The service's own handle on the TUN interface. See the class comment. */
+    private var tunPfd: ParcelFileDescriptor? = null
+    private var drainThread: Thread? = null
+    private val killSwitchBlocking = AtomicBoolean(false)
+    /** Set by the network callback; makes the monitor probe immediately instead of waiting for its interval. */
+    private val probeNow = AtomicBoolean(false)
+
+    // ── network callback ─────────────────────────────────────────────────────
+
     private var hadNetwork = true
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-    private fun registerNetworkCallback() {
-        val cm = getSystemService(ConnectivityManager::class.java) ?: return
-        connectivityManager = cm
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                // Only reconnect on the transition from "had no usable
-                // network at all" to "network is back" -- everyday changes
-                // (moving between Wi-Fi networks, a second network appearing
-                // alongside an existing one) fire onAvailable too, but
-                // mihomo's existing connection usually survives those fine
-                // on its own; forcing a reconnect on every single one would
-                // be disruptive for no benefit.
-                if (!hadNetwork) {
-                    hadNetwork = true
-                    if (isAutoReconnectEnabled() && !isRunning.get() && !killSwitchBlocking.get()
-                        && SecurePrefs.vpn(this@CdnVpnService).getString("active_config_id", "").isNullOrBlank().not()
-                    ) {
-                        debugLog += "\nNetwork restored after being fully down — auto-reconnecting."
-                        reconnectAttempt = 0
-                        startVpn()
-                    }
-                }
-            }
-            override fun onLost(network: Network) {
-                // Only mark "no network" once NO network with internet
-                // capability remains at all (ConnectivityManager keeps
-                // calling this per-network; onAvailable above is what
-                // actually confirms one exists again).
-                if (cm.activeNetwork == null) hadNetwork = false
+    // ── lifecycle ────────────────────────────────────────────────────────────
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        ConnLog.sink = { level, line ->
+            when (level) {
+                ConnLog.Level.ERROR -> android.util.Log.e("CdnVpn", line)
+                ConnLog.Level.WARN -> android.util.Log.w("CdnVpn", line)
+                else -> android.util.Log.i("CdnVpn", line)
             }
         }
-        networkCallback = callback
-        try {
-            cm.registerNetworkCallback(request, callback)
-        } catch (_: Exception) {
-            // Some OEM/Android versions restrict this for background
-            // services -- auto-reconnect still works via the normal
-            // mihomo-error retry path in startVpn(), just without this
-            // additional "network came back" trigger.
-        }
+        createNotificationChannel()
+        registerNetworkCallback()
+        scope.launch { commandLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
-            ACTION_START -> startVpn()
-            // stopVpn() makes a blocking JNI call into mihomo (MihomoBridge.stop()
-            // -> executor.Shutdown()) to tear down listeners/goroutines. Running
-            // that synchronously here on the main thread (onStartCommand always
-            // runs on main) could block the UI for as long as that call takes,
-            // which looked like "disconnect does nothing" rather than an actual
-            // failure — it just hadn't finished yet. Run it on the same IO scope
-            // startVpn() uses instead.
-            ACTION_STOP -> scope.launch { killSwitchBlocking.set(false); stopVpn() }
+            ACTION_START -> {
+                // startForegroundService() obliges us to call startForeground() quickly, so do
+                // it before anything asynchronous — even if this request ends up ignored.
+                try {
+                    startForeground(NOTIFICATION_ID, buildNotification("Connecting…"))
+                } catch (e: Exception) {
+                    ConnLog.w(null, Stage.CONNECTED, "startForeground refused: ${e.javaClass.simpleName}")
+                }
+                val configId = SecurePrefs.vpn(this).getString("active_config_id", "") ?: ""
+                pendingStarts.incrementAndGet()
+                commands.trySend(Command.Connect(configId, fromIntent = true))
+            }
+            ACTION_STOP -> commands.trySend(Command.Disconnect)
+            else -> {
+                // A restart with no intent (the process was killed): there is no tunnel any
+                // more and nothing asked for one, so do not sit around as an idle service.
+                if (!store.snapshot.isActive) stopSelfResult(startId)
+            }
         }
-        return START_STICKY
+        // Not sticky: a killed process takes the tunnel with it, and a null-intent restart
+        // would only produce a service that does nothing.
+        return START_NOT_STICKY
     }
 
-    private fun isKillSwitchEnabled(): Boolean =
-        AppSettings.killSwitchEnabled(this)
-
-    private fun isAutoReconnectEnabled(): Boolean =
-        AppSettings.autoReconnectEnabled(this)
-
-    private fun startVpn() {
-        if (isRunning.get()) return
+    override fun onDestroy() {
+        // The process is being torn down by the OS: finish synchronously. Everything below
+        // is bounded (no unbounded join), so this cannot hang the main thread.
+        scope.cancel()
+        commands.close()
         killSwitchBlocking.set(false)
-        isConnecting.set(true)
-        startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
-        lastError = ""
-        // Reset per-attempt, not appended forever — otherwise repeated connect/
-        // disconnect cycles grow this string without bound for the life of the process.
-        debugLog = ""
+        stopDrainBlocking()
+        MihomoBridge.stop()
+        closeTun()
+        clearExit()
+        val s = store.snapshot
+        if (s.isActive || s.state == ConnectionState.ERROR) {
+            store.transition(ConnectionState.DISCONNECTING)
+            store.transition(ConnectionState.DISCONNECTED)
+        }
+        networkCallback?.let { try { connectivityManager?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
 
-        job = scope.launch {
+    /** The user (or another VPN app) revoked this app's VPN permission from system settings. */
+    override fun onRevoke() {
+        ConnLog.i(store.snapshot.connectionId, Stage.DISCONNECT_REQUESTED, "VPN permission revoked by the system")
+        killSwitchBlocking.set(false)
+        commands.trySend(Command.Disconnect)
+        super.onRevoke()
+    }
+
+    // ── command loop ─────────────────────────────────────────────────────────
+
+    private suspend fun commandLoop() {
+        for (cmd in commands) {
             try {
-                // If the kill switch was holding a previous tun fd open, it's
-                // being drained by killSwitchDrainLoop on a coroutine tracked
-                // by killSwitchDrainJob, which is the SOLE owner responsible
-                // for closing that fd once it exits (see killSwitchDrainLoop).
-                // killSwitchBlocking.set(false) above wakes it on its next
-                // while-check, but that's not instant -- it may be blocked
-                // inside stream.read() at this exact moment. Actually join()
-                // it here (suspending, not busy-waiting) so we're guaranteed
-                // it has fully exited and closed its own fd before we touch
-                // tunRawFd/tunFd at all. Without this wait, closing the same
-                // fd from both this coroutine and the drain loop around the
-                // same moment would risk the exact double-close bug that
-                // previously crashed the app on disconnect. Bounded by a
-                // timeout as a safety net in case that coroutine is ever
-                // stuck for some unrelated reason -- we still proceed after
-                // it (a stale fd left open a bit longer is far less bad than
-                // startVpn() hanging forever).
-                killSwitchDrainJob?.let { withTimeoutOrNull(2000) { it.join() } }
-                tunRawFd = null
-                tunFd = null
-
-                val mihomoHomeDir = File(filesDir, "mihomo").apply { mkdirs() }
-
-                // Copy the bundled geo databases (geoip.metadb / geosite.dat) out of the APK
-                // assets into mihomo's home on first run — and RE-copy them whenever the app has
-                // been upgraded. The old guard was `if (!target.exists())`, which never refreshed
-                // the cached copies: an APK update ships newer geo data, but the stale files from
-                // the previous install survived, so routing (GEOSITE,category-ir / GEOIP,ir) kept
-                // resolving against out-of-date lists. We stamp the installed version code into a
-                // marker and re-extract when it changes (or when a file is missing).
-                val geoVersionMarker = File(mihomoHomeDir, ".geo-version")
-                val installedVersion = try {
-                    val pi = packageManager.getPackageInfo(packageName, 0)
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                        pi.longVersionCode
-                    } else {
-                        @Suppress("DEPRECATION") pi.versionCode.toLong()
+                when (cmd) {
+                    is Command.Connect -> {
+                        if (cmd.fromIntent) pendingStarts.decrementAndGet()
+                        onConnect(cmd)
                     }
-                } catch (_: Exception) { -1L }
-                val cachedVersion = try {
-                    geoVersionMarker.readText().trim().toLongOrNull()
-                } catch (_: Exception) { null }
-                val geoStale = cachedVersion == null || cachedVersion != installedVersion
-
-                listOf("geoip.metadb", "geosite.dat").forEach { name ->
-                    val target = File(mihomoHomeDir, name)
-                    if (geoStale || !target.exists()) {
-                        try {
-                            assets.open(name).use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
-                        } catch (_: Exception) {}
-                    }
-                }
-                try { geoVersionMarker.writeText(installedVersion.toString()) } catch (_: Exception) {}
-
-                // TUN must be established BEFORE building the config: mihomo needs
-                // the live file descriptor embedded directly in its YAML (tun.file-
-                // descriptor) to read/write packets. Building config first (the old
-                // order) meant there was no fd to give it, so mihomo only opened a
-                // local proxy port with nothing ever feeding it TUN traffic.
-                val tun = establishTun()
-                if (tun == null) {
-                    lastError = "Failed to create VPN tunnel"
-                    debugLog += "\nFAILED: could not establish TUN interface (lastError set above)"
-                    isConnecting.set(false)
-                    withContext(Dispatchers.Main) { stopSelf() }
-                    return@launch
-                }
-                tunFd = tun
-                // detachFd() transfers ownership of the underlying descriptor to us
-                // as a plain int — NOT tun.fd, which leaves the ParcelFileDescriptor
-                // object owning it. With .fd, Android's GC can finalize/close the
-                // ParcelFileDescriptor at any point while mihomo is still reading/
-                // writing it from native code — sometimes immediately, sometimes
-                // after a GC pause — since nothing forces the object to stay alive
-                // just because Go holds the raw number. That produced exactly this
-                // symptom: TUN "establishes", mihomo reports healthy and even logs
-                // proxied connections for traffic that happens to loop through
-                // userspace sockets, but the actual OS-level tun device never
-                // reliably passes packets, taking the whole device's connectivity
-                // down with it once Android sees a VPN is "active" but nothing
-                // flows through it. After detachFd() we own the raw fd directly and
-                // are responsible for closing it ourselves (see stopVpnInternal()).
-                val rawFd = tun.detachFd()
-                tunRawFd = rawFd
-                protect(rawFd)
-
-                // Register the socket protector BEFORE mihomo starts dialing
-                // anything: it exempts mihomo's own outbound connection to the
-                // real proxy server from being captured by the TUN mihomo is
-                // about to feed. Without this, only local (non-TUN) traffic —
-                // e.g. an app pointed directly at 127.0.0.1:10808 — ever
-                // reaches the internet; everything routed through the TUN
-                // loops back into mihomo and goes nowhere.
-                MihomoBridge.setProtector(this@CdnVpnService)
-
-                // Android's system-wide "Private DNS" (Settings > Network > Private
-                // DNS), when set to a specific hostname (strict mode), bypasses the
-                // VPN's captured port 53 entirely — apps' DNS queries go straight out
-                // over DoT to that hostname, never touching mihomo's dns-hijack. This
-                // produces exactly the "connects, no error, no traffic" symptom: the
-                // tun comes up and mihomo reports healthy, but nothing ever gets a
-                // domain to route because DNS never passed through it. Surface this
-                // in the debug log since there's no way to force it off from here.
-                checkPrivateDnsStrictMode()?.let { hostname ->
-                    debugLog += "\nWARNING: Android Private DNS is set to strict mode ($hostname). " +
-                        "This bypasses the VPN's DNS hijacking — traffic may not route correctly. " +
-                        "Disable it or set it to \"Automatic\" in Settings > Network > Private DNS."
-                }
-
-                var forceX25519 = false
-                var disableGeo = false
-                val config = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519)
-
-                debugLog = "── connect attempt @ ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} ──\n" +
-                    "config length: ${config.length} chars\n" +
-                    "tun fd: $rawFd\n" +
-                    // 600 was too short — it happened to cut off exactly after
-                    // "uuid: ", making the proxy's UUID look empty in the debug
-                    // log when it wasn't (the real config always had it; only the
-                    // truncated debug view didn't show it). 2000 comfortably
-                    // covers the whole proxies: entry for any of our supported
-                    // proxy types.
-                    "config head:\n${config.take(2000)}\n"
-
-                // The config is the secret: it carries the server address, the UUID or
-                // password, the SNI and the Reality public key. logcat is readable by adb
-                // and by anything with the log permission on older devices, so a release
-                // build says only how long the config is and never any of it. The full
-                // dump stays available in debug builds, where it is what makes a failed
-                // handshake diagnosable.
-                android.util.Log.i("CdnVpn", "Config length: ${config.length}")
-                if (com.cdnhunter.app.BuildConfig.DEBUG) {
-                    android.util.Log.i("CdnVpn", "Config first 200: ${config.take(200)}")
-                    android.util.Log.d("CdnVpn", "Full mihomo config: $config")
-                }
-
-                var started = MihomoBridge.start(config, mihomoHomeDir.absolutePath)
-                if (!started) {
-                    val startErr = MihomoBridge.lastError
-                    // Safety net for bad/wrong/corrupt bundled geo databases. The
-                    // GEOSITE,category-ir / GEOIP,ir DIRECT rules reference the shipped
-                    // geosite.dat / geoip.metadb; if that data is missing a category or
-                    // is otherwise unreadable, mihomo rejects the WHOLE config at parse
-                    // time (e.g. "list ir not found in geosite.dat") and nothing
-                    // connects. Rather than leave the user offline, rebuild the config
-                    // with those two geo rules stripped (disableGeoRules=true) — falling
-                    // back to the RULE-SET,ir-* HTTP providers alone, exactly the
-                    // pre-geo behavior — and try once more. A total connection failure is
-                    // strictly worse than losing the offline Iran-direct layer.
-                    val looksLikeGeoError = startErr.contains("geodata", true) ||
-                        startErr.contains("geosite", true) ||
-                        startErr.contains("geoip", true) ||
-                        startErr.contains("GeoSite", true) ||
-                        startErr.contains("GeoIP", true)
-                    if (looksLikeGeoError) {
-                        debugLog += "\nmihomo rejected config on geo data ($startErr) — retrying without GEOSITE/GEOIP rules (RULE-SET fallback)."
-                        MihomoBridge.stop()
-                        val noGeoConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519, disableGeoRules = true)
-                        started = MihomoBridge.start(noGeoConfig, mihomoHomeDir.absolutePath)
-                        if (started) {
-                            disableGeo = true
-                            debugLog += "\nmihomo started OK on RULE-SET fallback (offline Iran-direct geo layer disabled)."
-                        }
-                    }
-                }
-                if (!started) {
-                    lastError = "mihomo failed to start: ${MihomoBridge.lastError}"
-                    debugLog += "\nFAILED: mihomo rejected the config.\nmihomo error:\n${MihomoBridge.lastError}"
-                    stopVpnInternal(keepTunAlive = false)
-                    return@launch
-                }
-
-                debugLog += "\nmihomo started OK"
-
-                // REALITY's handshake is a strict binary match, not a soft TLS
-                // negotiation — support-x25519mlkem768 must exactly match what the
-                // server expects (some Xray-core versions require it, others break
-                // if it's forced on) and there's no way to know which ahead of time
-                // from the share link alone. mihomo only discovers this by actually
-                // attempting a handshake, which happens asynchronously after
-                // start() already returned success — so check coreLog a moment
-                // later and, if it shows the specific auth failure, restart once
-                // with the flag flipped. This only ever fires for reality configs
-                // (that's the only error text this check matches), so it's a
-                // no-op for every other proxy type.
-                if (!forceX25519 && config.contains("reality-opts")) {
-                    delay(2500)
-                    if (MihomoBridge.coreLog().contains("REALITY authentication failed")) {
-                        debugLog += "\nREALITY handshake failed without support-x25519mlkem768 — retrying with it enabled."
-                        forceX25519 = true
-                        MihomoBridge.stop()
-                        val retryConfig = VpnConfigBuilder.buildConfig(this@CdnVpnService, rawFd, forceX25519, disableGeoRules = disableGeo)
-                        val retryStarted = MihomoBridge.start(retryConfig, mihomoHomeDir.absolutePath)
-                        if (!retryStarted) {
-                            lastError = "mihomo failed to start (retry): ${MihomoBridge.lastError}"
-                            debugLog += "\nFAILED on retry: ${MihomoBridge.lastError}"
-                            stopVpnInternal(keepTunAlive = false)
-                            return@launch
-                        }
-                        debugLog += "\nmihomo restarted OK with support-x25519mlkem768"
-                    }
-                }
-
-                isRunning.set(true)
-                isConnecting.set(false)
-                reconnectAttempt = 0
-                uploadBytes = 0L
-                downloadBytes = 0L
-                updateNotification("Connected")
-                
-                // ⚠️ IMPORTANT: Check if system DoH is enabled and warn user
-                // System DoH (Private DNS in Android Settings) queries bypass our TUN
-                // because they use HTTPS port 443, which we cannot intercept.
-                // User should disable "Private DNS" while VPN is active.
-                checkAndWarnAboutSystemDoH()
-
-                // Resolve the server's REAL location by asking a geo-IP service
-                // through the tunnel itself, not by resolving the config's
-                // hostname directly (which for CDN-fronted domains reports the
-                // CDN edge's location, not the actual backend server's — see
-                // GeoService.lookupCurrentExitGeoInfo). Runs on its own coroutine,
-                // separate from the traffic-polling loop below, so a slow/failed
-                // geo-IP provider can never delay traffic stats or the connection
-                // itself.
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        val configId = SecurePrefs.vpn(this@CdnVpnService)
-                            .getString("active_config_id", "") ?: ""
-                        val info = com.cdnhunter.app.engine.GeoService().lookupCurrentExitGeoInfo()
-                        if (info.cc.isNotBlank()) {
-                            exitCountryCode = info.cc
-                            exitCity = info.city
-                            exitGeoConfigId = configId
-                            persistAccurateGeo(configId, info.cc, info.city)
-                        }
-                    } catch (_: Exception) {
-                        // Leave exitCountryCode blank — UI falls back to the
-                        // pre-connect estimate if this never resolves.
-                    }
-                }
-
-                while (isActive && isRunning.get()) {
-                    uploadBytes = MihomoBridge.queryUpload()
-                    downloadBytes = MihomoBridge.queryDownload()
-                    delay(1000)
+                    Command.Disconnect -> onDisconnect()
+                    Command.NetworkRestored -> onNetworkRestored()
+                    is Command.AttemptFailed -> onAttemptFailed(cmd)
                 }
             } catch (e: CancellationException) {
-                // Normal path when the user hits disconnect: stopVpn() calls
-                // job?.cancel(), which throws this inside the coroutine. It's
-                // not a failure — don't set lastError/debugLog as if it were,
-                // that only makes real errors harder to spot in the log.
                 throw e
             } catch (e: Exception) {
-                val wasRunning = isRunning.get()
-                lastError = e.message ?: "Unknown error"
-                debugLog += "\nEXCEPTION: ${e.message}\n${android.util.Log.getStackTraceString(e)}"
-                debugLog = debugLog.takeLast(8000)
-                isRunning.set(false)
-
-                // Auto-reconnect: try a bounded number of times with backoff
-                // before giving up. Kill switch is the backstop AFTER these
-                // retries are exhausted, not competing with them — if both
-                // are on, we retry first and only fall back to holding the
-                // kill switch once every retry attempt has failed. A retry
-                // "succeeding" here just means startVpn() ran again without
-                // throwing before the retry budget ran out; if it also fails
-                // it re-enters this same catch block recursively, so the
-                // retry count must be tracked outside this single catch
-                // invocation (see reconnectAttempt below).
-                if (isAutoReconnectEnabled() && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
-                    reconnectAttempt++
-                    val backoffMs = (1000L * (1 shl (reconnectAttempt - 1))).coerceAtMost(15000L)
-                    debugLog += "\nAuto-reconnect: attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS in ${backoffMs}ms"
-                    updateNotification("Reconnecting… ($reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)")
-                    // Must fully close the fd/mihomo before retrying — startVpn()
-                    // establishes a brand new tun, and the old one has to be gone
-                    // first or we'd leak it (same double-close hazard the kill
-                    // switch join logic exists to avoid). stopService = false:
-                    // this is a retry, not a real disconnect -- calling
-                    // stopSelf() here would race the startVpn() call right
-                    // below, potentially tearing down this service instance
-                    // mid-reconnect.
-                    stopVpnInternal(keepTunAlive = false, stopService = false)
-                    // stopVpnInternal clears it; a retry is still an attempt in
-                    // flight as far as the UI is concerned, so it goes back up for
-                    // the backoff and the startVpn() below.
-                    isConnecting.set(true)
-                    delay(backoffMs)
-                    if (isRunning.get()) return@launch // a newer connect attempt already took over
-                    startVpn()
-                    return@launch
-                }
-
-                val holdKillSwitch = wasRunning && isKillSwitchEnabled()
-                reconnectAttempt = 0
-                if (holdKillSwitch) {
-                    killSwitchBlocking.set(true)
-                    updateNotification("Blocked - connection lost (Kill Switch on)")
-                    debugLog += "\nAuto-reconnect gave up after $MAX_RECONNECT_ATTEMPTS attempts — kill switch holding TUN up with traffic blocked."
-                    stopVpnInternal(keepTunAlive = true)
-                    return@launch
-                }
-                updateNotification("Error: ${lastError.take(30)}")
-                delay(2000)
-                // Already running on the IO scope's job — no need to hop to Main
-                // (that would re-block the UI thread on MihomoBridge.stop()'s JNI
-                // call) or to cancel `job`, since this coroutine IS `job` and is
-                // already on its way out via this catch block.
-                stopVpnInternal(keepTunAlive = false)
+                // A bug in a handler must not kill the loop — later commands (above all Disconnect)
+                // still have to be served.
+                ConnLog.e(store.snapshot.connectionId, Stage.ERROR, "command handler failed: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
     }
 
-    private suspend fun stopVpn() {
-        job?.cancel()
-        reconnectAttempt = 0
-        stopVpnInternal(keepTunAlive = false)
+    private suspend fun onConnect(cmd: Command.Connect) {
+        val snap = store.snapshot
+        val sameConfig = snap.configId == cmd.configId
+        if (snap.isConnecting && sameConfig && attemptJob?.isActive == true) {
+            ConnLog.i(snap.connectionId, Stage.CONNECTED, "connect ignored: already connecting to this config")
+            return
+        }
+        if (snap.isConnected && sameConfig) {
+            ConnLog.i(snap.connectionId, Stage.CONNECTED, "connect ignored: already connected to this config")
+            return
+        }
+        if (cmd.configId.isBlank()) {
+            fail(null, ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "no server is selected", "active_config_id"))
+            return
+        }
+
+        // Anything else is a new request that supersedes whatever is there — a different server,
+        // a retry after an error, a connect while a previous attempt is winding down.
+        val keepTun = cmd.reuseTun && snap.killSwitchHolding
+        if (snap.isActive || attemptJob != null || (tunPfd != null && !keepTun)) {
+            teardown(publish = snap.isActive || snap.state == ConnectionState.ERROR, keepTun = keepTun)
+        }
+
+        val settings = readSettings()
+        val uri = SecurePrefs.vpn(this).getString("user_config", "") ?: ""
+        val p = Plan(newConnectionId(), cmd.configId, uri, settings, keepTun)
+        plan = p
+        lastError = ""
+        ConnLog.clear()
+        val ok = store.transition(
+            ConnectionState.PREPARING,
+            connectionId = p.connectionId,
+            configId = p.configId,
+            maxReconnectAttempts = policyFor(settings).maxAttempts,
+            stage = "preparing",
+        )
+        if (!ok) {
+            ConnLog.w(p.connectionId, Stage.ERROR, "could not enter PREPARING from ${store.snapshot.state}")
+            return
+        }
+        launchAttempt(p, attemptNo = 0, initialDelayMs = 0L)
     }
 
-    // Writes the tunnel-verified (accurate) country/city for one saved config
-    // straight into the same SharedPreferences record AppScreen's
-    // loadConfigs/saveConfigs read and write (key "saved_configs", one line
-    // per config:
+    private suspend fun onDisconnect() {
+        val s = store.snapshot
+        ConnLog.i(s.connectionId, Stage.DISCONNECT_REQUESTED, "state=${s.state}")
+        killSwitchBlocking.set(false)
+        val nothingToDo = !s.isActive && s.state != ConnectionState.ERROR && tunPfd == null && attemptJob == null
+        if (!nothingToDo) teardown(publish = true, keepTun = false)
+        finishService()
+    }
+
+    private suspend fun onNetworkRestored() {
+        val s = store.snapshot
+        when {
+            s.state == ConnectionState.ERROR && s.killSwitchHolding && !s.configId.isNullOrBlank() &&
+                readSettings().autoReconnect -> {
+                ConnLog.i(s.connectionId, Stage.NETWORK, "network restored while the kill switch is holding — reconnecting")
+                onConnect(Command.Connect(s.configId, reuseTun = true))
+            }
+            s.isConnected -> probeNow.set(true)
+            else -> Unit
+        }
+    }
+
+    private suspend fun onAttemptFailed(cmd: Command.AttemptFailed) {
+        if (cmd.serial != attemptSerial.get() || store.snapshot.connectionId != cmd.connectionId) {
+            ConnLog.d(cmd.connectionId, Stage.ERROR, "stale failure report ignored")
+            return
+        }
+        val p = plan ?: return
+        attemptJob = null
+        lastError = cmd.error.technical
+        ConnLog.error(cmd.connectionId, Stage.ERROR, cmd.error, coreOutput = recentCoreOutput())
+
+        val policy = policyFor(p.settings)
+        val used = store.snapshot.reconnectAttempt
+        val retry = policy.shouldRetry(used, cmd.error, p.settings.autoReconnect)
+
+        // The core is gone either way. The TUN stays only if the kill switch wants it held.
+        if (cmd.wasConnected) p.everConnected = true
+        val holdTun = p.settings.killSwitch && p.everConnected
+        withContext(Dispatchers.IO) { stopCore() }
+
+        if (retry) {
+            val next = used + 1
+            store.transition(ConnectionState.ERROR, error = cmd.error, expectedConnectionId = cmd.connectionId, willRetry = true)
+            val wait = policy.delayMs(next)
+            store.transition(
+                ConnectionState.RECONNECTING, reconnectAttempt = next, maxReconnectAttempts = policy.maxAttempts,
+                stage = "retrying in ${wait}ms", expectedConnectionId = cmd.connectionId,
+            )
+            ConnLog.i(cmd.connectionId, Stage.RECONNECT, "attempt $next/${policy.maxAttempts} in ${wait}ms")
+            updateNotification("Reconnecting… ($next/${policy.maxAttempts})")
+            if (!holdTun) closeTun()
+            val replanned = Plan(p.connectionId, p.configId, p.uri, p.settings, reuseTun = holdTun).also {
+                it.forceX25519 = p.forceX25519
+                it.everConnected = p.everConnected
+            }
+            plan = replanned
+            launchAttempt(replanned, attemptNo = next, initialDelayMs = wait)
+            return
+        }
+
+        val finalError = if (used > 0 && cmd.error.retryable) {
+            ConnectionError.ReconnectFailedError(used, "gave up after $used reconnect attempts; last: ${cmd.error.technical}")
+        } else cmd.error
+
+        if (p.settings.killSwitch && p.everConnected && tunPfd != null) {
+            // Hold the interface up with traffic blocked rather than letting it fall back to the open network.
+            killSwitchBlocking.set(true)
+            startDrain()
+            store.transition(ConnectionState.ERROR, error = finalError, expectedConnectionId = cmd.connectionId, killSwitchHolding = true)
+            updateNotification("Blocked — connection lost (kill switch on)")
+            ConnLog.w(cmd.connectionId, Stage.ERROR, "kill switch holding the tunnel with traffic blocked")
+            return
+        }
+
+        store.transition(ConnectionState.ERROR, error = finalError, expectedConnectionId = cmd.connectionId)
+        updateNotification("Error: ${finalError.userMessage(p.settings.language)}")
+        closeTun()
+        val id = cmd.connectionId
+        scope.launch {
+            // Leave the error visible in the notification briefly, then let go — unless a new request arrived.
+            delay(2_000)
+            if (store.snapshot.state == ConnectionState.ERROR && store.snapshot.connectionId == id) finishService()
+        }
+    }
+
+    /** Ends the service if nothing is using it. */
+    private fun finishService() {
+        if (pendingStarts.get() > 0) return // a connect is queued behind this; it still needs the foreground notification
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+        stopSelfResult(lastStartId)
+    }
+
+    // ── teardown ─────────────────────────────────────────────────────────────
+
+    /**
+     * Brings everything down in a fixed order, tolerating any of it already being down:
+     * cancel the attempt (and wait for it, bounded), stop the core, then release the TUN
+     * unless [keepTun]. [publish] walks the state through DISCONNECTING -> DISCONNECTED.
+     */
+    private suspend fun teardown(publish: Boolean, keepTun: Boolean) {
+        val cid = store.snapshot.connectionId
+        killSwitchBlocking.set(false)
+        val job = attemptJob
+        attemptJob = null
+        if (job != null) {
+            job.cancel()
+            val finished = withTimeoutOrNull(ATTEMPT_JOIN_TIMEOUT_MS) { job.join(); true }
+            if (finished == null) ConnLog.w(cid, Stage.ERROR, "attempt did not stop within ${ATTEMPT_JOIN_TIMEOUT_MS}ms; continuing teardown")
+        }
+        attemptSerial.incrementAndGet() // anything still running from the old attempt is now stale
+
+        val before = store.snapshot.state
+        val canPublish = publish && ConnectionTransitions_canDisconnect(before)
+        if (canPublish) store.transition(ConnectionState.DISCONNECTING)
+
+        withContext(Dispatchers.IO) {
+            stopDrainBlocking()
+            stopCore()
+            if (!keepTun) closeTun()
+        }
+        clearExit()
+        uploadBytes = 0L
+        downloadBytes = 0L
+
+        if (canPublish) {
+            ConnLog.i(cid, Stage.DISCONNECTED, "teardown complete")
+            store.transition(ConnectionState.DISCONNECTED)
+        }
+    }
+
+    private fun ConnectionTransitions_canDisconnect(from: ConnectionState) =
+        com.cdnhunter.app.core.ConnectionTransitions.canTransition(from, ConnectionState.DISCONNECTING)
+
+    /** Stops the core (which closes its duplicate of the TUN descriptor). Idempotent. */
+    private fun stopCore() {
+        if (MihomoBridge.isRunning()) {
+            MihomoBridge.stop()
+            ConnLog.i(store.snapshot.connectionId, Stage.CORE_STOPPED, "core stopped")
+        }
+    }
+
+    private fun closeTun() {
+        synchronized(resLock) {
+            try { tunPfd?.close() } catch (_: Exception) {}
+            tunPfd = null
+        }
+    }
+
+    private fun clearExit() {
+        exitCountryCode = ""
+        exitCity = ""
+        exitGeoConfigId = ""
+    }
+
+    // ── one connection attempt ───────────────────────────────────────────────
+
+    private fun launchAttempt(p: Plan, attemptNo: Int, initialDelayMs: Long) {
+        val serial = attemptSerial.incrementAndGet()
+        attemptJob = scope.launch { runAttempt(p, serial, attemptNo, initialDelayMs) }
+    }
+
+    private suspend fun runAttempt(p: Plan, serial: Int, attemptNo: Int, initialDelayMs: Long) {
+        val cid = p.connectionId
+        var connected = false
+        try {
+            if (initialDelayMs > 0) delay(initialDelayMs)
+
+            // ── PREPARING ────────────────────────────────────────────────────
+            if (store.snapshot.state != ConnectionState.PREPARING) {
+                if (!store.transition(ConnectionState.PREPARING, expectedConnectionId = cid, stage = "preparing")) return
+            }
+            ConnLog.i(cid, Stage.CONFIG_LOADED, "attempt #$attemptNo, config ${p.configId}")
+            val validated = prepareConfig(p)
+            ConnLog.i(cid, Stage.CONFIG_VALIDATED, "${validated.config.protocol.wire} ${validated.config.server}:${validated.config.port}")
+            SettingsValidator.validate(p.settings)?.let { throw AttemptFailure(it) }
+            if (prepare(this) != null) throw AttemptFailure(ConnectionError.PermissionError("VPN permission is not granted"))
+            val homeDir = prepareGeoFiles()
+            checkPrivateDnsStrictMode()?.let {
+                ConnLog.w(cid, Stage.CONFIG_VALIDATED, "Android Private DNS is in strict mode ($it); it bypasses the tunnel's DNS handling")
+            }
+            yield()
+
+            // ── CONNECTING ───────────────────────────────────────────────────
+            if (!store.transition(ConnectionState.CONNECTING, expectedConnectionId = cid, stage = "tunnel")) return
+            ConnLog.i(cid, Stage.TUNNEL_STARTING, "mtu=${p.settings.mtu} ipv6=${p.settings.ipv6}")
+            val pfd = obtainTun(p)
+            MihomoBridge.setProtector(this)
+            val geoPresent = VpnConfigBuilder.geoDatabasesPresent(this)
+            var disableGeo = false
+
+            fun startCore(): Boolean {
+                // The core gets its own duplicate; if it never takes ownership, closing it is on us.
+                val coreFd = try {
+                    pfd.dup().detachFd()
+                } catch (e: Exception) {
+                    throw AttemptFailure(ConnectionError.TunnelError("could not duplicate the tunnel descriptor", e))
+                }
+                val yaml = VpnConfigBuilder.buildFromValidated(
+                    validated, coreFd, p.settings, forceX25519Mlkem768 = p.forceX25519, geoDbPresent = geoPresent && !disableGeo,
+                )
+                val started = MihomoBridge.start(yaml, homeDir.absolutePath)
+                if (!started) closeRawFd(coreFd)
+                return started
+            }
+
+            var started = startCore()
+            if (!started && looksLikeGeoError(MihomoBridge.lastError)) {
+                // The bundled geo data was rejected and the whole config with it. Losing the
+                // offline Iran-direct layer is better than not connecting at all.
+                ConnLog.w(cid, Stage.CORE_STARTED, "core rejected geo data; retrying without GEOSITE/GEOIP rules")
+                disableGeo = true
+                started = startCore()
+            }
+            if (!started) {
+                throw AttemptFailure(ConnectionError.CoreError(ErrorCode.CORE_START_FAILED, MihomoBridge.lastError.ifBlank { "core did not start" }))
+            }
+            ConnLog.i(cid, Stage.CORE_STARTED, "geoRules=${geoPresent && !disableGeo}")
+
+            // ── VERIFY ───────────────────────────────────────────────────────
+            val probe = ProxyProbe("127.0.0.1", MIXED_PORT)
+            val isReality = validated.config.proxy.containsKey("reality-opts")
+            var realityRetryDone = p.forceX25519 || !isReality
+            val deadline = System.currentTimeMillis() + VERIFY_TIMEOUT_MS
+            var lastFailure: String
+            while (true) {
+                yield()
+                if (!MihomoBridge.isCoreAlive()) {
+                    throw AttemptFailure(ConnectionError.CoreError(ErrorCode.CORE_CRASHED, "core stopped during startup"))
+                }
+                store.update(cid) { it.copy(stage = "verifying") }
+                ConnLog.d(cid, Stage.CONNECTIVITY_CHECK, "probing through the tunnel")
+                val r = withContext(Dispatchers.IO) { probe.probeOnce() }
+                if (r is ProbeResult.Ok) {
+                    ConnLog.i(cid, Stage.CONNECTIVITY_CHECK, "ok in ${r.latencyMs} ms")
+                    break
+                }
+                lastFailure = (r as ProbeResult.Failed).reason
+                ConnLog.w(cid, Stage.CONNECTIVITY_CHECK, "failed: $lastFailure")
+
+                // REALITY is a strict match: whether support-x25519mlkem768 must be set depends on the
+                // server, and the only way to find out is a failed handshake. Retry once with it flipped.
+                if (!realityRetryDone && MihomoBridge.coreLog().contains("REALITY authentication failed")) {
+                    realityRetryDone = true
+                    p.forceX25519 = true
+                    ConnLog.w(cid, Stage.CORE_STARTED, "REALITY handshake failed; restarting the core with support-x25519mlkem768")
+                    stopCore() // closes the core's duplicate; our own descriptor is untouched, so the TUN stays
+                    if (!startCore()) {
+                        throw AttemptFailure(ConnectionError.CoreError(ErrorCode.CORE_START_FAILED, MihomoBridge.lastError.ifBlank { "core restart failed" }))
+                    }
+                    continue
+                }
+                if (System.currentTimeMillis() > deadline) {
+                    throw AttemptFailure(ConnectionError.TimeoutError("no traffic passed through the server within ${VERIFY_TIMEOUT_MS / 1000}s: $lastFailure"))
+                }
+                delay(700)
+            }
+
+            val link = TunnelInspector.vpnLink(this, TUN_ADDRESS_V4)
+            if (link != null) {
+                ConnLog.i(cid, Stage.TUNNEL_READY, "interface=${link.interfaceName} addresses=${link.addresses} osValidated=${link.osValidated}")
+            } else {
+                ConnLog.w(cid, Stage.TUNNEL_READY, "the OS did not report the VPN link (not treated as a failure)")
+            }
+
+            // ── CONNECTED ────────────────────────────────────────────────────
+            if (!store.transition(ConnectionState.CONNECTED, expectedConnectionId = cid, reconnectAttempt = 0)) return
+            connected = true
+            p.everConnected = true
+            uploadBytes = 0L
+            downloadBytes = 0L
+            lastError = ""
+            ConnLog.i(cid, Stage.CONNECTED, "server ${validated.config.server}:${validated.config.port}")
+            updateNotification("Connected")
+            checkAndWarnAboutSystemDoH()
+
+            coroutineScope {
+                val aux = launch(Dispatchers.IO) { collectTunnelInfo(cid, validated.config, link) }
+                try {
+                    monitor(serial, cid, probe)
+                } finally {
+                    aux.cancel()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e // a deliberate stop: the loop that cancelled us does the bookkeeping
+        } catch (e: AttemptFailure) {
+            report(serial, cid, e.error, connected)
+        } catch (e: Exception) {
+            report(serial, cid, ConnectionError.UnknownError("${e.javaClass.simpleName}: ${e.message}", e), connected)
+        }
+    }
+
+    private fun report(serial: Int, cid: String, error: ConnectionError, wasConnected: Boolean) {
+        commands.trySend(Command.AttemptFailed(serial, cid, error, wasConnected))
+    }
+
+    /** Watches a live connection until it fails (reported to the loop) or is cancelled. */
+    private suspend fun monitor(serial: Int, cid: String, probe: ProxyProbe) {
+        var lastCoreCheck = System.currentTimeMillis()
+        var lastProbe = System.currentTimeMillis()
+        var probeFailures = 0
+        while (coroutineContext.isActive) {
+            delay(1_000)
+            uploadBytes = MihomoBridge.queryUpload()
+            downloadBytes = MihomoBridge.queryDownload()
+            val now = System.currentTimeMillis()
+
+            if (now - lastCoreCheck >= CORE_CHECK_INTERVAL_MS) {
+                lastCoreCheck = now
+                if (!MihomoBridge.isCoreAlive()) {
+                    report(serial, cid, ConnectionError.CoreError(ErrorCode.CORE_CRASHED, "core is no longer running"), true)
+                    return
+                }
+            }
+
+            // No physical network: nothing to probe, and a probe failure would only be the network's. Wait
+            // for the network callback to say it is back.
+            if (!TunnelInspector.hasUnderlyingNetwork(this)) continue
+
+            val interval = if (probeFailures > 0) PROBE_INTERVAL_AFTER_FAILURE_MS else PROBE_INTERVAL_MS
+            val nudged = probeNow.getAndSet(false)
+            if (nudged || now - lastProbe >= interval) {
+                lastProbe = now
+                val r = withContext(Dispatchers.IO) { probe.probeOnce() }
+                if (r is ProbeResult.Ok) {
+                    if (probeFailures > 0) ConnLog.i(cid, Stage.CONNECTIVITY_CHECK, "recovered")
+                    probeFailures = 0
+                } else {
+                    probeFailures++
+                    ConnLog.w(cid, Stage.CONNECTIVITY_CHECK, "health probe failed ($probeFailures/$PROBE_FAILURES_BEFORE_RECONNECT): ${(r as ProbeResult.Failed).reason}")
+                    if (probeFailures >= PROBE_FAILURES_BEFORE_RECONNECT) {
+                        report(serial, cid, ConnectionError.TimeoutError("server stopped carrying traffic: ${r.reason}"), true)
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    // ── preparation helpers ──────────────────────────────────────────────────
+
+    private fun prepareConfig(p: Plan): ValidatedConfig {
+        if (p.uri.isBlank()) {
+            throw AttemptFailure(ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "no config is stored for the selected server", "user_config"))
+        }
+        val parsed = ConfigUriParser.parse(p.uri, forceX25519Mlkem768 = p.forceX25519)
+        val proxy = when (parsed) {
+            is ConfigUriParser.UriParseResult.Success -> parsed.proxy
+            is ConfigUriParser.UriParseResult.Failure -> throw AttemptFailure(parsed.error)
+        }
+        val internal = InternalConnectionConfig.fromProxyMap(proxy)
+            ?: throw AttemptFailure(ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "config has no usable protocol, server or port"))
+        return when (val v = ConfigValidator.validate(internal)) {
+            is ValidationResult.Valid -> v.config
+            is ValidationResult.Invalid -> throw AttemptFailure(v.error)
+        }
+    }
+
+    /** Copies the bundled geo databases out of the APK on first run and whenever the app was upgraded. */
+    private fun prepareGeoFiles(): File {
+        val home = File(filesDir, "mihomo").apply { mkdirs() }
+        val marker = File(home, ".geo-version")
+        val installed = try {
+            val pi = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pi.longVersionCode
+            else @Suppress("DEPRECATION") pi.versionCode.toLong()
+        } catch (_: Exception) { -1L }
+        val cached = try { marker.readText().trim().toLongOrNull() } catch (_: Exception) { null }
+        val stale = cached == null || cached != installed
+        listOf("geoip.metadb", "geosite.dat").forEach { name ->
+            val target = File(home, name)
+            if (stale || !target.exists()) {
+                try {
+                    assets.open(name).use { inp -> target.outputStream().use { out -> inp.copyTo(out) } }
+                } catch (_: Exception) {}
+            }
+        }
+        try { marker.writeText(installed.toString()) } catch (_: Exception) {}
+        return home
+    }
+
+    private fun looksLikeGeoError(err: String) =
+        err.contains("geodata", true) || err.contains("geosite", true) || err.contains("geoip", true)
+
+    private fun recentCoreOutput(): String = try { MihomoBridge.coreLog().takeLast(800) } catch (_: Exception) { "" }
+
+    private fun closeRawFd(fd: Int) {
+        try { ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
+    }
+
+    private fun readSettings() = ConnectionSettings(
+        mtu = AppSettings.mtu(this),
+        ipv6 = AppSettings.ipv6Enabled(this),
+        allowLan = AppSettings.allowLan(this),
+        useDoh = AppSettings.useDoh(this),
+        customDnsEnabled = AppSettings.customDnsEnabled(this),
+        customDnsServers = AppSettings.customDnsServers(this),
+        splitTunnelMode = AppSettings.splitTunnelMode(this),
+        adBlocker = AppSettings.adBlockerEnabled(this),
+        blockAds = AppSettings.blockAds(this),
+        blockTrackers = AppSettings.blockTrackers(this),
+        blockMalware = AppSettings.malwareBlockerEnabled(this),
+        splitTunnelApps = AppSettings.splitTunnelApps(this),
+        killSwitch = AppSettings.killSwitchEnabled(this),
+        autoReconnect = AppSettings.autoReconnectEnabled(this),
+        maxReconnectAttempts = AppSettings.maxRetryAttempts(this),
+        language = AppSettings.language(this),
+    )
+
+    private fun policyFor(s: ConnectionSettings) = ReconnectPolicy(maxAttempts = s.maxReconnectAttempts.coerceIn(0, 10))
+
+    private fun newConnectionId() = UUID.randomUUID().toString().take(8)
+
+    private fun fail(cid: String?, error: ConnectionError) {
+        lastError = error.technical
+        ConnLog.error(cid, Stage.ERROR, error)
+        val s = store.snapshot
+        if (s.state == ConnectionState.IDLE || s.state == ConnectionState.DISCONNECTED || s.state == ConnectionState.ERROR) {
+            if (store.transition(ConnectionState.PREPARING, connectionId = newConnectionId(), configId = s.configId)) {
+                store.transition(ConnectionState.ERROR, error = error)
+            }
+        }
+        finishService()
+    }
+
+    // ── tunnel interface ─────────────────────────────────────────────────────
+
+    /** Returns the service's TUN handle: the held one when [Plan.reuseTun], otherwise a fresh interface. */
+    private fun obtainTun(p: Plan): ParcelFileDescriptor {
+        synchronized(resLock) {
+            val held = tunPfd
+            if (p.reuseTun && held != null) return held
+            try { held?.close() } catch (_: Exception) {}
+            tunPfd = null
+        }
+        val pfd = establishTun(p.settings)
+            ?: throw AttemptFailure(ConnectionError.TunnelError("the system refused to create the VPN interface"))
+        synchronized(resLock) { tunPfd = pfd }
+        return pfd
+    }
+
+    private fun establishTun(s: ConnectionSettings): ParcelFileDescriptor? {
+        return try {
+            // These must be the SAME servers the core is configured to use (see VpnConfigBuilder):
+            // Android's Private DNS can opportunistically upgrade to DoT straight against whatever IPs
+            // are declared here. addDnsServer() only takes a literal IP, so a hostname-only DoH URL has
+            // nothing to extract and the Google default applies.
+            val dnsServers = if (s.customDnsEnabled) {
+                s.customDnsServers.mapNotNull { extractDnsIp(it) }.take(2).ifEmpty { listOf("8.8.8.8", "8.8.4.4") }
+            } else listOf("8.8.8.8", "8.8.4.4")
+
+            val builder = Builder()
+                .setSession("CDN Hunter VPN")
+                .addAddress(TUN_ADDRESS_V4, 32)
+            dnsServers.forEach { builder.addDnsServer(it) }
+            // IPv6 is always claimed, whatever the user's IPv6 setting: otherwise on a network with real
+            // IPv6, IPv6 traffic (and DNS over it) would bypass the VPN and leak. With IPv6 off the core
+            // drops those packets inside the tunnel — fail-closed rather than leaking.
+            builder.addAddress("fd00:1:1:1::1", 128)
+            builder
+                .setMtu(s.mtu)
+                .setBlocking(false)
+                .addRoute("0.0.0.0", 1)
+                .addRoute("128.0.0.0", 1)
+                .addRoute("::", 0)
+
+            // Android accepts EITHER allowed or disallowed applications on one Builder, never both.
+            if (s.splitTunnelMode == "include" && s.splitTunnelApps.isNotEmpty()) {
+                for (pkg in s.splitTunnelApps) {
+                    try { builder.addAllowedApplication(pkg) } catch (_: Exception) { /* uninstalled since being listed */ }
+                }
+            } else {
+                // This app itself must be excluded, or its own traffic to the proxy server would loop into its tunnel.
+                builder.addDisallowedApplication(packageName)
+                for (pkg in s.splitTunnelApps) {
+                    try { builder.addDisallowedApplication(pkg) } catch (_: Exception) { /* uninstalled since being listed */ }
+                }
+            }
+            builder.establish()
+        } catch (e: Exception) {
+            ConnLog.e(store.snapshot.connectionId, Stage.TUNNEL_STARTING, "establish failed: ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
+    }
+
+    // ── kill switch ──────────────────────────────────────────────────────────
+
+    /**
+     * Holds the interface open and discards everything arriving on it, so traffic is blocked
+     * explicitly and immediately instead of by a buffer eventually filling.
+     *
+     * The descriptor is non-blocking, so a plain read() returns EAGAIN the moment nothing is
+     * queued — which ended the old loop at once and, by closing the stream, tore the
+     * interface down: the kill switch failed open. This waits in poll() (woken at least every
+     * 500 ms to notice a stop request) and only reads when there is something to read.
+     */
+    private fun startDrain() {
+        val pfd = synchronized(resLock) { tunPfd } ?: return
+        stopDrainBlocking()
+        val t = Thread({
+            val fd = pfd.fileDescriptor
+            val buf = ByteArray(32 * 1024)
+            val pollFd = StructPollfd().apply { this.fd = fd; events = OsConstants.POLLIN.toShort() }
+            while (killSwitchBlocking.get()) {
+                try {
+                    pollFd.revents = 0
+                    val ready = Os.poll(arrayOf(pollFd), 500)
+                    if (ready > 0) {
+                        val bad = OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL
+                        if ((pollFd.revents.toInt() and bad) != 0) break
+                        try {
+                            Os.read(fd, buf, 0, buf.size)
+                        } catch (e: ErrnoException) {
+                            if (e.errno != OsConstants.EAGAIN && e.errno != OsConstants.EINTR) break
+                        }
+                    }
+                } catch (e: ErrnoException) {
+                    if (e.errno == OsConstants.EINTR) continue
+                    break
+                } catch (_: Exception) {
+                    break
+                }
+            }
+        }, "killswitch-drain")
+        t.isDaemon = true
+        drainThread = t
+        t.start()
+    }
+
+    /** Signals the drain thread to stop and waits for it briefly. The thread never closes the descriptor; the service does. */
+    private fun stopDrainBlocking() {
+        killSwitchBlocking.set(false)
+        val t = drainThread ?: return
+        drainThread = null
+        try { t.join(800) } catch (_: InterruptedException) {}
+    }
+
+    // ── post-connect information ─────────────────────────────────────────────
+
+    /** Gathers what is known about the live tunnel and publishes it. Every field is optional. */
+    private fun collectTunnelInfo(cid: String, config: InternalConnectionConfig, link: VpnLinkInfo?) {
+        val base = TunnelInfo(
+            serverAddress = config.server,
+            localIp = TunnelInspector.localAddress(this),
+            tunnelInterface = link?.interfaceName,
+            tunnelAddress = link?.addresses?.firstOrNull { it == TUN_ADDRESS_V4 } ?: link?.addresses?.firstOrNull(),
+            // Point-to-point TUN with on-link routes: there is no gateway address to report.
+            vpnGateway = null,
+            osValidated = link?.osValidated,
+        )
+        store.update(cid) { it.copy(tunnel = base) }
+        val serverIp = TunnelInspector.resolveServerIp(config.server)
+        if (serverIp != null) store.update(cid) { it.copy(tunnel = (it.tunnel ?: base).copy(serverIp = serverIp)) }
+
+        val geo = com.cdnhunter.app.engine.GeoService()
+        val publicIp = try { geo.lookupCurrentIp(proxied = true) } catch (_: Exception) { "" }
+        if (publicIp.isNotBlank()) store.update(cid) { it.copy(tunnel = (it.tunnel ?: base).copy(publicIp = publicIp)) }
+
+        try {
+            val info = geo.lookupCurrentExitGeoInfo()
+            if (info.cc.isNotBlank() && store.snapshot.connectionId == cid) {
+                val configId = SecurePrefs.vpn(this).getString("active_config_id", "") ?: ""
+                exitCountryCode = info.cc
+                exitCity = info.city
+                exitGeoConfigId = configId
+                persistAccurateGeo(configId, info.cc, info.city)
+            }
+        } catch (_: Exception) {
+            // Leave the exit location blank — the UI falls back to the pre-connect estimate.
+        }
+    }
+
+    // Writes the tunnel-verified country/city for one saved config into the same record the
+    // list reads and writes (key "saved_configs", one line per config:
     // "uri\u0001countryCode\u0001city\u0001pingMs\u0001geoResolved\u0001accurateGeoResolved
-    //  \u0001isImported\u0001subscriptionId\u0001subscriptionName").
-    // Without this, the accurate result only ever lived in the in-memory
-    // exitCountryCode/exitCity vars above — gone the moment the app restarts,
-    // so the next app-open flag went right back to the pre-connect (on-device,
-    // sometimes CDN-edge-instead-of-real-server) estimate. This makes the
-    // accurate one stick, so future app opens show it immediately without
-    // waiting to reconnect.
+    //  \u0001isImported\u0001subscriptionId\u0001subscriptionName"). Without this the accurate
+    // result lived only in memory and the next app start went back to the pre-connect estimate.
     private fun persistAccurateGeo(configId: String, cc: String, city: String) {
         try {
             val prefs = SecurePrefs.vpn(this)
@@ -544,274 +943,88 @@ class CdnVpnService : VpnService() {
                 val uri = parts.getOrNull(0)?.trim().orEmpty()
                 if (uri.isBlank() || uri.hashCode().toString() != configId) return@map line
                 changed = true
-
-                // Preserve original ping and the isImported/subscription fields —
-                // this function only ever knows about geo, so any field beyond that
-                // must come straight from the existing line, not get silently
-                // dropped (which used to un-mark subscription-imported configs).
+                // Only geo is known here; every other field must come from the existing line.
                 val originalPingMs = parts.getOrNull(3) ?: "-1"
                 val isImported = parts.getOrNull(6) ?: "0"
                 val subscriptionId = parts.getOrNull(7) ?: ""
                 val subscriptionName = parts.getOrNull(8) ?: ""
-                listOf(uri, cc, city, originalPingMs, "1", "1", isImported, subscriptionId, subscriptionName)
-                    .joinToString(sep)
+                listOf(uri, cc, city, originalPingMs, "1", "1", isImported, subscriptionId, subscriptionName).joinToString(sep)
             }
-            if (changed) {
-                prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()
-            }
+            if (changed) prefs.edit().putString("saved_configs", updated.joinToString("\n")).apply()
         } catch (e: Exception) {
-            android.util.Log.e("CdnVpnService", "persistAccurateGeo failed: ${e.message}")
+            ConnLog.w(null, Stage.CONNECTED, "persistAccurateGeo failed: ${e.javaClass.simpleName}")
         }
     }
 
-    // Actual teardown, shared by the external-stop path (stopVpn), the
-    // internal error-recovery path in startVpn's catch block (which must not
-    // cancel `job` since it IS the job currently running this code), and the
-    // auto-reconnect retry path (which needs mihomo/fd torn down but the
-    // Android service itself kept alive for the immediately-following
-    // startVpn() call -- see stopService below).
-    private suspend fun stopVpnInternal(keepTunAlive: Boolean, stopService: Boolean = true) {
-        isRunning.set(false)
-        // Every failure path and every disconnect comes through here, so this is the
-        // one place that has to clear the attempt flag; the auto-reconnect path sets
-        // it again for its own next attempt.
-        isConnecting.set(false)
-        MihomoBridge.stop()
-        exitCountryCode = ""
-        exitCity = ""
-        exitGeoConfigId = ""
+    // ── network callback ─────────────────────────────────────────────────────
 
-        if (keepTunAlive) {
-            // A real kill switch, matching how Mullvad/NordVPN/etc. implement
-            // it: Android's routes are still committed to this VPN interface
-            // (addRoute("0.0.0.0", 1) + addRoute("128.0.0.0", 1) in
-            // establishTun() are untouched — Android won't fall back to
-            // direct routing just because mihomo stopped reading), so all
-            // traffic is still forced through the tun fd. mihomo itself is
-            // now stopped and isn't reading it anymore, so simply leaving the
-            // fd open and doing nothing would only block traffic informally,
-            // by letting the kernel-side tun buffer fill up and start
-            // dropping packets on its own — not immediate, not guaranteed,
-            // and not how a real kill switch works. Instead, actively read
-            // and discard every packet ourselves on its own coroutine, so
-            // blocking is explicit and instant regardless of buffer
-            // behavior. Runs until reconnect (see startVpn(), which joins
-            // killSwitchDrainJob) or the user hits disconnect (below, in the
-            // !keepTunAlive branch, which also joins it).
-            val fd = tunRawFd
-            if (fd != null) {
-                killSwitchDrainJob = scope.launch(Dispatchers.IO) { killSwitchDrainLoop(fd) }
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        connectivityManager = cm
+        // The default builder excludes VPN networks, so this is about the physical network only.
+        val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // Only the transition from "no usable network at all" to "a network" is an event; moving
+                // between Wi-Fi access points fires this too and the core usually rides those out.
+                if (!hadNetwork) {
+                    hadNetwork = true
+                    commands.trySend(Command.NetworkRestored)
+                } else if (store.snapshot.isConnected) {
+                    // A different network took over while connected: re-check the path soon.
+                    probeNow.set(true)
+                }
             }
-            return
-        }
 
-        // If the kill switch was active, mihomo was already stopped earlier
-        // (when the kill switch first triggered) and does NOT own tunRawFd
-        // anymore -- killSwitchDrainLoop does, exclusively. Join it (it
-        // notices killSwitchBlocking=false, set below, on its next
-        // while-check) so it finishes and closes its own fd, rather than
-        // this coroutine racing to close the same fd independently -- that
-        // double-close was the actual original cause of the app being killed
-        // right after pressing disconnect. Bounded by a timeout as a safety
-        // net in case it's ever stuck.
-        val hadKillSwitchJob = killSwitchDrainJob != null
-        killSwitchBlocking.set(false)
-        killSwitchDrainJob?.let { withTimeoutOrNull(2000) { it.join() } }
-        killSwitchDrainJob = null
-
-        if (!hadKillSwitchJob) {
-            // Normal path: MihomoBridge.stop() above already closed the tun
-            // fd internally (via executor.Shutdown -> listener.Cleanup). We
-            // must NOT also close it here on the Kotlin side -- that would
-            // double-close the same fd number, which on Linux/Android can
-            // immediately reassign that same integer to a totally unrelated
-            // file/socket and corrupt native state. This was the actual
-            // cause of the app being killed right after pressing disconnect.
+            override fun onLost(network: Network) {
+                if (cm.activeNetwork == null) hadNetwork = false
+            }
         }
-        // Either way (kill switch was active, or normal disconnect), the fd
-        // has now been closed by whichever side actually owned it -- safe to
-        // drop our references.
-        tunRawFd = null
-        tunFd = null
-        if (stopService) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
-    }
-
-    // Reads and discards packets from the tun fd for as long as the kill
-    // switch is holding it open. Exits cleanly (no crash, no leak) once the
-    // fd is closed out from under it -- either by a real reconnect
-    // (startVpn() closes any stale kill-switch fd before establishing a new
-    // one) or the user disconnecting (stopVpnInternal(keepTunAlive = false)
-    // closes it).
-    private fun killSwitchDrainLoop(fd: Int) {
-        // ParcelFileDescriptor.adoptFd() + AutoCloseInputStream are both
-        // fully public, documented APIs -- deliberately avoiding any
-        // reflection into FileDescriptor's internal int constructor (a
-        // non-SDK interface Android's hidden-API restrictions can silently
-        // break depending on target SDK/OS version), since this path is
-        // security-critical and must not be allowed to quietly stop working.
-        val pfd = try { ParcelFileDescriptor.adoptFd(fd) } catch (_: Exception) { return }
-        val stream = ParcelFileDescriptor.AutoCloseInputStream(pfd)
-        val buf = ByteArray(32767)
+        networkCallback = callback
         try {
-            while (killSwitchBlocking.get()) {
-                val n = stream.read(buf)
-                if (n < 0) break // fd closed elsewhere (reconnect or real disconnect) -- exit quietly
-                // Read and discard -- do not forward, do not respond. This is
-                // the actual block: nothing this app does with these bytes
-                // ever reaches a real network socket.
-            }
+            cm.registerNetworkCallback(request, callback)
         } catch (_: Exception) {
-            // fd closed/invalidated elsewhere -- exit quietly, this is expected
-        } finally {
-            // AutoCloseInputStream closes pfd (and therefore fd) when the
-            // stream itself is closed -- do that here so the fd doesn't stay
-            // open forever if the loop exits because killSwitchBlocking went
-            // false (a real reconnect) rather than because the fd was
-            // already closed by someone else.
-            try { stream.close() } catch (_: Exception) {}
+            // Some OEM builds restrict this for background services; the health monitor still
+            // detects a dead path, just without this extra trigger.
         }
     }
 
-    private fun establishTun(): ParcelFileDescriptor? {
-        return try {
-            val ipv6Enabled = AppSettings.ipv6Enabled(this)
-            // These must be the SAME servers mihomo itself is configured to use
-            // (see VpnConfigBuilder) — Android's Private DNS, in "Automatic" mode,
-            // can opportunistically upgrade to DoT (port 853) straight against
-            // whatever IPs are declared here. dns-hijack now also catches :853 (see
-            // VpnConfigBuilder), so that traffic still gets captured either way —
-            // but if this stayed hardcoded to Cloudflare/Google regardless of the
-            // user's custom DNS setting, the query CONTENT would still go to a
-            // provider the user never chose, which reads as "leaking" even though
-            // it's tunneled. addDnsServer() only accepts a literal IP (not a
-            // https://.../dns-query URL) — extractDnsIp pulls one out of whatever
-            // format the user's custom entry is in, or falls back to Google
-            // (matches VpnConfigBuilder's own Google-only default — see there for
-            // why this stopped being Cloudflare+Google).
-            val dnsServers = if (AppSettings.customDnsEnabled(this)) {
-                AppSettings.customDnsServers(this).mapNotNull { extractDnsIp(it) }.take(2)
-                    .ifEmpty { listOf("8.8.8.8", "8.8.4.4") }
-            } else {
-                listOf("8.8.8.8", "8.8.4.4")
+    // ── system DNS ───────────────────────────────────────────────────────────
+
+    /** Returns the Private DNS hostname if Android's system-wide Private DNS is in strict (hostname) mode. */
+    private fun checkPrivateDnsStrictMode(): String? = try {
+        val mode = android.provider.Settings.Global.getString(contentResolver, "private_dns_mode")
+        if (mode == "hostname") android.provider.Settings.Global.getString(contentResolver, "private_dns_specifier") else null
+    } catch (_: Exception) { null }
+
+    /**
+     * System DoH (Private DNS) queries bypass the tunnel because they use HTTPS on port 443, which
+     * cannot be intercepted at the TUN level — warn the user.
+     */
+    private fun checkAndWarnAboutSystemDoH() {
+        try {
+            val mode = android.provider.Settings.Global.getString(contentResolver, "private_dns_mode") ?: "off"
+            if (mode != "off") {
+                updateNotification("⚠️ Disable Private DNS in Settings to prevent DNS leaks")
+                ConnLog.w(store.snapshot.connectionId, Stage.CONNECTED, "system Private DNS is on; its queries bypass the tunnel")
             }
-            val builder = Builder()
-                .setSession("CDN Hunter VPN")
-                .addAddress("10.10.10.10", 32)
-            dnsServers.forEach { builder.addDnsServer(it) }
-            // IPv6 address + route only added when the user has IPv6 enabled
-            // in Settings — matches the mihomo "ipv6" config flag set in
-            // VpnConfigBuilder so both sides agree on whether v6 traffic is
-            // routed through the tunnel at all.
-            // همیشه IPv6 رو claim کن، صرف‌نظر از ipv6Enabled — وگرنه روی هر
-            // شبکه‌ای که IPv6 واقعی داره، ترافیک IPv6 (و DNS روی IPv6) از
-            // مسیر عادیِ خارج از VPN میره و لو میره.
-            builder.addAddress("fd00:1:1:1::1", 128)
-            builder
-                // MTU is now user-adjustable via Settings UI (AppSettings.mtu()).
-                // Default is 1500 (standard Ethernet) — works on all mobile/ISP
-                // paths. Users who know their network supports jumbo frames can
-                // raise it up to 9000 via Custom in Settings.
-                // NOTE: must stay in sync with "mtu" in VpnConfigBuilder's mihomo
-                // tun config — both now read from AppSettings.mtu().
-                .setMtu(AppSettings.mtu(this))
-                .setBlocking(false)
-                .addRoute("0.0.0.0", 1)
-                .addRoute("128.0.0.0", 1)
-            // همیشه همه‌ی ترافیک IPv6 رو بگیر توی تانل. اگه ipv6Enabled
-            // خاموشه، mihomo (ipv6:false + rule صریح در VpnConfigBuilder)
-            // این بسته‌ها رو داخل تانل drop می‌کنه — fail-closed، نه leak.
-            builder.addRoute("::", 0)
-
-            // Split tunneling. Android only allows EITHER
-            // addAllowedApplication calls OR addDisallowedApplication calls
-            // on a single Builder, never a mix of both -- it throws
-            // UnsupportedOperationException if you try. So the two modes
-            // have to be mutually exclusive branches, not just "add this
-            // app to whichever list."
-            val splitApps = AppSettings.splitTunnelApps(this)
-            if (AppSettings.splitTunnelMode(this) == "include" && splitApps.isNotEmpty()) {
-                // Only the selected apps use the VPN; everything else
-                // (including this app itself, deliberately left out) goes
-                // direct.
-                for (pkg in splitApps) {
-                    try { builder.addAllowedApplication(pkg) } catch (_: Exception) {
-                        // App was uninstalled since being added to the list, or
-                        // some other lookup failure -- skip it rather than
-                        // aborting the whole VPN setup over one stale entry.
-                    }
-                }
-            } else {
-                // Default / "exclude" mode: everything uses the VPN except
-                // this app itself (required -- otherwise its own traffic to
-                // the proxy server would loop back into its own tunnel) plus
-                // whatever the user explicitly excluded.
-                builder.addDisallowedApplication(packageName)
-                for (pkg in splitApps) {
-                    try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {
-                        // Same as above -- stale/uninstalled package, skip it.
-                    }
-                }
-            }
-
-            // Allow LAN: user preference to keep local network traffic accessible
-            // Note: Android's VPN API handles this automatically by default - 
-            // private networks (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) are 
-            // NOT routed through the VPN unless explicitly added with addRoute().
-            // So "Allow LAN" is effectively always on unless we block it, which we don't.
-            // The AppSettings toggle is kept for future use or UI indication.
-
-            builder.establish()
-        } catch (e: Exception) {
-            lastError = "TUN: ${e.message}"
-            null
-        }
+        } catch (_: Exception) {}
     }
 
-    /** Returns the configured Private DNS hostname if Android's system-wide
-     *  Private DNS is set to strict/hostname mode, or null if it's off/opportunistic. */
-    private fun checkPrivateDnsStrictMode(): String? {
-        return try {
-            val mode = android.provider.Settings.Global.getString(contentResolver, "private_dns_mode")
-            if (mode == "hostname") {
-                android.provider.Settings.Global.getString(contentResolver, "private_dns_specifier")
-            } else null
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    // Pulls a literal IPv4/IPv6 address out of a custom DNS entry for
-    // VpnService.Builder.addDnsServer(), which only accepts a literal IP —
-    // "https://1.1.1.1/dns-query" -> "1.1.1.1", "9.9.9.9:53" -> "9.9.9.9",
-    // "quic://8.8.8.8" -> "8.8.8.8", "[2606:4700:4700::1111]:53" ->
-    // "2606:4700:4700::1111". A hostname-only DoH URL (e.g.
-    // "https://dns.google/dns-query", no embedded IP) has nothing to extract —
-    // returns null so the caller's fallback applies instead of passing a
-    // hostname Android's Builder would reject.
+    // Pulls a literal IPv4/IPv6 address out of a custom DNS entry for VpnService.Builder.addDnsServer(),
+    // which only accepts a literal IP: "https://1.1.1.1/dns-query" -> "1.1.1.1", "9.9.9.9:53" -> "9.9.9.9",
+    // "[2606:4700:4700::1111]:53" -> "2606:4700:4700::1111". A hostname-only entry has nothing to extract
+    // and yields null so the caller's fallback applies.
     private fun extractDnsIp(entry: String): String? {
-        var s = entry.trim()
-            .removePrefix("https://").removePrefix("quic://").removePrefix("tls://")
-            .substringBefore("/")
-
-        val ipv4Regex = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
-
-        // Bracketed IPv6 with an optional port, e.g. "[::1]:53" -> "::1".
-        if (s.startsWith("[")) {
-            return s.substringAfter("[").substringBefore("]").takeIf { it.contains(":") }
-        }
-        // Bare IPv6 (multiple colons, no brackets) has no port suffix to strip —
-        // a trailing ":53" on an unbracketed IPv6 literal would be ambiguous, so
-        // this is only ever a plain address here, not "address:port".
-        if (s.count { it == ':' } > 1) {
-            return s.takeIf { !ipv4Regex.matches(s) } // already excluded by colon count, kept for clarity
-        }
-        // IPv4, optionally with ":port" — exactly one colon at most.
+        var s = entry.trim().removePrefix("https://").removePrefix("quic://").removePrefix("tls://").substringBefore("/")
+        val ipv4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+        if (s.startsWith("[")) return s.substringAfter("[").substringBefore("]").takeIf { it.contains(":") }
+        if (s.count { it == ':' } > 1) return s
         s = s.substringBefore(":")
-        return s.takeIf { ipv4Regex.matches(it) }
+        return s.takeIf { ipv4.matches(it) }
     }
+
+    // ── notification ─────────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -820,63 +1033,17 @@ class CdnVpnService : VpnService() {
         }
     }
 
-    private fun buildNotification(status: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(status: String): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CDN Hunter VPN")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .build()
-    }
 
     private fun updateNotification(status: String) {
         try {
-            getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, buildNotification(status))
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(status))
         } catch (_: Exception) {}
     }
-
-    // onDestroy/onRevoke run synchronously and unconditionally: unlike the
-    // user-initiated stop button (where blocking the main thread on
-    // MihomoBridge.stop()'s JNI call would freeze the UI), here the process
-    // is already being torn down by the OS, so blocking briefly to actually
-    // finish mihomo's shutdown and release the tun fd is correct — cancelling
-    // `scope` first would abandon that teardown mid-flight and leak the fd.
-    
-    /**
-     * Check if system DoH (Private DNS) is enabled and warn user if so.
-     * System DoH queries bypass VPN because they use HTTPS port 443,
-     * which cannot be intercepted at TUN level.
-     */
-    private fun checkAndWarnAboutSystemDoH() {
-        try {
-            val privateDnsMode = android.provider.Settings.Global.getString(
-                contentResolver,
-                "private_dns_mode"
-            ) ?: "off"
-            
-            val isDoHEnabled = privateDnsMode != "off"
-            if (isDoHEnabled) {
-                // System DoH is enabled - show warning
-                updateNotification("⚠️ Disable Private DNS in Settings to prevent DNS leaks")
-                android.util.Log.w("CdnVpnService", 
-                    "⚠️ WARNING: System Private DNS (DoH) is enabled. " +
-                    "Disable it in Android Settings > Network > Private DNS to prevent DNS leaks! " +
-                    "System DoH queries bypass VPN because they use encrypted HTTPS port 443."
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("CdnVpnService", "Could not check DoH status: ${e.message}")
-        }
-    }
-    
-    override fun onDestroy() {
-        job?.cancel()
-        kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }
-        scope.cancel()
-        networkCallback?.let { try { connectivityManager?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
-        instance = null
-        super.onDestroy()
-    }
-    override fun onRevoke() { job?.cancel(); kotlinx.coroutines.runBlocking { stopVpnInternal(keepTunAlive = false) }; super.onRevoke() }
 }

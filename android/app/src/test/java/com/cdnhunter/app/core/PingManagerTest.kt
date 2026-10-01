@@ -165,4 +165,16 @@ class PingManagerTest {
         ServerSocket(0).use { s -> TcpPinger(protect = { protectedCount++ }).probe("127.0.0.1", s.localPort, 1_000) }
         assertEquals(1, protectedCount)
     }
+
+    @Test fun tcpPingerUsesTheSuppliedResolverAndReportsItsFailureAsUnreachable() {
+        ServerSocket(0).use { server ->
+            val seen = java.util.Collections.synchronizedList(ArrayList<String>())
+            val ok = TcpPinger(resolver = { host -> seen += host; java.net.InetAddress.getByName("127.0.0.1") })
+                .probe("backend.example.com", server.localPort, 2_000)
+            assertTrue(ok is ProbeOutcome.Success)
+            assertEquals(listOf("backend.example.com"), seen.toList())
+        }
+        val failing = TcpPinger(resolver = { throw java.net.UnknownHostException("nope") }).probe("x.example.com", 443, 1_000)
+        assertTrue(failing is ProbeOutcome.Unreachable)
+    }
 }

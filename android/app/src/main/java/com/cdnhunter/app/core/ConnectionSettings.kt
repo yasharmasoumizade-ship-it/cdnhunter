@@ -18,6 +18,12 @@ data class ConnectionSettings(
     val blockAds: Boolean,
     val blockTrackers: Boolean,
     val blockMalware: Boolean,
+    val splitTunnelApps: Set<String> = emptySet(),
+    val killSwitch: Boolean = false,
+    val autoReconnect: Boolean = true,
+    val maxReconnectAttempts: Int = 3,
+    /** The app's language setting ("fa" / "en"), used for user-facing error text. */
+    val language: String = "en",
 )
 
 object SettingsValidator {
