@@ -140,6 +140,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -167,6 +168,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cdnhunter.app.R
@@ -271,12 +273,12 @@ private val heroEdge = Brush.verticalGradient(
     0.62f to Color.White.copy(alpha = 0.03f),
     1.00f to Color.Black.copy(alpha = 0.10f),
 )
-private val RefElev1 = Color(0xFF111114)       // --bg-elev-1 (navy-tinted, was neutral #0F1116)
-private val RefElev2 = Color(0xFF17171B)       // --bg-elev-2 (navy-tinted, was neutral #15171E)
-private val RefBorder = Color(0xFF26262C)      // --border (navy-tinted, was neutral #23262F)
-private val RefTextHi = Color(0xFFF6F7F9)      // --text-hi
-private val RefTextMid = Color(0xFF9A9CA6)     // --text-mid
-private val RefTextLow = Color(0xFF6C6F7A)     // --text-low (bumped from #656B78 for contrast)
+private val RefElev1 = AppDs.Surface       // --bg-elev-1 (navy-tinted, was neutral #0F1116)
+private val RefElev2 = AppDs.SurfaceRaised       // --bg-elev-2 (navy-tinted, was neutral #15171E)
+private val RefBorder = AppDs.Border      // --border (navy-tinted, was neutral #23262F)
+private val RefTextHi = AppDs.TextHi      // --text-hi
+private val RefTextMid = AppDs.TextMid     // --text-mid
+private val RefTextLow = AppDs.TextLow     // --text-low (bumped from #656B78 for contrast)
 
 /**
  * The shadow every piece of hero type carries now that most of them have no surface under
@@ -316,7 +318,7 @@ private val RefAccent = AppDs.Accent      // --accent — more saturated blue, W
  * without the "highlighter on a flag" problem the earlier teal was chosen to avoid —
  * same worry, different colour, tuned down rather than avoided outright this time.
  */
-private val RefLive = Color(0xFF34C77A)
+private val RefLive = AppDs.Accent       // bone: "live" is shown by light, not by a hue
 /**
  * The room's light when the tunnel is up: blue, not the state's own teal.
  *
@@ -2582,16 +2584,9 @@ private val HeroMaxHeight = 232.dp
 private val HeroScrim = Brush.verticalGradient(
     0.00f to Color.Black.copy(alpha = 0.34f),
     0.28f to Color.Black.copy(alpha = 0.05f),
-    0.50f to Color.Transparent,
-    0.78f to Color.Black.copy(alpha = 0.38f),
-    1.00f to Color.Black.copy(alpha = 0.80f),
+    0.62f to Color.Transparent,
+    1.00f to Color.Black.copy(alpha = 0.28f),
 )
-
-private fun heroNameSize(name: String): TextUnit = when {
-    name.length <= 12 -> 32.sp
-    name.length <= 18 -> 26.sp
-    else -> 22.sp
-}
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 // Top to bottom: hero card (the selected server's flag, full width) → search pill → server list
@@ -2646,7 +2641,7 @@ internal fun HomeScreen(
         .coerceIn(HeroMinHeight, HeroMaxHeight)
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
-        Box(modifier.fillMaxSize().background(PageGradient)) {
+        Box(modifier.fillMaxSize().background(PageGradient).boneShapes(BoneComposition.Home)) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 HeroCard(
                     state = state,
@@ -2727,10 +2722,9 @@ private fun HeroCard(
     val name = if (holding) stableName else liveName
     val city = if (holding) stableCity else liveCity
     val ping = cfg?.pingMs ?: -1
-    val caption = listOfNotNull(
-        city.takeIf { it.isNotBlank() && !it.equals(name, ignoreCase = true) },
-        ping.takeIf { it >= 0 }?.let { "$it ms" },
-    ).joinToString(" · ")
+    // Under the country: the city when the exit is known, otherwise the server's own name.
+    val subtitle = city.takeIf { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
+        ?: cfg?.displayName?.takeIf { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
 
     val flagCountry = state.heroFlagCountry
     var lastFlagCountry by remember { mutableStateOf(flagCountry) }
@@ -2741,9 +2735,11 @@ private fun HeroCard(
         label = "heroFlag",
     )
 
+    var heroSize by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier
             .fillMaxWidth()
+            .onSizeChanged { heroSize = it }
             .shadow(
                 elevation = AppDs.ElevHero,
                 shape = shape,
@@ -2773,45 +2769,19 @@ private fun HeroCard(
             HeroStatusChip(visual)
         }
 
-        AnimatedContent(
-            targetState = name to caption,
-            transitionSpec = {
-                if (reduce) {
-                    fadeIn(snap()) togetherWith fadeOut(snap())
-                } else {
-                    (fadeIn(tween(240, delayMillis = 60)) +
-                        slideInVertically(tween(280)) { it / 5 }) togetherWith fadeOut(tween(120))
+        FlagInfoGlass(
+            title = name,
+            subtitle = subtitle,
+            pingMs = ping,
+            countryCode = lastFlagCountry.takeIf { it.isNotBlank() },
+            backdropSize = heroSize,
+            backdrop = {
+                if (flagAlpha > 0.01f) {
+                    HeaderFlag(countryCode = lastFlagCountry, modifier = Modifier.fillMaxSize().alpha(flagAlpha))
                 }
             },
-            label = "heroHeadline",
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = AppDs.S5, end = AppDs.S5, bottom = AppDs.S4),
-        ) { (n, c) ->
-            Column {
-                Text(
-                    n,
-                    fontSize = heroNameSize(n),
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(shadow = HeadlineInkShadow),
-                )
-                if (c.isNotEmpty()) {
-                    Text(
-                        c,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(shadow = HeroInkShadow),
-                    )
-                }
-            }
-        }
+            modifier = Modifier.align(Alignment.BottomCenter).padding(AppDs.S3),
+        )
     }
 }
 
@@ -3147,7 +3117,7 @@ private fun ServerRow(
         )
         Spacer(Modifier.width(AppDs.S3))
         Text(
-            if (pingMs >= 0) "$pingMs ms" else "—",
+            if (pingMs >= 0) "${pingMs}ms" else "—",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AppDs.TextMid,
@@ -3157,47 +3127,9 @@ private fun ServerRow(
             modifier = Modifier.width(AppDs.PingWidth),
         )
         Spacer(Modifier.width(AppDs.S3))
-        PingSignalBars(pingMs)
+        PingBars(pingMs)
         Spacer(Modifier.width(AppDs.S1))
         FavoriteButton(title = title, isFavorite = isFavorite, onToggle = onToggleFavorite)
-    }
-}
-
-/**
- * Four 3dp bars, 5/8/11/14dp tall. How many light up follows the measured ping; green is the
- * healthy tier and amber/red the two degraded ones (the only semantic colours on Home).
- */
-@Composable
-private fun PingSignalBars(pingMs: Int, modifier: Modifier = Modifier) {
-    val filled = when {
-        pingMs < 0 -> 0
-        pingMs < 50 -> 4
-        pingMs < 100 -> 3
-        pingMs < 180 -> 2
-        else -> 1
-    }
-    val on = when {
-        pingMs < 0 -> AppDs.TextLow
-        filled >= 3 -> RefLive
-        filled == 2 -> RefLoadMed
-        else -> RefLoadHigh
-    }
-    Row(
-        modifier.semantics {
-            contentDescription = if (pingMs < 0) "Signal not measured" else "Signal $filled of 4"
-        },
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        listOf(5.dp, 8.dp, 11.dp, 14.dp).forEachIndexed { index, height ->
-            Box(
-                Modifier
-                    .width(3.dp)
-                    .height(height)
-                    .clip(RoundedCornerShape(1.5.dp))
-                    .background(if (index < filled) on else Color.White.copy(alpha = 0.12f)),
-            )
-        }
     }
 }
 
@@ -3349,25 +3281,29 @@ private fun ConnectButton(
     val working by animateFloatAsState(
         if (busy) 1f else 0f, appMotion(reduce, 200), label = "connectBusy",
     )
+    // Bone while idle or working; the same button inverts to a dark glass plate once the tunnel is up.
+    val surface = lerp(AppDs.Bone, AppDs.SurfaceRaised, live)
     val fill by animateColorAsState(
-        if (pressed) AppDs.SurfacePressed else AppDs.SurfaceRaised, appMotion(reduce, 100), label = "connectFill",
+        if (pressed) lerp(surface, Color.Black, 0.10f) else surface, appMotion(reduce, 100), label = "connectFill",
     )
+    val titleColor = lerp(AppDs.Ink, AppDs.TextHi, live)
+    val captionColor = lerp(AppDs.Ink.copy(alpha = 0.62f), AppDs.TextMid, live)
     val edge by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> AppDs.Border
-            ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0.55f)
-            ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.70f)
-            ConnVisual.DISCONNECTING -> AppDs.Border
+            ConnVisual.DISCONNECTED -> AppDs.Accent.copy(alpha = 0f)
+            ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0f)
+            ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.55f)
+            ConnVisual.DISCONNECTING -> AppDs.Accent.copy(alpha = 0f)
         },
         animationSpec = appMotion(reduce, 260),
         label = "connectEdge",
     )
     val boltColor by animateColorAsState(
         targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> AppDs.TextHi
-            ConnVisual.CONNECTING -> AppDs.Accent
-            ConnVisual.CONNECTED -> Color.White
-            ConnVisual.DISCONNECTING -> AppDs.TextMid
+            ConnVisual.DISCONNECTED -> AppDs.Bone
+            ConnVisual.CONNECTING -> AppDs.Bone
+            ConnVisual.CONNECTED -> AppDs.Ink
+            ConnVisual.DISCONNECTING -> AppDs.Bone.copy(alpha = 0.50f)
         },
         animationSpec = appMotion(reduce, 220),
         label = "connectBolt",
@@ -3404,7 +3340,6 @@ private fun ConnectButton(
             .clip(shape)
             .background(fill)
             .background(AppDs.ButtonTopLight)
-            .background(AppDs.Accent.copy(alpha = 0.10f * live))
             .border(
                 1.dp,
                 Brush.verticalGradient(listOf(edge, edge.copy(alpha = edge.alpha * 0.45f))),
@@ -3465,14 +3400,14 @@ private fun ConnectButton(
                     v.title(),
                     fontSize = TypeTitle.first,
                     fontWeight = TypeTitle.second,
-                    color = AppDs.TextHi,
+                    color = titleColor,
                     maxLines = 1,
                 )
                 Text(
                     v.caption(),
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
-                    color = AppDs.TextMid,
+                    color = captionColor,
                     maxLines = 1,
                 )
             }
@@ -3480,7 +3415,7 @@ private fun ConnectButton(
     }
 }
 
-/** The icon well: charcoal disc, accent fill when live, a turning arc while busy, and the bolt. */
+/** The icon well: ink disc on the bone button, bone fill when live, a turning arc while busy, and the bolt. */
 @Composable
 private fun ConnectWell(
     visual: ConnVisual,
@@ -3493,14 +3428,14 @@ private fun ConnectWell(
     Canvas(modifier.size(AppDs.ConnectWell)) {
         val stroke = 2.dp.toPx()
         val radius = size.minDimension / 2f
-        drawCircle(AppDs.SurfacePressed)
+        drawCircle(AppDs.Ink)
         drawCircle(AppDs.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
         if (live > 0.01f) {
             drawCircle(AppDs.Accent.copy(alpha = live), radius = radius * (0.88f + 0.12f * live))
         }
         if (working > 0.01f) {
             val turn = if (visual == ConnVisual.DISCONNECTING) -spinDegrees() else spinDegrees()
-            val arc = if (visual == ConnVisual.DISCONNECTING) AppDs.TextMid else AppDs.Accent
+            val arc = if (visual == ConnVisual.DISCONNECTING) AppDs.TextMid else AppDs.Bone
             rotate(degrees = turn, pivot = center) {
                 drawArc(
                     color = arc.copy(alpha = working),

@@ -6,8 +6,12 @@ package com.cdnhunter.app.ui
 // Settings/Profile surface is built out of the Premium* components below — so a change to a
 // radius, a surface or the accent lands on all three screens at once.
 //
-//   Colour      matte black surfaces, ONE blue accent. Success / Warning / Error exist only as
-//               signal semantics (Pro, unverified, destructive) — never as decoration.
+//   Colour      BLACK + BONE WHITE. Matte black surfaces, one warm ivory ([AppDs.Bone]) for text,
+//               accent, the connect button and the abstract shapes. No hue accent: Warning / Error
+//               exist only as signal semantics (unverified, degraded ping, destructive).
+//   Shapes      large soft bone shapes ([boneShapes]) enter from the page corners behind the cards;
+//               the Profile adds [OrbitLines]. One geometric language on all three screens.
+//   Glass       [FlagInfoGlass] is the dark glass bar (country + ping) used on the hero flag.
 //   Type        Manrope ([AppFont]) on the [AppType] scale.
 //   Spacing     4dp grid: S1 4 · S2 8 · S3 12 · S4 16 · S5 20 · S6 24 · S7 32.
 //   Radius      RMd 16 (controls, chips, icon-less rows) · RLg 22 (cards, groups, primary
@@ -97,6 +101,29 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.cdnhunter.app.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -126,22 +153,24 @@ internal object AppType {
 
 internal object AppDs {
     // Colour
-    val Bg = Color(0xFF0A0A0C)              // Primary background
-    val BgTop = Color(0xFF0C0C0F)           // Secondary background (top of the page wash)
-    val Surface = Color(0xFF111114)         // Card surface
-    val SurfaceRaised = Color(0xFF17171B)   // Elevated surface (icon containers, controls)
-    val SurfacePressed = Color(0xFF1F1F24)
-    val Hairline = Color(0x12FFFFFF)        // white @ 7%  — dividers
-    val Border = Color(0x1AFFFFFF)          // white @ 10% — card / control edges
-    val TextHi = Color(0xFFF2F3F5)          // Primary text
-    val TextMid = Color(0xFF9A9CA6)         // Secondary text
-    val TextLow = Color(0xFF6C6F7A)         // Muted text
-    val Accent = Color(0xFF3D8BFF)
-    val AccentSoft = Color(0xFF7DB2FF)
+    val Bone = Color(0xFFEDE6D6)            // warm ivory — the one light colour
+    val Ink = Color(0xFF0E0E0C)             // text/icons on a Bone fill
+    val Bg = Color(0xFF0A0A09)              // Primary background
+    val BgTop = Color(0xFF0D0D0C)           // Secondary background (top of the page wash)
+    val Surface = Color(0xFF121211)         // Card surface
+    val Glass = Color(0xD1121211)           // Card surface at 82% — dark glass over the shapes
+    val SurfaceRaised = Color(0xFF1A1A18)   // Elevated surface (icon containers, controls)
+    val SurfacePressed = Color(0xFF232321)
+    val Hairline = Color(0x12EDE6D6)        // bone @ 7%  — dividers
+    val Border = Color(0x1FEDE6D6)          // bone @ 12% — card / control edges
+    val TextHi = Bone                       // Primary text
+    val TextMid = Color(0xFF9E9A8E)         // Secondary text
+    val TextLow = Color(0xFF6F6C63)         // Muted text
+    val Accent = Bone
+    val AccentSoft = Color(0xFFF6F1E5)
     val Success = Color(0xFF34C77A)
-    val Warning = Color(0xFFE0B23B)         // Pro / needs attention
+    val Warning = Color(0xFFE0B23B)         // needs attention
     val Error = Color(0xFFEF4444)
-    val WarmInk = Color(0xFF1B1712)         // dark ink on a Warning fill
 
     val PageGradient = Brush.verticalGradient(0.00f to BgTop, 1.00f to Bg)
 
@@ -181,6 +210,8 @@ internal object AppDs {
     val PingWidth = 52.dp
     val ConnectWell = 48.dp
     val ClearTap = 36.dp
+    val InfoBarHeight = 64.dp      // FlagInfoGlass
+    val BackdropBlur = 14.dp
 
     /** Where a row's text starts: gutter + icon container + gap. Dividers inset to it. */
     val RowTextInset = S4 + IconContainer + S3
@@ -242,9 +273,13 @@ internal fun animatePressScale(pressed: Boolean, pressedScale: Float = AppDs.Pre
 
 /** Page wash + Manrope + status-bar inset: the frame Home, Settings and Profile all sit in. */
 @Composable
-internal fun PremiumPage(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun PremiumPage(
+    modifier: Modifier = Modifier,
+    shapes: BoneComposition = BoneComposition.Settings,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     ProvideTextStyle(TextStyle(fontFamily = AppFont)) {
-        Box(modifier.fillMaxSize().background(AppDs.PageGradient)) {
+        Box(modifier.fillMaxSize().background(AppDs.PageGradient).boneShapes(shapes)) {
             Column(Modifier.fillMaxSize().statusBarsPadding(), content = content)
         }
     }
@@ -308,9 +343,10 @@ internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
 internal fun PremiumScreen(
     title: String,
     onBack: () -> Unit,
+    shapes: BoneComposition = BoneComposition.Settings,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    PremiumPage {
+    PremiumPage(shapes = shapes) {
         PremiumTopBar(title = title, onBack = onBack)
         Column(
             Modifier
@@ -346,7 +382,7 @@ internal fun PremiumCard(
     val active = pressed && onClick != null
     val scale = animatePressScale(active)
     val fill by animateColorAsState(
-        targetValue = if (active) AppDs.SurfacePressed else AppDs.Surface,
+        targetValue = if (active) AppDs.SurfacePressed else AppDs.Glass,
         animationSpec = appMotion(appReduceMotion(), 100),
         label = "cardFill",
     )
@@ -386,7 +422,7 @@ internal fun PremiumCardGroup(
         modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(AppDs.Surface)
+            .background(AppDs.Glass)
             .border(1.dp, borderColor, shape),
         content = content,
     )
@@ -644,7 +680,7 @@ internal fun PremiumToggle(
         if (checked) AppDs.Accent else AppDs.Border, appMotion(reduce, 180), label = "toggleEdge",
     )
     val thumb by animateColorAsState(
-        if (checked) Color.White else AppDs.TextMid, appMotion(reduce, 180), label = "toggleThumb",
+        if (checked) AppDs.Ink else AppDs.TextMid, appMotion(reduce, 180), label = "toggleThumb",
     )
     val thumbX by animateDpAsState(
         targetValue = if (checked) 25.dp else 3.dp,
@@ -844,7 +880,7 @@ internal fun PremiumButton(
             text,
             fontSize = AppType.Body.first,
             fontWeight = AppType.Body.second,
-            color = if (accent) Color.White else AppDs.TextHi,
+            color = if (accent) AppDs.Ink else AppDs.TextHi,
         )
     }
 }
@@ -852,7 +888,7 @@ internal fun PremiumButton(
 /**
  * The full-width call to action. It is Home's connect button language: [AppDs.ConnectHeight],
  * RLg corners, the same top-light, the same press sink and haptic. [tone] is the fill — the
- * accent by default, and the warm Pro colour only for the upgrade prompt.
+ * bone by default, with [AppDs.Ink] text.
  */
 @Composable
 internal fun PrimaryActionButton(
@@ -860,7 +896,7 @@ internal fun PrimaryActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tone: Color = AppDs.Accent,
-    contentColor: Color = Color.White,
+    contentColor: Color = AppDs.Ink,
     enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -906,7 +942,7 @@ internal fun PrimaryActionButton(
 
 // ── Status, identity ──────────────────────────────────────────────────────────
 
-/** A small pill: "FREE", "PRO". [tone] tints it (Pro → Warning); null is the neutral matte pill. */
+/** A small pill: "FREE", "PRO". [tone] tints it (Pro → bone); null is the neutral matte pill. */
 @Composable
 internal fun StatusBadge(text: String, modifier: Modifier = Modifier, tone: Color? = null) {
     val shape = RoundedCornerShape(8.dp)
@@ -927,13 +963,13 @@ internal fun StatusBadge(text: String, modifier: Modifier = Modifier, tone: Colo
     }
 }
 
-/** The plan pill — amber for Pro, neutral for Free. Driven by [AccountUiState.plan]. */
+/** The plan pill — bone for Pro, neutral for Free. Driven by [AccountUiState.plan]. */
 @Composable
 internal fun PlanBadge(plan: PlanTier, modifier: Modifier = Modifier) {
     StatusBadge(
         text = plan.label,
         modifier = modifier,
-        tone = if (plan == PlanTier.PRO) AppDs.Warning else null,
+        tone = if (plan == PlanTier.PRO) AppDs.Accent else null,
     )
 }
 
@@ -961,32 +997,47 @@ internal fun accountStatusShort(account: AccountUiState): String = when (val s =
 /** Profile's header: avatar, name, email in one card — the same container language as Home's. */
 @Composable
 internal fun ProfileHeader(account: AccountUiState, modifier: Modifier = Modifier) {
-    PremiumCard(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(size = 64.dp, initials = account.initials, initialsSize = AppType.Title.first)
-            Spacer(Modifier.width(AppDs.S4))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    account.displayName,
-                    fontSize = AppType.Title.first,
-                    fontWeight = AppType.Title.second,
-                    color = AppDs.TextHi,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(AppDs.S1))
-                Text(
-                    account.email,
-                    fontSize = AppType.Caption.first,
-                    fontWeight = AppType.Caption.second,
-                    color = AppDs.TextMid,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    PremiumCard(modifier = modifier, contentPadding = PaddingValues(0.dp)) {
+        Box(Modifier.fillMaxWidth()) {
+            // The brand curves bleed off the card's right edge; the text column stops short of them.
+            OrbitLines(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = 44.dp)
+                    .size(OrbitSize),
+            )
+            Row(
+                Modifier.padding(AppDs.S4).padding(end = OrbitClearance),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Avatar(size = 64.dp, initials = account.initials, initialsSize = AppType.Title.first)
+                Spacer(Modifier.width(AppDs.S4))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        account.displayName,
+                        fontSize = AppType.Title.first,
+                        fontWeight = AppType.Title.second,
+                        color = AppDs.TextHi,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(AppDs.S1))
+                    Text(
+                        account.email,
+                        fontSize = AppType.Caption.first,
+                        fontWeight = AppType.Caption.second,
+                        color = AppDs.TextMid,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+private val OrbitSize = 112.dp
+private val OrbitClearance = 52.dp
 
 /** The account card at the top of Settings: avatar, name, plan, chevron. Opens Profile. */
 @Composable
@@ -1016,6 +1067,237 @@ internal fun AccountSummaryCard(account: AccountUiState, onClick: () -> Unit, mo
                 }
             }
             RowChevron()
+        }
+    }
+}
+
+
+// ── Bone shapes ───────────────────────────────────────────────────────────────
+
+/** Which arrangement of shapes a page uses — the same three primitives, placed per screen. */
+internal enum class BoneComposition { Home, Settings, Profile }
+
+private fun DrawScope.boneDisc(cx: Float, cy: Float, radius: Float, alpha: Float) =
+    drawCircle(AppDs.Bone.copy(alpha = alpha), radius, Offset(cx, cy))
+
+private fun DrawScope.boneSquare(cx: Float, cy: Float, side: Float, corner: Float, degrees: Float, alpha: Float) =
+    rotate(degrees, Offset(cx, cy)) {
+        drawRoundRect(
+            AppDs.Bone.copy(alpha = alpha),
+            topLeft = Offset(cx - side / 2f, cy - side / 2f),
+            size = Size(side, side),
+            cornerRadius = CornerRadius(corner),
+        )
+    }
+
+private fun DrawScope.bonePill(cx: Float, cy: Float, width: Float, height: Float, degrees: Float, alpha: Float) =
+    rotate(degrees, Offset(cx, cy)) {
+        drawRoundRect(
+            AppDs.Bone.copy(alpha = alpha),
+            topLeft = Offset(cx - width / 2f, cy - height / 2f),
+            size = Size(width, height),
+            cornerRadius = CornerRadius(height / 2f),
+        )
+    }
+
+/**
+ * The page's bone shapes: large, soft, geometric — a disc, a rounded square, a pill — entering
+ * from the corners and edges and bleeding off the screen. Drawn behind everything, at low alpha,
+ * so cards (dark glass) sit over them and text never does; Home keeps them quietest because its
+ * list is not carded.
+ */
+internal fun Modifier.boneShapes(composition: BoneComposition): Modifier = drawBehind {
+    val w = size.width
+    val h = size.height
+    when (composition) {
+        BoneComposition.Home -> {
+            boneDisc(w * 1.05f, h * 0.50f, w * 0.34f, 0.06f)
+            boneSquare(-w * 0.04f, h * 0.86f, w * 0.46f, w * 0.12f, 14f, 0.05f)
+        }
+        BoneComposition.Settings -> {
+            boneSquare(w * 0.98f, h * 0.10f, w * 0.52f, w * 0.14f, -12f, 0.10f)
+            boneDisc(-w * 0.08f, h * 0.78f, w * 0.30f, 0.08f)
+            bonePill(w * 0.66f, h * 1.01f, w * 0.90f, w * 0.20f, -10f, 0.08f)
+        }
+        BoneComposition.Profile -> {
+            boneSquare(-w * 0.05f, h * 0.36f, w * 0.40f, w * 0.10f, 20f, 0.07f)
+            boneDisc(w * 0.92f, h * 0.90f, w * 0.34f, 0.12f)
+            bonePill(w * 0.15f, h * 0.99f, w * 0.80f, w * 0.24f, -14f, 0.10f)
+        }
+    }
+}
+
+/**
+ * The Profile's brand mark: an orbit ring, a tilted second ring, and two hairline waves that
+ * cross inside it. Strokes are 1.2dp — it is a graphic, not an icon — and nothing glows.
+ */
+@Composable
+internal fun OrbitLines(modifier: Modifier = Modifier, color: Color = AppDs.Bone) {
+    Canvas(modifier) {
+        val s = size.minDimension
+        val u = s / 100f
+        val stroke = 1.2.dp.toPx()
+        val orbit = Path().apply {
+            addOval(Rect(center = Offset(s / 2f, s / 2f), radius = s / 2f - stroke))
+        }
+        drawPath(orbit, color.copy(alpha = 0.32f), style = Stroke(stroke))
+        rotate(-24f, Offset(s / 2f, s / 2f)) {
+            drawOval(
+                color.copy(alpha = 0.16f),
+                topLeft = Offset(s * 0.04f, s * 0.22f),
+                size = Size(s * 0.92f, s * 0.56f),
+                style = Stroke(stroke),
+            )
+        }
+        fun wave(sign: Float) = Path().apply {
+            fun y(v: Float) = (50f + (v - 50f) * 0.8f * sign) * u
+            moveTo(0f, 50f * u)
+            cubicTo(20f * u, y(10f), 40f * u, y(10f), 50f * u, 50f * u)
+            cubicTo(60f * u, y(90f), 80f * u, y(90f), 100f * u, 50f * u)
+        }
+        clipPath(orbit) {
+            drawPath(wave(1f), color.copy(alpha = 0.85f), style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
+            drawPath(wave(-1f), color.copy(alpha = 0.85f), style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
+        }
+    }
+}
+
+// ── Ping + glass info bar ─────────────────────────────────────────────────────
+
+/**
+ * Four 3dp bars (5/8/11/14dp). Lit count follows the ping; healthy is bone, the two degraded
+ * tiers are the only coloured thing on a server row.
+ */
+@Composable
+internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
+    val filled = when {
+        pingMs < 0 -> 0
+        pingMs < 50 -> 4
+        pingMs < 100 -> 3
+        pingMs < 180 -> 2
+        else -> 1
+    }
+    val on = when {
+        pingMs < 0 -> AppDs.TextLow
+        filled >= 3 -> AppDs.TextHi
+        filled == 2 -> AppDs.Warning
+        else -> AppDs.Error
+    }
+    Row(
+        modifier.semantics {
+            contentDescription = if (pingMs < 0) "Signal not measured" else "Signal $filled of 4"
+        },
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        listOf(5.dp, 8.dp, 11.dp, 14.dp).forEachIndexed { index, height ->
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .height(height)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(if (index < filled) on else AppDs.Bone.copy(alpha = 0.14f)),
+            )
+        }
+    }
+}
+
+/**
+ * A dark glass bar that sits ON an image — the hero flag today, any server card tomorrow.
+ * Left: optional small flag, [title], [subtitle]. Right: [PingBars] over the ping.
+ *
+ * Real glass: when the caller passes [backdrop] (the same picture the bar sits on) and its full
+ * size, a copy is drawn behind the bar, shifted so it lines up with the original, and blurred
+ * (API 31+; older devices simply get the tint). The bar must be a DIRECT child of the box that
+ * holds the picture, because its offset is read with positionInParent.
+ */
+@Composable
+internal fun FlagInfoGlass(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    pingMs: Int = -1,
+    countryCode: String? = null,
+    backdropSize: IntSize = IntSize.Zero,
+    backdrop: (@Composable () -> Unit)? = null,
+) {
+    val reduce = appReduceMotion()
+    val density = LocalDensity.current
+    val shape = RoundedCornerShape(AppDs.RLg)
+    var origin by remember { mutableStateOf(IntOffset.Zero) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(AppDs.InfoBarHeight)
+            .onGloballyPositioned { origin = IntOffset(it.positionInParent().x.roundToInt(), it.positionInParent().y.roundToInt()) }
+            .clip(shape)
+            .border(1.dp, AppDs.Bone.copy(alpha = 0.22f), shape),
+    ) {
+        if (backdrop != null && backdropSize.width > 0 && backdropSize.height > 0) {
+            Box(Modifier.matchParentSize().clipToBounds()) {
+                Box(
+                    Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .offset { IntOffset(-origin.x, -origin.y) }
+                        .size(
+                            with(density) { backdropSize.width.toDp() },
+                            with(density) { backdropSize.height.toDp() },
+                        )
+                        .blur(AppDs.BackdropBlur, BlurredEdgeTreatment.Unbounded),
+                ) { backdrop() }
+            }
+        }
+        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.46f)))
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = AppDs.S3),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!countryCode.isNullOrBlank()) {
+                CountryFlagBadge(countryCode, 32.dp, Modifier.border(1.dp, AppDs.Border, CircleShape))
+                Spacer(Modifier.width(AppDs.S3))
+            }
+            AnimatedContent(
+                targetState = title to subtitle,
+                transitionSpec = {
+                    fadeIn(appMotion(reduce, 180)) togetherWith fadeOut(appMotion(reduce, 100))
+                },
+                label = "infoGlassText",
+                modifier = Modifier.weight(1f),
+            ) { (t, sub) ->
+                Column {
+                    Text(
+                        t,
+                        fontSize = AppType.Title.first,
+                        fontWeight = AppType.Title.second,
+                        color = AppDs.TextHi,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!sub.isNullOrBlank()) {
+                        Text(
+                            sub,
+                            fontSize = AppType.Caption.first,
+                            fontWeight = AppType.Caption.second,
+                            color = AppDs.TextMid,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(AppDs.S3))
+            Column(horizontalAlignment = Alignment.End) {
+                PingBars(pingMs)
+                Spacer(Modifier.height(AppDs.S1))
+                Text(
+                    if (pingMs >= 0) "${pingMs}ms" else "—",
+                    fontSize = AppType.Body.first,
+                    fontWeight = AppType.Body.second,
+                    color = AppDs.TextHi,
+                    maxLines = 1,
+                    style = TextStyle(fontFeatureSettings = "tnum"),
+                )
+            }
         }
     }
 }

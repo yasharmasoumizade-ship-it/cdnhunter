@@ -1676,12 +1676,12 @@ private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, h
     ) {
         Box(
             Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
-                .background(if (highlight) Color.White.copy(0.18f) else AnanasCard),
+                .background(if (highlight) AppDs.Ink.copy(0.12f) else AnanasCard),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = if (highlight) Color.White else AnanasTextHi, modifier = Modifier.size(19.dp)) }
+        ) { Icon(icon, null, tint = if (highlight) AppDs.Ink else AnanasTextHi, modifier = Modifier.size(19.dp)) }
         Column {
-            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) Color.White else AnanasTextHi)
-            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) Color.White.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AppDs.Ink else AnanasTextHi)
+            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) AppDs.Ink.copy(0.65f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
         }
     }
 }
@@ -2870,9 +2870,9 @@ private fun showComingSoon(context: Context) {
  */
 @Composable
 private fun UpgradeCard(onUpgrade: () -> Unit) {
-    PremiumCard(borderColor = AppDs.Warning.copy(alpha = 0.30f)) {
+    PremiumCard(borderColor = AppDs.Accent.copy(alpha = 0.30f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Warning)
+            PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Accent)
             Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -2902,7 +2902,7 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
             ) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = AppDs.Warning, modifier = Modifier.size(AppDs.IconMd))
+                Icon(Icons.Rounded.CheckCircle, null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconMd))
                 Text(benefit, fontSize = AppType.Body.first, fontWeight = FontWeight.Medium, color = AppDs.TextHi)
             }
         }
@@ -2910,8 +2910,8 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
         PrimaryActionButton(
             text = "Upgrade to Pro",
             onClick = onUpgrade,
-            tone = AppDs.Warning,
-            contentColor = AppDs.WarmInk,
+            tone = AppDs.Accent,
+            contentColor = AppDs.Ink,
         )
     }
 }
@@ -2944,7 +2944,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             )
         }
     }
-    PremiumScreen(title = "Profile", onBack = onBack) {
+    PremiumScreen(title = "Profile", onBack = onBack, shapes = BoneComposition.Profile) {
         ProfileHeader(account)
 
         SectionHeader("EMAIL")
@@ -2952,19 +2952,19 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionHeader("SUBSCRIPTION")
         PremiumCard(
-            borderColor = if (account.isPro) AppDs.Warning.copy(alpha = 0.30f) else AppDs.Border,
+            borderColor = if (account.isPro) AppDs.Accent.copy(alpha = 0.30f) else AppDs.Border,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 PremiumIconContainer(
                     if (account.isPro) Icons.Rounded.WorkspacePremium else Icons.Rounded.Shield,
-                    tone = if (account.isPro) AppDs.Warning else null,
+                    tone = if (account.isPro) AppDs.Accent else null,
                 )
                 Spacer(Modifier.width(AppDs.S3))
                 Text(
                     "${account.plan.label} plan",
                     fontSize = AppType.Subtitle.first,
                     fontWeight = FontWeight.Bold,
-                    color = if (account.isPro) AppDs.Warning else AppDs.TextHi,
+                    color = if (account.isPro) AppDs.Accent else AppDs.TextHi,
                     modifier = Modifier.weight(1f),
                 )
                 PlanBadge(account.plan)
@@ -2975,7 +2975,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
                     Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(AppDs.SurfaceRaised)) {
                         Box(
                             Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(CircleShape)
-                                .background(AppDs.Warning),
+                                .background(AppDs.Accent),
                         )
                     }
                     Spacer(Modifier.height(AppDs.S2))
@@ -3005,7 +3005,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionHeader("ACCOUNT")
         PremiumCardGroup {
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Warning, onClick = { showComingSoon(context) })
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Accent, onClick = { showComingSoon(context) })
             PremiumDivider()
             SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, showChevron = true, onClick = onPaymentHistory)
             PremiumDivider()
@@ -3257,7 +3257,7 @@ private fun SelectDot(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+            Icon(Icons.Rounded.Check, null, tint = AppDs.Ink, modifier = Modifier.size(14.dp))
         }
     }
 }
