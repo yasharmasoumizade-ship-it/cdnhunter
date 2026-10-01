@@ -104,11 +104,16 @@ data class ConnectionSnapshot(
 ) {
     val isConnected: Boolean get() = state == ConnectionState.CONNECTED
 
-    /** An attempt to get a tunnel up is in flight (including the wait before a retry). */
+    /**
+     * An attempt to get a tunnel up is in flight, including the wait before a retry. An ERROR
+     * that is about to be retried counts too: it lasts microseconds, and an observer that
+     * happened to sample it would otherwise show "failed" in the middle of a reconnect.
+     */
     val isConnecting: Boolean
         get() = state == ConnectionState.PREPARING ||
             state == ConnectionState.CONNECTING ||
-            state == ConnectionState.RECONNECTING
+            state == ConnectionState.RECONNECTING ||
+            (state == ConnectionState.ERROR && willRetry)
 
     /** Anything other than a settled "not connected" state. */
     val isActive: Boolean
