@@ -2680,7 +2680,7 @@ internal fun HomeScreen(
         .coerceIn(HeroMinHeight, HeroMaxHeight)
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
-        Box(modifier.fillMaxSize().background(PageGradient).pageShapes(ShapeComposition.Home)) {
+        Box(modifier.fillMaxSize().background(PageGradient)) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 HeroCard(
                     state = state,
@@ -3996,7 +3996,7 @@ internal fun HomeScreen(
         .coerceIn(HeroMinHeight, HeroMaxHeight)
 
     ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
-        Box(modifier.fillMaxSize().background(PageGradient).pageShapes(ShapeComposition.Home)) {
+        Box(modifier.fillMaxSize().background(PageGradient)) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 HeroCard(
                     state = state,

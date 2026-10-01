@@ -2944,7 +2944,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             )
         }
     }
-    PremiumScreen(title = "Profile", onBack = onBack, shapes = ShapeComposition.Profile) {
+    PremiumScreen(title = "Profile", onBack = onBack) {
         ProfileHeader(account)
 
         SectionHeader("EMAIL")

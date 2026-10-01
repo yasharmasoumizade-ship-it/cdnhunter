@@ -9,8 +9,6 @@ package com.cdnhunter.app.ui
 //   Colour      DEEP BLACK-NAVY. Navy surfaces, one controlled premium blue ([AppDs.Accent]), cool
 //               white text. Warm bone ([AppDs.Bone]) is reserved for two things: the selected server
 //               and the light inner CTA of the connect button. Warning / Error are signal semantics.
-//   Shapes      dark-navy, very low-contrast shapes ([pageShapes]) behind the cards for depth and
-//               identity; the Profile adds [OrbitLines]. Same geometry on all three screens.
 //   Glass       [LocationGlassPill] is the long glass capsule (pin + country) on the hero flag.
 //   Type        Manrope ([AppFont]) on the [AppType] scale.
 //   Spacing     4dp grid: S1 4 · S2 8 · S3 12 · S4 16 · S5 20 · S6 24 · S7 32.
@@ -171,7 +169,6 @@ internal object AppDs {
     val TextLow = Color(0xFF6B7588)         // Muted text
     val Accent = Color(0xFF3D82F0)          // Premium blue — controlled, not neon
     val AccentSoft = Color(0xFF8FB4F5)      // Soft blue (pin, orbit lines)
-    val ShapeTint = Color(0xFF1B2B4D)       // Background shapes — barely lighter than Bg
     val Success = Color(0xFF34C77A)
     val Warning = Color(0xFFE0B23B)         // needs attention
     val Error = Color(0xFFEF4444)
@@ -280,11 +277,10 @@ internal fun animatePressScale(pressed: Boolean, pressedScale: Float = AppDs.Pre
 @Composable
 internal fun PremiumPage(
     modifier: Modifier = Modifier,
-    shapes: ShapeComposition = ShapeComposition.Settings,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ProvideTextStyle(TextStyle(fontFamily = AppFont)) {
-        Box(modifier.fillMaxSize().background(AppDs.PageGradient).pageShapes(shapes)) {
+        Box(modifier.fillMaxSize().background(AppDs.PageGradient)) {
             Column(Modifier.fillMaxSize().statusBarsPadding(), content = content)
         }
     }
@@ -348,10 +344,9 @@ internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
 internal fun PremiumScreen(
     title: String,
     onBack: () -> Unit,
-    shapes: ShapeComposition = ShapeComposition.Settings,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    PremiumPage(shapes = shapes) {
+    PremiumPage {
         PremiumTopBar(title = title, onBack = onBack)
         Column(
             Modifier
@@ -1002,47 +997,32 @@ internal fun accountStatusShort(account: AccountUiState): String = when (val s =
 /** Profile's header: avatar, name, email in one card — the same container language as Home's. */
 @Composable
 internal fun ProfileHeader(account: AccountUiState, modifier: Modifier = Modifier) {
-    PremiumCard(modifier = modifier, contentPadding = PaddingValues(0.dp)) {
-        Box(Modifier.fillMaxWidth()) {
-            // The brand curves bleed off the card's right edge; the text column stops short of them.
-            OrbitLines(
-                Modifier
-                    .align(Alignment.CenterEnd)
-                    .offset(x = 44.dp)
-                    .size(OrbitSize),
-            )
-            Row(
-                Modifier.padding(AppDs.S4).padding(end = OrbitClearance),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Avatar(size = 64.dp, initials = account.initials, initialsSize = AppType.Title.first)
-                Spacer(Modifier.width(AppDs.S4))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        account.displayName,
-                        fontSize = AppType.Title.first,
-                        fontWeight = AppType.Title.second,
-                        color = AppDs.TextHi,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(AppDs.S1))
-                    Text(
-                        account.email,
-                        fontSize = AppType.Caption.first,
-                        fontWeight = AppType.Caption.second,
-                        color = AppDs.TextMid,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+    PremiumCard(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Avatar(size = 64.dp, initials = account.initials, initialsSize = AppType.Title.first)
+            Spacer(Modifier.width(AppDs.S4))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    account.displayName,
+                    fontSize = AppType.Title.first,
+                    fontWeight = AppType.Title.second,
+                    color = AppDs.TextHi,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(AppDs.S1))
+                Text(
+                    account.email,
+                    fontSize = AppType.Caption.first,
+                    fontWeight = AppType.Caption.second,
+                    color = AppDs.TextMid,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
-
-private val OrbitSize = 112.dp
-private val OrbitClearance = 52.dp
 
 /** The account card at the top of Settings: avatar, name, plan, chevron. Opens Profile. */
 @Composable
@@ -1076,96 +1056,6 @@ internal fun AccountSummaryCard(account: AccountUiState, onClick: () -> Unit, mo
     }
 }
 
-
-// ── Page shapes ───────────────────────────────────────────────────────────────
-
-/** Which arrangement of shapes a page uses — the same three primitives, placed per screen. */
-internal enum class ShapeComposition { Home, Settings, Profile }
-
-private fun DrawScope.shapeDisc(cx: Float, cy: Float, radius: Float, alpha: Float) =
-    drawCircle(AppDs.ShapeTint.copy(alpha = alpha), radius, Offset(cx, cy))
-
-private fun DrawScope.shapeSquare(cx: Float, cy: Float, side: Float, corner: Float, degrees: Float, alpha: Float) =
-    rotate(degrees, Offset(cx, cy)) {
-        drawRoundRect(
-            AppDs.ShapeTint.copy(alpha = alpha),
-            topLeft = Offset(cx - side / 2f, cy - side / 2f),
-            size = Size(side, side),
-            cornerRadius = CornerRadius(corner),
-        )
-    }
-
-private fun DrawScope.shapePill(cx: Float, cy: Float, width: Float, height: Float, degrees: Float, alpha: Float) =
-    rotate(degrees, Offset(cx, cy)) {
-        drawRoundRect(
-            AppDs.ShapeTint.copy(alpha = alpha),
-            topLeft = Offset(cx - width / 2f, cy - height / 2f),
-            size = Size(width, height),
-            cornerRadius = CornerRadius(height / 2f),
-        )
-    }
-
-/**
- * The page's background shapes: large, soft, geometric — a disc, a rounded square, a pill — entering
- * from the corners and edges and bleeding off the screen. Drawn behind everything, in a navy barely lighter
- * than the page, so they add depth without contrast: cards (dark glass) sit over them and text
- * never competes with them.
- */
-internal fun Modifier.pageShapes(composition: ShapeComposition): Modifier = drawBehind {
-    val w = size.width
-    val h = size.height
-    when (composition) {
-        ShapeComposition.Home -> {
-            shapeDisc(w * 1.05f, h * 0.50f, w * 0.34f, 0.38f)
-            shapeSquare(-w * 0.04f, h * 0.86f, w * 0.46f, w * 0.12f, 14f, 0.30f)
-        }
-        ShapeComposition.Settings -> {
-            shapeSquare(w * 0.98f, h * 0.10f, w * 0.52f, w * 0.14f, -12f, 0.50f)
-            shapeDisc(-w * 0.08f, h * 0.78f, w * 0.30f, 0.40f)
-            shapePill(w * 0.66f, h * 1.01f, w * 0.90f, w * 0.20f, -10f, 0.34f)
-        }
-        ShapeComposition.Profile -> {
-            shapeSquare(-w * 0.05f, h * 0.36f, w * 0.40f, w * 0.10f, 20f, 0.34f)
-            shapeDisc(w * 0.92f, h * 0.90f, w * 0.34f, 0.52f)
-            shapePill(w * 0.15f, h * 0.99f, w * 0.80f, w * 0.24f, -14f, 0.44f)
-        }
-    }
-}
-
-/**
- * The Profile's brand mark: an orbit ring, a tilted second ring, and two hairline waves that
- * cross inside it. Strokes are 1.2dp — it is a graphic, not an icon — and nothing glows.
- */
-@Composable
-internal fun OrbitLines(modifier: Modifier = Modifier, color: Color = AppDs.AccentSoft) {
-    Canvas(modifier) {
-        val s = size.minDimension
-        val u = s / 100f
-        val stroke = 1.2.dp.toPx()
-        val orbit = Path().apply {
-            addOval(Rect(center = Offset(s / 2f, s / 2f), radius = s / 2f - stroke))
-        }
-        drawPath(orbit, color.copy(alpha = 0.32f), style = Stroke(stroke))
-        rotate(-24f, Offset(s / 2f, s / 2f)) {
-            drawOval(
-                color.copy(alpha = 0.16f),
-                topLeft = Offset(s * 0.04f, s * 0.22f),
-                size = Size(s * 0.92f, s * 0.56f),
-                style = Stroke(stroke),
-            )
-        }
-        fun wave(sign: Float) = Path().apply {
-            fun y(v: Float) = (50f + (v - 50f) * 0.8f * sign) * u
-            moveTo(0f, 50f * u)
-            cubicTo(20f * u, y(10f), 40f * u, y(10f), 50f * u, 50f * u)
-            cubicTo(60f * u, y(90f), 80f * u, y(90f), 100f * u, 50f * u)
-        }
-        clipPath(orbit) {
-            drawPath(wave(1f), color.copy(alpha = 0.85f), style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
-            drawPath(wave(-1f), color.copy(alpha = 0.85f), style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
-        }
-    }
-}
 
 // ── Ping + glass info bar ─────────────────────────────────────────────────────
 
