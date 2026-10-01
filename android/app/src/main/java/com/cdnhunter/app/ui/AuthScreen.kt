@@ -1,6 +1,11 @@
 package com.cdnhunter.app.ui
 
 import android.app.Activity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.text.input.ImeAction
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -156,67 +161,6 @@ internal fun FullScreenLoopVideo(modifier: Modifier = Modifier, onReady: (() -> 
     )
 }
 
-/**
- * A borderless text field: just an underline that highlights teal on focus, no
- * outlined box. Used for the single-field login flow (email-only, then
- * password-only) where a full bordered field would look heavier than needed.
- */
-@Composable
-private fun UnderlineField(
-    label: String,
-    value: String,
-    onValue: (String) -> Unit,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    trailingIcon: @Composable (() -> Unit)? = null,
-    onImeAction: (() -> Unit)? = null,
-    onFocusLost: (() -> Unit)? = null,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-    var wasFocused by remember { mutableStateOf(false) }
-    LaunchedEffect(isFocused) {
-        if (wasFocused && !isFocused) onFocusLost?.invoke()
-        wasFocused = isFocused
-    }
-    TextField(
-        value = value,
-        onValueChange = onValue,
-        label = { Text(label, fontSize = 13.sp) },
-        singleLine = true,
-        interactionSource = interactionSource,
-        modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = keyboardType,
-            imeAction = if (onImeAction != null) androidx.compose.ui.text.input.ImeAction.Done
-                else androidx.compose.ui.text.input.ImeAction.Default,
-        ),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-            onDone = { onImeAction?.invoke() },
-        ),
-        visualTransformation = visualTransformation,
-        trailingIcon = trailingIcon,
-        colors = TextFieldDefaults.colors(
-            focusedIndicatorColor = TealAccent,
-            unfocusedIndicatorColor = Color.White.copy(alpha = 0.25f),
-            focusedLabelColor = TealAccent,
-            unfocusedLabelColor = TextMid,
-            focusedTextColor = TextHi,
-            unfocusedTextColor = TextHi.copy(.85f),
-            cursorColor = TealAccent,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-        ),
-    )
-}
-
-/**
- * Login screen: a single email field first (underline style, no border). Once a
- * valid email is entered and the user continues, the email field collapses into
- * a small pill showing the address (with an Edit affordance) and a password
- * field slides in below it -- avoids showing both fields at once. Google
- * sign-in stays as a secondary option, matching how Onboarding presents it.
- */
 /** Shared Haze blur source across a screen: the video sets itself as the blur
  *  source, and any glass card reads this local to sample it, without every
  *  composable in between needing to thread a HazeState parameter through. */
@@ -225,60 +169,42 @@ internal val LocalHazeState = compositionLocalOf<HazeState?> { null }
 @Composable
 fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, onBack: (() -> Unit)? = null) {
     val hazeState = remember { HazeState() }
-    val context = LocalContext.current
     var step by remember { mutableStateOf(AuthStep.FORM) }
     var mode by remember { mutableStateOf(initialMode) }
     var pendingEmail by remember { mutableStateOf("") }
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
-    Box(Modifier.fillMaxSize().background(BgDark)) {
-        FullScreenLoopVideo(modifier = Modifier.fillMaxSize(), hazeState = hazeState)
+        Box(Modifier.fillMaxSize()) {
+            AuthBackdrop(hazeState, dim = 0.34f)
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Black.copy(alpha = 0.35f),
-                            Color.Black.copy(alpha = 0.75f),
-                        ),
-                    ),
-                ),
-        )
-
-        AnimatedContent(
-            targetState = step,
-            transitionSpec = {
-                (fadeIn(tween(450)) + scaleIn(initialScale = 0.96f, animationSpec = tween(450)))
-                    .togetherWith(fadeOut(tween(250)))
-            },
-            label = "authStep",
-        ) { s ->
-            when (s) {
-                AuthStep.FORM -> AuthFormContent(
-                    mode = mode,
-                    onModeChange = { mode = it },
-                    onBack = onBack,
-                    // The 6-digit email-verification step has no real backend behind it --
-                    // it's UI-only, not wired to an actual code-send/verify flow -- so signup
-                    // now goes straight to SUCCESS like sign-in does. Whether the account's
-                    // real email is verified is still tracked and surfaced later, in
-                    // EmailVerificationCard on the Profile screen, via Firebase's own
-                    // isEmailVerified -- this just removes the fake gate that blocked entry
-                    // into the app on a code this screen never actually checked server-side.
-                    onSuccess = { _, _ -> onSignedIn() },
-                )
-                AuthStep.VERIFY -> VerifyEmailContent(
-                    email = pendingEmail,
-                    onVerified = { step = AuthStep.SUCCESS },
-                    onSkip = { step = AuthStep.SUCCESS },
-                )
-                AuthStep.SUCCESS -> SuccessContent(onContinue = onSignedIn)
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = { fadeIn(tween(350)).togetherWith(fadeOut(tween(200))) },
+                label = "authStep",
+            ) { s ->
+                when (s) {
+                    AuthStep.FORM -> AuthFormContent(
+                        mode = mode,
+                        onModeChange = { mode = it },
+                        onBack = onBack,
+                        // The 6-digit email-verification step has no real backend behind it --
+                        // it's UI-only, not wired to an actual code-send/verify flow -- so signup
+                        // now goes straight to SUCCESS like sign-in does. Whether the account's
+                        // real email is verified is still tracked and surfaced later, in
+                        // EmailVerificationCard on the Profile screen, via Firebase's own
+                        // isEmailVerified -- this just removes the fake gate that blocked entry
+                        // into the app on a code this screen never actually checked server-side.
+                        onSuccess = { _, _ -> onSignedIn() },
+                    )
+                    AuthStep.VERIFY -> VerifyEmailContent(
+                        email = pendingEmail,
+                        onVerified = { step = AuthStep.SUCCESS },
+                        onSkip = { step = AuthStep.SUCCESS },
+                    )
+                    AuthStep.SUCCESS -> SuccessContent(onContinue = onSignedIn)
+                }
             }
         }
-    }
     }
 }
 
@@ -432,61 +358,19 @@ private fun SuccessContent(onContinue: () -> Unit) {
     }
 }
 
+private enum class SignupStep { USERNAME, ACCOUNT }
+
+/** Which page of the flow is on screen. Order matters: it decides slide direction. */
+private enum class AuthFormPage { LOGIN, NAME, ACCOUNT }
+
 /**
- * Wraps [UnderlineField] with pass/fail validation feedback: a green check or red
- * X trailing icon appears once the field loses focus, based on [validator]. Used
- * for the step-by-step Sign Up flow so each field confirms itself before the
- * user moves to the next one.
+ * Log in and sign up, as paged steps over the shared backdrop:
+ *  - Log in: one page, email + password.
+ *  - Sign up: "Let's Get Started" (username), then "Set Up Your Account" (email, password, confirm).
+ *
+ * The auth calls, validation rules and error strings are the ones the screen always had; only the
+ * paging and presentation changed. Back steps through sign-up before leaving the screen.
  */
-@Composable
-private fun ValidatedField(
-    label: String,
-    value: String,
-    onValue: (String) -> Unit,
-    validator: (String) -> Boolean,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    showToggle: Boolean = false,
-    toggleVisible: Boolean = false,
-    onToggleVisible: (() -> Unit)? = null,
-    onImeAction: (() -> Unit)? = null,
-) {
-    var touched by remember { mutableStateOf(false) }
-    val isValid = value.isNotEmpty() && validator(value)
-    val showResult = touched && value.isNotEmpty()
-
-    UnderlineField(
-        label = label,
-        value = value,
-        onValue = { onValue(it); touched = false },
-        keyboardType = keyboardType,
-        visualTransformation = visualTransformation,
-        onImeAction = onImeAction,
-        onFocusLost = { if (value.isNotEmpty()) touched = true },
-        trailingIcon = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showResult) {
-                    Icon(
-                        if (isValid) Icons.Default.Check else Icons.Default.Close,
-                        contentDescription = null,
-                        tint = if (isValid) SuccessGreen else ErrorRed,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    if (showToggle) Spacer(Modifier.width(4.dp))
-                }
-                if (showToggle) {
-                    IconButton(onClick = { onToggleVisible?.invoke() }) {
-                        Icon(
-                            if (toggleVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            null, tint = TextMid,
-                        )
-                    }
-                }
-            }
-        },
-    )
-}
-
 @Composable
 private fun AuthFormContent(
     mode: AuthMode,
@@ -495,10 +379,9 @@ private fun AuthFormContent(
     onSuccess: (justSignedUp: Boolean, email: String) -> Unit,
 ) {
     val context = LocalContext.current
-    val auth = remember { FirebaseAuth.getInstance() }
+    val hazeState = LocalHazeState.current
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var emailConfirmed by remember { mutableStateOf(false) }
     var signupStep by remember { mutableStateOf(SignupStep.USERNAME) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -507,23 +390,26 @@ private fun AuthFormContent(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     val submitLogin: () -> Unit = {
         error = null
-        if (password.isBlank()) {
-            error = "Please enter your password."
-        } else {
-            loading = true
-            coroutineScope.launch {
-                val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.logIn(email.trim(), password)
-                when (outcome) {
-                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
-                        com.cdnhunter.app.vpn.GroomxAuthClient.saveSession(context, outcome.result)
-                        onSuccess(false, email.trim())
-                    }
-                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
-                        error = outcome.message
-                        loading = false
+        when {
+            !isValidEmail(email) -> error = "Please enter a valid email address."
+            password.isBlank() -> error = "Please enter your password."
+            else -> {
+                loading = true
+                coroutineScope.launch {
+                    val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.logIn(email.trim(), password)
+                    when (outcome) {
+                        is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                            com.cdnhunter.app.vpn.GroomxAuthClient.saveSession(context, outcome.result)
+                            onSuccess(false, email.trim())
+                        }
+                        is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
+                            error = outcome.message
+                            loading = false
+                        }
                     }
                 }
             }
@@ -556,353 +442,188 @@ private fun AuthFormContent(
         }
     }
 
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
+    val continueFromUsername: () -> Unit = {
+        if (username.trim().length >= 3) { error = null; signupStep = SignupStep.ACCOUNT }
+        else error = "Username must be at least 3 characters."
+    }
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(500)) + slideInVertically(tween(600, easing = EaseOutCubic)) { it / 5 },
+    val page = when {
+        mode == AuthMode.LOGIN -> AuthFormPage.LOGIN
+        signupStep == SignupStep.USERNAME -> AuthFormPage.NAME
+        else -> AuthFormPage.ACCOUNT
+    }
+
+    // Back steps through sign-up first; from the first page it leaves the screen.
+    val goBack: (() -> Unit)? = if (page == AuthFormPage.ACCOUNT) {
+        val stepBack: () -> Unit = { error = null; signupStep = SignupStep.USERNAME }
+        stepBack
+    } else if (onBack != null) {
+        val leave: () -> Unit = { focusManager.clearFocus(); onBack() }
+        leave
+    } else {
+        null
+    }
+    androidx.activity.compose.BackHandler(enabled = page == AuthFormPage.ACCOUNT) {
+        error = null
+        signupStep = SignupStep.USERNAME
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp)
-                .padding(top = 90.dp, bottom = 28.dp),
-        ) {
-            // Single glass card holds the back button, title, form, and footer link --
-            // matching the "one contained card" reference instead of loose elements
-            // floating above/below it.
-            Column(
-                with(Glass) {
-                    Modifier
-                        .fillMaxWidth()
-                        .glassSurface(hazeState = LocalHazeState.current)
-                        .padding(horizontal = 22.dp, vertical = 28.dp)
-                },
-            ) {
+        AuthTopBar(
+            onBack = goBack,
+            step = if (page == AuthFormPage.ACCOUNT) 2 else 1,
+            steps = if (mode == AuthMode.SIGNUP) 2 else 0,
+            hazeState = hazeState,
+        )
 
-            if (onBack != null) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.padding(bottom = 8.dp).size(32.dp),
+        AnimatedContent(
+            targetState = page,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                val dir = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                (fadeIn(tween(320)) + slideInHorizontally(tween(380, easing = FastOutSlowInEasing)) { dir * it / 6 })
+                    .togetherWith(
+                        fadeOut(tween(180)) + slideOutHorizontally(tween(380, easing = FastOutSlowInEasing)) { -dir * it / 6 },
+                    )
+            },
+            label = "authPage",
+        ) { p ->
+            when (p) {
+                AuthFormPage.LOGIN -> AuthPage(
+                    title = "Welcome Back",
+                    subtitle = "Log in to pick up where you left off.",
+                    bottom = {
+                        AuthButton(
+                            text = "Log In",
+                            onClick = submitLogin,
+                            style = AuthButtonStyle.Primary,
+                            loading = loading,
+                        )
+                        AuthLinkRow(
+                            prefix = "Don't have an account?",
+                            action = "Sign Up",
+                            onClick = { error = null; onModeChange(AuthMode.SIGNUP) },
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    },
                 ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextHi)
-                }
-            }
-
-            Text(
-                if (mode == AuthMode.LOGIN) "Sign In" else "Join Sector 51",
-                fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextHi,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (mode == AuthMode.LOGIN) "Access granted only to the cleared."
-                else "Get clearance. Access begins here.",
-                fontSize = 13.sp, color = TextMid,
-            )
-
-            Spacer(Modifier.height(30.dp))
-
-            if (mode == AuthMode.LOGIN) {
-                // --- Single-field login flow: email first, then password replaces it ---
-                AnimatedContent(
-                    targetState = emailConfirmed,
-                    transitionSpec = {
-                        (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 4 })
-                            .togetherWith(fadeOut(tween(200)) + slideOutVertically(tween(200)) { -it / 4 })
-                    },
-                    label = "emailToPassword",
-                ) { confirmed ->
-                    if (!confirmed) {
-                        Column {
-                            UnderlineField(
-                                label = "Email",
-                                value = email,
-                                onValue = { email = it; error = null },
-                                keyboardType = KeyboardType.Email,
-                                onImeAction = {
-                                    if (isValidEmail(email)) emailConfirmed = true
-                                    else error = "Please enter a valid email address."
-                                },
-                            )
-                            error?.let {
-                                Spacer(Modifier.height(10.dp))
-                                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                            }
-                            Spacer(Modifier.height(22.dp))
-                            Button(
-                                onClick = {
-                                    if (isValidEmail(email)) emailConfirmed = true
-                                    else error = "Please enter a valid email address."
-                                },
-                                modifier = Modifier.fillMaxWidth().height(52.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                            ) {
-                                Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            }
-                        }
-                    } else {
-                        Column {
-                            Row(
-                                with(Glass) {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .glassSurface(hazeState = LocalHazeState.current)
-                                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                                },
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(email, fontSize = 14.sp, color = TextHi.copy(.85f))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable {
-                                        emailConfirmed = false
-                                        password = ""
-                                        error = null
-                                    },
-                                ) {
-                                    Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Edit", fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                            Spacer(Modifier.height(18.dp))
-                            UnderlineField(
-                                label = "Password",
-                                value = password,
-                                onValue = { password = it; error = null },
-                                keyboardType = KeyboardType.Password,
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton({ passwordVisible = !passwordVisible }) {
-                                        Icon(
-                                            if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            null, tint = TextMid,
-                                        )
-                                    }
-                                },
-                                onImeAction = submitLogin,
-                            )
-                            error?.let {
-                                Spacer(Modifier.height(10.dp))
-                                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                            }
-                            Spacer(Modifier.height(22.dp))
-                            Button(
-                                onClick = submitLogin,
-                                modifier = Modifier.fillMaxWidth().height(52.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                enabled = !loading,
-                            ) {
-                                if (loading) {
-                                    GlowSpinner(size = 20.dp)
-                                } else {
-                                    Text("Sign In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(18.dp))
-                Spacer(Modifier.height(28.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Text("Don't have an account? ", fontSize = 13.sp, color = TextMid)
-                    Text(
-                        "Sign Up",
-                        fontSize = 14.sp, color = Accent, fontWeight = FontWeight.Bold,
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                        modifier = Modifier.clickable {
-                            error = null
-                            onModeChange(AuthMode.SIGNUP)
-                        },
+                    AuthField(
+                        value = email,
+                        onValueChange = { email = it; error = null },
+                        placeholder = "Email",
+                        keyboardType = KeyboardType.Email,
+                        autoFocus = true,
+                        hazeState = hazeState,
                     )
-                }
-            } else {
-                // --- Sign Up: one field confirmed at a time (Username -> Email -> Password) ---
-                AnimatedContent(
-                    targetState = signupStep,
-                    transitionSpec = {
-                        (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 4 })
-                            .togetherWith(fadeOut(tween(200)) + slideOutVertically(tween(200)) { -it / 4 })
-                    },
-                    label = "signupStep",
-                ) { stepNow ->
-                    Column {
-                        if (stepNow > SignupStep.USERNAME) {
-                            ConfirmedFieldRow(label = "Username", value = username) {
-                                signupStep = SignupStep.USERNAME
-                            }
-                            Spacer(Modifier.height(14.dp))
-                        }
-                        if (stepNow > SignupStep.EMAIL) {
-                            ConfirmedFieldRow(label = "Email", value = email) {
-                                signupStep = SignupStep.EMAIL
-                            }
-                            Spacer(Modifier.height(14.dp))
-                        }
-
-                        when (stepNow) {
-                            SignupStep.USERNAME -> {
-                                ValidatedField(
-                                    label = "Username",
-                                    value = username,
-                                    onValue = { username = it; error = null },
-                                    validator = { it.trim().length >= 3 },
-                                    onImeAction = {
-                                        if (username.trim().length >= 3) signupStep = SignupStep.EMAIL
-                                        else error = "Username must be at least 3 characters."
-                                    },
-                                )
-                                error?.let {
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                                }
-                                Spacer(Modifier.height(22.dp))
-                                Button(
-                                    onClick = {
-                                        if (username.trim().length >= 3) { error = null; signupStep = SignupStep.EMAIL }
-                                        else error = "Username must be at least 3 characters."
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                ) {
-                                    Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                }
-                            }
-                            SignupStep.EMAIL -> {
-                                ValidatedField(
-                                    label = "Email",
-                                    value = email,
-                                    onValue = { email = it; error = null },
-                                    validator = ::isValidEmail,
-                                    keyboardType = KeyboardType.Email,
-                                    onImeAction = {
-                                        if (isValidEmail(email)) signupStep = SignupStep.PASSWORD
-                                        else error = "Please enter a valid email address."
-                                    },
-                                )
-                                error?.let {
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                                }
-                                Spacer(Modifier.height(22.dp))
-                                Button(
-                                    onClick = {
-                                        if (isValidEmail(email)) { error = null; signupStep = SignupStep.PASSWORD }
-                                        else error = "Please enter a valid email address."
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                ) {
-                                    Text("Continue", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                }
-                            }
-                            SignupStep.PASSWORD -> {
-                                ValidatedField(
-                                    label = "Password",
-                                    value = password,
-                                    onValue = { password = it; error = null },
-                                    validator = { it.length >= 6 },
-                                    keyboardType = KeyboardType.Password,
-                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                    showToggle = true,
-                                    toggleVisible = passwordVisible,
-                                    onToggleVisible = { passwordVisible = !passwordVisible },
-                                )
-                                Spacer(Modifier.height(14.dp))
-                                ValidatedField(
-                                    label = "Confirm Password",
-                                    value = confirmPassword,
-                                    onValue = { confirmPassword = it; error = null },
-                                    validator = { it.length >= 6 && it == password },
-                                    keyboardType = KeyboardType.Password,
-                                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                    showToggle = true,
-                                    toggleVisible = confirmPasswordVisible,
-                                    onToggleVisible = { confirmPasswordVisible = !confirmPasswordVisible },
-                                    onImeAction = submitSignup,
-                                )
-
-                                error?.let {
-                                    Spacer(Modifier.height(14.dp))
-                                    Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                                }
-
-                                Spacer(Modifier.height(22.dp))
-
-                                Button(
-                                    onClick = submitSignup,
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                    enabled = !loading,
-                                ) {
-                                    if (loading) {
-                                        GlowSpinner(size = 20.dp)
-                                    } else {
-                                        Text("Sign Up", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(18.dp))
-                Spacer(Modifier.height(28.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Text("Already have an account? ", fontSize = 13.sp, color = TextMid)
-                    Text(
-                        "Sign In",
-                        fontSize = 14.sp, color = Accent, fontWeight = FontWeight.Bold,
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                        modifier = Modifier.clickable {
-                            error = null
-                            onModeChange(AuthMode.LOGIN)
-                        },
+                    Spacer(Modifier.height(12.dp))
+                    AuthField(
+                        value = password,
+                        onValueChange = { password = it; error = null },
+                        placeholder = "Password",
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        hazeState = hazeState,
+                        onImeAction = submitLogin,
+                        trailing = { AuthPasswordToggle(passwordVisible) { passwordVisible = !passwordVisible } },
                     )
+                    AuthError(error)
                 }
-            }
+
+                AuthFormPage.NAME -> AuthPage(
+                    title = "Let's Get Started",
+                    subtitle = "First, choose a username for your account.",
+                    bottom = {
+                        AuthButton(
+                            text = "Continue",
+                            onClick = continueFromUsername,
+                            style = AuthButtonStyle.Primary,
+                        )
+                        AuthLinkRow(
+                            prefix = "Already have an account?",
+                            action = "Log In",
+                            onClick = { error = null; onModeChange(AuthMode.LOGIN) },
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    },
+                ) {
+                    AuthValidatedField(
+                        value = username,
+                        onValueChange = { username = it; error = null },
+                        placeholder = "Username",
+                        validator = { it.trim().length >= 3 },
+                        imeAction = ImeAction.Done,
+                        autoFocus = true,
+                        hazeState = hazeState,
+                        onImeAction = continueFromUsername,
+                    )
+                    AuthError(error)
+                }
+
+                AuthFormPage.ACCOUNT -> AuthPage(
+                    title = "Set Up Your Account",
+                    subtitle = "Add your email and a password to finish.",
+                    bottom = {
+                        AuthButton(
+                            text = "Create an Account",
+                            onClick = submitSignup,
+                            style = AuthButtonStyle.Primary,
+                            loading = loading,
+                        )
+                        AuthLinkRow(
+                            prefix = "Already have an account?",
+                            action = "Log In",
+                            onClick = { error = null; onModeChange(AuthMode.LOGIN) },
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    },
+                ) {
+                    AuthValidatedField(
+                        value = email,
+                        onValueChange = { email = it; error = null },
+                        placeholder = "Email",
+                        validator = ::isValidEmail,
+                        keyboardType = KeyboardType.Email,
+                        autoFocus = true,
+                        hazeState = hazeState,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AuthValidatedField(
+                        value = password,
+                        onValueChange = { password = it; error = null },
+                        placeholder = "Password",
+                        validator = { it.length >= 6 },
+                        keyboardType = KeyboardType.Password,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        showToggle = true,
+                        toggleVisible = passwordVisible,
+                        onToggleVisible = { passwordVisible = !passwordVisible },
+                        hazeState = hazeState,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AuthValidatedField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it; error = null },
+                        placeholder = "Confirm password",
+                        validator = { it.length >= 6 && it == password },
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        showToggle = true,
+                        toggleVisible = confirmPasswordVisible,
+                        onToggleVisible = { confirmPasswordVisible = !confirmPasswordVisible },
+                        hazeState = hazeState,
+                        onImeAction = submitSignup,
+                    )
+                    AuthError(error)
+                }
             }
         }
     }
 }
-
-private enum class SignupStep { USERNAME, EMAIL, PASSWORD }
-
-@Composable
-private fun ConfirmedFieldRow(label: String, value: String, onEdit: () -> Unit) {
-    Row(
-        with(Glass) {
-            Modifier
-                .fillMaxWidth()
-                .glassSurface(hazeState = LocalHazeState.current)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column {
-            Text(label, fontSize = 11.sp, color = TextMid)
-            Text(value, fontSize = 14.sp, color = TextHi.copy(.85f))
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clickable { onEdit() },
-        ) {
-            Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Edit", fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
