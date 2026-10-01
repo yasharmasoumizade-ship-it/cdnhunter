@@ -6,12 +6,12 @@ package com.cdnhunter.app.ui
 // Settings/Profile surface is built out of the Premium* components below — so a change to a
 // radius, a surface or the accent lands on all three screens at once.
 //
-//   Colour      BLACK + BONE WHITE. Matte black surfaces, one warm ivory ([AppDs.Bone]) for text,
-//               accent, the connect button and the abstract shapes. No hue accent: Warning / Error
-//               exist only as signal semantics (unverified, degraded ping, destructive).
-//   Shapes      large soft bone shapes ([boneShapes]) enter from the page corners behind the cards;
-//               the Profile adds [OrbitLines]. One geometric language on all three screens.
-//   Glass       [FlagInfoGlass] is the dark glass bar (country + ping) used on the hero flag.
+//   Colour      DEEP BLACK-NAVY. Navy surfaces, one controlled premium blue ([AppDs.Accent]), cool
+//               white text. Warm bone ([AppDs.Bone]) is reserved for two things: the selected server
+//               and the light inner CTA of the connect button. Warning / Error are signal semantics.
+//   Shapes      dark-navy, very low-contrast shapes ([pageShapes]) behind the cards for depth and
+//               identity; the Profile adds [OrbitLines]. Same geometry on all three screens.
+//   Glass       [LocationGlassPill] is the long glass capsule (pin + country) on the hero flag.
 //   Type        Manrope ([AppFont]) on the [AppType] scale.
 //   Spacing     4dp grid: S1 4 · S2 8 · S3 12 · S4 16 · S5 20 · S6 24 · S7 32.
 //   Radius      RMd 16 (controls, chips, icon-less rows) · RLg 22 (cards, groups, primary
@@ -124,6 +124,8 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.foundation.layout.fillMaxHeight
 import com.cdnhunter.app.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -153,21 +155,23 @@ internal object AppType {
 
 internal object AppDs {
     // Colour
-    val Bone = Color(0xFFEDE6D6)            // warm ivory — the one light colour
-    val Ink = Color(0xFF0E0E0C)             // text/icons on a Bone fill
-    val Bg = Color(0xFF0A0A09)              // Primary background
-    val BgTop = Color(0xFF0D0D0C)           // Secondary background (top of the page wash)
-    val Surface = Color(0xFF121211)         // Card surface
-    val Glass = Color(0xD1121211)           // Card surface at 82% — dark glass over the shapes
-    val SurfaceRaised = Color(0xFF1A1A18)   // Elevated surface (icon containers, controls)
-    val SurfacePressed = Color(0xFF232321)
-    val Hairline = Color(0x12EDE6D6)        // bone @ 7%  — dividers
-    val Border = Color(0x1FEDE6D6)          // bone @ 12% — card / control edges
-    val TextHi = Bone                       // Primary text
-    val TextMid = Color(0xFF9E9A8E)         // Secondary text
-    val TextLow = Color(0xFF6F6C63)         // Muted text
-    val Accent = Bone
-    val AccentSoft = Color(0xFFF6F1E5)
+    val Bone = Color(0xFFEDE6D6)            // warm ivory — selected server + connect CTA only
+    val Ink = Color(0xFF0B0F18)             // text/icons on a Bone fill
+    val OnAccent = Color.White              // text/icons on an Accent or Error fill
+    val Bg = Color(0xFF070B12)              // Primary background
+    val BgTop = Color(0xFF0A1019)           // Secondary background (top of the page wash)
+    val Surface = Color(0xFF0D131F)         // Card surface
+    val Glass = Color(0xD10D131F)           // Card surface at 82% — dark navy glass
+    val SurfaceRaised = Color(0xFF121A28)   // Elevated surface (icon containers, controls)
+    val SurfacePressed = Color(0xFF1A2438)
+    val Hairline = Color(0x12E6ECF7)        // cool white @ 7%  — dividers
+    val Border = Color(0x1FE6ECF7)          // cool white @ 12% — card / control edges
+    val TextHi = Color(0xFFEEF2F8)          // Primary text — cool white
+    val TextMid = Color(0xFF98A2B3)         // Secondary text
+    val TextLow = Color(0xFF6B7588)         // Muted text
+    val Accent = Color(0xFF3D82F0)          // Premium blue — controlled, not neon
+    val AccentSoft = Color(0xFF8FB4F5)      // Soft blue (pin, orbit lines)
+    val ShapeTint = Color(0xFF1B2B4D)       // Background shapes — barely lighter than Bg
     val Success = Color(0xFF34C77A)
     val Warning = Color(0xFFE0B23B)         // needs attention
     val Error = Color(0xFFEF4444)
@@ -210,7 +214,8 @@ internal object AppDs {
     val PingWidth = 52.dp
     val ConnectWell = 48.dp
     val ClearTap = 36.dp
-    val InfoBarHeight = 64.dp      // FlagInfoGlass
+    val PillHeight = 40.dp         // LocationGlassPill
+    val IconPin = 18.dp
     val BackdropBlur = 14.dp
 
     /** Where a row's text starts: gutter + icon container + gap. Dividers inset to it. */
@@ -275,11 +280,11 @@ internal fun animatePressScale(pressed: Boolean, pressedScale: Float = AppDs.Pre
 @Composable
 internal fun PremiumPage(
     modifier: Modifier = Modifier,
-    shapes: BoneComposition = BoneComposition.Settings,
+    shapes: ShapeComposition = ShapeComposition.Settings,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ProvideTextStyle(TextStyle(fontFamily = AppFont)) {
-        Box(modifier.fillMaxSize().background(AppDs.PageGradient).boneShapes(shapes)) {
+        Box(modifier.fillMaxSize().background(AppDs.PageGradient).pageShapes(shapes)) {
             Column(Modifier.fillMaxSize().statusBarsPadding(), content = content)
         }
     }
@@ -343,7 +348,7 @@ internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
 internal fun PremiumScreen(
     title: String,
     onBack: () -> Unit,
-    shapes: BoneComposition = BoneComposition.Settings,
+    shapes: ShapeComposition = ShapeComposition.Settings,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     PremiumPage(shapes = shapes) {
@@ -680,7 +685,7 @@ internal fun PremiumToggle(
         if (checked) AppDs.Accent else AppDs.Border, appMotion(reduce, 180), label = "toggleEdge",
     )
     val thumb by animateColorAsState(
-        if (checked) AppDs.Ink else AppDs.TextMid, appMotion(reduce, 180), label = "toggleThumb",
+        if (checked) AppDs.OnAccent else AppDs.TextMid, appMotion(reduce, 180), label = "toggleThumb",
     )
     val thumbX by animateDpAsState(
         targetValue = if (checked) 25.dp else 3.dp,
@@ -880,7 +885,7 @@ internal fun PremiumButton(
             text,
             fontSize = AppType.Body.first,
             fontWeight = AppType.Body.second,
-            color = if (accent) AppDs.Ink else AppDs.TextHi,
+            color = if (accent) AppDs.OnAccent else AppDs.TextHi,
         )
     }
 }
@@ -888,14 +893,14 @@ internal fun PremiumButton(
 /**
  * The full-width call to action. It is Home's connect button language: [AppDs.ConnectHeight],
  * RLg corners, the same top-light, the same press sink and haptic. [tone] is the fill — the
- * bone by default, with [AppDs.Ink] text.
+ * the light bone CTA by default, with [AppDs.Ink] text.
  */
 @Composable
 internal fun PrimaryActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tone: Color = AppDs.Accent,
+    tone: Color = AppDs.Bone,
     contentColor: Color = AppDs.Ink,
     enabled: Boolean = true,
 ) {
@@ -942,7 +947,7 @@ internal fun PrimaryActionButton(
 
 // ── Status, identity ──────────────────────────────────────────────────────────
 
-/** A small pill: "FREE", "PRO". [tone] tints it (Pro → bone); null is the neutral matte pill. */
+/** A small pill: "FREE", "PRO". [tone] tints it (Pro → blue); null is the neutral matte pill. */
 @Composable
 internal fun StatusBadge(text: String, modifier: Modifier = Modifier, tone: Color? = null) {
     val shape = RoundedCornerShape(8.dp)
@@ -963,7 +968,7 @@ internal fun StatusBadge(text: String, modifier: Modifier = Modifier, tone: Colo
     }
 }
 
-/** The plan pill — bone for Pro, neutral for Free. Driven by [AccountUiState.plan]. */
+/** The plan pill — blue for Pro, neutral for Free. Driven by [AccountUiState.plan]. */
 @Composable
 internal fun PlanBadge(plan: PlanTier, modifier: Modifier = Modifier) {
     StatusBadge(
@@ -1072,28 +1077,28 @@ internal fun AccountSummaryCard(account: AccountUiState, onClick: () -> Unit, mo
 }
 
 
-// ── Bone shapes ───────────────────────────────────────────────────────────────
+// ── Page shapes ───────────────────────────────────────────────────────────────
 
 /** Which arrangement of shapes a page uses — the same three primitives, placed per screen. */
-internal enum class BoneComposition { Home, Settings, Profile }
+internal enum class ShapeComposition { Home, Settings, Profile }
 
-private fun DrawScope.boneDisc(cx: Float, cy: Float, radius: Float, alpha: Float) =
-    drawCircle(AppDs.Bone.copy(alpha = alpha), radius, Offset(cx, cy))
+private fun DrawScope.shapeDisc(cx: Float, cy: Float, radius: Float, alpha: Float) =
+    drawCircle(AppDs.ShapeTint.copy(alpha = alpha), radius, Offset(cx, cy))
 
-private fun DrawScope.boneSquare(cx: Float, cy: Float, side: Float, corner: Float, degrees: Float, alpha: Float) =
+private fun DrawScope.shapeSquare(cx: Float, cy: Float, side: Float, corner: Float, degrees: Float, alpha: Float) =
     rotate(degrees, Offset(cx, cy)) {
         drawRoundRect(
-            AppDs.Bone.copy(alpha = alpha),
+            AppDs.ShapeTint.copy(alpha = alpha),
             topLeft = Offset(cx - side / 2f, cy - side / 2f),
             size = Size(side, side),
             cornerRadius = CornerRadius(corner),
         )
     }
 
-private fun DrawScope.bonePill(cx: Float, cy: Float, width: Float, height: Float, degrees: Float, alpha: Float) =
+private fun DrawScope.shapePill(cx: Float, cy: Float, width: Float, height: Float, degrees: Float, alpha: Float) =
     rotate(degrees, Offset(cx, cy)) {
         drawRoundRect(
-            AppDs.Bone.copy(alpha = alpha),
+            AppDs.ShapeTint.copy(alpha = alpha),
             topLeft = Offset(cx - width / 2f, cy - height / 2f),
             size = Size(width, height),
             cornerRadius = CornerRadius(height / 2f),
@@ -1101,28 +1106,28 @@ private fun DrawScope.bonePill(cx: Float, cy: Float, width: Float, height: Float
     }
 
 /**
- * The page's bone shapes: large, soft, geometric — a disc, a rounded square, a pill — entering
- * from the corners and edges and bleeding off the screen. Drawn behind everything, at low alpha,
- * so cards (dark glass) sit over them and text never does; Home keeps them quietest because its
- * list is not carded.
+ * The page's background shapes: large, soft, geometric — a disc, a rounded square, a pill — entering
+ * from the corners and edges and bleeding off the screen. Drawn behind everything, in a navy barely lighter
+ * than the page, so they add depth without contrast: cards (dark glass) sit over them and text
+ * never competes with them.
  */
-internal fun Modifier.boneShapes(composition: BoneComposition): Modifier = drawBehind {
+internal fun Modifier.pageShapes(composition: ShapeComposition): Modifier = drawBehind {
     val w = size.width
     val h = size.height
     when (composition) {
-        BoneComposition.Home -> {
-            boneDisc(w * 1.05f, h * 0.50f, w * 0.34f, 0.06f)
-            boneSquare(-w * 0.04f, h * 0.86f, w * 0.46f, w * 0.12f, 14f, 0.05f)
+        ShapeComposition.Home -> {
+            shapeDisc(w * 1.05f, h * 0.50f, w * 0.34f, 0.38f)
+            shapeSquare(-w * 0.04f, h * 0.86f, w * 0.46f, w * 0.12f, 14f, 0.30f)
         }
-        BoneComposition.Settings -> {
-            boneSquare(w * 0.98f, h * 0.10f, w * 0.52f, w * 0.14f, -12f, 0.10f)
-            boneDisc(-w * 0.08f, h * 0.78f, w * 0.30f, 0.08f)
-            bonePill(w * 0.66f, h * 1.01f, w * 0.90f, w * 0.20f, -10f, 0.08f)
+        ShapeComposition.Settings -> {
+            shapeSquare(w * 0.98f, h * 0.10f, w * 0.52f, w * 0.14f, -12f, 0.50f)
+            shapeDisc(-w * 0.08f, h * 0.78f, w * 0.30f, 0.40f)
+            shapePill(w * 0.66f, h * 1.01f, w * 0.90f, w * 0.20f, -10f, 0.34f)
         }
-        BoneComposition.Profile -> {
-            boneSquare(-w * 0.05f, h * 0.36f, w * 0.40f, w * 0.10f, 20f, 0.07f)
-            boneDisc(w * 0.92f, h * 0.90f, w * 0.34f, 0.12f)
-            bonePill(w * 0.15f, h * 0.99f, w * 0.80f, w * 0.24f, -14f, 0.10f)
+        ShapeComposition.Profile -> {
+            shapeSquare(-w * 0.05f, h * 0.36f, w * 0.40f, w * 0.10f, 20f, 0.34f)
+            shapeDisc(w * 0.92f, h * 0.90f, w * 0.34f, 0.52f)
+            shapePill(w * 0.15f, h * 0.99f, w * 0.80f, w * 0.24f, -14f, 0.44f)
         }
     }
 }
@@ -1132,7 +1137,7 @@ internal fun Modifier.boneShapes(composition: BoneComposition): Modifier = drawB
  * cross inside it. Strokes are 1.2dp — it is a graphic, not an icon — and nothing glows.
  */
 @Composable
-internal fun OrbitLines(modifier: Modifier = Modifier, color: Color = AppDs.Bone) {
+internal fun OrbitLines(modifier: Modifier = Modifier, color: Color = AppDs.AccentSoft) {
     Canvas(modifier) {
         val s = size.minDimension
         val u = s / 100f
@@ -1165,8 +1170,8 @@ internal fun OrbitLines(modifier: Modifier = Modifier, color: Color = AppDs.Bone
 // ── Ping + glass info bar ─────────────────────────────────────────────────────
 
 /**
- * Four 3dp bars (5/8/11/14dp). Lit count follows the ping; healthy is bone, the two degraded
- * tiers are the only coloured thing on a server row.
+ * Four 3dp bars (5/8/11/14dp). Lit count follows the ping: green when healthy, amber / red for
+ * the two degraded tiers.
  */
 @Composable
 internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
@@ -1179,7 +1184,7 @@ internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
     }
     val on = when {
         pingMs < 0 -> AppDs.TextLow
-        filled >= 3 -> AppDs.TextHi
+        filled >= 3 -> AppDs.Success
         filled == 2 -> AppDs.Warning
         else -> AppDs.Error
     }
@@ -1196,44 +1201,46 @@ internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
                     .width(3.dp)
                     .height(height)
                     .clip(RoundedCornerShape(1.5.dp))
-                    .background(if (index < filled) on else AppDs.Bone.copy(alpha = 0.14f)),
+                    .background(if (index < filled) on else AppDs.TextHi.copy(alpha = 0.14f)),
             )
         }
     }
 }
 
 /**
- * A dark glass bar that sits ON an image — the hero flag today, any server card tomorrow.
- * Left: optional small flag, [title], [subtitle]. Right: [PingBars] over the ping.
+ * A long glass capsule that sits ON an image — the hero flag today, any picture tomorrow. It
+ * carries exactly two things: a line pin and [title]. Nothing else belongs in it.
  *
- * Real glass: when the caller passes [backdrop] (the same picture the bar sits on) and its full
- * size, a copy is drawn behind the bar, shifted so it lines up with the original, and blurred
- * (API 31+; older devices simply get the tint). The bar must be a DIRECT child of the box that
- * holds the picture, because its offset is read with positionInParent.
+ * Real glass: when the caller passes [backdrop] (the same picture the pill sits on) and its full
+ * size, a copy is drawn behind the pill, shifted so it lines up with the original, and blurred.
+ * Blur needs API 31, so older devices skip the copy entirely (no wasted layer) and get the tint.
+ * The pill must be a DIRECT child of the box that holds the picture: its offset is read with
+ * positionInParent.
  */
 @Composable
-internal fun FlagInfoGlass(
+internal fun LocationGlassPill(
     title: String,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    pingMs: Int = -1,
-    countryCode: String? = null,
     backdropSize: IntSize = IntSize.Zero,
     backdrop: (@Composable () -> Unit)? = null,
 ) {
     val reduce = appReduceMotion()
     val density = LocalDensity.current
-    val shape = RoundedCornerShape(AppDs.RLg)
+    val shape = RoundedCornerShape(50)
     var origin by remember { mutableStateOf(IntOffset.Zero) }
+    val canBlur = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
     Box(
         modifier
-            .fillMaxWidth()
-            .height(AppDs.InfoBarHeight)
-            .onGloballyPositioned { origin = IntOffset(it.positionInParent().x.roundToInt(), it.positionInParent().y.roundToInt()) }
+            .height(AppDs.PillHeight)
+            .onGloballyPositioned {
+                val p = it.positionInParent()
+                origin = IntOffset(p.x.roundToInt(), p.y.roundToInt())
+            }
             .clip(shape)
-            .border(1.dp, AppDs.Bone.copy(alpha = 0.22f), shape),
+            .border(1.dp, AppDs.TextHi.copy(alpha = 0.20f), shape)
+            .semantics(mergeDescendants = true) {},
     ) {
-        if (backdrop != null && backdropSize.width > 0 && backdropSize.height > 0) {
+        if (canBlur && backdrop != null && backdropSize.width > 0 && backdropSize.height > 0) {
             Box(Modifier.matchParentSize().clipToBounds()) {
                 Box(
                     Modifier
@@ -1247,55 +1254,32 @@ internal fun FlagInfoGlass(
                 ) { backdrop() }
             }
         }
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.46f)))
+        Box(Modifier.matchParentSize().background(AppDs.Bg.copy(alpha = 0.44f)))
         Row(
-            Modifier.fillMaxSize().padding(horizontal = AppDs.S3),
+            Modifier.fillMaxHeight().padding(horizontal = AppDs.S4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (!countryCode.isNullOrBlank()) {
-                CountryFlagBadge(countryCode, 32.dp, Modifier.border(1.dp, AppDs.Border, CircleShape))
-                Spacer(Modifier.width(AppDs.S3))
-            }
+            Icon(
+                Icons.Outlined.LocationOn,
+                contentDescription = null,
+                tint = AppDs.AccentSoft,
+                modifier = Modifier.size(AppDs.IconPin),
+            )
+            Spacer(Modifier.width(AppDs.S2))
             AnimatedContent(
-                targetState = title to subtitle,
+                targetState = title,
                 transitionSpec = {
                     fadeIn(appMotion(reduce, 180)) togetherWith fadeOut(appMotion(reduce, 100))
                 },
-                label = "infoGlassText",
-                modifier = Modifier.weight(1f),
-            ) { (t, sub) ->
-                Column {
-                    Text(
-                        t,
-                        fontSize = AppType.Title.first,
-                        fontWeight = AppType.Title.second,
-                        color = AppDs.TextHi,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (!sub.isNullOrBlank()) {
-                        Text(
-                            sub,
-                            fontSize = AppType.Caption.first,
-                            fontWeight = AppType.Caption.second,
-                            color = AppDs.TextMid,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.width(AppDs.S3))
-            Column(horizontalAlignment = Alignment.End) {
-                PingBars(pingMs)
-                Spacer(Modifier.height(AppDs.S1))
+                label = "pillTitle",
+            ) { t ->
                 Text(
-                    if (pingMs >= 0) "${pingMs}ms" else "—",
-                    fontSize = AppType.Body.first,
-                    fontWeight = AppType.Body.second,
+                    t,
+                    fontSize = AppType.Subtitle.first,
+                    fontWeight = AppType.Subtitle.second,
                     color = AppDs.TextHi,
                     maxLines = 1,
-                    style = TextStyle(fontFeatureSettings = "tnum"),
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

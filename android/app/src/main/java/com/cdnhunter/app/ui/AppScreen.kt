@@ -1676,12 +1676,12 @@ private fun AddSheetAction(title: String, subtitle: String, icon: ImageVector, h
     ) {
         Box(
             Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
-                .background(if (highlight) AppDs.Ink.copy(0.12f) else AnanasCard),
+                .background(if (highlight) Color.White.copy(0.18f) else AnanasCard),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = if (highlight) AppDs.Ink else AnanasTextHi, modifier = Modifier.size(19.dp)) }
+        ) { Icon(icon, null, tint = if (highlight) AppDs.OnAccent else AnanasTextHi, modifier = Modifier.size(19.dp)) }
         Column {
-            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AppDs.Ink else AnanasTextHi)
-            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) AppDs.Ink.copy(0.65f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
+            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (highlight) AppDs.OnAccent else AnanasTextHi)
+            Text(subtitle, fontSize = 11.5.sp, color = if (highlight) Color.White.copy(0.7f) else AnanasMuted, modifier = Modifier.padding(top = 1.dp))
         }
     }
 }
@@ -2910,7 +2910,7 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
         PrimaryActionButton(
             text = "Upgrade to Pro",
             onClick = onUpgrade,
-            tone = AppDs.Accent,
+            tone = AppDs.Bone,
             contentColor = AppDs.Ink,
         )
     }
@@ -2944,7 +2944,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
             )
         }
     }
-    PremiumScreen(title = "Profile", onBack = onBack, shapes = BoneComposition.Profile) {
+    PremiumScreen(title = "Profile", onBack = onBack, shapes = ShapeComposition.Profile) {
         ProfileHeader(account)
 
         SectionHeader("EMAIL")
@@ -3257,7 +3257,7 @@ private fun SelectDot(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Icon(Icons.Rounded.Check, null, tint = AppDs.Ink, modifier = Modifier.size(14.dp))
+            Icon(Icons.Rounded.Check, null, tint = AppDs.OnAccent, modifier = Modifier.size(14.dp))
         }
     }
 }
