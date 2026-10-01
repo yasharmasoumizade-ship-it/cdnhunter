@@ -1099,7 +1099,10 @@ internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
 
 /**
  * A long glass capsule that sits ON an image — the hero flag today, any picture tomorrow. It
- * carries exactly two things: a line pin and [title]. Nothing else belongs in it.
+ * carries exactly three things: a line pin and [title] on the left, and — when [pingMs] is given —
+ * the [PingBars] on the right. Nothing else belongs in it. With [pingMs] the pill is meant to be
+ * given the width of the card (caller adds `fillMaxWidth()` + side padding) so the bars sit at
+ * the far right; without it the pill wraps its content.
  *
  * Real glass: when the caller passes [backdrop] (the same picture the pill sits on) and its full
  * size, a copy is drawn behind the pill, shifted so it lines up with the original, and blurred.
@@ -1113,6 +1116,7 @@ internal fun LocationGlassPill(
     modifier: Modifier = Modifier,
     backdropSize: IntSize = IntSize.Zero,
     backdrop: (@Composable () -> Unit)? = null,
+    pingMs: Int? = null,
 ) {
     val reduce = appReduceMotion()
     val density = LocalDensity.current
@@ -1146,7 +1150,10 @@ internal fun LocationGlassPill(
         }
         Box(Modifier.matchParentSize().background(AppDs.Bg.copy(alpha = 0.44f)))
         Row(
-            Modifier.fillMaxHeight().padding(horizontal = AppDs.S4),
+            Modifier
+                .fillMaxHeight()
+                .then(if (pingMs != null) Modifier.fillMaxWidth() else Modifier)
+                .padding(horizontal = AppDs.S4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -1158,6 +1165,7 @@ internal fun LocationGlassPill(
             Spacer(Modifier.width(AppDs.S2))
             AnimatedContent(
                 targetState = title,
+                modifier = if (pingMs != null) Modifier.weight(1f) else Modifier,
                 transitionSpec = {
                     fadeIn(appMotion(reduce, 180)) togetherWith fadeOut(appMotion(reduce, 100))
                 },
@@ -1171,6 +1179,10 @@ internal fun LocationGlassPill(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (pingMs != null) {
+                Spacer(Modifier.width(AppDs.S3))
+                PingBars(pingMs)
             }
         }
     }
