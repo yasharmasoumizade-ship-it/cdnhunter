@@ -1,6 +1,8 @@
 package com.cdnhunter.app.vpn
 
 import android.content.Context
+import com.cdnhunter.app.core.ConnectionSettings
+import com.cdnhunter.app.core.ValidatedConfig
 
 /**
  * Builds a mihomo (Clash.Meta) YAML config from the stored user proxy URI.
@@ -11,38 +13,44 @@ object VpnConfigBuilder {
 
     const val ERROR_LOG_NAME = "mihomo_error.log"
 
-    fun buildConfig(ctx: Context, tunFd: Int, forceX25519Mlkem768: Boolean = false, disableGeoRules: Boolean = false): String {
-        val prefs = SecurePrefs.vpn(ctx)
-        val userConfig = prefs.getString("user_config", "") ?: ""
-        val mtu = AppSettings.mtu(ctx)
-        val allowLan = AppSettings.allowLan(ctx)
-        val ipv6 = AppSettings.ipv6Enabled(ctx)
-        val useDoh = AppSettings.useDoh(ctx)
-        val adBlocker = AppSettings.adBlockerEnabled(ctx)
-        val blockAds = AppSettings.blockAds(ctx)
-        val blockTrackers = AppSettings.blockTrackers(ctx)
-        val blockMalware = AppSettings.malwareBlockerEnabled(ctx)
-        val customDnsEnabled = AppSettings.customDnsEnabled(ctx)
-        val customDnsServers = AppSettings.customDnsServers(ctx)
-        // Whether the bundled geo databases are actually present in mihomo's home
-        // dir (CdnVpnService copies them from assets before this runs). The
-        // GEOSITE,category-ir / GEOIP,ir DIRECT rules are only emitted when both exist:
-        // referencing a geo db that isn't there makes mihomo fail to start, which
-        // would break the connection entirely. If they're missing we fall back to
-        // the RULE-SET,ir-* providers alone — exactly the pre-change behavior — so
-        // this can never regress connectivity.
-        val geoDir = java.io.File(ctx.filesDir, "mihomo")
-        val geoDbPresent = !disableGeoRules &&
-            java.io.File(geoDir, "geosite.dat").let { it.exists() && it.length() > 0 } &&
-            java.io.File(geoDir, "geoip.metadb").let { it.exists() && it.length() > 0 }
-        return buildConfigFromUri(
-            userConfig, tunFd, forceX25519Mlkem768, mtu, allowLan, ipv6, useDoh,
-            adBlocker, blockAds, blockTrackers, blockMalware, customDnsEnabled, customDnsServers,
-            geoDbPresent
+    /**
+     * Builds the core's YAML for a config that has passed validation.
+     *
+     * This is the only entry point the connection flow uses: it takes a [ValidatedConfig]
+     * (so an unparseable or incomplete config can no longer get here at all) and an
+     * immutable [ConnectionSettings] snapshot (so the tunnel and the core cannot disagree
+     * about MTU/IPv6 if the user changes a setting mid-attempt).
+     *
+     * [forceX25519Mlkem768] only has an effect on REALITY proxies — see
+     * [ConfigUriParser.applyTransport] for why the flag exists.
+     */
+    fun buildFromValidated(
+        config: ValidatedConfig, tunFd: Int, settings: ConnectionSettings,
+        forceX25519Mlkem768: Boolean = false, geoDbPresent: Boolean = false,
+    ): String {
+        val proxy = deepCopy(config.config.proxy)
+        proxy["name"] = "proxy"
+        if (forceX25519Mlkem768) {
+            @Suppress("UNCHECKED_CAST")
+            (proxy["reality-opts"] as? MutableMap<String, Any>)?.put("support-x25519mlkem768", true)
+        }
+        return renderYaml(
+            proxy, tunFd, settings.mtu, settings.allowLan, settings.ipv6, settings.useDoh,
+            settings.adBlocker, settings.blockAds, settings.blockTrackers, settings.blockMalware,
+            settings.customDnsEnabled, settings.customDnsServers, geoDbPresent
         )
     }
 
-    /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss). */
+    /** True when both bundled geo databases are present and non-empty in mihomo's home dir. */
+    fun geoDatabasesPresent(ctx: Context): Boolean {
+        val geoDir = java.io.File(ctx.filesDir, "mihomo")
+        return java.io.File(geoDir, "geosite.dat").let { it.exists() && it.length() > 0 } &&
+            java.io.File(geoDir, "geoip.metadb").let { it.exists() && it.length() > 0 }
+    }
+
+    /** Builds a full mihomo YAML config string from a raw proxy URI (vless/trojan/vmess/ss).
+     *  Throws if the URI cannot be parsed. It used to fall back to a `direct` outbound, which
+     *  made a bad or empty config "connect" and send everything unprotected. */
     fun buildConfigFromUri(
         uri: String, tunFd: Int, forceX25519Mlkem768: Boolean = false,
         mtu: Int = 1500, allowLan: Boolean = false, ipv6: Boolean = false, useDoh: Boolean = true,
@@ -51,7 +59,8 @@ object VpnConfigBuilder {
         customDnsEnabled: Boolean = false, customDnsServers: List<String> = emptyList(),
         geoDbPresent: Boolean = false
     ): String {
-        val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768) ?: defaultProxy()
+        val proxy = ConfigUriParser.parseToProxy(uri, forceX25519Mlkem768)
+            ?: throw IllegalArgumentException("config could not be parsed")
         proxy["name"] = "proxy"
         return renderYaml(
             proxy, tunFd, mtu, allowLan, ipv6, useDoh,
@@ -60,9 +69,18 @@ object VpnConfigBuilder {
         )
     }
 
-
-    private fun defaultProxy(): LinkedHashMap<String, Any> =
-        linkedMapOf("name" to "proxy", "type" to "direct")
+    @Suppress("UNCHECKED_CAST")
+    private fun deepCopy(m: Map<String, Any>): LinkedHashMap<String, Any> {
+        val out = LinkedHashMap<String, Any>()
+        for ((k, v) in m) {
+            out[k] = when (v) {
+                is Map<*, *> -> deepCopy(v as Map<String, Any>)
+                is List<*> -> v.toMutableList()
+                else -> v
+            }
+        }
+        return out
+    }
 
     private fun renderYaml(
         proxy: LinkedHashMap<String, Any>, tunFd: Int, mtu: Int = 1500,
@@ -111,7 +129,6 @@ object VpnConfigBuilder {
         
         val root = linkedMapOf<String, Any>(
             "mixed-port" to 10808,
-            "external-controller" to "127.0.0.1:10809",
             "allow-lan" to allowLan,
             "mode" to "rule",
             "log-level" to "error",
@@ -129,7 +146,10 @@ object VpnConfigBuilder {
             "geo-auto-update" to false,
             "dns" to linkedMapOf(
                 "enable" to true,
-                "listen" to "0.0.0.0:1053",
+                // Loopback only. The old 0.0.0.0 bind exposed an open DNS resolver (answering through
+                // the tunnel) to everyone on the same Wi-Fi network. Nothing needs it from outside:
+                // tun dns-hijack hands queries to the resolver inside the core.
+                "listen" to "127.0.0.1:1053",
                 // دیگه AAAA fake-ip صادر نکن وقتی کاربر IPv6 رو خاموش کرده —
                 // باید با تنظیم ipv6 در سطح tun sync باشه.
                 "ipv6" to ipv6,
@@ -602,14 +622,28 @@ object VpnConfigBuilder {
     // Quote any string that contains YAML-significant characters or could be
     // misread as another type (e.g. a bare "yes"/"no", a number-looking id).
     private fun yamlQuoteIfNeeded(s: String): String {
-        val needsQuote = s.isEmpty() ||
+        val hasControl = s.any { it.code < 0x20 || it.code == 0x7f }
+        val needsQuote = hasControl || s.isEmpty() ||
             s.any { it in ":#{}[],&*!|>'\"%@`" } ||
             s.startsWith(" ") || s.endsWith(" ") ||
             s == "true" || s == "false" || s == "null" ||
             s.toDoubleOrNull() != null
         if (!needsQuote) return s
-        val escaped = s.replace("\\", "\\\\").replace("\"", "\\\"")
-        return "\"$escaped\""
+        // Double-quoted YAML scalar: backslash escapes are interpreted, so a newline in a
+        // value stays a newline INSIDE the string instead of ending the line and letting
+        // the rest be read as new YAML keys.
+        val sb = StringBuilder(s.length + 2).append('"')
+        for (c in s) {
+            when {
+                c == '\\' -> sb.append("\\\\")
+                c == '"' -> sb.append("\\\"")
+                c == '\n' -> sb.append("\\n")
+                c == '\r' -> sb.append("\\r")
+                c == '\t' -> sb.append("\\t")
+                c.code < 0x20 || c.code == 0x7f -> sb.append("\\x").append(String.format("%02x", c.code))
+                else -> sb.append(c)
+            }
+        }
+        return sb.append('"').toString()
     }
 }
-

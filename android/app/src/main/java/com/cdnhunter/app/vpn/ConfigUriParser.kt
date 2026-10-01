@@ -1,6 +1,8 @@
 package com.cdnhunter.app.vpn
 
-import android.util.Base64
+import com.cdnhunter.app.core.ConfigCodec
+import com.cdnhunter.app.core.ConnectionError
+import com.cdnhunter.app.core.ErrorCode
 import org.json.JSONObject
 import java.net.URLDecoder
 
@@ -12,18 +14,55 @@ import java.net.URLDecoder
  */
 object ConfigUriParser {
 
-    /** Returns a LinkedHashMap ready to be YAML-serialized as one `proxies:` entry, or null.
-     *  forceX25519Mlkem768: only meaningful for reality proxies — see applyTransport(). */
-    fun parseToProxy(uri: String, forceX25519Mlkem768: Boolean = false): LinkedHashMap<String, Any>? {
+    /** Outcome of parsing one share link. [Failure] carries a typed, redacted reason. */
+    sealed class UriParseResult {
+        class Success(val proxy: LinkedHashMap<String, Any>) : UriParseResult()
+        class Failure(val error: ConnectionError.ConfigError) : UriParseResult()
+    }
+
+    /**
+     * Parses a share link (vless/trojan/vmess/ss) or a stored `cdnjson://` entry.
+     *
+     * Never throws. A malformed link used to escape as an IllegalArgumentException /
+     * JSONException from inside the parsers — for a bad `vmess://` payload that was an
+     * app crash on paste, and on every launch if it had already been saved.
+     */
+    fun parse(uri: String, forceX25519Mlkem768: Boolean = false): UriParseResult {
         val trimmed = uri.trim()
-        return when {
-            trimmed.startsWith("trojan://") -> parseTrojan(trimmed)
-            trimmed.startsWith("vless://") -> parseVless(trimmed, forceX25519Mlkem768)
-            trimmed.startsWith("vmess://") -> parseVmess(trimmed)
-            trimmed.startsWith("ss://") -> parseShadowsocks(trimmed)
-            else -> null
+        if (trimmed.isEmpty()) {
+            return UriParseResult.Failure(ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "empty config"))
+        }
+        val scheme = trimmed.substringBefore("://", "").lowercase()
+        return try {
+            val proxy = when (scheme) {
+                "trojan" -> parseTrojan(trimmed)
+                "vless" -> parseVless(trimmed, forceX25519Mlkem768)
+                "vmess" -> parseVmess(trimmed)
+                "ss" -> parseShadowsocks(trimmed)
+                ConfigCodec.SCHEME -> ConfigCodec.decodeStored(trimmed)
+                else -> return UriParseResult.Failure(
+                    ConnectionError.ConfigError(
+                        ErrorCode.UNSUPPORTED_PROTOCOL,
+                        if (scheme.isEmpty()) "not a proxy link" else "unsupported scheme '$scheme'",
+                    )
+                )
+            }
+            if (proxy == null) {
+                UriParseResult.Failure(ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "malformed $scheme link"))
+            } else {
+                UriParseResult.Success(proxy)
+            }
+        } catch (e: Exception) {
+            UriParseResult.Failure(
+                ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "malformed $scheme link (${e.javaClass.simpleName})")
+            )
         }
     }
+
+    /** Returns a LinkedHashMap ready to be YAML-serialized as one `proxies:` entry, or null.
+     *  forceX25519Mlkem768: only meaningful for reality proxies — see applyTransport(). */
+    fun parseToProxy(uri: String, forceX25519Mlkem768: Boolean = false): LinkedHashMap<String, Any>? =
+        (parse(uri, forceX25519Mlkem768) as? UriParseResult.Success)?.proxy
 
     private fun parseTrojan(uri: String): LinkedHashMap<String, Any> {
         val body = uri.removePrefix("trojan://")
@@ -74,7 +113,7 @@ object ConfigUriParser {
 
     private fun parseVmess(uri: String): LinkedHashMap<String, Any> {
         val b64 = uri.removePrefix("vmess://")
-        val json = String(Base64.decode(padBase64(b64), Base64.DEFAULT))
+        val json = decodeB64(b64) ?: throw IllegalArgumentException("vmess payload is not base64")
         val obj = JSONObject(json)
 
         val p = linkedMapOf<String, Any>(
@@ -112,19 +151,12 @@ object ConfigUriParser {
         if (hasAt) {
             val userInfo = withoutTag.substringBefore("@")
             hostPortRaw = withoutTag.substringAfter("@")
-            val decodedUserInfo = try {
-                String(Base64.decode(padBase64(userInfo), Base64.URL_SAFE or Base64.NO_WRAP))
-            } catch (e: Exception) {
-                try { String(Base64.decode(padBase64(userInfo), Base64.DEFAULT)) }
-                catch (e2: Exception) { userInfo }
-            }
+            val decodedUserInfo = decodeB64(userInfo) ?: userInfo
             val credSource = if (decodedUserInfo.contains(":")) decodedUserInfo else userInfo
             method = credSource.substringBefore(":")
             password = credSource.substringAfter(":")
         } else {
-            val decoded = try {
-                String(Base64.decode(padBase64(withoutTag), Base64.DEFAULT))
-            } catch (e: Exception) { return null }
+            val decoded = decodeB64(withoutTag) ?: return null
             if (!decoded.contains("@")) return null
             val credPart = decoded.substringBefore("@")
             hostPortRaw = decoded.substringAfter("@")
@@ -147,12 +179,9 @@ object ConfigUriParser {
         )
     }
 
-    private fun padBase64(s: String): String {
-        var str = s.replace('-', '+').replace('_', '/')
-        val mod = str.length % 4
-        if (mod > 0) str += "=".repeat(4 - mod)
-        return str
-    }
+    /** Lenient base64 (standard or URL-safe alphabet, padding optional) to a UTF-8 string; null if it is not base64. */
+    private fun decodeB64(s: String): String? =
+        ConfigCodec.base64Decode(s)?.let { String(it, Charsets.UTF_8) }
 
     /**
      * Splits an authority into address + port.
@@ -195,7 +224,7 @@ object ConfigUriParser {
      *  negotiation with a graceful fallback). The caller (CdnVpnService) tries false
      *  first and retries with true only if the first attempt's coreLog shows
      *  "REALITY authentication failed". */
-    private fun applyTransport(p: LinkedHashMap<String, Any>, params: Map<String, String>, forceX25519Mlkem768: Boolean = false) {
+    internal fun applyTransport(p: LinkedHashMap<String, Any>, params: Map<String, String>, forceX25519Mlkem768: Boolean = false) {
         val network = params["type"] ?: "tcp"
         val security = params["security"] ?: ""
 
@@ -270,6 +299,12 @@ object ConfigUriParser {
                 p["xhttp-opts"] = xhttpOpts
             }
             // "tcp" (the default) needs no network/*-opts entry in mihomo.
+            "tcp", "raw", "none", "" -> {}
+            // Any other transport (kcp, quic, httpupgrade, ...) used to fall through here
+            // and be treated as plain TCP, so the config "connected" and never passed
+            // traffic. Record the name instead: ConfigValidator rejects it up front with
+            // UNSUPPORTED_PROTOCOL, which says what is wrong.
+            else -> p["network"] = network.lowercase()
         }
     }
 
@@ -310,7 +345,7 @@ object ConfigUriParser {
         val params: Map<String, String> = if (trimmed.startsWith("vmess://")) {
             // vmess carries its settings as base64 JSON, not as a query string.
             try {
-                val obj = JSONObject(String(Base64.decode(padBase64(trimmed.removePrefix("vmess://")), Base64.DEFAULT)))
+                val obj = JSONObject(decodeB64(trimmed.removePrefix("vmess://")) ?: return "TCP")
                 mapOf(
                     "type" to obj.optString("net", "tcp"),
                     "security" to obj.optString("tls", ""),
