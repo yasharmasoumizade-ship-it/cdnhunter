@@ -210,7 +210,7 @@ private val TypeHeadline = AppType.Headline   // the country name
 // midnightNavy/primaryBlue/mintGreen in their AppColors.kt — but re-tuned as our own
 // values rather than their literal hex, and kept inside this file's own token names so
 // the rest of the file (which reasons about "RefBg", "RefAccent" etc.) needs no rewiring.
-private val RefBg = Color(0xFF0A0A0C)          // was a neutral #0A0B0F; now navy-black
+private val RefBg = AppDs.Bg          // was a neutral #0A0B0F; now navy-black
 
 /**
  * The browse card's own base: the same luminance as [RefBg], a degree or two colder.
