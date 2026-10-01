@@ -1,16 +1,32 @@
 package com.cdnhunter.app.ui
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Presentation kit for the authentication flow (landing, log in, sign up).
+// Presentation kit for the authentication flow (landing, log in, sign up, verify).
 //
-// Pure UI: nothing here knows about Firebase, Groomx or validation rules — the screens
-// pass state and callbacks in. One visual language: a full-bleed cinematic backdrop under a
-// dark scrim, translucent glass controls with a hairline edge, pill buttons, large type.
+// Pure UI: nothing here knows about Firebase, Groomx or validation rules — screens pass state and
+// callbacks in. It sits on the app's own tokens (Manrope, the 4dp [AppDs] spacing grid) and adds
+// only what auth needs on top of a photographic backdrop.
+//
+// Rules the components follow, so screens never restyle anything:
+//   Shape     actions (buttons, back) are full pills; containers (fields, banners, code cells) are 16dp.
+//   Colour    white at four strengths on the scrim (Hi / Mid / Low / Edge) + one error and one
+//             success hue. Primary action = solid white, everything else = glass.
+//   Type      [AuthType] — one style per role; a size always implies its weight.
+//   State     every control has rest / focus / pressed / disabled / loading / error where it applies.
+//   Feedback  errors say what happened and what to do next (see [AuthIssue]); a red edge is never
+//             the only signal. Contrast: Low text is >= 4.5:1 over the scrim.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +60,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -65,15 +82,22 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.HazeState
@@ -83,25 +107,63 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.delay
 
 internal object AuthDs {
-    val Ink = Color(0xFF0B0B0E)
+    val Ink = AppDs.Ink
     val Hi = Color.White
-    val Mid = Color.White.copy(alpha = 0.66f)
-    val Low = Color.White.copy(alpha = 0.44f)
+    val Mid = Color.White.copy(alpha = 0.78f)
+    val Low = Color.White.copy(alpha = 0.60f)
 
     val GlassFill = Color.White.copy(alpha = 0.08f)
-    val GlassFillFocus = Color.White.copy(alpha = 0.13f)
-    val Edge = Color.White.copy(alpha = 0.16f)
-    val EdgeFocus = Color.White.copy(alpha = 0.55f)
+    val GlassFillFocus = Color.White.copy(alpha = 0.12f)
+    val Edge = Color.White.copy(alpha = 0.18f)
+    val EdgeFilled = Color.White.copy(alpha = 0.38f)
+    val EdgeFocus = Color.White.copy(alpha = 0.72f)
 
-    val Error = Color(0xFFFF6B6B)
+    // Lighter than AppDs.Error: the standard red loses contrast on a dark photographic scrim.
+    val Error = Color(0xFFFF7B7B)
+    val ErrorFill = Error.copy(alpha = 0.12f)
     val ErrorEdge = Error.copy(alpha = 0.85f)
     val Success = Color(0xFF4ADE80)
 
-    val Gutter = 24.dp
+    val Gutter = AppDs.S6
     val ButtonHeight = 56.dp
-    val FieldHeight = 58.dp
-    val FieldShape = RoundedCornerShape(18.dp)
+    val FieldHeight = 56.dp
+    val CodeCellHeight = 60.dp
+    val MinTouch = 48.dp
+    val ContainerShape = RoundedCornerShape(AppDs.RMd)
 }
+
+/** The auth type scale. Manrope throughout; weight is fixed per role. */
+internal object AuthType {
+    val Hero = TextStyle(fontFamily = AppFont, fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.0).sp)
+    val Display = TextStyle(fontFamily = AppFont, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp)
+    val Body = TextStyle(fontFamily = AppFont, fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+    val Label = TextStyle(fontFamily = AppFont, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp)
+    val Input = TextStyle(fontFamily = AppFont, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+    val Button = TextStyle(fontFamily = AppFont, fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+    val Caption = TextStyle(fontFamily = AppFont, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
+    val Notice = TextStyle(fontFamily = AppFont, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+    val Code = TextStyle(fontFamily = AppFont, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+}
+
+// ── Issues ───────────────────────────────────────────────────────────────────
+
+/** Which field an [AuthIssue] belongs to, so that field can draw its error edge. */
+internal enum class AuthFieldId { USERNAME, EMAIL, PASSWORD, CONFIRM, CODE }
+
+/** What the banner's button does. The screen owns the behaviour; the kit only renders the label. */
+internal enum class AuthIssueAction { NONE, RETRY, LOG_IN, RESEND }
+
+/**
+ * An error the person can act on: what happened ([message]), what to do about it ([hint]), the
+ * field to mark ([field]) and an optional one-tap fix ([action] + [actionLabel]).
+ */
+internal data class AuthIssue(
+    val message: String,
+    val hint: String? = null,
+    val field: AuthFieldId? = null,
+    val action: AuthIssueAction = AuthIssueAction.NONE,
+    val actionLabel: String? = null,
+)
 
 // ── Backdrop ─────────────────────────────────────────────────────────────────
 
@@ -164,9 +226,10 @@ internal fun Modifier.authGlass(
 internal enum class AuthButtonStyle { Primary, Glass }
 
 /**
- * A full-width pill. [AuthButtonStyle.Primary] is solid white with dark text; [AuthButtonStyle.Glass]
- * is translucent with a hairline. Pressed sinks and dims, focus draws a ring, [loading] swaps the
- * label for a spinner and blocks taps (the button keeps its size, so nothing jumps).
+ * A full-width pill. [AuthButtonStyle.Primary] is solid white with dark text — the one action on a
+ * screen; [AuthButtonStyle.Glass] is translucent with a hairline — everything secondary. Pressed
+ * sinks and dims, keyboard focus draws a ring, [loading] swaps the label for a spinner and blocks
+ * taps (the button keeps its size, so nothing jumps), disabled fades to half.
  */
 @Composable
 internal fun AuthButton(
@@ -182,7 +245,7 @@ internal fun AuthButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(110), label = "authBtnScale")
+    val scale = animatePressScale(pressed)
     val shape = RoundedCornerShape(50)
     val primary = style == AuthButtonStyle.Primary
     val fill by animateColorAsState(
@@ -221,25 +284,19 @@ internal fun AuthButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .semantics { contentDescription = text }
-            .padding(horizontal = 24.dp),
+            .semantics { if (loading) contentDescription = "$text, in progress" }
+            .padding(horizontal = AppDs.S6),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
         ) {
             if (loading) {
                 GlowSpinner(size = 20.dp)
             } else {
                 leading?.invoke()
-                Text(
-                    text,
-                    color = if (primary) AuthDs.Ink else AuthDs.Hi,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
+                Text(text, style = AuthType.Button, color = if (primary) AuthDs.Ink else AuthDs.Hi, maxLines = 1)
             }
         }
     }
@@ -250,12 +307,12 @@ internal fun AuthButton(
 internal fun AuthOrDivider(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).height(1.dp).background(AuthDs.Edge))
-        Text("or", color = AuthDs.Low, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp))
+        Text("or", style = AuthType.Caption, color = AuthDs.Low, modifier = Modifier.padding(horizontal = AppDs.S4))
         Box(Modifier.weight(1f).height(1.dp).background(AuthDs.Edge))
     }
 }
 
-/** "Already have an account?  Log In" — the action is a real 48dp-tall tap target. */
+/** "Already have an account?  Log In" — the action is a full 48dp-tall tap target. */
 @Composable
 internal fun AuthLinkRow(prefix: String, action: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
@@ -263,40 +320,112 @@ internal fun AuthLinkRow(prefix: String, action: String, onClick: () -> Unit, mo
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(prefix, color = AuthDs.Mid, fontSize = 14.sp)
-        Spacer(Modifier.width(6.dp))
+        Text(prefix, style = AuthType.Caption.copy(fontSize = 14.sp), color = AuthDs.Mid)
         Text(
             action,
+            style = AuthType.Notice,
             color = AuthDs.Hi,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
             modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(AppDs.S3))
                 .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = 6.dp, vertical = 14.dp),
+                .heightIn(min = AuthDs.MinTouch)
+                .padding(horizontal = AppDs.S2)
+                .padding(vertical = 14.dp),
         )
+    }
+}
+
+// ── Feedback ─────────────────────────────────────────────────────────────────
+
+/**
+ * The error surface: an icon, what happened, what to do next and — when there is a one-tap fix — a
+ * button for it. It grows in and out (no layout jump) and is an assertive live region, so a screen
+ * reader announces it the moment it appears. [issue] = null hides it.
+ */
+@Composable
+internal fun AuthBanner(
+    issue: AuthIssue?,
+    onAction: (AuthIssueAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var last by remember { mutableStateOf(issue) }
+    if (issue != null) last = issue
+
+    AnimatedVisibility(
+        visible = issue != null,
+        modifier = modifier,
+        enter = fadeIn(tween(200)) + expandVertically(tween(220)),
+        exit = fadeOut(tween(120)) + shrinkVertically(tween(160)),
+    ) {
+        val shown = last
+        if (shown != null) {
+            Row(
+                Modifier
+                    .padding(top = AppDs.S4)
+                    .fillMaxWidth()
+                    .clip(AuthDs.ContainerShape)
+                    .background(AuthDs.ErrorFill)
+                    .border(1.dp, AuthDs.ErrorEdge.copy(alpha = 0.40f), AuthDs.ContainerShape)
+                    .padding(AppDs.S4)
+                    .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Assertive },
+                horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = AuthDs.Error,
+                    modifier = Modifier.padding(top = 1.dp).size(20.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(shown.message, style = AuthType.Notice, color = AuthDs.Hi)
+                    if (shown.hint != null) {
+                        Text(shown.hint, style = AuthType.Caption, color = AuthDs.Mid, modifier = Modifier.padding(top = AppDs.S1))
+                    }
+                    if (shown.action != AuthIssueAction.NONE && shown.actionLabel != null) {
+                        Text(
+                            shown.actionLabel,
+                            style = AuthType.Notice,
+                            color = AuthDs.Hi,
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier
+                                .padding(top = AppDs.S1)
+                                .clip(RoundedCornerShape(AppDs.S2))
+                                .clickable(role = Role.Button) { onAction(shown.action) }
+                                .heightIn(min = AuthDs.MinTouch)
+                                .padding(vertical = AppDs.S3),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
 
 /**
- * A rounded glass input. The edge brightens on focus and turns red on [isError]; [trailing] sits
- * inside the field on the right (validation tick, show/hide). [autoFocus] opens the keyboard once
- * the page has finished sliding in.
+ * A labelled rounded glass input. The label is always visible (a placeholder alone disappears the
+ * moment you type, and screen readers lose it); the edge brightens on focus and turns red on
+ * [isError]; [trailing] sits inside the field on the right. [supportingText] sits under it — a hint
+ * normally, an explanation when [supportingIsError]. [autoFocus] opens the keyboard once the page
+ * has finished sliding in.
  */
 @Composable
 internal fun AuthField(
+    label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String,
     modifier: Modifier = Modifier,
+    placeholder: String = "",
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Next,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     isError: Boolean = false,
+    enabled: Boolean = true,
     autoFocus: Boolean = false,
     hazeState: HazeState? = null,
+    supportingText: String? = null,
+    supportingIsError: Boolean = false,
     onImeAction: (() -> Unit)? = null,
     onFocusLost: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -317,10 +446,11 @@ internal fun AuthField(
         }
     }
     val focusManager = LocalFocusManager.current
+    val showError = isError || supportingIsError
 
     val edge by animateColorAsState(
         when {
-            isError -> AuthDs.ErrorEdge
+            showError -> AuthDs.ErrorEdge
             focused -> AuthDs.EdgeFocus
             else -> AuthDs.Edge
         },
@@ -333,47 +463,66 @@ internal fun AuthField(
         label = "authFieldFill",
     )
 
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier
+    Column(
+        modifier
             .fillMaxWidth()
-            .authGlass(AuthDs.FieldShape, hazeState, fill, edge)
-            .focusRequester(requester),
-        singleLine = true,
-        textStyle = TextStyle(color = AuthDs.Hi, fontSize = 16.sp, fontWeight = FontWeight.Medium),
-        cursorBrush = SolidColor(Color.White),
-        visualTransformation = visualTransformation,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-        keyboardActions = KeyboardActions(
-            onNext = {
-                if (onImeAction != null) onImeAction() else focusManager.moveFocus(FocusDirection.Down)
-            },
-            onDone = { onImeAction?.invoke() },
-            onGo = { onImeAction?.invoke() },
-        ),
-        interactionSource = interaction,
-        decorationBox = { inner ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = AuthDs.FieldHeight)
-                    .padding(start = 20.dp, end = if (trailing != null) 8.dp else 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) {
-                        Text(placeholder, color = AuthDs.Low, fontSize = 16.sp, maxLines = 1)
+            .animateContentSize(tween(180))
+            .semantics(mergeDescendants = true) {},
+    ) {
+        Text(label, style = AuthType.Label, color = AuthDs.Mid, modifier = Modifier.padding(start = AppDs.S1, bottom = AppDs.S2))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (enabled) 1f else 0.6f)
+                .authGlass(AuthDs.ContainerShape, hazeState, fill, edge)
+                .focusRequester(requester)
+                .semantics { if (supportingIsError && supportingText != null) error(supportingText) },
+            singleLine = true,
+            textStyle = AuthType.Input.copy(color = AuthDs.Hi),
+            cursorBrush = SolidColor(Color.White),
+            visualTransformation = visualTransformation,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+            keyboardActions = KeyboardActions(
+                onNext = {
+                    if (onImeAction != null) onImeAction() else focusManager.moveFocus(FocusDirection.Down)
+                },
+                onDone = { onImeAction?.invoke() },
+                onGo = { onImeAction?.invoke() },
+            ),
+            interactionSource = interaction,
+            decorationBox = { inner ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = AuthDs.FieldHeight)
+                        .padding(start = AppDs.S5, end = if (trailing != null) AppDs.S2 else AppDs.S5),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty() && placeholder.isNotEmpty()) {
+                            Text(placeholder, style = AuthType.Input, color = AuthDs.Low, maxLines = 1)
+                        }
+                        inner()
                     }
-                    inner()
+                    trailing?.invoke()
                 }
-                trailing?.invoke()
-            }
-        },
-    )
+            },
+        )
+        if (supportingText != null) {
+            Text(
+                supportingText,
+                style = AuthType.Caption,
+                color = if (supportingIsError) AuthDs.Error else AuthDs.Low,
+                modifier = Modifier.padding(start = AppDs.S1, top = AppDs.S2),
+            )
+        }
+    }
 }
 
-/** Eye / eye-off toggle for a password field's [AuthField.trailing]. */
+/** Eye / eye-off toggle for a password field's trailing slot — a 48dp target. */
 @Composable
 internal fun AuthPasswordToggle(visible: Boolean, onToggle: () -> Unit) {
     IconButton(onClick = onToggle) {
@@ -387,16 +536,18 @@ internal fun AuthPasswordToggle(visible: Boolean, onToggle: () -> Unit) {
 }
 
 /**
- * [AuthField] that reports validity once the person has left it: a green tick or a red cross, and
- * a red edge when invalid. Typing clears the verdict again, so it never nags mid-word.
+ * [AuthField] that judges itself once the person has left it: a tick or a cross, a red edge and
+ * [invalidMessage] when invalid, [hint] otherwise. Typing clears the verdict, so it never nags
+ * mid-word. [forceError] lets the screen mark the field for a server-side problem.
  */
 @Composable
 internal fun AuthValidatedField(
+    label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String,
     validator: (String) -> Boolean,
     modifier: Modifier = Modifier,
+    placeholder: String = "",
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Next,
     visualTransformation: VisualTransformation = VisualTransformation.None,
@@ -404,12 +555,17 @@ internal fun AuthValidatedField(
     toggleVisible: Boolean = false,
     onToggleVisible: (() -> Unit)? = null,
     autoFocus: Boolean = false,
+    enabled: Boolean = true,
+    forceError: Boolean = false,
+    hint: String? = null,
+    invalidMessage: String? = null,
     hazeState: HazeState? = null,
     onImeAction: (() -> Unit)? = null,
 ) {
     var touched by remember { mutableStateOf(false) }
     val isValid = value.isNotEmpty() && validator(value)
     val showResult = touched && value.isNotEmpty()
+    val invalid = showResult && !isValid
 
     val trailingContent: (@Composable () -> Unit)? = if (showResult || showToggle) {
         {
@@ -421,7 +577,7 @@ internal fun AuthValidatedField(
                         tint = if (isValid) AuthDs.Success else AuthDs.Error,
                         modifier = Modifier.size(18.dp),
                     )
-                    if (!showToggle) Spacer(Modifier.width(12.dp))
+                    if (!showToggle) Spacer(Modifier.width(AppDs.S3))
                 }
                 if (showToggle) {
                     AuthPasswordToggle(visible = toggleVisible, onToggle = { onToggleVisible?.invoke() })
@@ -433,41 +589,122 @@ internal fun AuthValidatedField(
     }
 
     AuthField(
+        label = label,
         value = value,
         onValueChange = { onValueChange(it); touched = false },
-        placeholder = placeholder,
         modifier = modifier,
+        placeholder = placeholder,
         keyboardType = keyboardType,
         imeAction = imeAction,
         visualTransformation = visualTransformation,
-        isError = showResult && !isValid,
+        isError = forceError,
+        enabled = enabled,
         autoFocus = autoFocus,
         hazeState = hazeState,
+        supportingText = if (invalid && invalidMessage != null) invalidMessage else hint,
+        supportingIsError = invalid && invalidMessage != null,
         onImeAction = onImeAction,
         onFocusLost = { if (value.isNotEmpty()) touched = true },
         trailing = trailingContent,
     )
 }
 
-/** An inline error under the fields. Renders nothing for null, so the layout only grows when needed. */
+/**
+ * A one-time-code input: [length] cells over one hidden text field, so the system keyboard, paste
+ * and "fill from message" all just work. Non-digits are dropped (pasting "123 456" gives 123456),
+ * [onComplete] fires when the last digit lands, and bumping [shakeKey] shakes the cells to say the
+ * code was wrong (skipped when the user has animations off).
+ */
 @Composable
-internal fun AuthError(message: String?, modifier: Modifier = Modifier) {
-    if (message != null) {
-        Text(
-            message,
-            color = AuthDs.Error,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            modifier = modifier.fillMaxWidth().padding(top = 14.dp, start = 4.dp, end = 4.dp),
-        )
+internal fun AuthOtpField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    length: Int = 6,
+    isError: Boolean = false,
+    enabled: Boolean = true,
+    shakeKey: Int = 0,
+    onComplete: () -> Unit = {},
+) {
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(380)
+        runCatching { requester.requestFocus() }
     }
+    LaunchedEffect(value) { if (value.length == length) onComplete() }
+
+    val reduce = appReduceMotion()
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(shakeKey) {
+        if (shakeKey > 0 && !reduce) {
+            for (x in listOf(-10f, 10f, -6f, 6f, 0f)) shake.animateTo(x, tween(55))
+        }
+    }
+
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    BasicTextField(
+        value = value,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(length)
+            if (digits != value) onValueChange(digits)
+        },
+        enabled = enabled,
+        modifier = modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .semantics { contentDescription = "Verification code, $length digits" },
+        singleLine = true,
+        textStyle = AuthType.Code.copy(color = Color.Transparent),
+        cursorBrush = SolidColor(Color.Transparent),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { if (value.length == length) onComplete() }),
+        interactionSource = interaction,
+        decorationBox = { inner ->
+            Box {
+                Row(
+                    Modifier.fillMaxWidth().graphicsLayer { translationX = shake.value },
+                    horizontalArrangement = Arrangement.spacedBy(AppDs.S2),
+                ) {
+                    repeat(length) { i ->
+                        val char = value.getOrNull(i)
+                        val active = focused && enabled && i == value.length.coerceAtMost(length - 1)
+                        val edge by animateColorAsState(
+                            when {
+                                isError -> AuthDs.ErrorEdge
+                                active -> AuthDs.EdgeFocus
+                                char != null -> AuthDs.EdgeFilled
+                                else -> AuthDs.Edge
+                            },
+                            tween(140),
+                            label = "otpEdge$i",
+                        )
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(AuthDs.CodeCellHeight)
+                                .clip(AuthDs.ContainerShape)
+                                .background(if (active) AuthDs.GlassFillFocus else AuthDs.GlassFill)
+                                .border(1.dp, edge, AuthDs.ContainerShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(char?.toString() ?: "", style = AuthType.Code, color = AuthDs.Hi)
+                        }
+                    }
+                }
+                // The real field must be composed exactly once; it stays invisible behind the cells.
+                Box(Modifier.size(1.dp).alpha(0f)) { inner() }
+            }
+        },
+    )
 }
 
 // ── Step chrome ──────────────────────────────────────────────────────────────
 
 /**
  * The top row of a step screen: a round glass back button on the left, a thin segmented progress
- * bar in the middle ([steps] = 0 hides it). The right side is a spacer of the button's width so
+ * bar in the middle ([steps] = 0 hides it). The right side is a spacer the width of the button so
  * the bar stays centred.
  */
 @Composable
@@ -479,13 +716,13 @@ internal fun AuthTopBar(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier.fillMaxWidth().padding(horizontal = AuthDs.Gutter, vertical = 8.dp),
+        modifier.fillMaxWidth().padding(horizontal = AuthDs.Gutter, vertical = AppDs.S2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
             Box(
                 Modifier
-                    .size(44.dp)
+                    .size(AuthDs.MinTouch)
                     .authGlass(CircleShape, hazeState)
                     .clickable(role = Role.Button, onClick = onBack),
                 contentAlignment = Alignment.Center,
@@ -498,14 +735,14 @@ internal fun AuthTopBar(
                 )
             }
         } else {
-            Spacer(Modifier.size(44.dp))
+            Spacer(Modifier.size(AuthDs.MinTouch))
         }
         if (steps > 0) {
-            AuthProgress(step = step, steps = steps, modifier = Modifier.weight(1f).padding(horizontal = 20.dp))
+            AuthProgress(step = step, steps = steps, modifier = Modifier.weight(1f).padding(horizontal = AppDs.S5))
         } else {
             Spacer(Modifier.weight(1f))
         }
-        Spacer(Modifier.size(44.dp))
+        Spacer(Modifier.size(AuthDs.MinTouch))
     }
 }
 
@@ -532,9 +769,9 @@ internal fun AuthProgress(step: Int, steps: Int, modifier: Modifier = Modifier) 
 }
 
 /**
- * One step: a large heading and subtitle, then [content] in a scrollable column (so a short phone
- * or an open keyboard never hides a field), with [bottom] pinned under it. The parent supplies
- * the insets (status bar, navigation bar, keyboard) around the whole step.
+ * One step: a heading and subtitle, then [content] in a scrollable column (so a short phone or an
+ * open keyboard never hides a field), with [bottom] pinned under it. The parent supplies the
+ * insets (status bar, navigation bar, keyboard) around the whole step.
  */
 @Composable
 internal fun AuthPage(
@@ -549,24 +786,17 @@ internal fun AuthPage(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = AuthDs.Gutter)
-                .padding(top = 28.dp),
+                .padding(top = AppDs.S6),
         ) {
-            Text(
-                title,
-                color = AuthDs.Hi,
-                fontSize = 34.sp,
-                lineHeight = 40.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.6).sp,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(subtitle, color = AuthDs.Mid, fontSize = 15.sp, lineHeight = 22.sp)
-            Spacer(Modifier.height(32.dp))
+            Text(title, style = AuthType.Display, color = AuthDs.Hi, modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(AppDs.S3))
+            Text(subtitle, style = AuthType.Body, color = AuthDs.Mid)
+            Spacer(Modifier.height(AppDs.S7))
             content()
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(AppDs.S4))
         }
         Column(
-            Modifier.padding(horizontal = AuthDs.Gutter).padding(top = 12.dp, bottom = 12.dp),
+            Modifier.padding(horizontal = AuthDs.Gutter).padding(top = AppDs.S3, bottom = AppDs.S3),
             content = bottom,
         )
     }

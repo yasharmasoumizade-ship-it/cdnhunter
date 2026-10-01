@@ -1,6 +1,9 @@
 package com.cdnhunter.app.ui
 
 import android.app.Activity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -208,122 +211,168 @@ fun AuthScreen(initialMode: AuthMode = AuthMode.LOGIN, onSignedIn: () -> Unit, o
     }
 }
 
+private const val RESEND_COOLDOWN_S = 30
+
+/**
+ * The six-digit email code step. The code field takes paste and the keyboard, submits itself on
+ * the sixth digit, shakes on a wrong code, and "Resend" is gated by a short countdown. Failures
+ * come back as [AuthIssue]s with a next step (new code, retry) rather than a bare red line.
+ *
+ * Not on the sign-up path today (sign-up goes straight into the app and verifies later from the
+ * profile); it is ready for it — set the pending email and `step = VERIFY` in `onSuccess`.
+ */
 @Composable
 private fun VerifyEmailContent(email: String, onVerified: () -> Unit, onSkip: () -> Unit) {
     val context = LocalContext.current
-    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val hazeState = LocalHazeState.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var code by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var resending by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var resendMessage by remember { mutableStateOf<String?>(null) }
+    var issue by remember { mutableStateOf<AuthIssue?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var shakeKey by remember { mutableStateOf(0) }
+    var secondsLeft by remember { mutableStateOf(RESEND_COOLDOWN_S) }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("Check your email", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextHi)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "We sent a 6-digit code to $email",
-                fontSize = 13.sp, color = TextMid, textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(28.dp))
+    LaunchedEffect(secondsLeft) {
+        if (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft -= 1
+        }
+    }
 
-            OutlinedTextField(
-                value = code,
-                onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    fontSize = 24.sp, letterSpacing = 8.sp, textAlign = TextAlign.Center,
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                modifier = Modifier.width(200.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Accent.copy(.6f),
-                    unfocusedBorderColor = FieldBorder,
-                    focusedTextColor = TextHi,
-                    unfocusedTextColor = TextHi.copy(.85f),
-                    cursorColor = Accent,
-                    focusedContainerColor = FieldBg,
-                    unfocusedContainerColor = FieldBg,
-                ),
-            )
-
-            error?.let {
-                Spacer(Modifier.height(10.dp))
-                Text(it, color = ErrorRed, fontSize = 11.5.sp, textAlign = TextAlign.Center)
-            }
-            resendMessage?.let {
-                Spacer(Modifier.height(10.dp))
-                Text(it, color = TextMid, fontSize = 11.5.sp, textAlign = TextAlign.Center)
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    error = null
-                    loading = true
-                    coroutineScope.launch {
-                        when (val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.verifyEmail(email, code)) {
-                            is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
-                                com.cdnhunter.app.vpn.GroomxAuthClient.markEmailVerified(context)
-                                onVerified()
-                            }
-                            is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
-                                error = outcome.message
-                                loading = false
-                            }
-                        }
+    val verify: () -> Unit = {
+        if (!loading && code.length == 6) {
+            issue = null
+            notice = null
+            loading = true
+            scope.launch {
+                when (val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.verifyEmail(email, code)) {
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                        com.cdnhunter.app.vpn.GroomxAuthClient.markEmailVerified(context)
+                        onVerified()
                     }
-                },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                enabled = !loading && code.length == 6,
-            ) {
-                if (loading) {
-                    GlowSpinner(size = 20.dp)
-                } else {
-                    Text("Verify", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
+                        issue = classifyVerifyFailure(outcome.message)
+                        shakeKey += 1
+                        loading = false
+                    }
                 }
             }
+        }
+    }
 
-            Spacer(Modifier.height(20.dp))
+    val sendNewCode: () -> Unit = {
+        if (!resending) {
+            resending = true
+            issue = null
+            notice = null
+            scope.launch {
+                when (val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.resendVerificationCode(email)) {
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> {
+                        code = ""
+                        notice = "A new code is on its way."
+                        secondsLeft = RESEND_COOLDOWN_S
+                    }
+                    is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure ->
+                        issue = commonAuthIssue(outcome.message) ?: AuthIssue(outcome.message)
+                }
+                resending = false
+            }
+        }
+    }
 
-            Row {
-                Text("Didn't get a code? ", fontSize = 13.sp, color = TextMid)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
+    ) {
+        AuthTopBar(onBack = null, step = 0, steps = 0, hazeState = hazeState)
+        AuthPage(
+            title = "Check your email",
+            subtitle = "We sent a 6-digit code to $email. Enter it below.",
+            bottom = {
+                AuthButton(
+                    text = "Verify",
+                    onClick = verify,
+                    style = AuthButtonStyle.Primary,
+                    loading = loading,
+                    enabled = code.length == 6,
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = AppDs.S2),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (secondsLeft > 0) {
+                        val mm = secondsLeft / 60
+                        val ss = (secondsLeft % 60).toString().padStart(2, '0')
+                        Text(
+                            "Resend code in $mm:$ss",
+                            style = AuthType.Caption.copy(fontSize = 14.sp),
+                            color = AuthDs.Low,
+                            modifier = Modifier.heightIn(min = AuthDs.MinTouch).padding(vertical = 14.dp),
+                        )
+                    } else {
+                        Text(
+                            if (resending) "Sending…" else "Resend code",
+                            style = AuthType.Notice,
+                            color = AuthDs.Hi,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppDs.S3))
+                                .clickable(enabled = !resending, role = androidx.compose.ui.semantics.Role.Button, onClick = sendNewCode)
+                                .heightIn(min = AuthDs.MinTouch)
+                                .padding(horizontal = AppDs.S3, vertical = 14.dp),
+                        )
+                    }
+                }
                 Text(
-                    if (resending) "Sending..." else "Resend",
-                    fontSize = 13.sp, color = Accent, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable(enabled = !resending) {
-                        resending = true
-                        resendMessage = null
-                        coroutineScope.launch {
-                            val outcome = com.cdnhunter.app.vpn.GroomxAuthClient.resendVerificationCode(email)
-                            resending = false
-                            resendMessage = when (outcome) {
-                                is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Success -> "A new code was sent."
-                                is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> outcome.message
-                            }
-                        }
-                    },
+                    "Skip for now",
+                    style = AuthType.Caption.copy(fontSize = 14.sp),
+                    color = AuthDs.Low,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clip(RoundedCornerShape(AppDs.S3))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onSkip)
+                        .heightIn(min = AuthDs.MinTouch)
+                        .padding(horizontal = AppDs.S4, vertical = 14.dp),
+                )
+            },
+        ) {
+            AuthOtpField(
+                value = code,
+                onValueChange = { code = it; issue = null; notice = null },
+                isError = issue?.field == AuthFieldId.CODE,
+                enabled = !loading,
+                shakeKey = shakeKey,
+                onComplete = verify,
+            )
+            notice?.let {
+                Text(
+                    it,
+                    style = AuthType.Caption,
+                    color = AuthDs.Success,
+                    modifier = Modifier
+                        .padding(top = AppDs.S4)
+                        .politeLiveRegion(),
                 )
             }
-
-            Spacer(Modifier.height(28.dp))
-
-            Text(
-                "Skip for now",
-                fontSize = 12.sp, color = TextMid.copy(alpha = 0.6f),
-                modifier = Modifier.clickable { onSkip() },
-            )
+            AuthBanner(issue, onAction = { action ->
+                when (action) {
+                    AuthIssueAction.RETRY -> verify()
+                    AuthIssueAction.RESEND -> sendNewCode()
+                    else -> Unit
+                }
+            })
         }
     }
 }
+
+private fun Modifier.politeLiveRegion(): Modifier =
+    this.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }
 
 @Composable
 private fun SuccessContent(onContinue: () -> Unit) {
@@ -363,13 +412,73 @@ private enum class SignupStep { USERNAME, ACCOUNT }
 /** Which page of the flow is on screen. Order matters: it decides slide direction. */
 private enum class AuthFormPage { LOGIN, NAME, ACCOUNT }
 
+// ── Turning raw failures into something actionable ───────────────────────────
+// UI-only: these read the text the existing auth calls already return and choose how to present
+// it. Anything unrecognised falls back to the original message, as it always did.
+
+private fun commonAuthIssue(raw: String): AuthIssue? {
+    val m = raw.lowercase()
+    return when {
+        "network" in m || "connection" in m || "timeout" in m || "timed out" in m || "offline" in m ->
+            AuthIssue(
+                "Can't reach the server",
+                "Check your internet connection, then try again.",
+                action = AuthIssueAction.RETRY,
+                actionLabel = "Try again",
+            )
+        "too many" in m || "rate limit" in m || "rate-limit" in m || "try again later" in m || "429" in m ->
+            AuthIssue("Too many attempts", "Wait a minute, then try again.")
+        else -> null
+    }
+}
+
+private fun classifyAuthFailure(raw: String, signingUp: Boolean): AuthIssue {
+    commonAuthIssue(raw)?.let { return it }
+    val m = raw.lowercase()
+    return when {
+        signingUp && "username" !in m &&
+            ("already" in m || "exists" in m || "in use" in m || "registered" in m) ->
+            AuthIssue(
+                "This email already has an account",
+                "Log in instead, or use a different email.",
+                field = AuthFieldId.EMAIL,
+                action = AuthIssueAction.LOG_IN,
+                actionLabel = "Log in",
+            )
+        // Every credential failure reads the same on purpose, so the screen can't be used to
+        // find out which emails are registered.
+        !signingUp && ("incorrect" in m || "invalid" in m || "wrong" in m || "not found" in m ||
+            "no account" in m || "credential" in m || "password" in m || "unauthor" in m) ->
+            AuthIssue("Incorrect email or password", "Check your details and try again.", field = AuthFieldId.PASSWORD)
+        "went wrong" in m ->
+            AuthIssue("Something went wrong", "Please try again.", action = AuthIssueAction.RETRY, actionLabel = "Try again")
+        else -> AuthIssue(raw)
+    }
+}
+
+private fun classifyVerifyFailure(raw: String): AuthIssue {
+    commonAuthIssue(raw)?.let { return it }
+    return if ("expired" in raw.lowercase()) {
+        AuthIssue(
+            "This code has expired",
+            "Request a new one and enter it here.",
+            field = AuthFieldId.CODE,
+            action = AuthIssueAction.RESEND,
+            actionLabel = "Send a new code",
+        )
+    } else {
+        AuthIssue("That code isn't right", "Check the code in your email and try again.", field = AuthFieldId.CODE)
+    }
+}
+
 /**
  * Log in and sign up, as paged steps over the shared backdrop:
  *  - Log in: one page, email + password.
  *  - Sign up: "Let's Get Started" (username), then "Set Up Your Account" (email, password, confirm).
  *
- * The auth calls, validation rules and error strings are the ones the screen always had; only the
- * paging and presentation changed. Back steps through sign-up before leaving the screen.
+ * The auth calls, validation rules and session handling are the ones the screen always had; the
+ * paging, copy and presentation changed. Back steps through sign-up before leaving the screen,
+ * fields lock while a request is in flight, and every error is an [AuthIssue].
  */
 @Composable
 private fun AuthFormContent(
@@ -388,15 +497,18 @@ private fun AuthFormContent(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var issue by remember { mutableStateOf<AuthIssue?>(null) }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val reduce = appReduceMotion()
 
     val submitLogin: () -> Unit = {
-        error = null
+        issue = null
         when {
-            !isValidEmail(email) -> error = "Please enter a valid email address."
-            password.isBlank() -> error = "Please enter your password."
+            !isValidEmail(email) ->
+                issue = AuthIssue("Enter a valid email address", "Use the format name@example.com.", field = AuthFieldId.EMAIL)
+            password.isBlank() ->
+                issue = AuthIssue("Enter your password", field = AuthFieldId.PASSWORD)
             else -> {
                 loading = true
                 coroutineScope.launch {
@@ -407,7 +519,7 @@ private fun AuthFormContent(
                             onSuccess(false, email.trim())
                         }
                         is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
-                            error = outcome.message
+                            issue = classifyAuthFailure(outcome.message, signingUp = false)
                             loading = false
                         }
                     }
@@ -417,12 +529,18 @@ private fun AuthFormContent(
     }
 
     val submitSignup: () -> Unit = {
-        error = null
+        issue = null
         when {
-            username.isBlank() -> error = "Please choose a username."
-            email.isBlank() || !isValidEmail(email) -> error = "Please enter a valid email address."
-            password.isBlank() -> error = "Please enter a password."
-            password != confirmPassword -> error = "Passwords don't match."
+            username.isBlank() -> {
+                signupStep = SignupStep.USERNAME
+                issue = AuthIssue("Choose a username", "Use at least 3 characters.", field = AuthFieldId.USERNAME)
+            }
+            email.isBlank() || !isValidEmail(email) ->
+                issue = AuthIssue("Enter a valid email address", "Use the format name@example.com.", field = AuthFieldId.EMAIL)
+            password.isBlank() ->
+                issue = AuthIssue("Create a password", "Use at least 6 characters.", field = AuthFieldId.PASSWORD)
+            password != confirmPassword ->
+                issue = AuthIssue("Passwords don't match", "Enter the same password in both fields.", field = AuthFieldId.CONFIRM)
             else -> {
                 loading = true
                 coroutineScope.launch {
@@ -433,7 +551,7 @@ private fun AuthFormContent(
                             onSuccess(true, email.trim())
                         }
                         is com.cdnhunter.app.vpn.GroomxAuthClient.AuthOutcome.Failure -> {
-                            error = outcome.message
+                            issue = classifyAuthFailure(outcome.message, signingUp = true)
                             loading = false
                         }
                     }
@@ -443,8 +561,21 @@ private fun AuthFormContent(
     }
 
     val continueFromUsername: () -> Unit = {
-        if (username.trim().length >= 3) { error = null; signupStep = SignupStep.ACCOUNT }
-        else error = "Username must be at least 3 characters."
+        if (username.trim().length >= 3) {
+            issue = null
+            signupStep = SignupStep.ACCOUNT
+        } else {
+            issue = AuthIssue("That username is too short", "Use at least 3 characters.", field = AuthFieldId.USERNAME)
+        }
+    }
+
+    val onIssueAction: (AuthIssueAction) -> Unit = { action ->
+        when (action) {
+            AuthIssueAction.RETRY -> if (mode == AuthMode.SIGNUP) submitSignup() else submitLogin()
+            // The email stays filled in: this composable outlives the mode change.
+            AuthIssueAction.LOG_IN -> { issue = null; onModeChange(AuthMode.LOGIN) }
+            AuthIssueAction.RESEND, AuthIssueAction.NONE -> Unit
+        }
     }
 
     val page = when {
@@ -455,7 +586,7 @@ private fun AuthFormContent(
 
     // Back steps through sign-up first; from the first page it leaves the screen.
     val goBack: (() -> Unit)? = if (page == AuthFormPage.ACCOUNT) {
-        val stepBack: () -> Unit = { error = null; signupStep = SignupStep.USERNAME }
+        val stepBack: () -> Unit = { issue = null; signupStep = SignupStep.USERNAME }
         stepBack
     } else if (onBack != null) {
         val leave: () -> Unit = { focusManager.clearFocus(); onBack() }
@@ -464,9 +595,11 @@ private fun AuthFormContent(
         null
     }
     androidx.activity.compose.BackHandler(enabled = page == AuthFormPage.ACCOUNT) {
-        error = null
+        issue = null
         signupStep = SignupStep.USERNAME
     }
+
+    fun marks(field: AuthFieldId) = issue?.field == field
 
     Column(
         Modifier
@@ -486,18 +619,22 @@ private fun AuthFormContent(
             targetState = page,
             modifier = Modifier.weight(1f),
             transitionSpec = {
-                val dir = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                (fadeIn(tween(320)) + slideInHorizontally(tween(380, easing = FastOutSlowInEasing)) { dir * it / 6 })
-                    .togetherWith(
-                        fadeOut(tween(180)) + slideOutHorizontally(tween(380, easing = FastOutSlowInEasing)) { -dir * it / 6 },
-                    )
+                if (reduce) {
+                    fadeIn(snap()) togetherWith fadeOut(snap())
+                } else {
+                    val dir = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                    (fadeIn(tween(320)) + slideInHorizontally(tween(380, easing = FastOutSlowInEasing)) { dir * it / 6 })
+                        .togetherWith(
+                            fadeOut(tween(180)) + slideOutHorizontally(tween(380, easing = FastOutSlowInEasing)) { -dir * it / 6 },
+                        )
+                }
             },
             label = "authPage",
         ) { p ->
             when (p) {
                 AuthFormPage.LOGIN -> AuthPage(
                     title = "Welcome Back",
-                    subtitle = "Log in to pick up where you left off.",
+                    subtitle = "Log in to your account.",
                     bottom = {
                         AuthButton(
                             text = "Log In",
@@ -506,39 +643,47 @@ private fun AuthFormContent(
                             loading = loading,
                         )
                         AuthLinkRow(
-                            prefix = "Don't have an account?",
-                            action = "Sign Up",
-                            onClick = { error = null; onModeChange(AuthMode.SIGNUP) },
-                            modifier = Modifier.padding(top = 4.dp),
+                            prefix = "New here?",
+                            action = "Create an account",
+                            onClick = { issue = null; onModeChange(AuthMode.SIGNUP) },
+                            modifier = Modifier.padding(top = AppDs.S1),
                         )
                     },
                 ) {
-                    AuthField(
+                    AuthValidatedField(
+                        label = "Email",
                         value = email,
-                        onValueChange = { email = it; error = null },
-                        placeholder = "Email",
+                        onValueChange = { email = it; issue = null },
+                        validator = ::isValidEmail,
+                        placeholder = "name@example.com",
                         keyboardType = KeyboardType.Email,
                         autoFocus = true,
+                        enabled = !loading,
+                        forceError = marks(AuthFieldId.EMAIL),
+                        invalidMessage = "Enter a valid email address",
                         hazeState = hazeState,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(AppDs.S4))
                     AuthField(
+                        label = "Password",
                         value = password,
-                        onValueChange = { password = it; error = null },
-                        placeholder = "Password",
+                        onValueChange = { password = it; issue = null },
+                        placeholder = "Your password",
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        isError = marks(AuthFieldId.PASSWORD),
+                        enabled = !loading,
                         hazeState = hazeState,
                         onImeAction = submitLogin,
                         trailing = { AuthPasswordToggle(passwordVisible) { passwordVisible = !passwordVisible } },
                     )
-                    AuthError(error)
+                    AuthBanner(issue, onIssueAction)
                 }
 
                 AuthFormPage.NAME -> AuthPage(
                     title = "Let's Get Started",
-                    subtitle = "First, choose a username for your account.",
+                    subtitle = "Pick a username for your account.",
                     bottom = {
                         AuthButton(
                             text = "Continue",
@@ -548,27 +693,31 @@ private fun AuthFormContent(
                         AuthLinkRow(
                             prefix = "Already have an account?",
                             action = "Log In",
-                            onClick = { error = null; onModeChange(AuthMode.LOGIN) },
-                            modifier = Modifier.padding(top = 4.dp),
+                            onClick = { issue = null; onModeChange(AuthMode.LOGIN) },
+                            modifier = Modifier.padding(top = AppDs.S1),
                         )
                     },
                 ) {
                     AuthValidatedField(
+                        label = "Username",
                         value = username,
-                        onValueChange = { username = it; error = null },
-                        placeholder = "Username",
+                        onValueChange = { username = it; issue = null },
                         validator = { it.trim().length >= 3 },
+                        placeholder = "Choose a username",
                         imeAction = ImeAction.Done,
                         autoFocus = true,
+                        forceError = marks(AuthFieldId.USERNAME),
+                        hint = "At least 3 characters",
+                        invalidMessage = "Use at least 3 characters",
                         hazeState = hazeState,
                         onImeAction = continueFromUsername,
                     )
-                    AuthError(error)
+                    AuthBanner(issue, onIssueAction)
                 }
 
                 AuthFormPage.ACCOUNT -> AuthPage(
                     title = "Set Up Your Account",
-                    subtitle = "Add your email and a password to finish.",
+                    subtitle = "Add an email and a password to finish.",
                     bottom = {
                         AuthButton(
                             text = "Create an Account",
@@ -579,49 +728,62 @@ private fun AuthFormContent(
                         AuthLinkRow(
                             prefix = "Already have an account?",
                             action = "Log In",
-                            onClick = { error = null; onModeChange(AuthMode.LOGIN) },
-                            modifier = Modifier.padding(top = 4.dp),
+                            onClick = { issue = null; onModeChange(AuthMode.LOGIN) },
+                            modifier = Modifier.padding(top = AppDs.S1),
                         )
                     },
                 ) {
                     AuthValidatedField(
+                        label = "Email",
                         value = email,
-                        onValueChange = { email = it; error = null },
-                        placeholder = "Email",
+                        onValueChange = { email = it; issue = null },
                         validator = ::isValidEmail,
+                        placeholder = "name@example.com",
                         keyboardType = KeyboardType.Email,
                         autoFocus = true,
+                        enabled = !loading,
+                        forceError = marks(AuthFieldId.EMAIL),
+                        invalidMessage = "Enter a valid email address",
                         hazeState = hazeState,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(AppDs.S4))
                     AuthValidatedField(
+                        label = "Password",
                         value = password,
-                        onValueChange = { password = it; error = null },
-                        placeholder = "Password",
+                        onValueChange = { password = it; issue = null },
                         validator = { it.length >= 6 },
+                        placeholder = "Create a password",
                         keyboardType = KeyboardType.Password,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         showToggle = true,
                         toggleVisible = passwordVisible,
                         onToggleVisible = { passwordVisible = !passwordVisible },
+                        enabled = !loading,
+                        forceError = marks(AuthFieldId.PASSWORD),
+                        hint = "At least 6 characters",
+                        invalidMessage = "Use at least 6 characters",
                         hazeState = hazeState,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(AppDs.S4))
                     AuthValidatedField(
+                        label = "Confirm password",
                         value = confirmPassword,
-                        onValueChange = { confirmPassword = it; error = null },
-                        placeholder = "Confirm password",
+                        onValueChange = { confirmPassword = it; issue = null },
                         validator = { it.length >= 6 && it == password },
+                        placeholder = "Re-enter your password",
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                         visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         showToggle = true,
                         toggleVisible = confirmPasswordVisible,
                         onToggleVisible = { confirmPasswordVisible = !confirmPasswordVisible },
+                        enabled = !loading,
+                        forceError = marks(AuthFieldId.CONFIRM),
+                        invalidMessage = if (confirmPassword != password) "Passwords don't match" else "Use at least 6 characters",
                         hazeState = hazeState,
                         onImeAction = submitSignup,
                     )
-                    AuthError(error)
+                    AuthBanner(issue, onIssueAction)
                 }
             }
         }

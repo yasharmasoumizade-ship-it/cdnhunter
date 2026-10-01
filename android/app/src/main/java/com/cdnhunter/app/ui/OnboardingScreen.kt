@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -118,22 +121,28 @@ fun OnboardingScreen(
                     Image(
                         painter = painterResource(id = com.cdnhunter.app.R.drawable.logo_alien),
                         contentDescription = "Logo",
-                        modifier = Modifier.padding(top = 16.dp).size(44.dp),
+                        modifier = Modifier.padding(top = AppDs.S4).size(44.dp),
                     )
                 }
 
-                Column(Modifier.padding(top = 48.dp, bottom = 12.dp)) {
+                Column(Modifier.padding(top = AppDs.S7 + AppDs.S6, bottom = AppDs.S3)) {
                     Entrance(delayMs = 120) {
-                        Text(
-                            "Log In or Create an Account",
-                            color = AuthDs.Hi,
-                            fontSize = 40.sp,
-                            lineHeight = 46.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-1).sp,
-                        )
+                        Column {
+                            Text(
+                                "Log In or Create an Account",
+                                style = AuthType.Hero,
+                                color = AuthDs.Hi,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                            Spacer(Modifier.height(AppDs.S3))
+                            Text(
+                                "Fast, private access to the open internet.",
+                                style = AuthType.Body,
+                                color = AuthDs.Mid,
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(32.dp))
+                    Spacer(Modifier.height(AppDs.S7))
 
                     Entrance(delayMs = 240) {
                         Column {
@@ -142,9 +151,9 @@ fun OnboardingScreen(
                                 onClick = onSignUp,
                                 style = AuthButtonStyle.Primary,
                             )
-                            Spacer(Modifier.height(20.dp))
+                            Spacer(Modifier.height(AppDs.S5))
                             AuthOrDivider()
-                            Spacer(Modifier.height(20.dp))
+                            Spacer(Modifier.height(AppDs.S5))
                             AuthButton(
                                 text = "Continue with Google",
                                 onClick = { googleError = null; launcher.launch(googleClient.signInIntent) },
@@ -159,14 +168,24 @@ fun OnboardingScreen(
                                 },
                             )
                             if (onApple != null) {
-                                Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(AppDs.S3))
                                 AuthButton(
                                     text = "Continue with Apple",
                                     onClick = onApple,
                                     hazeState = hazeState,
                                 )
                             }
-                            AuthError(googleError)
+                            AuthBanner(
+                                issue = googleError?.let {
+                                    AuthIssue(
+                                        "Google sign-in didn't work",
+                                        "Check your connection and try again.",
+                                        action = AuthIssueAction.RETRY,
+                                        actionLabel = "Try again",
+                                    )
+                                },
+                                onAction = { googleError = null; launcher.launch(googleClient.signInIntent) },
+                            )
                         }
                     }
 
@@ -176,15 +195,14 @@ fun OnboardingScreen(
                                 prefix = "Already have an account?",
                                 action = "Log In",
                                 onClick = onContinueWithEmail,
-                                modifier = Modifier.padding(top = 8.dp),
+                                modifier = Modifier.padding(top = AppDs.S2),
                             )
                             Text(
                                 "By continuing, you agree to our Terms of Service and Privacy Policy.",
+                                style = AuthType.Caption.copy(fontSize = 12.sp, lineHeight = 17.sp),
                                 color = AuthDs.Low,
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp, start = 12.dp, end = 12.dp),
+                                modifier = Modifier.fillMaxWidth().padding(top = AppDs.S1, bottom = AppDs.S2, start = AppDs.S3, end = AppDs.S3),
                             )
                         }
                     }
@@ -199,9 +217,10 @@ fun OnboardingScreen(
 private fun Entrance(delayMs: Int, content: @Composable () -> Unit) {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
+    val reduce = appReduceMotion()
     val progress by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = tween(durationMillis = 650, delayMillis = delayMs, easing = FastOutSlowInEasing),
+        animationSpec = if (reduce) snap() else tween(durationMillis = 650, delayMillis = delayMs, easing = FastOutSlowInEasing),
         label = "authEntrance",
     )
     Box(
