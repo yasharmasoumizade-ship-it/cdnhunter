@@ -1273,7 +1273,14 @@ private fun HomeUiState.rowTitle(cfg: SavedConfig): String {
 
 /** ".server-sub" — the ping, plus the config's own name when the title is geo. */
 private fun HomeUiState.rowSubtitle(cfg: SavedConfig): String {
-    val ping = if (cfg.pingMs >= 0) "${cfg.pingMs} ms" else "not measured"
+    // A number when there is one; otherwise say WHY there is not, instead of "not measured" for everything.
+    val ping = when {
+        cfg.pingMs >= 0 -> "${cfg.pingMs} ms"
+        cfg.pingState == com.cdnhunter.app.core.ping.PingState.TESTING -> "testing…"
+        cfg.pingState == com.cdnhunter.app.core.ping.PingState.TIMEOUT -> "timeout"
+        cfg.pingState == com.cdnhunter.app.core.ping.PingState.UNREACHABLE -> "unreachable"
+        else -> "not measured"
+    }
     val name = cfg.displayName.takeIf {
         it.isNotBlank() && !it.equals(rowTitle(cfg), ignoreCase = true)
     }

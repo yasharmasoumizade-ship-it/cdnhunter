@@ -71,6 +71,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.platform.LocalDensity
 import java.io.File
+import com.cdnhunter.app.core.ConfigCodec
+import com.cdnhunter.app.core.ConfigValidator
+import com.cdnhunter.app.core.InternalConnectionConfig
+import com.cdnhunter.app.core.ValidationResult
+import com.cdnhunter.app.core.json.JsonConfigParser
+import com.cdnhunter.app.core.json.JsonParseResult
+import com.cdnhunter.app.core.ping.PingManager
+import com.cdnhunter.app.core.ping.PingResult
+import com.cdnhunter.app.core.ping.PingState
+import com.cdnhunter.app.core.ping.PingTarget
+import com.cdnhunter.app.core.ping.ProbeOutcome
+import com.cdnhunter.app.core.ping.TcpPinger
 import com.cdnhunter.app.vpn.CdnVpnService
 import com.cdnhunter.app.vpn.ConfigUriParser
 import com.cdnhunter.app.vpn.MihomoBridge
@@ -135,6 +147,9 @@ data class SavedConfig(
     val isImported: Boolean = false,         // Is this from a subscription?
     val subscriptionId: String? = null,      // Which subscription (if imported)?
     val subscriptionName: String? = null,    // Subscription display name (if imported)
+    // Live reachability, owned by PingManager. Not persisted: [pingMs] keeps the last known
+    // latency across launches; this says whether it is being measured, timed out, or unreachable.
+    val pingState: PingState = PingState.UNKNOWN,
 )
 
 // Measures round-trip time of a raw TCP connect to the server's host:port. DNS
@@ -182,25 +197,30 @@ private fun underlyingNonVpnNetwork(context: Context): android.net.Network? {
     }
 }
 
-private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int {
-    return try {
-        val svc = com.cdnhunter.app.vpn.CdnVpnService.instance
-        // Resolve on the physical network so a hostname server address never comes
-        // back as a fake-ip from the tunnel (see note above).
+/**
+ * The app's TCP prober. [TcpPinger] calls `protect` on every probe socket (which also binds it to
+ * the physical network) and resolves hostnames through `resolver` on that network, so a hostname
+ * server address never comes back as a tunnel fake-ip while a VPN is up.
+ */
+private val appPinger = TcpPinger(
+    protect = { socket ->
+        val svc = CdnVpnService.instance
+        svc?.protect(socket)
+        svc?.let { underlyingNonVpnNetwork(it) }?.bindSocket(socket)
+    },
+    resolver = { host ->
+        val svc = CdnVpnService.instance
         val underlying = svc?.let { underlyingNonVpnNetwork(it) }
-        val addr = if (underlying != null) underlying.getByName(host)
-                   else java.net.InetAddress.getByName(host)
-        java.net.Socket().use { socket ->
-            svc?.protect(socket)
-            underlying?.bindSocket(socket)
-            val started = System.currentTimeMillis()
-            socket.connect(java.net.InetSocketAddress(addr, port), timeoutMs)
-            (System.currentTimeMillis() - started).toInt()
-        }
-    } catch (e: Exception) {
-        -1
-    }
-}
+        if (underlying != null) underlying.getByName(host) else java.net.InetAddress.getByName(host)
+    },
+)
+
+/** One-off latency in ms, or -1 when the server did not answer. Blocking: call from an IO dispatcher. */
+private fun measurePingMs(host: String, port: Int, timeoutMs: Int = 2000): Int =
+    (appPinger.probe(host, port, timeoutMs) as? ProbeOutcome.Success)?.latencyMs ?: -1
+
+/** Pause between background ping sweeps of the whole server list. */
+private const val PING_SWEEP_INTERVAL_MS = 15_000L
 
 /**
  * The ceiling on one pull-to-refresh ping sweep of Home's server list — the whole
@@ -247,23 +267,6 @@ private suspend fun enrichConfigGeo(cfg: SavedConfig): SavedConfig =
             geoResolved = true,
         )
     }
-
-// Periodic ping monitor — continuously measures latency every 3 seconds
-// Similar to v2rayng's live ping display. Updates the config in-memory as ping changes.
-private suspend fun monitorPingContinuously(
-    cfg: SavedConfig,
-    onPingUpdate: (SavedConfig) -> Unit,
-    cancelCheck: () -> Boolean = { false }
-) {
-    while (!cancelCheck()) {
-        val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
-        if (newPing != cfg.pingMs) {
-            val updated = cfg.copy(pingMs = newPing)
-            onPingUpdate(updated)
-        }
-        delay(3000)  // Update ping every 3 seconds
-    }
-}
 
 // Note: the accurate (through-the-tunnel) geo check runs inside CdnVpnService
 // itself, right after a real connection succeeds — see the coroutine launched
@@ -608,6 +611,78 @@ private fun countryCodeFromTitle(title: String): String? {
     return null
 }
 
+/**
+ * Folds one PingManager result into the server list. It reads [current] and hands the new list
+ * to [set], so it can be called from a main-thread callback.
+ *
+ * The number shown ([SavedConfig.pingMs]) is the latest successful latency, or -1 once the server
+ * has been seen to time out or refuse. While a re-measurement is running, a server that already
+ * has a number keeps showing it instead of flickering to "testing".
+ */
+private fun applyPingResult(
+    r: PingResult,
+    current: List<SavedConfig>,
+    quality: ServerQualityTracker,
+    set: (List<SavedConfig>) -> Unit,
+) {
+    val terminal = r.state == PingState.AVAILABLE || r.state == PingState.TIMEOUT || r.state == PingState.UNREACHABLE
+    // Every finished sample goes into the window Smart mode reads, failures included: "answered
+    // 40 ms, then timed out three times" is exactly the shape of server the score should reject.
+    if (terminal) quality.record(r.serverId, if (r.state == PingState.AVAILABLE) r.latencyMs else -1)
+    var changed = false
+    val next = current.map { c ->
+        if (c.id != r.serverId) return@map c
+        val ms = when (r.state) {
+            PingState.AVAILABLE -> r.latencyMs
+            PingState.TIMEOUT, PingState.UNREACHABLE -> -1
+            else -> c.pingMs
+        }
+        val state = if (r.state == PingState.TESTING && c.pingMs >= 0) c.pingState else r.state
+        if (c.pingMs == ms && c.pingState == state) c else { changed = true; c.copy(pingMs = ms, pingState = state) }
+    }
+    if (changed) set(next)
+}
+
+/** Downloads a subscription body with timeouts and a size cap (the old `URL.readText()` had neither). */
+private fun fetchSubscriptionBody(url: String): String {
+    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.connectTimeout = 10_000
+    conn.readTimeout = 15_000
+    conn.instanceFollowRedirects = true
+    conn.setRequestProperty("User-Agent", "CDNHunter")
+    try {
+        if (conn.responseCode !in 200..299) throw java.io.IOException("HTTP ${conn.responseCode}")
+        val out = java.io.ByteArrayOutputStream()
+        conn.inputStream.use { input ->
+            val buf = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                total += n
+                if (total > 2 * 1024 * 1024) throw java.io.IOException("subscription is larger than 2 MB")
+                out.write(buf, 0, n)
+            }
+        }
+        return out.toString("UTF-8")
+    } finally {
+        conn.disconnect()
+    }
+}
+
+/** Subscription bodies are plain text, JSON, or the whole body base64-encoded (V2RayN/Clash convention). */
+private fun decodeSubscriptionBody(body: String): String {
+    val t = body.trim()
+    if (JsonConfigParser.looksLikeJson(t) || t.contains("://")) return t
+    val bytes = ConfigCodec.base64Decode(t) ?: return t
+    return String(bytes, Charsets.UTF_8)
+}
+
+/** Turns every proxy found in a JSON config into the app's saved-server form. Null if the JSON is not usable. */
+private fun savedConfigsFromJson(text: String): List<SavedConfig>? =
+    (JsonConfigParser.parse(text) as? JsonParseResult.Success)?.proxies
+        ?.mapNotNull { parseConfig(ConfigCodec.encodeStored(it.config)) }
+
 private fun parseConfig(uri: String): SavedConfig? {
     val proxy = com.cdnhunter.app.vpn.ConfigUriParser.parseToProxy(uri) ?: return null
     val proto = (proxy["type"] as? String) ?: "?"
@@ -623,7 +698,9 @@ private fun parseConfig(uri: String): SavedConfig? {
     // overwritten by the geo lookup through the live tunnel once connected (see
     // CdnVpnService's post-connect check). The lookup is the authority; the title is
     // what fills the badge until there is one.
-    val remark = try {
+    val remark = if (uri.startsWith(ConfigCodec.SCHEME + "://")) {
+        ConfigCodec.storedName(uri)
+    } else try {
         java.net.URI(uri).rawFragment?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.takeIf { it.isNotBlank() }
     } catch (e: Exception) { null }
     val fallbackName = when (proto) {
@@ -1126,55 +1203,30 @@ private fun VpnTab(onSignOut: () -> Unit) {
         }
     }
 
-    // Continuous ping monitoring — live update like v2rayng
-    // Updates all configs' ping values every 3 seconds in background
-    val pingMonitorJobs = remember { mutableMapOf<String, kotlinx.coroutines.Job>() }
-    LaunchedEffect(configs.size) {
-        // Start ping monitoring for new configs
-        for (cfg in configs) {
-            if (pingMonitorJobs[cfg.id] == null) {
-                pingMonitorJobs[cfg.id] = launch {
-                    try {
-                        while (this.isActive && configs.find { it.id == cfg.id } != null) {
-                            // Skip re-measuring the currently active, connected server.
-                            // measurePingMs dials the raw backend address directly from
-                            // this app's own process (excluded from the VPN itself --
-                            // see addDisallowedApplication in CdnVpnService). For a
-                            // CDN-fronted/reality server that's often exactly the
-                            // address that's blocked or throttled when reached
-                            // directly, which is the whole reason it needs fronting
-                            // in the first place. Repeatedly failing that direct
-                            // probe once connected kept overwriting a perfectly good
-                            // last-known ping with -1, which is why the ping badge
-                            // visibly disappeared right after connecting.
-                            val isActiveConnected = cfg.id == activeId && connected
-                            if (!isActiveConnected) {
-                                val newPing = measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
-                                // Every sample goes into the window Smart mode reads,
-                                // including the failures: "answered 40ms, then timed
-                                // out three times" is exactly the shape of server the
-                                // score is meant to reject, and it is invisible if
-                                // only successful probes are kept.
-                                quality.record(cfg.id, newPing)
-                                if (newPing != cfg.pingMs) {
-                                    configs = configs.map { if (it.id == cfg.id) it.copy(pingMs = newPing) else it }
-                                }
-                            }
-                            delay(3000)
-                        }
-                    } finally {
-                        pingMonitorJobs.remove(cfg.id)
-                    }
-                }
-            }
+    // Reachability of every listed server, measured by PingManager: bounded concurrency (a long
+    // list is a queue worked by a few workers, not one coroutine and one socket per server), and
+    // every result stored under the id of the server it belongs to.
+    val pingManager = remember { PingManager(prober = appPinger, maxConcurrency = 6, timeoutMs = 3000) }
+    val pingMainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    DisposableEffect(pingManager) {
+        val remove = pingManager.addListener { r ->
+            // Results arrive on worker threads; `configs` is only written from the main thread.
+            pingMainHandler.post { applyPingResult(r, configs, quality) { configs = it } }
         }
-        
-        // Cancel ping jobs for removed configs
-        pingMonitorJobs.forEach { (id, job) ->
-            if (configs.find { it.id == id } == null) {
-                job.cancel()
-                pingMonitorJobs.remove(id)
-            }
+        onDispose { remove() }
+    }
+    LaunchedEffect(configCountAndIds, connected, activeId) {
+        pingManager.retain(configs.map { it.id }.toSet())
+        while (true) {
+            // The active, connected server is skipped: the probe dials its raw backend address from
+            // this app's own process (excluded from the VPN), which for a CDN-fronted or REALITY
+            // server is often exactly the address that is blocked or throttled when reached
+            // directly. Probing it while connected only overwrote a good last-known ping with -1.
+            val targets = configs
+                .filter { !(it.id == activeId && connected) }
+                .map { PingTarget(it.id, it.address, it.port) }
+            pingManager.measure(targets)
+            delay(PING_SWEEP_INTERVAL_MS)
         }
     }
 
@@ -1328,27 +1380,24 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 val subName = try { java.net.URI(trimmed).host ?: "Subscription" } catch (e: Exception) { "Subscription" }
                 val added = withContext(Dispatchers.IO) {
                     try {
-                        val response = java.net.URL(trimmed).readText(Charsets.UTF_8)
-                        // Subscriptions are commonly the whole body base64-encoded
-                        // (V2RayN/Clash convention); fall back to raw text if it isn't.
-                        val decoded = try {
-                            String(java.util.Base64.getDecoder().decode(response.trim()), Charsets.UTF_8)
-                        } catch (e: Exception) {
-                            response
+                        val text = decodeSubscriptionBody(fetchSubscriptionBody(trimmed))
+                        val parsed: List<SavedConfig> = if (JsonConfigParser.looksLikeJson(text)) {
+                            savedConfigsFromJson(text) ?: emptyList()
+                        } else {
+                            text.split("\n", "\r\n")
+                                .map { it.trim() }
+                                .filter {
+                                    it.startsWith("vless://") || it.startsWith("trojan://") ||
+                                        it.startsWith("vmess://") || it.startsWith("ss://") ||
+                                        it.startsWith("socks5://")
+                                }
+                                // Reuse the SAME per-line parser as manual add (ConfigUriParser-backed,
+                                // captures every proxy field) rather than a stripped-down duplicate —
+                                // otherwise imported servers would be missing uuid/cipher/tls/reality
+                                // fields and simply fail to connect.
+                                .mapNotNull { line -> parseConfig(line) }
                         }
-                        decoded.split("\n", "\r\n")
-                            .map { it.trim() }
-                            .filter {
-                                it.startsWith("vless://") || it.startsWith("trojan://") ||
-                                    it.startsWith("vmess://") || it.startsWith("ss://") ||
-                                    it.startsWith("socks5://")
-                            }
-                            // Reuse the SAME per-line parser as manual add (ConfigUriParser-backed,
-                            // captures every proxy field) rather than a stripped-down duplicate —
-                            // otherwise imported servers would be missing uuid/cipher/tls/reality
-                            // fields and simply fail to connect.
-                            .mapNotNull { line -> parseConfig(line) }
-                            .map { it.copy(isImported = true, subscriptionId = subId, subscriptionName = subName) }
+                        parsed.map { it.copy(isImported = true, subscriptionId = subId, subscriptionName = subName) }
                     } catch (e: Exception) {
                         emptyList()
                     }
@@ -1369,10 +1418,52 @@ private fun VpnTab(onSignOut: () -> Unit) {
             }
             return
         }
+        val lang = AppSettings.language(context)
+        if (JsonConfigParser.looksLikeJson(trimmed)) {
+            when (val r = JsonConfigParser.parse(trimmed)) {
+                is JsonParseResult.Failure -> android.widget.Toast.makeText(
+                    context, r.error.userMessage(lang) + " (" + r.error.technical.take(90) + ")", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                is JsonParseResult.Success -> {
+                    val fresh = r.proxies.mapNotNull { parseConfig(ConfigCodec.encodeStored(it.config)) }
+                        .filter { n -> configs.none { it.uri == n.uri } }
+                        .distinctBy { it.uri }
+                    if (fresh.isEmpty()) {
+                        android.widget.Toast.makeText(context, "Already added", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        val updated = configs + fresh
+                        configs = updated
+                        saveConfigs(context, updated)
+                        val skipped = r.skipped.count { !it.reason.contains("not a proxy") }
+                        android.widget.Toast.makeText(
+                            context,
+                            "Added ${fresh.size} server(s) from JSON" + if (skipped > 0) " · $skipped skipped" else "",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }
+            return
+        }
         val cfg = parseConfig(trimmed)
         if (cfg == null) {
-            android.widget.Toast.makeText(context, "Invalid config link", android.widget.Toast.LENGTH_SHORT).show()
+            val why = (ConfigUriParser.parse(trimmed) as? ConfigUriParser.UriParseResult.Failure)?.error
+            android.widget.Toast.makeText(
+                context, why?.userMessage(lang) ?: "Invalid config link", android.widget.Toast.LENGTH_LONG,
+            ).show()
             return
+        }
+        // Refuse at add time what could never connect (missing UUID, bad port, unsupported transport),
+        // so the person hears about it now rather than as a failed connect later. Saved servers are
+        // NOT re-validated on load: a stricter rule must never silently drop an existing server.
+        ConfigUriParser.parseToProxy(trimmed)?.let { proxy ->
+            val verdict = InternalConnectionConfig.fromProxyMap(proxy)?.let { ConfigValidator.validate(it) }
+            if (verdict is ValidationResult.Invalid) {
+                android.widget.Toast.makeText(
+                    context, verdict.error.userMessage(lang) + " (" + verdict.error.technical.take(90) + ")", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return
+            }
         }
         if (configs.any { it.uri == cfg.uri }) {
             android.widget.Toast.makeText(context, "Already added", android.widget.Toast.LENGTH_SHORT).show()
@@ -1488,29 +1579,12 @@ private fun VpnTab(onSignOut: () -> Unit) {
         coroutineScope.launch {
             try {
                 kotlinx.coroutines.withTimeoutOrNull(PING_SWEEP_TIMEOUT_MS) {
-                    // Fully qualified: `coroutineScope` is also the name of this
-                    // composable's own rememberCoroutineScope value, and a val is not
-                    // invokable — the suspending builder is what is wanted here, so that
-                    // every probe below is a child of this sweep and the timeout reaches
-                    // all of them.
-                    kotlinx.coroutines.coroutineScope {
-                        for (cfg in shown) {
-                            if (cfg.id == activeId && connected) continue
-                            launch {
-                                val ping = withContext(Dispatchers.IO) {
-                                    measurePingMs(cfg.address, cfg.port, timeoutMs = 3000)
-                                }
-                                quality.record(cfg.id, ping)
-                                // Read from the current list rather than from `cfg`, which
-                                // is a snapshot taken before the sweep started. Back on the
-                                // main dispatcher by now, which is where Compose state is
-                                // written from everywhere else in this function.
-                                configs = configs.map {
-                                    if (it.id == cfg.id) it.copy(pingMs = ping) else it
-                                }
-                            }
-                        }
-                    }
+                    // One retry for a timeout: the person asked for a fresh reading, so a single lost
+                    // SYN should not leave a healthy server marked unreachable.
+                    pingManager.measure(
+                        shown.filter { !(it.id == activeId && connected) }.map { PingTarget(it.id, it.address, it.port) },
+                        retries = 1,
+                    )
                 }
                 saveConfigs(context, configs)
             } finally {
