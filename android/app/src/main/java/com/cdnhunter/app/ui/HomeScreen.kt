@@ -2813,53 +2813,6 @@ private fun HeroCard(
     }
 }
 
-/** Connection state as a small glass chip on the flag: a dot and one word. */
-@Composable
-private fun HeroStatusChip(visual: ConnVisual, modifier: Modifier = Modifier) {
-    val reduce = appReduceMotion()
-    val shape = RoundedCornerShape(50)
-    val dot by animateColorAsState(
-        targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> AppDs.TextMid
-            ConnVisual.CONNECTING -> AppDs.Accent
-            ConnVisual.CONNECTED -> RefLive
-            ConnVisual.DISCONNECTING -> AppDs.TextMid
-        },
-        animationSpec = appMotion(reduce, 260),
-        label = "statusDot",
-    )
-    Row(
-        modifier
-            .clip(shape)
-            .background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, AppDs.Border, shape)
-            .padding(horizontal = AppDs.S3, vertical = AppDs.S2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
-        Spacer(Modifier.width(AppDs.S2))
-        AnimatedContent(
-            targetState = when (visual) {
-                ConnVisual.DISCONNECTED -> "Not connected"
-                else -> visual.title()
-            },
-            transitionSpec = {
-                fadeIn(appMotion(reduce, 160)) togetherWith fadeOut(appMotion(reduce, 100))
-            },
-            label = "statusLabel",
-        ) { label ->
-            Text(
-                label,
-                fontSize = TypeCaption.first,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.92f),
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
-    }
-}
-
 // ── Menu button ───────────────────────────────────────────────────────────────
 // The tapered three-line mark on a glass chip, so it holds its edge on any flag without the old
 // under-stroke. Same press language as the rest of Home: no ripple, a quick sink and a soft return.
