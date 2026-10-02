@@ -13,7 +13,7 @@ package com.cdnhunter.app.core
  */
 object ConfigValidator {
 
-    private val SUPPORTED_NETWORKS = setOf("tcp", "ws", "grpc", "h2", "xhttp")
+    private val SUPPORTED_NETWORKS = setOf("tcp", "ws", "grpc", "h2", "xhttp", "http")
     private val HEX = Regex("^[0-9a-fA-F]*$")
     private val IPV4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
     private val HOST_LABEL = Regex("""^[\p{L}\p{N}_]([\p{L}\p{N}_-]{0,61}[\p{L}\p{N}_])?$""")
@@ -52,6 +52,14 @@ object ConfigValidator {
             }
         }
 
+        val encryption = p["encryption"]?.toString().orEmpty()
+        if (encryption.isNotEmpty()) {
+            if (config.protocol != ProxyProtocol.VLESS) {
+                return invalid(ErrorCode.INVALID_CONFIG, "encryption is only valid for vless", "encryption")
+            }
+            validateVlessEncryption(encryption)?.let { return invalid(ErrorCode.UNSUPPORTED_PROTOCOL, it, "encryption") }
+        }
+
         val network = (p["network"]?.toString() ?: "tcp").lowercase()
         if (network !in SUPPORTED_NETWORKS) {
             return invalid(ErrorCode.UNSUPPORTED_PROTOCOL, "transport '$network' is not supported", "network")
@@ -80,12 +88,33 @@ object ConfigValidator {
             if (!flow.startsWith("xtls-rprx-vision")) {
                 return invalid(ErrorCode.UNSUPPORTED_PROTOCOL, "flow '$flow' is not supported", "flow")
             }
-            if (!tls) {
-                return invalid(ErrorCode.INVALID_CONFIG, "flow requires TLS or REALITY", "flow")
+            // Vision needs an encrypted layer underneath it: TLS/REALITY, or VLESS Encryption itself.
+            if (!tls && encryption.isEmpty()) {
+                return invalid(ErrorCode.INVALID_CONFIG, "flow requires TLS, REALITY or VLESS encryption", "flow")
             }
         }
 
         return ValidationResult.Valid(ValidatedConfig.of(config))
+    }
+
+    private val ENC_CHARS = Regex("""^[A-Za-z0-9._+/=-]+$""")
+
+    /**
+     * VLESS Encryption client string:
+     * `mlkem768x25519plus.<native|xorpub|random>.<1rtt|0rtt>[.<padding>...].<base64 key>[.<base64 key>...]`.
+     * Only the envelope is checked — the key material is the core's to judge. A value that does not
+     * start with the known scheme is refused up front instead of failing as a silent handshake timeout.
+     */
+    fun validateVlessEncryption(value: String): String? {
+        if (value.length > 4096 || !ENC_CHARS.matches(value)) return "vless encryption contains illegal characters"
+        val parts = value.split('.')
+        if (parts.size < 4 || parts[0] != "mlkem768x25519plus") {
+            return "vless encryption scheme is not supported (expected mlkem768x25519plus.<mode>.<1rtt|0rtt>.<key>)"
+        }
+        if (parts[1] !in setOf("native", "xorpub", "random")) return "vless encryption mode '${parts[1]}' is not supported"
+        if (parts[2] !in setOf("1rtt", "0rtt")) return "vless encryption round-trip mode '${parts[2]}' is not supported"
+        if (parts.drop(3).any { it.isEmpty() }) return "vless encryption has an empty segment"
+        return null
     }
 
     /** Null if [host] is a usable server address, else a human-readable reason. */

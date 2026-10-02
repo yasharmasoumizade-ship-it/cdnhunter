@@ -107,6 +107,11 @@ object ConfigUriParser {
         )
         val flow = params["flow"] ?: ""
         if (flow.isNotBlank()) p["flow"] = flow
+        // VLESS Encryption (post-quantum, "mlkem768x25519plus.native.0rtt.<key>"). The client MUST
+        // send the same value the server was configured with; leaving it out makes the server drop
+        // the handshake, and the connection just times out. mihomo takes the exact Xray string.
+        val encryption = params["encryption"]?.trim().orEmpty()
+        if (encryption.isNotEmpty() && !encryption.equals("none", ignoreCase = true)) p["encryption"] = encryption
         applyTransport(p, params, forceX25519Mlkem768)
         return p
     }
@@ -299,7 +304,18 @@ object ConfigUriParser {
                 p["xhttp-opts"] = xhttpOpts
             }
             // "tcp" (the default) needs no network/*-opts entry in mihomo.
-            "tcp", "raw", "none", "" -> {}
+            "tcp", "raw", "none", "" -> {
+                // TCP with an HTTP header ("headerType=http") is v2ray's HTTP obfuscation, which is
+                // NOT plain TCP: the server expects the fake HTTP request. mihomo calls it network "http".
+                if ((params["headerType"] ?: "").equals("http", ignoreCase = true)) {
+                    val host = (params["host"] ?: "").split(",").firstOrNull()?.trim().orEmpty()
+                    val path = (params["path"] ?: "").split(",").firstOrNull()?.trim().orEmpty().ifEmpty { "/" }
+                    val opts = linkedMapOf<String, Any>("method" to "GET", "path" to listOf(path))
+                    if (host.isNotEmpty()) opts["headers"] = linkedMapOf<String, Any>("Host" to listOf(host))
+                    p["network"] = "http"
+                    p["http-opts"] = opts
+                }
+            }
             // Any other transport (kcp, quic, httpupgrade, ...) used to fall through here
             // and be treated as plain TCP, so the config "connected" and never passed
             // traffic. Record the name instead: ConfigValidator rejects it up front with

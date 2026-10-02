@@ -74,9 +74,15 @@ object JsonConfigParser {
         }
 
         val schema = detect(root)
-        val entries: List<JSONObject> = when (root) {
-            is JSONObject -> entriesOf(root, schema)
-            is JSONArray -> root.objects()
+        val entries: List<Entry> = when (root) {
+            is JSONObject -> entriesOf(root, schema).map { Entry(it, root.str("remarks")) }
+            is JSONArray -> root.objects().flatMap { el ->
+                // An array is either a list of bare outbounds/proxies, or a list of COMPLETE configs
+                // (what subscription servers send: one Xray config per server, each with its own
+                // inbounds/outbounds/remarks). Complete configs are unpacked to their outbounds.
+                if (isWholeConfig(el)) entriesOf(el, detectObject(el)).map { Entry(it, el.str("remarks")) }
+                else listOf(Entry(el, null))
+            }
             else -> emptyList()
         }
         if (schema == JsonSchema.UNKNOWN) {
@@ -89,7 +95,7 @@ object JsonConfigParser {
         val skipped = ArrayList<SkippedEntry>()
         var firstError: ConnectionError.ConfigError? = null
 
-        for (entry in entries) {
+        for ((entry, remark) in entries) {
             val adapted = try {
                 when (schema) {
                     JsonSchema.XRAY -> XrayAdapter.adapt(entry)
@@ -107,15 +113,18 @@ object JsonConfigParser {
                     skipped += SkippedEntry(adapted.tag, "${adapted.error.code}: ${adapted.error.technical}")
                 }
                 is Adapted.Proxy -> {
-                    val internal = InternalConnectionConfig.fromProxyMap(adapted.map, adapted.name)
+                    // The remark is the name the server's owner gave this config ("🇩🇪 Germany 4");
+                    // the outbound's own tag is usually just "proxy".
+                    val displayName = remark ?: adapted.name
+                    val internal = InternalConnectionConfig.fromProxyMap(adapted.map, displayName)
                     if (internal == null) {
                         skipped += SkippedEntry(adapted.name, "${ErrorCode.INVALID_CONFIG}: missing server or port")
                         if (firstError == null) firstError = ConnectionError.ConfigError(ErrorCode.INVALID_CONFIG, "missing server or port")
                     } else when (val v = ConfigValidator.validate(internal)) {
-                        is ValidationResult.Valid -> proxies += ParsedProxy(adapted.name, v.config.config)
+                        is ValidationResult.Valid -> proxies += ParsedProxy(displayName, v.config.config)
                         is ValidationResult.Invalid -> {
                             if (firstError == null) firstError = v.error
-                            skipped += SkippedEntry(adapted.name, "${v.error.code}: ${v.error.technical}")
+                            skipped += SkippedEntry(displayName, "${v.error.code}: ${v.error.technical}")
                         }
                     }
                 }
@@ -133,11 +142,22 @@ object JsonConfigParser {
     /** Identifies the schema from structure alone. */
     fun detect(root: Any): JsonSchema = when (root) {
         is JSONObject -> detectObject(root)
-        is JSONArray -> root.objects().firstOrNull()?.let { detectEntry(it) } ?: JsonSchema.UNKNOWN
+        is JSONArray -> root.objects().firstNotNullOfOrNull { el ->
+            (if (isWholeConfig(el)) detectObject(el) else detectEntry(el)).takeIf { it != JsonSchema.UNKNOWN }
+        } ?: JsonSchema.UNKNOWN
         else -> JsonSchema.UNKNOWN
     }
 
-    private fun detectObject(o: JSONObject): JsonSchema {
+    /** A complete client config (as opposed to a single outbound/proxy): it holds a list of them. */
+    private fun isWholeConfig(o: JSONObject) =
+        o.arr("outbounds") != null || o.obj("outbound") != null || o.arr("proxies") != null
+
+    private class Entry(val obj: JSONObject, val remark: String?) {
+        operator fun component1() = obj
+        operator fun component2() = remark
+    }
+
+    internal fun detectObject(o: JSONObject): JsonSchema {
         val outbounds = o.arr("outbounds")?.objects() ?: o.obj("outbound")?.let { listOf(it) }
         if (outbounds != null) return outbounds.firstNotNullOfOrNull { detectEntry(it).takeIf { s -> s != JsonSchema.UNKNOWN } } ?: JsonSchema.UNKNOWN
         if (o.arr("proxies") != null) return JsonSchema.CLASH

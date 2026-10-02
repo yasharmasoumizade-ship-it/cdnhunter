@@ -145,7 +145,7 @@ class JsonConfigParserTest {
         assertEquals(ErrorCode.UNSUPPORTED_PROTOCOL, failCode(
             """{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"$uuid"}]}]},"streamSettings":{"network":"kcp"}}]}"""))
         assertEquals(ErrorCode.UNSUPPORTED_PROTOCOL, failCode(
-            """{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"$uuid","encryption":"mlkem768x25519plus.native.0rtt.xxx"}]}]}}]}"""))
+            """{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"a.example.com","port":443,"users":[{"id":"$uuid","encryption":"some-future-scheme.native.0rtt.xxx"}]}]}}]}"""))
     }
 
     @Test fun oneBadServerDoesNotSinkTheOthers() {

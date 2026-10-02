@@ -46,10 +46,8 @@ internal object XrayAdapter {
                 proxy["uuid"] = id
                 proxy["udp"] = true
                 if (protocol == "vless") {
-                    val enc = user.str("encryption")
-                    if (enc != null && !enc.equals("none", ignoreCase = true)) {
-                        return rejected(tag, ErrorCode.UNSUPPORTED_PROTOCOL, "vless encryption '$enc' is not supported", "encryption")
-                    }
+                    // Passed through as-is; ConfigValidator decides whether the format is one the core can use.
+                    user.str("encryption")?.takeIf { !it.equals("none", ignoreCase = true) }?.let { proxy["encryption"] = it }
                     user.str("flow")?.let { proxy["flow"] = it }
                 } else {
                     proxy["alterId"] = user.int("alterId") ?: 0
@@ -101,6 +99,17 @@ internal object XrayAdapter {
             reality.str("publicKey")?.let { params["pbk"] = it }
             reality.str("shortId")?.let { params["sid"] = it }
             reality.str("fingerprint")?.let { params["fp"] = it }
+        }
+
+        // Classic TCP + HTTP header obfuscation: tcpSettings.header { type: "http", request: { path, headers.Host } }.
+        if (network == "tcp") {
+            val header = stream?.obj("tcpSettings")?.obj("header")
+            if (header?.str("type").equals("http", ignoreCase = true)) {
+                params["headerType"] = "http"
+                val req = header?.obj("request")
+                req?.strList("path")?.firstOrNull()?.let { params["path"] = it }
+                req?.obj("headers")?.strList("Host")?.firstOrNull()?.let { params["host"] = it }
+            }
         }
 
         when (network) {

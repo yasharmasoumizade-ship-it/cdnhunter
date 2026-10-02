@@ -93,7 +93,7 @@ class CdnVpnService : VpnService() {
         const val TUN_ADDRESS_V4 = "10.10.10.10"
         const val MIXED_PORT = 10808
 
-        private const val VERIFY_TIMEOUT_MS = 20_000L
+        private const val VERIFY_TIMEOUT_MS = 15_000L
         private const val CORE_CHECK_INTERVAL_MS = 5_000L
         private const val PROBE_INTERVAL_MS = 30_000L
         private const val PROBE_INTERVAL_AFTER_FAILURE_MS = 5_000L
@@ -388,10 +388,14 @@ class CdnVpnService : VpnService() {
 
         val policy = policyFor(p.settings)
         val used = store.snapshot.reconnectAttempt
-        val retry = policy.shouldRetry(used, cmd.error, p.settings.autoReconnect)
+        if (cmd.wasConnected) p.everConnected = true
+        // Auto-reconnect exists for a connection that WAS up and dropped. A first connect that never
+        // got traffic through (wrong config, blocked server, server rejecting the handshake) will fail
+        // the same way again: retrying it only held the UI on "Connecting…" for minutes (3 retries x
+        // the verification wait) before showing the error that was already known after the first try.
+        val retry = p.everConnected && policy.shouldRetry(used, cmd.error, p.settings.autoReconnect)
 
         // The core is gone either way. The TUN stays only if the kill switch wants it held.
-        if (cmd.wasConnected) p.everConnected = true
         val holdTun = p.settings.killSwitch && p.everConnected
         withContext(Dispatchers.IO) { stopCore() }
 

@@ -29,7 +29,7 @@ internal object ClashAdapter {
         p["port"] = port
         p["udp"] = ob.bool("udp") ?: true
 
-        for (k in listOf("uuid", "cipher", "password", "servername", "sni", "client-fingerprint", "flow", "network")) {
+        for (k in listOf("uuid", "cipher", "password", "servername", "sni", "client-fingerprint", "flow", "network", "encryption")) {
             ob.str(k)?.let { p[k] = if (k == "network") it.lowercase() else it }
         }
         ob.int("alterId")?.let { p["alterId"] = it }
@@ -41,6 +41,13 @@ internal object ClashAdapter {
             ws.str("path")?.let { o["path"] = it }
             ws.obj("headers")?.str("Host")?.let { o["headers"] = linkedMapOf<String, Any>("Host" to it) }
             if (o.isNotEmpty()) p["ws-opts"] = o
+        }
+        ob.obj("http-opts")?.let { h ->
+            val o = linkedMapOf<String, Any>()
+            o["method"] = h.str("method") ?: "GET"
+            h.strList("path").takeIf { it.isNotEmpty() }?.let { o["path"] = it }
+            h.obj("headers")?.strList("Host")?.takeIf { it.isNotEmpty() }?.let { o["headers"] = linkedMapOf<String, Any>("Host" to it) }
+            p["http-opts"] = o
         }
         ob.obj("grpc-opts")?.str("grpc-service-name")?.let {
             p["grpc-opts"] = linkedMapOf<String, Any>("grpc-service-name" to it)
