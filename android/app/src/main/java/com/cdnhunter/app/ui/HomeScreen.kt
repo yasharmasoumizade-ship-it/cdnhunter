@@ -106,6 +106,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -2561,18 +2562,27 @@ private enum class ConnVisual { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTI
 
 private fun ConnVisual.title(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Connect"
-    ConnVisual.CONNECTING -> "Connecting"
+    ConnVisual.CONNECTING -> "Connecting..."
     ConnVisual.CONNECTED -> "Connected"
-    ConnVisual.DISCONNECTING -> "Disconnecting"
+    ConnVisual.DISCONNECTING -> "Disconnecting..."
     ConnVisual.ERROR -> "Couldn't connect"
 }
 
 private fun ConnVisual.caption(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Not protected"
-    ConnVisual.CONNECTING -> "Tap to cancel"
-    ConnVisual.CONNECTED -> "Tap to disconnect"
-    ConnVisual.DISCONNECTING -> "One moment"
+    ConnVisual.CONNECTING -> "Establishing secure connection"
+    ConnVisual.CONNECTED -> "Protected"
+    ConnVisual.DISCONNECTING -> "Closing secure connection"
     ConnVisual.ERROR -> "Tap to retry"
+}
+
+/** The glyph mirrors the same real state the words do. */
+private fun ConnVisual.glyph(): GlyphPhase = when (this) {
+    ConnVisual.DISCONNECTED -> GlyphPhase.Idle
+    ConnVisual.CONNECTING -> GlyphPhase.Connecting
+    ConnVisual.CONNECTED -> GlyphPhase.Connected
+    ConnVisual.DISCONNECTING -> GlyphPhase.Disconnecting
+    ConnVisual.ERROR -> GlyphPhase.Error
 }
 
 /** How long DISCONNECTING stays up after the tunnel reports down, so the state is readable. */
@@ -2582,7 +2592,14 @@ private const val DISCONNECT_HOLD_MS = 500L
 private const val DISCONNECT_TIMEOUT_MS = 6_000L
 
 /** How long the ERROR state stays up after a failed attempt before the button settles back. */
-private const val ERROR_HOLD_MS = 6_000L
+private const val ERROR_HOLD_MS = 2_500L
+
+/**
+ * Taps closer together than this are one tap. Without it a double-tap would start a connect and
+ * immediately cancel it, replaying the whole animation for an attempt that never meant anything.
+ * Short enough that cancelling a slow connect still feels immediate.
+ */
+private const val TAP_GUARD_MS = 450L
 
 private val HeroMinHeight = 168.dp
 private val HeroMaxHeight = 232.dp
@@ -3253,14 +3270,15 @@ private fun ConnectPanel(
 
 /**
  * The connect control: a wide matte button with a round icon well at its left and the state in
- * words beside it. The four states each change the icon, the words, the edge and the motion:
+ * words beside it. Every state is drawn from the app's real connection state — nothing here
+ * times, estimates or invents progress:
  *
- *   DISCONNECTED   — bolt in white on a charcoal well, neutral hairline.
- *   CONNECTING     — bolt pulses in the accent while an accent arc turns around the well; the
- *                    edge takes the accent.
- *   CONNECTED      — the well fills with the accent and the bolt turns white; a faint accent tint
- *                    settles over the button.
- *   DISCONNECTING  — the arc turns the other way, the bolt dims, taps are ignored until it lands.
+ *   DISCONNECTED   — bolt · "Connect" · "Not protected".
+ *   CONNECTING     — the bolt becomes a thin ring with a travelling arc, for exactly as long as the
+ *                    service reports CONNECTING.
+ *   CONNECTED      — the ring closes into a check with one soft pulse; the well fills with the accent.
+ *   DISCONNECTING  — the same morph backwards, until the tunnel reports down.
+ *   ERROR          — the ring settles into a still, red circle, then returns to the bolt.
  *
  * Tap toggles the tunnel; a vertical drag switches Smart / Manual (also exposed as two named
  * accessibility actions), exactly as the old disc did.
@@ -3279,46 +3297,24 @@ private fun ConnectButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = RoundedCornerShape(AppDs.RLg)
-    val busy = visual == ConnVisual.CONNECTING || visual == ConnVisual.DISCONNECTING
-
     val scale = animatePressScale(pressed)
-    val live by animateFloatAsState(
-        if (visual == ConnVisual.CONNECTED) 1f else 0f, appMotion(reduce, 280), label = "connectLive",
-    )
-    val working by animateFloatAsState(
-        if (busy) 1f else 0f, appMotion(reduce, 200), label = "connectBusy",
+    // The well fills with the accent only once the glyph's ring has closed (hence the delay), and
+    // drains at once on the way down. Held as State so the draw phase reads it, not composition.
+    val liveFill = animateFloatAsState(
+        targetValue = if (visual == ConnVisual.CONNECTED) 1f else 0f,
+        animationSpec = when {
+            reduce -> snap()
+            visual == ConnVisual.CONNECTED -> tween(280, delayMillis = 220, easing = FastOutSlowInEasing)
+            else -> tween(200, easing = FastOutSlowInEasing)
+        },
+        label = "connectLive",
     )
     // The light inner CTA is bone in every state; the state lives in the well, the words and the
     // outer panel's edge. Pressed deepens it a step.
     val fill by animateColorAsState(
         if (pressed) lerp(AppDs.Bone, Color.Black, 0.10f) else AppDs.Bone, appMotion(reduce, 100), label = "connectFill",
     )
-    val fault by animateFloatAsState(
-        if (visual == ConnVisual.ERROR) 1f else 0f, appMotion(reduce, 200), label = "connectFault",
-    )
-    val boltColor by animateColorAsState(
-        targetValue = when (visual) {
-            ConnVisual.DISCONNECTED -> AppDs.Bone
-            ConnVisual.CONNECTING -> AppDs.Bone
-            ConnVisual.CONNECTED -> AppDs.OnAccent
-            ConnVisual.DISCONNECTING -> AppDs.Bone.copy(alpha = 0.50f)
-            ConnVisual.ERROR -> AppDs.OnAccent
-        },
-        animationSpec = appMotion(reduce, 220),
-        label = "connectBolt",
-    )
-
-    // The arc's rotation. Driven only while busy, and cancelled by the effect's key on any state
-    // change, so nothing runs (or keeps the display refreshing) while the tunnel is idle or up.
-    val spin = remember { Animatable(0f) }
-    LaunchedEffect(busy, reduce) {
-        if (busy && !reduce) {
-            while (true) {
-                spin.snapTo(0f)
-                spin.animateTo(360f, tween(CONNECT_SPIN_MS, easing = LinearEasing))
-            }
-        }
-    }
+    var lastTapAt by remember { mutableStateOf(0L) }
 
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
@@ -3365,8 +3361,12 @@ private fun ConnectButton(
                 indication = null,
                 onClickLabel = label,
                 onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastTapAt >= TAP_GUARD_MS) {
+                        lastTapAt = now
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClick()
+                    }
                 },
             )
             .semantics {
@@ -3379,19 +3379,30 @@ private fun ConnectButton(
             .padding(horizontal = AppDs.S4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ConnectWell(
-            visual = visual,
-            wellFill = if (visual == ConnVisual.ERROR) AppDs.Error else AppDs.Accent,
-            fillAmount = maxOf(live, fault),
-            working = working,
-            boltColor = boltColor,
-            spinDegrees = { spin.value },
-        )
+        ConnectWell(phase = visual.glyph(), fillAmount = { liveFill.value })
         Spacer(Modifier.width(AppDs.S4))
         AnimatedContent(
             targetState = visual,
+            // Opacity + a little scale + a short vertical drift, on a fast ease: the words arrive
+            // from below and the old ones lift away. The column is the same height in every state,
+            // so nothing around it moves.
             transitionSpec = {
-                fadeIn(appMotion(reduce, 160)) togetherWith fadeOut(appMotion(reduce, 100))
+                if (reduce) {
+                    fadeIn(snap()) togetherWith fadeOut(snap())
+                } else {
+                    (
+                        fadeIn(tween(200, delayMillis = 70)) +
+                            scaleIn(
+                                tween(240, delayMillis = 70, easing = FastOutSlowInEasing),
+                                initialScale = 0.94f,
+                                transformOrigin = TransformOrigin(0f, 0.5f),
+                            ) +
+                            slideInVertically(tween(240, delayMillis = 70, easing = FastOutSlowInEasing)) { it / 5 }
+                        ) togetherWith (
+                        fadeOut(tween(110)) +
+                            slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { -it / 6 }
+                        ) using SizeTransform(clip = false)
+                }
             },
             label = "connectLabel",
             modifier = Modifier.weight(1f),
@@ -3416,62 +3427,32 @@ private fun ConnectButton(
     }
 }
 
-/** The icon well: ink disc on the bone button, filled blue when live (red on error), a turning arc while busy, and the bolt. */
+/**
+ * The icon well: an ink disc on the bone button that fills with the accent once connected, with
+ * the [ConnectGlyph] (bolt → ring → check) drawn over it. [fillAmount] is read while drawing.
+ */
 @Composable
 private fun ConnectWell(
-    visual: ConnVisual,
-    wellFill: Color,
-    fillAmount: Float,
-    working: Float,
-    boltColor: Color,
-    spinDegrees: () -> Float,
+    phase: GlyphPhase,
+    fillAmount: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier.size(AppDs.ConnectWell)) {
-        val stroke = 2.dp.toPx()
-        val radius = size.minDimension / 2f
-        drawCircle(AppDs.Ink)
-        drawCircle(AppDs.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
-        if (fillAmount > 0.01f) {
-            drawCircle(wellFill.copy(alpha = fillAmount), radius = radius * (0.88f + 0.12f * fillAmount))
-        }
-        if (working > 0.01f) {
-            // A ping: two rings leave the bolt and fade as they reach the rim — outward while the
-            // tunnel is coming up, drawn back in while it is going down. Nothing about progress is
-            // implied; it says only "something is happening", which is all the service reports.
-            val phase = (spinDegrees() / 360f).coerceIn(0f, 1f)
-            val inward = visual == ConnVisual.DISCONNECTING
-            val ring = if (inward) AppDs.TextMid else AppDs.AccentSoft
-            for (k in 0..1) {
-                val travelled = (phase + k * 0.5f) % 1f
-                val p = if (inward) 1f - travelled else travelled
-                drawCircle(
-                    color = ring.copy(alpha = (1f - travelled) * 0.6f * working),
-                    radius = radius * (0.30f + 0.66f * p),
-                    style = Stroke(1.5.dp.toPx()),
-                )
+    Box(modifier.size(AppDs.ConnectWell)) {
+        Canvas(Modifier.matchParentSize()) {
+            val stroke = 2.dp.toPx()
+            val radius = size.minDimension / 2f
+            drawCircle(AppDs.Ink)
+            drawCircle(AppDs.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
+            val fill = fillAmount()
+            if (fill > 0.01f) {
+                drawCircle(AppDs.Accent.copy(alpha = fill), radius = radius * (0.88f + 0.12f * fill))
             }
         }
-        // The bolt pulses gently while connecting; every other state draws it steady.
-        val pulse = if (visual == ConnVisual.CONNECTING && working > 0.01f) {
-            0.65f + 0.35f * (0.5f + 0.5f * kotlin.math.sin(spinDegrees() / 57.29578f))
-        } else {
-            1f
-        }
-        val bounds = ConnectBoltPath.getBounds()
-        val fit = size.minDimension * 0.46f / maxOf(bounds.width, bounds.height)
-        translate(
-            left = (size.width - bounds.width * fit) / 2f - bounds.left * fit,
-            top = (size.height - bounds.height * fit) / 2f - bounds.top * fit,
-        ) {
-            scale(scale = fit, pivot = Offset.Zero) {
-                drawPath(
-                    path = ConnectBoltPath,
-                    color = boltColor.copy(alpha = boltColor.alpha * pulse),
-                    style = Fill,
-                )
-            }
-        }
+        ConnectGlyph(
+            phase = phase,
+            boltPath = ConnectBoltPath,
+            modifier = Modifier.matchParentSize(),
+        )
     }
 }
 
