@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -995,12 +996,19 @@ internal fun accountStatusShort(account: AccountUiState): String = when (val s =
     SubscriptionState.None -> if (account.isPro) "Subscription active" else "Free plan"
 }
 
-/** Profile's header: avatar, name, email in one card — the same container language as Home's. */
+/**
+ * Profile's header: who this is (avatar, name, email) and, in [badges], what state the account is
+ * in — plan, email verification — so the page answers both before anything below it is read.
+ */
 @Composable
-internal fun ProfileHeader(account: AccountUiState, modifier: Modifier = Modifier) {
+internal fun ProfileHeader(
+    account: AccountUiState,
+    modifier: Modifier = Modifier,
+    badges: @Composable RowScope.() -> Unit = {},
+) {
     PremiumCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(size = 64.dp, initials = account.initials, initialsSize = AppType.Title.first)
+            Avatar(size = 56.dp, initials = account.initials, initialsSize = AppType.Title.first)
             Spacer(Modifier.width(AppDs.S4))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -1022,6 +1030,15 @@ internal fun ProfileHeader(account: AccountUiState, modifier: Modifier = Modifie
                 )
             }
         }
+        Spacer(Modifier.height(AppDs.S4))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(AppDs.Border))
+        Spacer(Modifier.height(AppDs.S3))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDs.S4),
+            content = badges,
+        )
     }
 }
 

@@ -2788,7 +2788,8 @@ private fun VerificationBadge(verified: Boolean) {
 }
 
 /**
- * The email card on Profile: the account email, its verification state, and — when unverified — a
+ * The "verify your email" card on Profile, shown only while the account is unverified (the state
+ * itself lives in the header's badge): the address, why it matters, and a
  * live "Resend verification" action wired to FirebaseAuth's real `sendEmailVerification()`. This
  * is NOT mock: the email address and verified flag come from the signed-in Firebase user, and the
  * resend actually dispatches Firebase's verification email.
@@ -2801,21 +2802,26 @@ private fun EmailVerificationCard(account: AccountUiState) {
     val context = LocalContext.current
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
-    PremiumCard {
+    PremiumCard(borderColor = AppDs.Warning.copy(alpha = 0.30f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PremiumIconContainer(com.cdnhunter.app.R.drawable.ic_lucide_mail)
+            PremiumIconContainer(com.cdnhunter.app.R.drawable.ic_lucide_mail, tone = AppDs.Warning)
             Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
                 Text(
-                    account.email,
+                    "Verify your email",
                     fontSize = AppType.Subtitle.first,
                     fontWeight = AppType.Subtitle.second,
                     color = AppDs.TextHi,
+                )
+                Spacer(Modifier.height(AppDs.S1))
+                Text(
+                    account.email,
+                    fontSize = AppType.Caption.first,
+                    fontWeight = AppType.Caption.second,
+                    color = AppDs.TextMid,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(AppDs.S1))
-                VerificationBadge(account.emailVerified)
             }
         }
         if (!account.emailVerified) {
@@ -2950,70 +2956,66 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
         }
     }
     PremiumScreen(title = "Profile", onBack = onBack) {
-        ProfileHeader(account)
-
-        SectionHeader("EMAIL")
-        EmailVerificationCard(account)
-
-        SectionHeader("SUBSCRIPTION")
-        PremiumCard(
-            borderColor = if (account.isPro) AppDs.Accent.copy(alpha = 0.30f) else AppDs.Border,
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PremiumIconContainer(
-                    if (account.isPro) Icons.Rounded.WorkspacePremium else Icons.Rounded.Shield,
-                    tone = if (account.isPro) AppDs.Accent else null,
-                )
-                Spacer(Modifier.width(AppDs.S3))
-                Text(
-                    "${account.plan.label} plan",
-                    fontSize = AppType.Subtitle.first,
-                    fontWeight = FontWeight.Bold,
-                    color = if (account.isPro) AppDs.Accent else AppDs.TextHi,
-                    modifier = Modifier.weight(1f),
-                )
-                PlanBadge(account.plan)
-            }
-            when (val s = account.subscription) {
-                is SubscriptionState.Active -> {
-                    Spacer(Modifier.height(AppDs.S4))
-                    Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(AppDs.SurfaceRaised)) {
-                        Box(
-                            Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(CircleShape)
-                                .background(AppDs.Accent),
-                        )
-                    }
-                    Spacer(Modifier.height(AppDs.S2))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(s.daysRemainingLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
-                        Text(s.renewalLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
-                    }
-                }
-                SubscriptionState.None -> {
-                    Spacer(Modifier.height(AppDs.S3))
-                    Text(
-                        if (account.isPro) "Your subscription is active."
-                        else "You're on the free plan — no active subscription.",
-                        fontSize = AppType.Caption.first,
-                        fontWeight = AppType.Caption.second,
-                        color = AppDs.TextMid,
-                        lineHeight = 16.sp,
-                    )
-                }
-            }
+        ProfileHeader(account) {
+            PlanBadge(account.plan)
+            VerificationBadge(account.emailVerified)
         }
 
-        if (!account.isPro) {
-            Spacer(Modifier.height(AppDs.S3))
+        // Only an unverified account has anything to do here; a verified one is already said in
+        // the header, so it gets no card repeating the address.
+        if (!account.emailVerified) {
+            SectionHeader("EMAIL")
+            EmailVerificationCard(account)
+        }
+
+        SectionHeader("SUBSCRIPTION")
+        if (account.isPro) {
+            PremiumCard(borderColor = AppDs.Accent.copy(alpha = 0.30f)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Accent)
+                    Spacer(Modifier.width(AppDs.S3))
+                    Text(
+                        "${account.plan.label} plan",
+                        fontSize = AppType.Subtitle.first,
+                        fontWeight = FontWeight.Bold,
+                        color = AppDs.Accent,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                when (val s = account.subscription) {
+                    is SubscriptionState.Active -> {
+                        Spacer(Modifier.height(AppDs.S4))
+                        Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(AppDs.SurfaceRaised)) {
+                            Box(
+                                Modifier.fillMaxHeight().fillMaxWidth(s.periodProgress).clip(CircleShape)
+                                    .background(AppDs.Accent),
+                            )
+                        }
+                        Spacer(Modifier.height(AppDs.S2))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(s.daysRemainingLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
+                            Text(s.renewalLabel, fontSize = AppType.Caption.first, fontWeight = AppType.Caption.second, color = AppDs.TextMid)
+                        }
+                    }
+                    SubscriptionState.None -> {
+                        Spacer(Modifier.height(AppDs.S3))
+                        Text(
+                            "Your subscription is active.",
+                            fontSize = AppType.Caption.first,
+                            fontWeight = AppType.Caption.second,
+                            color = AppDs.TextMid,
+                            lineHeight = 16.sp,
+                        )
+                    }
+                }
+            }
+        } else {
+            // Free: the upgrade card already says everything the old "Free plan" card did.
             UpgradeCard(onUpgrade = { showComingSoon(context) })
         }
 
         SectionHeader("ACCOUNT")
         PremiumCardGroup {
-            if (account.isPro) {
-                SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Accent, onClick = { showComingSoon(context) })
-                PremiumDivider()
-            }
             SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, showChevron = true, onClick = onPaymentHistory)
             PremiumDivider()
             // The one destructive row in the app, so it is the one row whose label is not the
