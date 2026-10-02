@@ -26,6 +26,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -73,6 +74,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -1209,7 +1211,7 @@ private fun SignalBars(modifier: Modifier, height: Dp, color: Color, phase: (() 
  * placeholder must never read brighter than the content that replaces it. Still when motion is
  * reduced.
  */
-internal fun Modifier.shimmer(): Modifier = androidx.compose.ui.composed {
+internal fun Modifier.shimmer(): Modifier = composed {
     val reduce = appReduceMotion()
     if (reduce) {
         this
