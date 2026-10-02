@@ -3,6 +3,7 @@ package com.cdnhunter.app.vpn
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -1033,13 +1034,23 @@ class CdnVpnService : VpnService() {
         }
     }
 
-    private fun buildNotification(status: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(status: String): Notification {
+        // A Disconnect action in every state. It is the way out when the kill switch is blocking
+        // traffic: the in-app button reconnects, and without this the only way to release the block
+        // would be the system VPN settings.
+        val stop = PendingIntent.getService(
+            this, 0,
+            Intent(this, CdnVpnService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0),
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CDN Hunter VPN")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
+            .addAction(0, "Disconnect", stop)
             .build()
+    }
 
     private fun updateNotification(status: String) {
         try {
