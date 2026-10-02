@@ -1166,11 +1166,15 @@ internal data class HomeUiState(
      *  indicator. See [onRefreshPings] at Home's own call site. */
     val refreshingPings: Boolean = false,
     /**
-     * The address the connection layer is dialling, as the connection snapshot reports it
-     * (`TunnelInfo.serverIp`). Empty until it is known — never a guess, and not the device's own
-     * [publicIp]. Shown under "Connecting" the moment it exists.
+     * The exit IP of THIS connection: `TunnelInfo.publicIp`, which the service asks for through
+     * the tunnel once it is CONNECTED. Null until that lookup really returns -- never a guess, a
+     * cache, or the previous connection's address -- and kept apart from the connection state on
+     * purpose: CONNECTED with a null here is the normal "protected, address still arriving"
+     * moment. Also not [publicIp], which deliberately keeps the prior address up while refreshing.
      */
-    val serverIp: String = "",
+    val connectionIp: String? = null,
+    /** That lookup finished without an address. The tunnel is up regardless; only the readout gives up. */
+    val connectionIpFailed: Boolean = false,
 ) {
     private fun hasExitGeo(cfg: SavedConfig) =
         connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
@@ -2603,12 +2607,17 @@ private fun ConnVisual.caption(): String = when (this) {
     ConnVisual.BLOCKED -> "Kill switch is blocking traffic · tap to reconnect"
 }
 
-/** The glyph mirrors the same real state the words do. */
+/**
+ * The glyph mirrors the same real state the words do -- except that it never loads. The three
+ * dots after the title ([ActivityDots]) are the connect button's only loading indicator, so while
+ * connecting or disconnecting the well simply holds the bolt, and on CONNECTED the bolt closes
+ * into the check. (The travelling line stays in [ConnectGlyph] for anything else that wants it.)
+ */
 private fun ConnVisual.glyph(): GlyphPhase = when (this) {
     ConnVisual.DISCONNECTED -> GlyphPhase.Idle
-    ConnVisual.CONNECTING -> GlyphPhase.Connecting
+    ConnVisual.CONNECTING -> GlyphPhase.Idle
     ConnVisual.CONNECTED -> GlyphPhase.Connected
-    ConnVisual.DISCONNECTING -> GlyphPhase.Disconnecting
+    ConnVisual.DISCONNECTING -> GlyphPhase.Idle
     ConnVisual.ERROR -> GlyphPhase.Error
     ConnVisual.BLOCKED -> GlyphPhase.Error
 }
@@ -3288,7 +3297,8 @@ private fun ConnectPanel(
     ) {
         ConnectButton(
             visual = visual,
-            serverIp = state.serverIp,
+            connectionIp = state.connectionIp,
+            connectionIpFailed = state.connectionIpFailed,
             enabled = enabled,
             onClick = onClick,
             onSwipeUp = onSwipeUp,
@@ -3338,7 +3348,8 @@ private fun ConnectPanel(
 @Composable
 private fun ConnectButton(
     visual: ConnVisual,
-    serverIp: String,
+    connectionIp: String?,
+    connectionIpFailed: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
@@ -3457,13 +3468,7 @@ private fun ConnectButton(
                     }
                 }
             }
-            // The real address, once the connection layer has one; until then the plain line. No
-            // placeholder digits are ever drawn.
-            val caption = if (visual == ConnVisual.CONNECTING && serverIp.isNotBlank()) {
-                "Server IP: $serverIp"
-            } else {
-                visual.caption()
-            }
+            val caption = visual.caption()
             AnimatedContent(
                 targetState = caption,
                 transitionSpec = labelTransition(reduce),
@@ -3479,9 +3484,84 @@ private fun ConnectButton(
                     style = TextStyle(fontFeatureSettings = "tnum"),
                 )
             }
+            // Only once the tunnel is really up. The line's own height is fixed, so the address
+            // arriving (or giving up) changes what is inside it and nothing around it.
+            AnimatedVisibility(
+                visible = visual == ConnVisual.CONNECTED,
+                enter = if (reduce) fadeIn(snap()) else fadeIn(tween(200)) + expandVertically(tween(220, easing = FastOutSlowInEasing)),
+                exit = if (reduce) fadeOut(snap()) else fadeOut(tween(120)) + shrinkVertically(tween(160, easing = FastOutSlowInEasing)),
+            ) {
+                ConnectionIpLine(connectionIp, connectionIpFailed, reduce)
+            }
         }
     }
 }
+
+/**
+ * "IP" and the address of THIS connection, under "Protected". It has three faces that depend only
+ * on the real data: the server list's own ping-measuring placeholder (the same shimmer block and
+ * the same four-bar [SignalLoader], at the same size) while the address is still being asked
+ * for; the address itself once it arrives; and a quiet "Unavailable" if the lookup finished
+ * empty. There is no timer in here and no stand-in digits -- and because the VPN is already up,
+ * none of these faces ever says the connection failed.
+ */
+@Composable
+private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
+    val slot = if (ip != null) IpSlot.Value(ip) else if (failed) IpSlot.Failed else IpSlot.Pending
+    Row(
+        Modifier.height(IpLineHeight).padding(top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "IP",
+            fontSize = TypeCaption.first,
+            fontWeight = FontWeight.SemiBold,
+            color = AppDs.Ink.copy(alpha = 0.62f),
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(AppDs.S2))
+        AnimatedContent(
+            targetState = slot,
+            transitionSpec = labelTransition(reduce),
+            contentAlignment = Alignment.CenterStart,
+            label = "connectionIp",
+        ) { s ->
+            when (s) {
+                is IpSlot.Value -> Text(
+                    s.ip,
+                    fontSize = TypeCaption.first,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppDs.Ink.copy(alpha = 0.88f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(fontFeatureSettings = "tnum"),
+                )
+                IpSlot.Failed -> Text(
+                    "Unavailable",
+                    fontSize = TypeCaption.first,
+                    fontWeight = TypeCaption.second,
+                    color = AppDs.Ink.copy(alpha = 0.50f),
+                    maxLines = 1,
+                )
+                IpSlot.Pending -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Exactly the server row's "ms is being measured" pair, tinted for the bone button.
+                    SkeletonBlock(Modifier.width(84.dp).height(10.dp), color = AppDs.Ink.copy(alpha = 0.16f))
+                    Spacer(Modifier.width(AppDs.S3))
+                    SignalLoader(height = 14.dp, color = AppDs.Ink.copy(alpha = 0.55f))
+                }
+            }
+        }
+    }
+}
+
+private sealed interface IpSlot {
+    data class Value(val ip: String) : IpSlot
+    data object Failed : IpSlot
+    data object Pending : IpSlot
+}
+
+/** One line of caption text plus its 2dp lead-in; fixed so the slot never changes size. */
+private val IpLineHeight = 18.dp
 
 /**
  * Opacity + a little scale + a short vertical drift, on a fast ease: new words arrive from below

@@ -1249,8 +1249,12 @@ internal fun Modifier.shimmer(): Modifier = composed {
 
 /** A placeholder block on the raised surface with the [shimmer] band. Give it the content's size. */
 @Composable
-internal fun SkeletonBlock(modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(6.dp)) {
-    Box(modifier.clip(shape).background(AppDs.SurfaceRaised).shimmer())
+internal fun SkeletonBlock(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(6.dp),
+    color: Color = AppDs.SurfaceRaised,
+) {
+    Box(modifier.clip(shape).background(color).shimmer())
 }
 
 /**

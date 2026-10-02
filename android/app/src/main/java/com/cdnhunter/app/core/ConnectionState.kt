@@ -79,6 +79,12 @@ data class TunnelInfo(
     val tunnelAddress: String? = null,
     val vpnGateway: String? = null,
     val publicIp: String? = null,
+    /**
+     * The lookup that fills [publicIp] has finished without an address. Separate from [publicIp]
+     * being null (which also means "still asking") so the UI can tell waiting from gave-up; the
+     * tunnel itself is unaffected -- a missing exit IP is never a connection failure.
+     */
+    val publicIpFailed: Boolean = false,
     val osValidated: Boolean? = null,
 )
 

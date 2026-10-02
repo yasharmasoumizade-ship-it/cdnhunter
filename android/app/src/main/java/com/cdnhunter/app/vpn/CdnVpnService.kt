@@ -934,7 +934,12 @@ class CdnVpnService : VpnService() {
 
         val geo = com.cdnhunter.app.engine.GeoService()
         val publicIp = try { geo.lookupCurrentIp(proxied = true) } catch (_: Exception) { "" }
-        if (publicIp.isNotBlank()) store.update(cid) { it.copy(tunnel = (it.tunnel ?: base).copy(publicIp = publicIp)) }
+        // Exactly one of the two lands: the exit address, or the fact that the lookup came back
+        // empty. Both are fenced to this connection id, so neither can leak into the next attempt.
+        store.update(cid) {
+            val t = it.tunnel ?: base
+            it.copy(tunnel = if (publicIp.isNotBlank()) t.copy(publicIp = publicIp) else t.copy(publicIpFailed = true))
+        }
 
         try {
             val info = geo.lookupCurrentExitGeoInfo()
