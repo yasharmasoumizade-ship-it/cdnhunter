@@ -901,6 +901,9 @@ private fun VpnTab(onSignOut: () -> Unit) {
     // so it survives Home being left and re-entered and covers the auto-reconnect
     // retries the UI never initiated (see CdnVpnService.isConnecting).
     var connecting by remember { mutableStateOf(CdnVpnService.isConnecting.get()) }
+    // The address the connection layer is dialling, read from its own snapshot
+    // (`TunnelInfo.serverIp`) — the one source of truth; nothing here resolves or guesses it.
+    var serverIp by remember { mutableStateOf("") }
     // When the user last asked for a connection. The service's own flag is only set
     // once startVpn() runs, which is after the system VPN-permission dialog — so for
     // the seconds that dialog is up there is a real request in flight that the
@@ -1059,6 +1062,15 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 )
             if (vpnRunning) connectRequestedAtMs = 0L
 
+            // Only while an attempt is live, and only for the server being attempted: a stale
+            // address from the previous session or another config is never shown.
+            val snap = CdnVpnService.store.snapshot
+            serverIp = if ((connecting || vpnRunning) && (snap.configId == null || snap.configId == activeId)) {
+                snap.tunnel?.serverIp.orEmpty()
+            } else {
+                ""
+            }
+
             if (connected) {
                 if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
                 elapsedSec = (System.currentTimeMillis() - connectedSinceMs) / 1000
@@ -1091,7 +1103,9 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 dailyUsageBytes = com.cdnhunter.app.vpn.AppSettings.usageBytesToday(context)
             }
 
-            delay(1000)
+            // Quicker while an attempt is in flight, so the resolved address and the state change
+            // are on screen within a quarter second of the service publishing them.
+            delay(if (connecting) 250L else 1000L)
         }
     }
     // Public IP for Home's hero. Re-resolved whenever the tunnel comes up or goes down, and
@@ -1634,6 +1648,7 @@ private fun VpnTab(onSignOut: () -> Unit) {
                         ipLookupPending = ipLookupPending,
                         lastFlagCountry = lastFlagCountry,
                         refreshingPings = refreshingPings,
+                        serverIp = serverIp,
                     ),
                     onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
                     onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },

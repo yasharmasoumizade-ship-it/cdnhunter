@@ -23,6 +23,8 @@ package com.cdnhunter.app.ui
 
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
@@ -1163,6 +1165,12 @@ internal data class HomeUiState(
     /** A ping sweep of the browse list is in flight — drives the pull-to-refresh
      *  indicator. See [onRefreshPings] at Home's own call site. */
     val refreshingPings: Boolean = false,
+    /**
+     * The address the connection layer is dialling, as the connection snapshot reports it
+     * (`TunnelInfo.serverIp`). Empty until it is known — never a guess, and not the device's own
+     * [publicIp]. Shown under "Connecting" the moment it exists.
+     */
+    val serverIp: String = "",
 ) {
     private fun hasExitGeo(cfg: SavedConfig) =
         connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
@@ -1513,13 +1521,17 @@ private val HeroDockWell = PowerSize / 2
 
 /** The hamburger's drawn size, inside a [TapTarget] touch area. Matched to the reference
  *  mockup's exact 26px lines (was 27dp, close but not exact). */
-private val MenuGlyphSize = 20.dp
+private val MenuGlyphSize = 16.dp
 
 /** Line weight, and the gap from the mark's centre to its outer lines. Matched to the
  *  reference mockup exactly: 3px line height, 7px pitch between adjacent lines (was
  *  2.5dp/6.5dp). */
-private val MenuStroke = 2.dp
-private val MenuLineGap = 5.dp
+private val MenuStroke = 1.5.dp
+private val MenuLineGap = 4.5.dp
+
+/** The drawn chip: smaller and lighter than its 48dp touch target. */
+private val MenuChipSize = 38.dp
+private val MenuChipRadius = 12.dp
 
 /** How far the shadow line sits below its white line, and its colour. */
 private val MenuShadowDrop = 1.dp
@@ -2575,9 +2587,9 @@ private enum class ConnVisual { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTI
 
 private fun ConnVisual.title(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Connect"
-    ConnVisual.CONNECTING -> "Connecting..."
+    ConnVisual.CONNECTING -> "Connecting"
     ConnVisual.CONNECTED -> "Connected"
-    ConnVisual.DISCONNECTING -> "Disconnecting..."
+    ConnVisual.DISCONNECTING -> "Disconnecting"
     ConnVisual.ERROR -> "Couldn't connect"
     ConnVisual.BLOCKED -> "Blocked"
 }
@@ -2832,7 +2844,10 @@ private fun HeroCard(
         Box(Modifier.fillMaxSize().border(1.dp, heroEdge, shape))
 
         Row(
-            Modifier.fillMaxWidth().align(Alignment.TopStart).padding(AppDs.S3),
+            // The touch target is larger than the drawn chip; inset by the difference so the chip
+            // itself sits exactly one S3 from the card's edges.
+            Modifier.fillMaxWidth().align(Alignment.TopStart)
+                .padding(AppDs.S3 - (AppDs.Control - MenuChipSize) / 2),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MenuButton(onClick = onOpenSettings)
@@ -2863,14 +2878,11 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = animatePressScale(pressed, AppDs.PressScaleSmall)
-    val shape = RoundedCornerShape(AppDs.RMd)
+    val shape = RoundedCornerShape(MenuChipRadius)
+    // The touch target keeps its full 48dp; only the drawn chip is smaller, centred inside it.
     Box(
         modifier
             .size(AppDs.Control)
-            .scale(scale)
-            .clip(shape)
-            .background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, AppDs.Border, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -2879,18 +2891,31 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(MenuGlyphSize)) {
-            val stroke = MenuStroke.toPx()
-            val gap = MenuLineGap.toPx()
-            val cy = size.height / 2f
-            listOf(cy - gap, cy, cy + gap).forEachIndexed { i, y ->
-                drawLine(
-                    Color.White,
-                    Offset(stroke / 2f, y),
-                    Offset(size.width * MenuLineRatios[i] - stroke / 2f, y),
-                    stroke,
-                    StrokeCap.Round,
-                )
+        Box(
+            Modifier
+                .size(MenuChipSize)
+                .scale(scale)
+                .clip(shape)
+                .background(Color.Black.copy(alpha = 0.34f))
+                .border(1.dp, AppDs.Border, shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(MenuGlyphSize)) {
+                val stroke = MenuStroke.toPx()
+                val gap = MenuLineGap.toPx()
+                // Centre the mark's visual mass, not its box: the lines are left-aligned and
+                // taper, so shift by half the average shortfall.
+                val shift = size.width * (1f - MenuLineRatios.average().toFloat()) / 2f
+                val cy = size.height / 2f
+                listOf(cy - gap, cy, cy + gap).forEachIndexed { i, y ->
+                    drawLine(
+                        AppDs.TextHi.copy(alpha = 0.92f),
+                        Offset(shift + stroke / 2f, y),
+                        Offset(shift + size.width * MenuLineRatios[i] - stroke / 2f, y),
+                        stroke,
+                        StrokeCap.Round,
+                    )
+                }
             }
         }
     }
@@ -3263,6 +3288,7 @@ private fun ConnectPanel(
     ) {
         ConnectButton(
             visual = visual,
+            serverIp = state.serverIp,
             enabled = enabled,
             onClick = onClick,
             onSwipeUp = onSwipeUp,
@@ -3298,11 +3324,13 @@ private fun ConnectPanel(
  * times, estimates or invents progress:
  *
  *   DISCONNECTED   — bolt · "Connect" · "Not protected".
- *   CONNECTING     — the bolt becomes a thin ring with a travelling arc, for exactly as long as the
- *                    service reports CONNECTING.
- *   CONNECTED      — the ring closes into a check with one soft pulse; the well fills with the accent.
- *   DISCONNECTING  — the same morph backwards, until the tunnel reports down.
- *   ERROR          — the ring settles into a still, red circle, then returns to the bolt.
+ *   CONNECTING     — the bolt becomes one weighted line travelling round a loop, for exactly as long
+ *                    as the service reports CONNECTING; the dots after the word step in turn, and the
+ *                    caption becomes the real server IP once the connection layer has resolved it.
+ *   CONNECTED      — the line closes into a loop, then a check, with one soft pulse; the well fills.
+ *   DISCONNECTING  — the same morph backwards (the line turns the other way, slower), until the
+ *                    tunnel reports down.
+ *   ERROR          — the line closes into a still, red loop, then returns to the bolt.
  *
  * Tap toggles the tunnel; a vertical drag switches Smart / Manual (also exposed as two named
  * accessibility actions), exactly as the old disc did.
@@ -3310,6 +3338,7 @@ private fun ConnectPanel(
 @Composable
 private fun ConnectButton(
     visual: ConnVisual,
+    serverIp: String,
     enabled: Boolean,
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
@@ -3406,46 +3435,48 @@ private fun ConnectButton(
     ) {
         ConnectWell(phase = visual.glyph(), fillAmount = { liveFill.value })
         Spacer(Modifier.width(AppDs.S4))
-        AnimatedContent(
-            targetState = visual,
-            // Opacity + a little scale + a short vertical drift, on a fast ease: the words arrive
-            // from below and the old ones lift away. The column is the same height in every state,
-            // so nothing around it moves.
-            transitionSpec = {
-                if (reduce) {
-                    fadeIn(snap()) togetherWith fadeOut(snap())
-                } else {
-                    (
-                        fadeIn(tween(200, delayMillis = 70)) +
-                            scaleIn(
-                                tween(240, delayMillis = 70, easing = FastOutSlowInEasing),
-                                initialScale = 0.94f,
-                                transformOrigin = TransformOrigin(0f, 0.5f),
-                            ) +
-                            slideInVertically(tween(240, delayMillis = 70, easing = FastOutSlowInEasing)) { it / 5 }
-                        ) togetherWith (
-                        fadeOut(tween(110)) +
-                            slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { -it / 6 }
-                        ) using SizeTransform(clip = false)
+        // Title and caption change independently: the server address arriving mid-attempt swaps
+        // only the caption line, and both lines are the same height in every state, so neither the
+        // button nor the words around the change ever move.
+        Column(Modifier.weight(1f)) {
+            AnimatedContent(
+                targetState = visual,
+                transitionSpec = labelTransition(reduce),
+                label = "connectTitle",
+            ) { v ->
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        v.title(),
+                        fontSize = TypeTitle.first,
+                        fontWeight = TypeTitle.second,
+                        color = AppDs.Ink,
+                        maxLines = 1,
+                    )
+                    if (v == ConnVisual.CONNECTING || v == ConnVisual.DISCONNECTING) {
+                        ActivityDots(TypeTitle.first, TypeTitle.second, AppDs.Ink)
+                    }
                 }
-            },
-            label = "connectLabel",
-            modifier = Modifier.weight(1f),
-        ) { v ->
-            Column {
+            }
+            // The real address, once the connection layer has one; until then the plain line. No
+            // placeholder digits are ever drawn.
+            val caption = if (visual == ConnVisual.CONNECTING && serverIp.isNotBlank()) {
+                "Server IP: $serverIp"
+            } else {
+                visual.caption()
+            }
+            AnimatedContent(
+                targetState = caption,
+                transitionSpec = labelTransition(reduce),
+                label = "connectCaption",
+            ) { c ->
                 Text(
-                    v.title(),
-                    fontSize = TypeTitle.first,
-                    fontWeight = TypeTitle.second,
-                    color = AppDs.Ink,
-                    maxLines = 1,
-                )
-                Text(
-                    v.caption(),
+                    c,
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
                     color = AppDs.Ink.copy(alpha = 0.62f),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(fontFeatureSettings = "tnum"),
                 )
             }
         }
@@ -3453,8 +3484,31 @@ private fun ConnectButton(
 }
 
 /**
+ * Opacity + a little scale + a short vertical drift, on a fast ease: new words arrive from below
+ * and the old ones lift away. Shared by every line of the connect button's text.
+ */
+private fun <S> labelTransition(reduce: Boolean): AnimatedContentTransitionScope<S>.() -> ContentTransform = {
+    if (reduce) {
+        fadeIn(snap()) togetherWith fadeOut(snap())
+    } else {
+        (
+            fadeIn(tween(200, delayMillis = 70)) +
+                scaleIn(
+                    tween(240, delayMillis = 70, easing = FastOutSlowInEasing),
+                    initialScale = 0.94f,
+                    transformOrigin = TransformOrigin(0f, 0.5f),
+                ) +
+                slideInVertically(tween(240, delayMillis = 70, easing = FastOutSlowInEasing)) { it / 5 }
+            ) togetherWith (
+            fadeOut(tween(110)) +
+                slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { -it / 6 }
+            ) using SizeTransform(clip = false)
+    }
+}
+
+/**
  * The icon well: an ink disc on the bone button that fills with the accent once connected, with
- * the [ConnectGlyph] (bolt → ring → check) drawn over it. [fillAmount] is read while drawing.
+ * the [ConnectGlyph] (bolt → travelling line → check) drawn over it. [fillAmount] is read while drawing.
  */
 @Composable
 private fun ConnectWell(

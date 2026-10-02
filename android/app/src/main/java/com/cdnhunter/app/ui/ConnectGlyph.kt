@@ -1,11 +1,9 @@
 package com.cdnhunter.app.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseInOutSine
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -13,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -21,14 +20,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -37,14 +33,14 @@ import kotlin.math.sqrt
  */
 internal enum class GlyphPhase { Idle, Connecting, Connected, Disconnecting, Error }
 
-/** The bright arc's length while the tunnel is coming up or going down. */
-private const val ARC_SWEEP = 110f
+/** Where the line sits on the ring, as a share of the glyph. */
+private const val RING_RADIUS = 0.31f
 
-/** One revolution of the arc. Slow enough to read as signal flow rather than "loading". */
-private const val RING_SPIN_MS = 1100
+/** The line's weight. One width for all of it — the weight is in the motion, not the stroke. */
+private val LineWidth = 2.4.dp
 
-/** Half a breath — the ring swells and settles over twice this. */
-private const val BREATHE_HALF_MS = 700
+/** How much slower the line runs on the way down: the same line, in a quieter mode. */
+private const val DISCONNECT_PACE = 0.7f
 
 private const val PULSE_MS = 560
 
@@ -56,23 +52,26 @@ private fun glyphSpec(
 ): FiniteAnimationSpec<Float> = if (reduce) snap() else tween(ms, delayMs, easing)
 
 /**
- * The app's signature micro-interaction: the lightning bolt becomes a thin ring while the tunnel
- * is coming up, the ring completes and becomes a check once it is up, and the whole thing plays
- * backwards on the way down.
+ * The app's signature micro-interaction: the lightning bolt becomes ONE weighted line travelling
+ * round a small loop while the tunnel is coming up, the line closes and becomes a check once it
+ * is up, and the whole thing plays backwards on the way down.
  *
  *   Idle           bolt.
- *   Connecting     bolt → ring; a short arc with a bright head travels round it while the ring
- *                  breathes. Motion says "traffic is moving", not "the app is busy".
- *   Connected      the arc closes into a full ring → the ring becomes a check (drawn, not faded
+ *   Connecting     bolt → line. The line is a single stroke whose speed and length both breathe
+ *                  ([LoaderMotion.headDegrees] / [LoaderMotion.lengthDegrees]): it surges, eases to
+ *                  a crawl, never stops, stretches as it speeds up and shortens as it slows. Same
+ *                  pace and resting weight as the ping loader ([SignalLoader]).
+ *   Connected      the line closes into a full loop → the loop becomes a check (drawn, not faded
  *                  in) → one soft pulse leaves it.
- *   Disconnecting  the reverse: the check un-draws, the ring reopens and turns the other way.
- *   Error          the arc closes into a still ring that takes the error colour and gives one
+ *   Disconnecting  the reverse: the check un-draws, the loop opens back into the line, which
+ *                  turns the other way at a lower pace.
+ *   Error          the line closes into a still loop that takes the error colour and gives one
  *                  short shake; the caller then moves to [GlyphPhase.Idle] and it returns to bolt.
  *
- * Everything is a few draw calls on one canvas, and every animated value is read in the draw
- * phase, so no frame of any of this recomposes. Nothing runs while idle or connected. With
- * animations off the glyph still shows each state, just without the travel: the arc is static
- * and every change is a cut.
+ * It is a few draw calls on one canvas and every animated value is read in the draw phase, so no
+ * frame recomposes. Nothing runs while idle or connected (the clock is not even registered), and
+ * the only per-frame work is a handful of sines. With animations off the line is still and every
+ * change is a cut.
  *
  * Fixed-size and drawn inside its own bounds — the caller's layout never moves.
  */
@@ -90,18 +89,21 @@ internal fun ConnectGlyph(
     val first = remember { phase }
 
     val bolt = remember { Animatable(if (first == GlyphPhase.Idle) 1f else 0f) }
-    val ring = remember {
+    // How present the line is (0 = not drawn, 1 = full), and how far it has closed into a loop
+    // (0 = its travelling length, 1 = a complete circle).
+    val line = remember {
         Animatable(
             if (first == GlyphPhase.Connecting || first == GlyphPhase.Disconnecting || first == GlyphPhase.Error) 1f else 0f,
         )
     }
-    val sweep = remember { Animatable(if (first == GlyphPhase.Error) 360f else ARC_SWEEP) }
+    val closed = remember { Animatable(if (first == GlyphPhase.Error) 1f else 0f) }
     val check = remember { Animatable(if (first == GlyphPhase.Connected) 1f else 0f) }
     val fault = remember { Animatable(if (first == GlyphPhase.Error) 1f else 0f) }
-    val spin = remember { Animatable(0f) }
-    val breathe = remember { Animatable(0f) }
     val pulse = remember { Animatable(1f) } // 1 = finished: nothing is drawn
     val shake = remember { Animatable(0f) }
+    val clock = rememberLoaderClock(active = phase == GlyphPhase.Connecting || phase == GlyphPhase.Disconnecting)
+    val density = LocalDensity.current
+    val lineStroke = remember(density) { Stroke(width = with(density) { LineWidth.toPx() }, cap = StrokeCap.Round) }
 
     // One effect, keyed on the phase: a change cancels whatever was running (loops included) and
     // every value continues from where it is, so an interrupted transition never jumps.
@@ -109,45 +111,32 @@ internal fun ConnectGlyph(
         when (phase) {
             GlyphPhase.Idle -> {
                 launch { check.animateTo(0f, glyphSpec(reduce, 160)) }
-                launch { ring.animateTo(0f, glyphSpec(reduce, 200)) }
+                launch { line.animateTo(0f, glyphSpec(reduce, 200)) }
                 launch { fault.animateTo(0f, glyphSpec(reduce, 200)) }
-                launch { breathe.animateTo(0f, glyphSpec(reduce, 200)) }
+                launch { closed.animateTo(0f, glyphSpec(reduce, 200)) }
                 launch { bolt.animateTo(1f, glyphSpec(reduce, 260, delayMs = 100)) }
             }
 
             GlyphPhase.Connecting -> {
+                // The bolt hands over to the line: the bolt shrinks and fades while the line draws
+                // itself out of nothing, so there is never an empty well.
                 launch { bolt.animateTo(0f, glyphSpec(reduce, 150)) }
                 launch { check.animateTo(0f, glyphSpec(reduce, 120)) }
                 launch { fault.animateTo(0f, glyphSpec(reduce, 160)) }
-                launch { sweep.animateTo(ARC_SWEEP, glyphSpec(reduce, 260)) }
-                launch { ring.animateTo(1f, glyphSpec(reduce, 240, delayMs = 60)) }
-                if (!reduce) {
-                    launch {
-                        while (true) {
-                            spin.snapTo(spin.value % 360f)
-                            spin.animateTo(spin.value + 360f, tween(RING_SPIN_MS, easing = LinearEasing))
-                        }
-                    }
-                    launch {
-                        while (true) {
-                            breathe.animateTo(1f, tween(BREATHE_HALF_MS, easing = EaseInOutSine))
-                            breathe.animateTo(0f, tween(BREATHE_HALF_MS, easing = EaseInOutSine))
-                        }
-                    }
-                }
+                launch { closed.animateTo(0f, glyphSpec(reduce, 260)) }
+                launch { line.animateTo(1f, glyphSpec(reduce, 260, delayMs = 40)) }
             }
 
             GlyphPhase.Connected -> {
-                val cameFromAnotherGlyph = bolt.value > 0.01f || ring.value > 0.01f
-                launch { breathe.animateTo(0f, glyphSpec(reduce, 200)) }
+                val cameFromAnotherGlyph = bolt.value > 0.01f || line.value > 0.01f
                 if (cameFromAnotherGlyph) {
-                    // 1 · the ring completes its motion.
+                    // 1 · the line closes into a loop.
                     launch { bolt.animateTo(0f, glyphSpec(reduce, 120)) }
                     launch { fault.animateTo(0f, glyphSpec(reduce, 120)) }
-                    ring.animateTo(1f, glyphSpec(reduce, 100))
-                    sweep.animateTo(360f, glyphSpec(reduce, 260))
-                    // 2 · the ring becomes a check, and one soft pulse leaves it.
-                    launch { ring.animateTo(0f, glyphSpec(reduce, 220)) }
+                    line.animateTo(1f, glyphSpec(reduce, 100))
+                    closed.animateTo(1f, glyphSpec(reduce, 260))
+                    // 2 · the loop becomes a check, and one soft pulse leaves it.
+                    launch { line.animateTo(0f, glyphSpec(reduce, 220)) }
                     if (!reduce) {
                         launch {
                             pulse.snapTo(0f)
@@ -161,32 +150,26 @@ internal fun ConnectGlyph(
             }
 
             GlyphPhase.Disconnecting -> {
-                // The reverse of connecting: the check un-draws, the ring reopens and turns back.
+                // The reverse of connecting: the check un-draws, the loop opens back into the line.
+                // A line cancelled mid-travel dips out and back in, because it turns the other way
+                // from here and would otherwise jump.
+                if (line.value > 0.01f && closed.value < 0.5f) line.animateTo(0f, glyphSpec(reduce, 90))
                 launch { bolt.animateTo(0f, glyphSpec(reduce, 120)) }
                 launch { fault.animateTo(0f, glyphSpec(reduce, 120)) }
                 launch { check.animateTo(0f, glyphSpec(reduce, 200)) }
-                ring.animateTo(1f, glyphSpec(reduce, 200, delayMs = 60))
-                sweep.animateTo(ARC_SWEEP, glyphSpec(reduce, 300))
-                if (!reduce) {
-                    launch {
-                        while (true) {
-                            spin.snapTo(spin.value % 360f)
-                            spin.animateTo(spin.value - 360f, tween(RING_SPIN_MS, easing = LinearEasing))
-                        }
-                    }
-                }
+                line.animateTo(1f, glyphSpec(reduce, 200, delayMs = 40))
+                closed.animateTo(0f, glyphSpec(reduce, 300))
             }
 
             GlyphPhase.Error -> {
                 launch { bolt.animateTo(0f, glyphSpec(reduce, 120)) }
                 launch { check.animateTo(0f, glyphSpec(reduce, 120)) }
-                launch { breathe.animateTo(0f, glyphSpec(reduce, 160)) }
-                launch { ring.animateTo(1f, glyphSpec(reduce, 160)) }
+                launch { line.animateTo(1f, glyphSpec(reduce, 160)) }
                 launch { fault.animateTo(1f, glyphSpec(reduce, 220)) }
-                launch { sweep.animateTo(360f, glyphSpec(reduce, 280)) }
+                launch { closed.animateTo(1f, glyphSpec(reduce, 280)) }
                 if (!reduce) {
                     for (x in floatArrayOf(-1f, 1f, -0.6f, 0.3f, 0f)) {
-                        shake.animateTo(x, tween(55, easing = LinearEasing))
+                        shake.animateTo(x, tween(55, easing = LinearOutSlowInEasing))
                     }
                 }
             }
@@ -194,57 +177,34 @@ internal fun ConnectGlyph(
     }
 
     val bounds = remember(boltPath) { boltPath.getBounds() }
+    val disconnecting = phase == GlyphPhase.Disconnecting
 
     Canvas(modifier) {
         val s = size.minDimension
         val c = Offset(size.width / 2f, size.height / 2f)
-        val stroke = 2.dp.toPx()
 
         translate(left = shake.value * 2.5.dp.toPx()) {
-            // ── ring ───────────────────────────────────────────────────────────────────
-            val ringA = ring.value
-            if (ringA > 0.01f) {
-                val r = s * 0.31f
+            // ── the line ───────────────────────────────────────────────────────────────
+            val present = line.value
+            if (present > 0.01f) {
+                val r = s * RING_RADIUS
                 val tint = lerp(ringColor, errorColor, fault.value)
-                val done = ((sweep.value - ARC_SWEEP) / (360f - ARC_SWEEP)).coerceIn(0f, 1f)
-                val ringScale = (0.78f + 0.22f * ringA) * (1f + 0.05f * breathe.value)
-                scale(ringScale, pivot = c) {
-                    drawCircle(tint.copy(alpha = 0.22f * ringA), r, c, style = Stroke(stroke))
-                    rotate(spin.value, pivot = c) {
-                        val topLeft = Offset(c.x - r, c.y - r)
-                        val box = Size(r * 2f, r * 2f)
-                        // The long, faint tail …
-                        drawArc(
-                            color = tint.copy(alpha = (0.45f + 0.55f * done) * ringA),
-                            startAngle = -90f,
-                            sweepAngle = sweep.value,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = box,
-                            style = Stroke(stroke, cap = StrokeCap.Round),
-                        )
-                        if (done < 0.99f) {
-                            // … the brighter head …
-                            val head = sweep.value * 0.4f
-                            drawArc(
-                                color = tint.copy(alpha = ringA * (1f - done)),
-                                startAngle = -90f + sweep.value - head,
-                                sweepAngle = head,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = box,
-                                style = Stroke(stroke, cap = StrokeCap.Round),
-                            )
-                            // … and the small highlight riding the leading edge.
-                            val a = Math.toRadians((-90f + sweep.value).toDouble())
-                            drawCircle(
-                                color = Color.White.copy(alpha = ringA * (1f - done)),
-                                radius = stroke * 0.9f,
-                                center = Offset(c.x + r * cos(a).toFloat(), c.y + r * sin(a).toFloat()),
-                            )
-                        }
-                    }
-                }
+                val t = clock.value * (if (disconnecting) DISCONNECT_PACE else 1f)
+                // Clockwise on the way up (the line trails behind its head), anticlockwise on the way down.
+                val headAngle = -90f + LoaderMotion.headDegrees(t) * (if (disconnecting) -1f else 1f)
+                // It draws itself out of nothing, and closes into a loop when asked to.
+                val travel = LoaderMotion.lengthDegrees(t) * present
+                val length = travel + (360f - travel) * closed.value
+                val glow = LoaderMotion.glow(t)
+                drawArc(
+                    color = tint.copy(alpha = present * (glow + (1f - glow) * closed.value)),
+                    startAngle = if (disconnecting) headAngle else headAngle - length,
+                    sweepAngle = length,
+                    useCenter = false,
+                    topLeft = Offset(c.x - r, c.y - r),
+                    size = Size(r * 2f, r * 2f),
+                    style = lineStroke,
+                )
             }
 
             // ── bolt ───────────────────────────────────────────────────────────────────

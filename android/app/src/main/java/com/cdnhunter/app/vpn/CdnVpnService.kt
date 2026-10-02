@@ -533,6 +533,10 @@ class CdnVpnService : VpnService() {
             ConnLog.i(cid, Stage.CONFIG_LOADED, "attempt #$attemptNo, config ${p.configId}")
             val validated = prepareConfig(p)
             ConnLog.i(cid, Stage.CONFIG_VALIDATED, "${validated.config.protocol.wire} ${validated.config.server}:${validated.config.port}")
+            // Publish where we are dialling as soon as it is known, so the UI can show the real
+            // address while the attempt is still in flight. Off the attempt's path: it never delays
+            // or fails a connect, and it is fenced to this attempt's connection id.
+            scope.launch(Dispatchers.IO) { publishServerIp(cid, validated.config.server) }
             SettingsValidator.validate(p.settings)?.let { throw AttemptFailure(it) }
             if (prepare(this) != null) throw AttemptFailure(ConnectionError.PermissionError("VPN permission is not granted"))
             val homeDir = prepareGeoFiles()
@@ -898,6 +902,20 @@ class CdnVpnService : VpnService() {
 
     // ── post-connect information ─────────────────────────────────────────────
 
+    /**
+     * Resolves the dialled server's address and publishes it as `tunnel.serverIp`. An IP literal
+     * needs no lookup; a hostname is resolved once (bounded) — the same lookup [collectTunnelInfo]
+     * would make after connecting, made early and only once. Resolving BEFORE the tunnel exists
+     * also means the answer is the server's real address, not one the tunnel's own DNS handed back.
+     */
+    private fun publishServerIp(cid: String, host: String) {
+        val ip = TunnelInspector.resolveServerIp(host) ?: return
+        store.update(cid) { snap ->
+            val t = snap.tunnel ?: TunnelInfo(serverAddress = host)
+            if (t.serverIp == ip) snap else snap.copy(tunnel = t.copy(serverIp = ip))
+        }
+    }
+
     /** Gathers what is known about the live tunnel and publishes it. Every field is optional. */
     private fun collectTunnelInfo(cid: String, config: InternalConnectionConfig, link: VpnLinkInfo?) {
         val base = TunnelInfo(
@@ -909,8 +927,9 @@ class CdnVpnService : VpnService() {
             vpnGateway = null,
             osValidated = link?.osValidated,
         )
-        store.update(cid) { it.copy(tunnel = base) }
-        val serverIp = TunnelInspector.resolveServerIp(config.server)
+        // Keep the address published while connecting rather than dropping it and looking it up again.
+        store.update(cid) { it.copy(tunnel = base.copy(serverIp = it.tunnel?.serverIp)) }
+        val serverIp = store.snapshot.tunnel?.serverIp ?: TunnelInspector.resolveServerIp(config.server)
         if (serverIp != null) store.update(cid) { it.copy(tunnel = (it.tunnel ?: base).copy(serverIp = serverIp)) }
 
         val geo = com.cdnhunter.app.engine.GeoService()

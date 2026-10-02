@@ -1180,7 +1180,7 @@ internal fun SignalLoader(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                animation = tween(1100, easing = androidx.compose.animation.core.LinearEasing),
+                animation = tween(LoaderMotion.CycleMs, easing = androidx.compose.animation.core.LinearEasing),
             ),
             label = "signalPhase",
         )
@@ -1205,7 +1205,7 @@ private fun SignalBars(modifier: Modifier, height: Dp, color: Color, phase: (() 
             val lit = ((p * 5f) - i).coerceIn(0f, 1f) * release
             val h = heights[i] * unit
             drawRoundRect(
-                color = color.copy(alpha = 0.22f + 0.78f * lit),
+                color = color.copy(alpha = LoaderMotion.TrackAlpha + (1f - LoaderMotion.TrackAlpha) * lit),
                 topLeft = Offset(i * (barW + gap), size.height - h),
                 size = Size(barW, h),
                 cornerRadius = CornerRadius(barW / 2f),
