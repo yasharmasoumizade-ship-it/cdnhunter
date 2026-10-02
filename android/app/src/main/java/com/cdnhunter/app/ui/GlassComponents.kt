@@ -124,37 +124,7 @@ object Glass {
  */
 @Composable
 fun GlowSpinner(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 22.dp, strokeWidth: androidx.compose.ui.unit.Dp = 2.5.dp) {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "glowSpinner")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing),
-        ),
-        label = "rotation",
-    )
-    androidx.compose.foundation.Canvas(
-        modifier = modifier
-            .size(size)
-            .graphicsLayer(rotationZ = rotation),
-    ) {
-        val sweep = androidx.compose.ui.graphics.Brush.sweepGradient(
-            colors = listOf(
-                AppColors.Accent.copy(alpha = 0f),
-                AppColors.Accent.copy(alpha = 0.35f),
-                AppColors.AccentBright,
-            ),
-        )
-        drawArc(
-            brush = sweep,
-            startAngle = 0f,
-            sweepAngle = 300f,
-            useCenter = false,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = strokeWidth.toPx(),
-                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-            ),
-        )
-    }
+    // Kept under its old name so every caller picks up the app's loader: see [SignalLoader].
+    // [strokeWidth] is ignored — the bars have a fixed geometry.
+    SignalLoader(modifier = modifier, height = size, color = AppDs.AccentSoft)
 }
-

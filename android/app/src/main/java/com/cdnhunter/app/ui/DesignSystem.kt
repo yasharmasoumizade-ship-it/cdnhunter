@@ -87,6 +87,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -110,6 +111,7 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -151,6 +153,15 @@ internal object AppType {
 }
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
+
+/**
+ * The app's one icon family as an [ImageVector]: 24dp grid, 2dp round-cap strokes, no fills
+ * (the filled heart is the one deliberate exception — it is the "on" state of the outline heart).
+ * Everything that used to reach for a Material icon goes through here so no screen mixes styles.
+ */
+@Composable
+internal fun lucide(@androidx.annotation.DrawableRes id: Int): androidx.compose.ui.graphics.vector.ImageVector =
+    androidx.compose.ui.graphics.vector.ImageVector.vectorResource(id)
 
 internal object AppDs {
     // Colour
@@ -332,7 +343,7 @@ internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.Rounded.ChevronLeft,
+            lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_left),
             contentDescription = "Back",
             tint = AppDs.TextHi,
             modifier = Modifier.size(24.dp),
@@ -456,37 +467,44 @@ internal fun SectionHeader(text: String, top: Dp = AppDs.S6) {
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
+private val IconTileShape = RoundedCornerShape(12.dp)
+
+/**
+ * The tile behind every row icon: a 40dp rounded square (a squircle, not a circle — circles are
+ * reserved for people and places: avatars, flags), hairline edge, 20dp glyph centred on the
+ * 24dp icon grid. Three states, all cross-fading: default (muted glyph on the raised surface),
+ * active (accent glyph on a faint accent wash — a switch that is on, the current choice) and a
+ * [tone] for semantic cases (Pro, error).
+ */
 @Composable
-private fun IconContainerShell(tone: Color?, modifier: Modifier, content: @Composable () -> Unit) {
+private fun IconTile(tone: Color?, active: Boolean, modifier: Modifier, glyph: @Composable (Color) -> Unit) {
+    val reduce = appReduceMotion()
+    val resolved = tone ?: if (active) AppDs.Accent else null
+    val tint by animateColorAsState(resolved ?: AppDs.TextMid, appMotion(reduce, 180), label = "tileTint")
+    val fill by animateColorAsState(resolved?.copy(alpha = 0.12f) ?: AppDs.SurfaceRaised, appMotion(reduce, 180), label = "tileFill")
+    val edge by animateColorAsState(resolved?.copy(alpha = 0.30f) ?: AppDs.Border, appMotion(reduce, 180), label = "tileEdge")
     Box(
         modifier
             .size(AppDs.IconContainer)
-            .clip(CircleShape)
-            .background(if (tone != null) tone.copy(alpha = 0.12f) else AppDs.SurfaceRaised)
-            .border(1.dp, if (tone != null) tone.copy(alpha = 0.32f) else AppDs.Border, CircleShape),
+            .clip(IconTileShape)
+            .background(fill)
+            .border(1.dp, edge, IconTileShape),
         contentAlignment = Alignment.Center,
-        content = { content() },
-    )
+    ) { glyph(tint) }
 }
 
-/** Every row's icon: a 40dp circle on the raised surface, hairline border, 20dp glyph.
- *  [tone] (Pro, destructive) tints the container; otherwise it is neutral. */
+/** Every row's icon tile (see [IconTile]). [tone] tints it semantically; [active] marks "on". */
 @Composable
-internal fun PremiumIconContainer(icon: ImageVector, modifier: Modifier = Modifier, tone: Color? = null) {
-    IconContainerShell(tone, modifier) {
-        Icon(icon, null, tint = tone ?: AppDs.TextHi.copy(alpha = 0.92f), modifier = Modifier.size(AppDs.IconMd))
+internal fun PremiumIconContainer(icon: ImageVector, modifier: Modifier = Modifier, tone: Color? = null, active: Boolean = false) {
+    IconTile(tone, active, modifier) { tint ->
+        Icon(icon, null, tint = tint, modifier = Modifier.size(AppDs.IconMd))
     }
 }
 
 @Composable
-internal fun PremiumIconContainer(@DrawableRes iconRes: Int, modifier: Modifier = Modifier, tone: Color? = null) {
-    IconContainerShell(tone, modifier) {
-        Icon(
-            painterResource(id = iconRes),
-            null,
-            tint = tone ?: AppDs.TextHi.copy(alpha = 0.92f),
-            modifier = Modifier.size(AppDs.IconMd),
-        )
+internal fun PremiumIconContainer(@DrawableRes iconRes: Int, modifier: Modifier = Modifier, tone: Color? = null, active: Boolean = false) {
+    IconTile(tone, active, modifier) { tint ->
+        Icon(painterResource(id = iconRes), null, tint = tint, modifier = Modifier.size(AppDs.IconMd))
     }
 }
 
@@ -580,7 +598,7 @@ internal fun PremiumRow(
 
 @Composable
 private fun RowChevron() {
-    Icon(Icons.Rounded.ChevronRight, null, tint = AppDs.TextLow, modifier = Modifier.size(AppDs.IconMd))
+    Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_right), null, tint = AppDs.TextLow, modifier = Modifier.size(AppDs.IconMd))
 }
 
 /** A row that opens something, or just states a value. */
@@ -636,7 +654,7 @@ internal fun SettingsToggleRow(
     PremiumRow(
         title = title,
         subtitle = subtitle,
-        leading = { PremiumIconContainer(icon) },
+        leading = { PremiumIconContainer(icon, active = checked) },
         trailing = { PremiumToggle(checked = checked, onCheckedChange = null) },
         onToggle = onCheckedChange,
         checked = checked,
@@ -654,7 +672,7 @@ internal fun SettingsToggleRow(
     PremiumRow(
         title = title,
         subtitle = subtitle,
-        leading = { PremiumIconContainer(iconRes) },
+        leading = { PremiumIconContainer(iconRes, active = checked) },
         trailing = { PremiumToggle(checked = checked, onCheckedChange = null) },
         onToggle = onCheckedChange,
         checked = checked,
@@ -1078,11 +1096,14 @@ internal fun AccountSummaryCard(account: AccountUiState, onClick: () -> Unit, mo
 // ── Ping + glass info bar ─────────────────────────────────────────────────────
 
 /**
- * Four 3dp bars (5/8/11/14dp). Lit count follows the ping: green when healthy, amber / red for
- * the two degraded tiers.
+ * Four 3dp bars (5/8/11/14dp) — the app's signal mark. Lit count follows the measured ping:
+ * unknown 0 · poor 1 · medium 2 · good 3 · excellent 4; green when healthy, amber / red for the
+ * two degraded tiers. Unlit bars stay clearly visible (22%), so "not measured" still reads as a
+ * signal glyph rather than a gap. Each bar cross-fades when the value changes.
  */
 @Composable
 internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
+    val reduce = appReduceMotion()
     val filled = when {
         pingMs < 0 -> 0
         pingMs < 50 -> 4
@@ -1096,23 +1117,130 @@ internal fun PingBars(pingMs: Int, modifier: Modifier = Modifier) {
         filled == 2 -> AppDs.Warning
         else -> AppDs.Error
     }
+    val off = AppDs.TextHi.copy(alpha = 0.22f)
+    val quality = when {
+        pingMs < 0 -> "not measured"
+        filled == 4 -> "excellent"
+        filled == 3 -> "good"
+        filled == 2 -> "medium"
+        else -> "poor"
+    }
     Row(
-        modifier.semantics {
-            contentDescription = if (pingMs < 0) "Signal not measured" else "Signal $filled of 4"
-        },
+        modifier.semantics { contentDescription = "Signal $quality" },
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         listOf(5.dp, 8.dp, 11.dp, 14.dp).forEachIndexed { index, height ->
+            val color by animateColorAsState(
+                if (index < filled) on else off, appMotion(reduce, 220), label = "pingBar$index",
+            )
             Box(
                 Modifier
                     .width(3.dp)
                     .height(height)
                     .clip(RoundedCornerShape(1.5.dp))
-                    .background(if (index < filled) on else AppDs.TextHi.copy(alpha = 0.14f)),
+                    .background(color),
             )
         }
     }
+}
+
+// ── Loading ───────────────────────────────────────────────────────────────────
+
+/**
+ * The app's loader: the exact four-bar geometry of [PingBars], lit one after another and then
+ * released — a signal acquiring strength. It replaces the circular spinner everywhere, so waiting
+ * looks like the product (connection, signal) and sits on the same grid as the ping marks it
+ * stands in for. [height] 14dp is pixel-identical to a PingBars slot (no layout shift when the
+ * measurement lands). Draw-phase only: one float read per frame, no recomposition, and with
+ * reduced motion it is a still, fully lit mark.
+ */
+@Composable
+internal fun SignalLoader(
+    modifier: Modifier = Modifier,
+    height: Dp = 20.dp,
+    color: Color = AppDs.AccentSoft,
+) {
+    val reduce = appReduceMotion()
+    if (reduce) {
+        SignalBars(modifier, height, color, phase = null)
+    } else {
+        val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "signalLoader")
+        val t by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                animation = tween(1100, easing = androidx.compose.animation.core.LinearEasing),
+            ),
+            label = "signalPhase",
+        )
+        SignalBars(modifier, height, color, phase = { t })
+    }
+}
+
+@Composable
+private fun SignalBars(modifier: Modifier, height: Dp, color: Color, phase: (() -> Float)?) {
+    androidx.compose.foundation.Canvas(
+        modifier
+            .size(height * (18f / 14f), height)
+            .semantics { contentDescription = "Loading" },
+    ) {
+        val unit = size.height / 14f
+        val barW = 3f * unit
+        val gap = 2f * unit
+        val heights = floatArrayOf(5f, 8f, 11f, 14f)
+        val p = phase?.invoke() ?: 0.8f
+        val release = if (p > 0.85f) 1f - (p - 0.85f) / 0.15f else 1f
+        for (i in 0..3) {
+            val lit = ((p * 5f) - i).coerceIn(0f, 1f) * release
+            val h = heights[i] * unit
+            drawRoundRect(
+                color = color.copy(alpha = 0.22f + 0.78f * lit),
+                topLeft = Offset(i * (barW + gap), size.height - h),
+                size = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 2f),
+            )
+        }
+    }
+}
+
+/**
+ * A faint light band that crosses its content — the shimmer of a placeholder. 7% white: the
+ * placeholder must never read brighter than the content that replaces it. Still when motion is
+ * reduced.
+ */
+internal fun Modifier.shimmer(): Modifier = androidx.compose.ui.composed {
+    val reduce = appReduceMotion()
+    if (reduce) {
+        this
+    } else {
+        val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer")
+        val x by transition.animateFloat(
+            initialValue = -0.6f,
+            targetValue = 1.6f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                animation = tween(1300, easing = androidx.compose.animation.core.LinearEasing),
+            ),
+            label = "shimmerX",
+        )
+        this.drawWithContent {
+            drawContent()
+            val start = size.width * x
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.07f), Color.Transparent),
+                    startX = start,
+                    endX = start + size.width * 0.6f,
+                ),
+            )
+        }
+    }
+}
+
+/** A placeholder block on the raised surface with the [shimmer] band. Give it the content's size. */
+@Composable
+internal fun SkeletonBlock(modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(6.dp)) {
+    Box(modifier.clip(shape).background(AppDs.SurfaceRaised).shimmer())
 }
 
 /**
@@ -1166,7 +1294,7 @@ internal fun LocationGlassPill(
                 ) { backdrop() }
             }
         }
-        Box(Modifier.matchParentSize().background(AppDs.Bg.copy(alpha = 0.44f)))
+        Box(Modifier.matchParentSize().background(AppDs.Bg.copy(alpha = 0.62f)))
         Row(
             Modifier
                 .fillMaxHeight()
@@ -1175,7 +1303,7 @@ internal fun LocationGlassPill(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Outlined.LocationOn,
+                lucide(com.cdnhunter.app.R.drawable.ic_lucide_map_pin),
                 contentDescription = null,
                 tint = AppDs.AccentSoft,
                 modifier = Modifier.size(AppDs.IconPin),

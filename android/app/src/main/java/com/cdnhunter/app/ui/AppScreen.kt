@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -370,7 +372,7 @@ internal fun CountryFlagBadge(countryCode: String, size: androidx.compose.ui.uni
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                Icons.Rounded.Public, null,
+                lucide(com.cdnhunter.app.R.drawable.ic_lucide_globe), null,
                 modifier = Modifier.size(size * 0.55f)
             )
         }
@@ -1642,11 +1644,11 @@ private fun AddConfigSheet(
                     "Add a config", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     color = AnanasTextHi, modifier = Modifier.padding(bottom = 16.dp)
                 )
-                AddSheetAction("Scan QR code", "Scan a config from another device", Icons.Rounded.QrCodeScanner) {
+                AddSheetAction("Scan QR code", "Scan a config from another device", lucide(com.cdnhunter.app.R.drawable.ic_lucide_qr_code)) {
                     onToggle(); onScanQr()
                 }
                 Spacer(Modifier.height(10.dp))
-                AddSheetAction("Add from clipboard", "Paste a config link you've copied", Icons.Rounded.ContentPaste, highlight = true) {
+                AddSheetAction("Add from clipboard", "Paste a config link you've copied", lucide(com.cdnhunter.app.R.drawable.ic_lucide_clipboard), highlight = true) {
                     onToggle(); onClipboard()
                 }
             }
@@ -1792,7 +1794,7 @@ private fun ServerListItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Rounded.Delete, null,
+                            lucide(com.cdnhunter.app.R.drawable.ic_lucide_trash), null,
                             tint = Color.White.copy(alpha = revealFraction),
                             modifier = Modifier.size(18.dp)
                         )
@@ -1894,7 +1896,7 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
                 if (qrBitmap != null) {
                     Image(qrBitmap.asImageBitmap(), contentDescription = "QR code", modifier = Modifier.size(196.dp))
                 } else {
-                    CircularProgressIndicator(color = AnanasAccent)
+                    SignalLoader(height = 28.dp, color = AppDs.Accent)
                 }
             }
 
@@ -1912,7 +1914,7 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.ContentCopy, null, tint = AnanasText, modifier = Modifier.size(15.dp))
+                Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_copy), null, tint = AnanasText, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Copy link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AnanasText)
             }
@@ -1966,7 +1968,7 @@ private fun LocationsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AnanasIconButton(Icons.Rounded.ChevronLeft, onClick = onBack)
+                AnanasIconButton(lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_left), onClick = onBack)
                 Column(Modifier.weight(1f)) {
                     Text("Locations", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi, letterSpacing = (-0.3).sp)
                     Text(
@@ -1974,7 +1976,7 @@ private fun LocationsScreen(
                         fontSize = 11.5.sp, color = AnanasMuted
                     )
                 }
-                AnanasIconButton(Icons.Rounded.Add, onClick = onToggleAddMenu)
+                AnanasIconButton(lucide(com.cdnhunter.app.R.drawable.ic_lucide_plus), onClick = onToggleAddMenu)
             }
 
             // Minimal search field — no card and no box, just the glyph and the line of type.
@@ -1982,7 +1984,7 @@ private fun LocationsScreen(
                 Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Rounded.Search, null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
+                Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_search), null, tint = AnanasFaint, modifier = Modifier.size(16.dp))
                 // Box(CenterStart) + SheetSearchStyle is the caret fix: the field's own line box
                 // is taller than its glyphs, so without both the caret sat high of the text.
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
@@ -2005,7 +2007,7 @@ private fun LocationsScreen(
                     Modifier.fillMaxWidth().padding(top = 60.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(Icons.Rounded.Public, null, tint = AnanasFaint, modifier = Modifier.size(36.dp))
+                    Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_globe), null, tint = AnanasFaint, modifier = Modifier.size(36.dp))
                     Spacer(Modifier.height(10.dp))
                     Text("No servers yet", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
                     Spacer(Modifier.height(4.dp))
@@ -2064,7 +2066,7 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
             Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(AnanasCard2),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Rounded.Cloud, null, tint = AnanasMuted, modifier = Modifier.size(15.dp))
+            Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_database), null, tint = AnanasMuted, modifier = Modifier.size(15.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = AnanasText)
@@ -2084,12 +2086,12 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
             contentAlignment = Alignment.CenterStart
         ) {
             Icon(
-                Icons.Rounded.Delete, null, tint = AnanasMuted,
+                lucide(com.cdnhunter.app.R.drawable.ic_lucide_trash), null, tint = AnanasMuted,
                 modifier = Modifier.padding(start = 2.dp).size(16.dp)
             )
         }
         Icon(
-            Icons.Rounded.ChevronRight, null, tint = AnanasFaint,
+            lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_right), null, tint = AnanasFaint,
             modifier = Modifier.size(18.dp).rotate(chevronRotation)
         )
     }
@@ -2103,7 +2105,7 @@ private fun SubscriptionGroupRow(name: String, count: Int, expanded: Boolean, on
                 Box(
                     Modifier.size(44.dp).clip(CircleShape).background(AnanasRed.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
-                ) { Icon(Icons.Rounded.Delete, null, tint = AnanasRed, modifier = Modifier.size(20.dp)) }
+                ) { Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_trash), null, tint = AnanasRed, modifier = Modifier.size(20.dp)) }
             },
             title = { Text("Remove subscription?", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AnanasTextHi) },
             text = {
@@ -2391,21 +2393,27 @@ private fun InlineField(
  */
 @Composable
 private fun ModeChoiceRow(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
-    PremiumRow(
-        title = "Server choice",
-        subtitle = when (mode) {
-            ConnectMode.SMART -> "Best-measuring server, picked for you"
-            ConnectMode.MANUAL -> "The one you tap in the list"
-        },
-        leading = { PremiumIconContainer(Icons.Rounded.AutoAwesome) },
-        trailing = {
-            PremiumSegmentedControl(
-                options = ConnectMode.values().map { it.name to it.label },
-                selected = mode.name,
-                onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
-            )
-        },
-    )
+    Column {
+        PremiumRow(
+            title = "Server choice",
+            subtitle = when (mode) {
+                ConnectMode.SMART -> "Best-measuring server, picked for you"
+                ConnectMode.MANUAL -> "The one you tap in the list"
+            },
+            leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_sparkles), active = mode == ConnectMode.SMART) },
+        )
+        // Its own line, indented to the text column: beside the title it took a third of the row
+        // and left "Server choice" wrapping onto two lines.
+        PremiumSegmentedControl(
+            options = ConnectMode.values().map { it.name to it.label },
+            selected = mode.name,
+            onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
+            equalWeight = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = AppDs.S4 + AppDs.IconContainer + AppDs.S3, end = AppDs.S4, bottom = AppDs.S4),
+        )
+    }
 }
 
 @Composable
@@ -2534,7 +2542,7 @@ private fun SettingsScreen(
             PremiumRow(
                 title = "MTU",
                 subtitle = if (mtuMode == "auto") "Automatic · 1500 bytes" else "$customMtuText bytes",
-                leading = { PremiumIconContainer(Icons.Rounded.Tune) },
+                leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_sliders)) },
                 trailing = {
                     PremiumSegmentedControl(
                         options = listOf("auto" to "Auto", "custom" to "Custom"),
@@ -2670,7 +2678,7 @@ private fun SettingsScreen(
                             .padding(start = AppDs.S4, top = AppDs.S3, end = AppDs.S3, bottom = AppDs.S3),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppDs.S2)) {
-                            Icon(Icons.Rounded.Shield, null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm))
+                            Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_shield), null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm))
                             Text(
                                 "DNS leak protection",
                                 fontSize = AppType.Caption.first,
@@ -2709,7 +2717,7 @@ private fun SettingsScreen(
                     "No errors on last connect"
                 },
                 subtitleColor = if (CdnVpnService.lastError.isNotBlank()) AppDs.Error else AppDs.TextMid,
-                leading = { PremiumIconContainer(Icons.Rounded.Terminal) },
+                leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_terminal)) },
                 trailing = {
                     PremiumButton(
                         "Copy",
@@ -2732,7 +2740,7 @@ private fun SettingsScreen(
                 PremiumRow(
                     title = "Last crash log",
                     subtitle = "A saved report is on the device",
-                    leading = { PremiumIconContainer(Icons.Rounded.BugReport, tone = AppDs.Error) },
+                    leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_bug), tone = AppDs.Error) },
                     trailing = {
                         Row(horizontalArrangement = Arrangement.spacedBy(AppDs.S2)) {
                             PremiumButton(
@@ -2778,7 +2786,7 @@ private fun SettingsScreen(
  */
 @Composable
 private fun VerificationBadge(verified: Boolean) {
-    val icon = if (verified) Icons.Rounded.Verified else Icons.Rounded.ErrorOutline
+    val icon = if (verified) lucide(com.cdnhunter.app.R.drawable.ic_lucide_badge_check) else lucide(com.cdnhunter.app.R.drawable.ic_lucide_circle_alert)
     val color = if (verified) AppDs.Accent else AppDs.Warning
     val label = if (verified) "Verified" else "Not verified"
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppDs.S1)) {
@@ -2855,10 +2863,10 @@ private fun EmailVerificationCard(account: AccountUiState) {
                 },
                 leading = {
                     if (sending) {
-                        CircularProgressIndicator(Modifier.size(AppDs.IconSm), color = AppDs.Accent, strokeWidth = 2.dp)
+                        SignalLoader(height = AppDs.IconSm, color = AppDs.Accent)
                     } else {
                         Icon(
-                            if (sent) Icons.Rounded.MarkEmailRead else Icons.Rounded.Send,
+                            if (sent) lucide(com.cdnhunter.app.R.drawable.ic_lucide_mail_check) else lucide(com.cdnhunter.app.R.drawable.ic_lucide_send),
                             null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm),
                         )
                     }
@@ -2883,7 +2891,7 @@ private fun showComingSoon(context: Context) {
 private fun UpgradeCard(onUpgrade: () -> Unit) {
     PremiumCard(borderColor = AppDs.Accent.copy(alpha = 0.30f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Accent)
+            PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_gem), tone = AppDs.Accent)
             Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -2913,7 +2921,7 @@ private fun UpgradeCard(onUpgrade: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
             ) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconMd))
+                Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_circle_check), null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconMd))
                 Text(benefit, fontSize = AppType.Body.first, fontWeight = FontWeight.Medium, color = AppDs.TextHi)
             }
         }
@@ -2972,7 +2980,7 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
         if (account.isPro) {
             PremiumCard(borderColor = AppDs.Accent.copy(alpha = 0.30f)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    PremiumIconContainer(Icons.Rounded.WorkspacePremium, tone = AppDs.Accent)
+                    PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_gem), tone = AppDs.Accent)
                     Spacer(Modifier.width(AppDs.S3))
                     Text(
                         "${account.plan.label} plan",
@@ -3042,7 +3050,7 @@ private fun PaymentHistoryScreen(onBack: () -> Unit, account: AccountUiState) {
     PremiumScreen(title = "Payment history", onBack = onBack) {
         if (account.payments.isEmpty()) {
             EmptyState(
-                icon = Icons.Rounded.ReceiptLong,
+                icon = lucide(com.cdnhunter.app.R.drawable.ic_lucide_receipt),
                 title = "No payment history yet",
                 subtitle = "Your transactions will appear here once billing is available.",
             )
@@ -3094,7 +3102,7 @@ private fun PaymentRow(record: PaymentRecord) {
     PremiumRow(
         title = record.description,
         subtitle = record.dateLabel,
-        leading = { PremiumIconContainer(Icons.Rounded.ReceiptLong) },
+        leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_receipt)) },
         trailing = {
             Text(
                 record.amountLabel,
@@ -3191,9 +3199,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
             }
 
             if (apps == null) {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AppDs.Accent, modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
-                }
+                AppListSkeleton(Modifier.weight(1f).padding(horizontal = AppDs.S4))
             } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(
@@ -3240,6 +3246,40 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(AppDs.S4))
+            }
+        }
+    }
+}
+
+/**
+ * What the split-tunnel list looks like while the installed apps are being read: the same card, the
+ * same rows (40dp squircle, a name line, a package line, the select dot), every part a placeholder
+ * — so the page already has its shape and the list fills in rather than appearing.
+ */
+@Composable
+private fun AppListSkeleton(modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(AppDs.RLg)
+    Column(
+        modifier
+            .semantics { contentDescription = "Loading apps" }
+            .clip(shape)
+            .background(AppDs.Surface)
+            .border(1.dp, AppDs.Border, shape),
+    ) {
+        repeat(7) { index ->
+            if (index > 0) PremiumDivider()
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = AppDs.RowHeight).padding(horizontal = AppDs.S4, vertical = AppDs.S3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SkeletonBlock(Modifier.size(AppDs.IconContainer), RoundedCornerShape(12.dp))
+                Spacer(Modifier.width(AppDs.S3))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppDs.S2)) {
+                    SkeletonBlock(Modifier.width(if (index % 3 == 0) 150.dp else 112.dp).height(12.dp))
+                    SkeletonBlock(Modifier.width(if (index % 2 == 0) 210.dp else 168.dp).height(9.dp))
+                }
+                Spacer(Modifier.width(AppDs.S3))
+                SkeletonBlock(Modifier.size(22.dp), CircleShape)
             }
         }
     }

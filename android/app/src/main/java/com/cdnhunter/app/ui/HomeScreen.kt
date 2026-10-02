@@ -149,6 +149,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -1806,7 +1807,7 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                         )
                         Spacer(Modifier.width(8.dp))          // snapped to the 4dp grid, was 6dp
                         Icon(
-                            Icons.Rounded.Refresh,
+                            lucide(com.cdnhunter.app.R.drawable.ic_lucide_refresh),
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.45f),
                             modifier = Modifier.size(13.dp),
@@ -2887,7 +2888,7 @@ private fun ServerSearchField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Rounded.Search,
+            lucide(com.cdnhunter.app.R.drawable.ic_lucide_search),
             contentDescription = null,
             tint = iconTint,
             modifier = Modifier.size(AppDs.IconMd),
@@ -3001,6 +3002,7 @@ private fun ServerList(
                         AppSettings.setFavoriteServers(favContext, favoriteIds)
                     },
                     onClick = { onSelectConfig(cfg) },
+                    measuring = state.refreshingPings,
                 )
             }
         }
@@ -3036,6 +3038,8 @@ private fun ServerRow(
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
+    /** True while the pings are being re-measured: the ping column shows placeholders, not stale numbers. */
+    measuring: Boolean = false,
 ) {
     val reduce = appReduceMotion()
     val interaction = remember { MutableInteractionSource() }
@@ -3097,18 +3101,27 @@ private fun ServerRow(
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(AppDs.S3))
-        Text(
-            if (pingMs >= 0) "${pingMs}ms" else "—",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = AppDs.TextMid,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            style = TextStyle(fontFeatureSettings = "tnum"),
-            modifier = Modifier.width(AppDs.PingWidth),
-        )
-        Spacer(Modifier.width(AppDs.S3))
-        PingBars(pingMs)
+        if (measuring) {
+            Box(Modifier.width(AppDs.PingWidth), contentAlignment = Alignment.CenterEnd) {
+                SkeletonBlock(Modifier.width(30.dp).height(10.dp))
+            }
+            Spacer(Modifier.width(AppDs.S3))
+            // Same four bars as PingBars, at the same size — the number lands without a shift.
+            SignalLoader(height = 14.dp, color = AppDs.TextLow)
+        } else {
+            Text(
+                if (pingMs >= 0) "${pingMs}ms" else "—",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = AppDs.TextMid,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                style = TextStyle(fontFeatureSettings = "tnum"),
+                modifier = Modifier.width(AppDs.PingWidth),
+            )
+            Spacer(Modifier.width(AppDs.S3))
+            PingBars(pingMs)
+        }
         Spacer(Modifier.width(AppDs.S1))
         FavoriteButton(title = title, isFavorite = isFavorite, onToggle = onToggleFavorite)
     }
@@ -3117,14 +3130,15 @@ private fun ServerRow(
 @Composable
 private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> Unit) {
     val reduce = appReduceMotion()
-    val pop = remember { Animatable(1f) }
+    val settle = remember { Animatable(1f) }
     var previous by remember { mutableStateOf(isFavorite) }
     LaunchedEffect(isFavorite) {
         if (previous != isFavorite) {
             previous = isFavorite
-            if (!reduce && isFavorite) {
-                pop.animateTo(1.22f, tween(90))
-                pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium))
+            if (!reduce) {
+                // Adding dips a little deeper than removing; both ease back with no overshoot.
+                settle.snapTo(if (isFavorite) 0.78f else 0.9f)
+                settle.animateTo(1f, tween(170, easing = FastOutSlowInEasing))
             }
         }
     }
@@ -3135,20 +3149,25 @@ private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> U
         Modifier
             .size(AppDs.Control)
             .clip(CircleShape)
-            .clickable(onClickLabel = "Toggle favorite", onClick = onToggle),
+            .clickable(role = Role.Checkbox, onClickLabel = if (isFavorite) "Remove from favorites" else "Add to favorites", onClick = onToggle),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-            contentDescription = if (isFavorite) "Remove $title from favorites" else "Add $title to favorites",
-            tint = tint,
-            modifier = Modifier
-                .size(AppDs.IconMd)
-                .graphicsLayer {
-                    scaleX = pop.value
-                    scaleY = pop.value
-                },
-        )
+        androidx.compose.animation.Crossfade(
+            targetState = isFavorite,
+            animationSpec = appMotion(reduce, 140),
+            label = "favIcon",
+            modifier = Modifier.graphicsLayer {
+                scaleX = settle.value
+                scaleY = settle.value
+            },
+        ) { fav ->
+            Icon(
+                if (fav) lucide(com.cdnhunter.app.R.drawable.ic_lucide_heart_fill) else lucide(com.cdnhunter.app.R.drawable.ic_lucide_heart),
+                contentDescription = if (fav) "Remove $title from favorites" else "Add $title to favorites",
+                tint = tint,
+                modifier = Modifier.size(AppDs.IconMd),
+            )
+        }
     }
 }
 
@@ -3417,17 +3436,19 @@ private fun ConnectWell(
             drawCircle(wellFill.copy(alpha = fillAmount), radius = radius * (0.88f + 0.12f * fillAmount))
         }
         if (working > 0.01f) {
-            val turn = if (visual == ConnVisual.DISCONNECTING) -spinDegrees() else spinDegrees()
-            val arc = if (visual == ConnVisual.DISCONNECTING) AppDs.TextMid else AppDs.AccentSoft
-            rotate(degrees = turn, pivot = center) {
-                drawArc(
-                    color = arc.copy(alpha = working),
-                    startAngle = -90f,
-                    sweepAngle = 100f,
-                    useCenter = false,
-                    topLeft = Offset(stroke / 2f, stroke / 2f),
-                    size = Size(size.width - stroke, size.height - stroke),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+            // A ping: two rings leave the bolt and fade as they reach the rim — outward while the
+            // tunnel is coming up, drawn back in while it is going down. Nothing about progress is
+            // implied; it says only "something is happening", which is all the service reports.
+            val phase = (spinDegrees() / 360f).coerceIn(0f, 1f)
+            val inward = visual == ConnVisual.DISCONNECTING
+            val ring = if (inward) AppDs.TextMid else AppDs.AccentSoft
+            for (k in 0..1) {
+                val travelled = (phase + k * 0.5f) % 1f
+                val p = if (inward) 1f - travelled else travelled
+                drawCircle(
+                    color = ring.copy(alpha = (1f - travelled) * 0.6f * working),
+                    radius = radius * (0.30f + 0.66f * p),
+                    style = Stroke(1.5.dp.toPx()),
                 )
             }
         }

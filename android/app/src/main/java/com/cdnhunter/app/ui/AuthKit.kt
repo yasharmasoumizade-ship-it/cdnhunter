@@ -297,7 +297,7 @@ internal fun AuthButton(
             horizontalArrangement = Arrangement.spacedBy(AppDs.S3),
         ) {
             if (loading) {
-                GlowSpinner(size = 20.dp)
+                SignalLoader(height = 16.dp, color = if (primary) AuthDs.Ink else AppDs.AccentSoft)
             } else {
                 leading?.invoke()
                 Text(text, style = AuthType.Button, color = if (primary) AuthDs.Ink else AuthDs.Hi, maxLines = 1)
