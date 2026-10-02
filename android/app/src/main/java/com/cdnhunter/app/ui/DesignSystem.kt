@@ -569,7 +569,8 @@ internal fun PremiumRow(
             Spacer(Modifier.width(AppDs.S3))
             trailing()
         }
-        if (chevron) {
+        // A chevron promises navigation, so it only draws on a row that actually has an action.
+        if (chevron && onClick != null) {
             Spacer(Modifier.width(AppDs.S2))
             RowChevron()
         }

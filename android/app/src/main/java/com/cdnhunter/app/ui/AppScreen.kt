@@ -2440,21 +2440,13 @@ private fun SettingsScreen(
             // disc as the sole way to change it — discoverable by nobody.
             ModeChoiceRow(mode = mode, onSetMode = onSetMode)
             PremiumDivider()
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS", showChevron = true)
+            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS")
             PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_refresh, "Auto-reconnect", "Reconnect if connection drops",
                 autoReconnect, {
                     autoReconnect = it
                     AppSettings.setAutoReconnectEnabled(context, it)
-                },
-            )
-            PremiumDivider()
-            SettingsToggleRow(
-                com.cdnhunter.app.R.drawable.ic_lucide_wifi_off, "Kill switch", "Block traffic on disconnect",
-                killSwitch, {
-                    killSwitch = it
-                    AppSettings.setKillSwitchEnabled(context, it)
                 },
             )
             PremiumDivider()
@@ -2471,6 +2463,17 @@ private fun SettingsScreen(
                     showChevron = true, onClick = onSplitTunnelClick,
                 )
             }
+        }
+
+        SectionHeader("PROTECTION")
+        PremiumCardGroup {
+            SettingsToggleRow(
+                com.cdnhunter.app.R.drawable.ic_lucide_wifi_off, "Kill switch", "Block traffic on disconnect",
+                killSwitch, {
+                    killSwitch = it
+                    AppSettings.setKillSwitchEnabled(context, it)
+                },
+            )
             PremiumDivider()
             run {
                 var adBlockEnabled by remember { mutableStateOf(AppSettings.adBlockerEnabled(context)) }
@@ -2497,6 +2500,23 @@ private fun SettingsScreen(
                     },
                 )
             }
+            PremiumDivider()
+            run {
+                var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
+                SettingsToggleRow(
+                    com.cdnhunter.app.R.drawable.ic_lucide_lock, "DNS over HTTPS", "Encrypt DNS queries with DoH",
+                    useDoh, {
+                        useDoh = it
+                        AppSettings.setUseDoh(context, it)
+                        // Notify VPN service of settings change
+                        android.widget.Toast.makeText(
+                            context,
+                            if (it) "DoH enabled (reconnect to apply)" else "DoH disabled (reconnect to apply)",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                )
+            }
         }
 
         SectionHeader("NETWORK")
@@ -2506,7 +2526,6 @@ private fun SettingsScreen(
             var showCustomInput by remember { mutableStateOf(mtuMode == "custom") }
             var allowLan by remember { mutableStateOf(AppSettings.allowLan(context)) }
             var ipv6Enabled by remember { mutableStateOf(AppSettings.ipv6Enabled(context)) }
-            var useDoh by remember { mutableStateOf(AppSettings.useDoh(context)) }
 
             // MTU is the one row on the page that carries a choice rather than a switch, so
             // it carries a segmented control where the others carry a toggle. Everything
@@ -2578,20 +2597,6 @@ private fun SettingsScreen(
                 ipv6Enabled, {
                     ipv6Enabled = it
                     AppSettings.setIpv6Enabled(context, it)
-                },
-            )
-            PremiumDivider()
-            SettingsToggleRow(
-                com.cdnhunter.app.R.drawable.ic_lucide_lock, "DNS over HTTPS", "Encrypt DNS queries with DoH",
-                useDoh, {
-                    useDoh = it
-                    AppSettings.setUseDoh(context, it)
-                    // Notify VPN service of settings change
-                    android.widget.Toast.makeText(
-                        context,
-                        if (it) "DoH enabled (reconnect to apply)" else "DoH disabled (reconnect to apply)",
-                        android.widget.Toast.LENGTH_SHORT,
-                    ).show()
                 },
             )
         }
@@ -3005,8 +3010,10 @@ private fun ProfileScreen(onBack: () -> Unit, account: AccountUiState, onSignOut
 
         SectionHeader("ACCOUNT")
         PremiumCardGroup {
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Accent, onClick = { showComingSoon(context) })
-            PremiumDivider()
+            if (account.isPro) {
+                SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_gem, "Upgrade plan", null, showChevron = true, tone = AppDs.Accent, onClick = { showComingSoon(context) })
+                PremiumDivider()
+            }
             SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_history, "Payment history", null, showChevron = true, onClick = onPaymentHistory)
             PremiumDivider()
             // The one destructive row in the app, so it is the one row whose label is not the

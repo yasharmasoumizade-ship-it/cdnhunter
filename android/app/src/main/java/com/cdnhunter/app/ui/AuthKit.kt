@@ -9,8 +9,8 @@ package com.cdnhunter.app.ui
 //
 // Rules the components follow, so screens never restyle anything:
 //   Shape     actions (buttons, back) are full pills; containers (fields, banners, code cells) are 16dp.
-//   Colour    white at four strengths on the scrim (Hi / Mid / Low / Edge) + one error and one
-//             success hue. Primary action = solid white, everything else = glass.
+//   Colour    white at four strengths on the scrim (Hi / Mid / Low / Edge); primary action = the
+//             app's Bone fill, focus = the app accent, everything else = glass.
 //   Type      [AuthType] — one style per role; a size always implies its weight.
 //   State     every control has rest / focus / pressed / disabled / loading / error where it applies.
 //   Feedback  errors say what happened and what to do next (see [AuthIssue]); a red edge is never
@@ -107,7 +107,11 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.delay
 
 internal object AuthDs {
+    // One system with the app: the primary action is the same Bone-on-Ink as Home's connect button,
+    // focus is the app's accent, success and error come from AppDs. Only what must survive a
+    // photographic backdrop (the white text ramp, the lighter error text) is auth-specific.
     val Ink = AppDs.Ink
+    val Primary = AppDs.Bone
     val Hi = Color.White
     val Mid = Color.White.copy(alpha = 0.78f)
     val Low = Color.White.copy(alpha = 0.60f)
@@ -116,13 +120,13 @@ internal object AuthDs {
     val GlassFillFocus = Color.White.copy(alpha = 0.12f)
     val Edge = Color.White.copy(alpha = 0.18f)
     val EdgeFilled = Color.White.copy(alpha = 0.38f)
-    val EdgeFocus = Color.White.copy(alpha = 0.72f)
+    val EdgeFocus = AppDs.Accent
 
-    // Lighter than AppDs.Error: the standard red loses contrast on a dark photographic scrim.
+    // Text-sized red needs more lightness than AppDs.Error to hold 4.5:1 on the scrim.
     val Error = Color(0xFFFF7B7B)
-    val ErrorFill = Error.copy(alpha = 0.12f)
-    val ErrorEdge = Error.copy(alpha = 0.85f)
-    val Success = Color(0xFF4ADE80)
+    val ErrorFill = AppDs.Error.copy(alpha = 0.14f)
+    val ErrorEdge = AppDs.Error
+    val Success = AppDs.Success
 
     val Gutter = AppDs.S6
     val ButtonHeight = 56.dp
@@ -226,7 +230,7 @@ internal fun Modifier.authGlass(
 internal enum class AuthButtonStyle { Primary, Glass }
 
 /**
- * A full-width pill. [AuthButtonStyle.Primary] is solid white with dark text — the one action on a
+ * A full-width pill. [AuthButtonStyle.Primary] is solid Bone with Ink text — the one action on a
  * screen; [AuthButtonStyle.Glass] is translucent with a hairline — everything secondary. Pressed
  * sinks and dims, keyboard focus draws a ring, [loading] swaps the label for a spinner and blocks
  * taps (the button keeps its size, so nothing jumps), disabled fades to half.
@@ -250,8 +254,8 @@ internal fun AuthButton(
     val primary = style == AuthButtonStyle.Primary
     val fill by animateColorAsState(
         when {
-            primary && pressed -> Color.White.copy(alpha = 0.86f)
-            primary -> Color.White
+            primary && pressed -> AuthDs.Primary.copy(alpha = 0.86f)
+            primary -> AuthDs.Primary
             pressed -> Color.White.copy(alpha = 0.18f)
             else -> AuthDs.GlassFill
         },
@@ -482,7 +486,7 @@ internal fun AuthField(
                 .semantics { if (supportingIsError && supportingText != null) error(supportingText) },
             singleLine = true,
             textStyle = AuthType.Input.copy(color = AuthDs.Hi),
-            cursorBrush = SolidColor(Color.White),
+            cursorBrush = SolidColor(AuthDs.Primary),
             visualTransformation = visualTransformation,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
             keyboardActions = KeyboardActions(
@@ -762,7 +766,7 @@ internal fun AuthProgress(step: Int, steps: Int, modifier: Modifier = Modifier) 
                     .clip(RoundedCornerShape(50))
                     .background(AuthDs.Edge),
             ) {
-                Box(Modifier.fillMaxWidth(fill).fillMaxHeight().background(Color.White))
+                Box(Modifier.fillMaxWidth(fill).fillMaxHeight().background(AuthDs.Primary))
             }
         }
     }
