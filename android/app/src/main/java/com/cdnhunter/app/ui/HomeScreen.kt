@@ -2562,10 +2562,16 @@ private fun PlusGlyph(color: Color, modifier: Modifier = Modifier) {
 /** The bottom panel sits a shade deeper than the card surface, so it reads as recessed. */
 private val PanelFill = Color(0xFF0A101C)
 
-/** The five states the connect control draws. [ConnPhase] has no disconnecting
+/** The six states the connect control draws. [ConnPhase] has no disconnecting
  *  phase — the service tears down and reports OFF — so HomeScreen holds DISCONNECTING for the
  *  gap between the tap and the tunnel actually reporting down. */
-private enum class ConnVisual { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING, ERROR }
+/**
+ * [BLOCKED] is the kill switch doing its job: the tunnel dropped, the app is holding the interface
+ * with traffic discarded instead of letting it fall back to the open network. It is not "not
+ * protected" — nothing is leaking — and it must not look like it, or the person turns the VPN off
+ * to get online and exposes themselves. It reuses the error glyph and colours (no new animation).
+ */
+private enum class ConnVisual { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING, ERROR, BLOCKED }
 
 private fun ConnVisual.title(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Connect"
@@ -2573,6 +2579,7 @@ private fun ConnVisual.title(): String = when (this) {
     ConnVisual.CONNECTED -> "Connected"
     ConnVisual.DISCONNECTING -> "Disconnecting..."
     ConnVisual.ERROR -> "Couldn't connect"
+    ConnVisual.BLOCKED -> "Blocked"
 }
 
 private fun ConnVisual.caption(): String = when (this) {
@@ -2581,6 +2588,7 @@ private fun ConnVisual.caption(): String = when (this) {
     ConnVisual.CONNECTED -> "Protected"
     ConnVisual.DISCONNECTING -> "Closing secure connection"
     ConnVisual.ERROR -> "Tap to retry"
+    ConnVisual.BLOCKED -> "Kill switch is blocking traffic · tap to reconnect"
 }
 
 /** The glyph mirrors the same real state the words do. */
@@ -2590,6 +2598,7 @@ private fun ConnVisual.glyph(): GlyphPhase = when (this) {
     ConnVisual.CONNECTED -> GlyphPhase.Connected
     ConnVisual.DISCONNECTING -> GlyphPhase.Disconnecting
     ConnVisual.ERROR -> GlyphPhase.Error
+    ConnVisual.BLOCKED -> GlyphPhase.Error
 }
 
 /** How long DISCONNECTING stays up after the tunnel reports down, so the state is readable. */
@@ -2693,10 +2702,18 @@ internal fun HomeScreen(
             }
         }
     }
+    // Observed from the connection store, not polled: it is set while the kill switch holds the
+    // tunnel after a drop and cleared the moment a new attempt starts or the VPN is stopped.
+    var blocked by remember { mutableStateOf(CdnVpnService.store.snapshot.killSwitchHolding) }
+    DisposableEffect(Unit) {
+        val remove = CdnVpnService.store.addListener { blocked = it.killSwitchHolding }
+        onDispose { remove() }
+    }
     val visual = when {
         state.phase == ConnPhase.CONNECTING -> ConnVisual.CONNECTING
         disconnecting -> ConnVisual.DISCONNECTING
         state.phase == ConnPhase.CONNECTED -> ConnVisual.CONNECTED
+        blocked -> ConnVisual.BLOCKED
         failed -> ConnVisual.ERROR
         else -> ConnVisual.DISCONNECTED
     }
@@ -3217,7 +3234,7 @@ private fun ConnectPanel(
         targetValue = when (visual) {
             ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.45f)
             ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0.22f)
-            ConnVisual.ERROR -> AppDs.Error.copy(alpha = 0.45f)
+            ConnVisual.ERROR, ConnVisual.BLOCKED -> AppDs.Error.copy(alpha = 0.45f)
             else -> AppDs.Hairline
         },
         animationSpec = appMotion(reduce, 320),
@@ -3332,6 +3349,7 @@ private fun ConnectButton(
         ConnVisual.CONNECTING -> "Cancel connecting"
         ConnVisual.DISCONNECTING -> "Disconnecting"
         ConnVisual.ERROR -> "Retry connecting"
+        ConnVisual.BLOCKED -> "Reconnect. Traffic is blocked by the kill switch"
         ConnVisual.DISCONNECTED -> "Connect"
     }
 
