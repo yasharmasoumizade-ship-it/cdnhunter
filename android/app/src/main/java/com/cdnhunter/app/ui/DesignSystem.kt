@@ -750,8 +750,9 @@ internal fun PremiumToggle(
 }
 
 /**
- * A two-or-three way choice as one control: a recessed track with one lit thumb that glides to
- * the selected segment. The thumb is measured to each segment's real bounds, so it fits whether
+ * A two-or-three way choice as one control: a recessed track with one lit thumb that springs to
+ * the selected segment — it overshoots a touch and settles (bouncy), and ticks the haptic as it
+ * lands. The thumb is a strong accent wash, so the chosen option is unmistakable. The thumb is measured to each segment's real bounds, so it fits whether
  * segments are content-sized (Server choice, MTU) or share the row ([equalWeight]).
  *
  * `options` is (stored value, shown label) — the key is what goes to [AppSettings].
@@ -768,6 +769,7 @@ internal fun PremiumSegmentedControl(
     val segShape = remember { RoundedCornerShape(AppDs.RMd - 3.dp) }
     val density = LocalDensity.current
     val reduce = appReduceMotion()
+    val haptics = LocalHapticFeedback.current
 
     val segX = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
     val segW = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
@@ -787,8 +789,10 @@ internal fun PremiumSegmentedControl(
             thumbW.snapTo(targetW)
             settled = true
         } else {
-            launch { thumbX.animateTo(targetX, tween(220, easing = FastOutSlowInEasing)) }
-            launch { thumbW.animateTo(targetW, tween(220, easing = FastOutSlowInEasing)) }
+            // Position bounces a little more than width, so the thumb stretches and snaps back
+            // rather than sliding on rails. Low damping = visible overshoot; the track clips it.
+            launch { thumbX.animateTo(targetX, spring(dampingRatio = 0.5f, stiffness = 420f)) }
+            launch { thumbW.animateTo(targetW, spring(dampingRatio = 0.62f, stiffness = 420f)) }
         }
     }
 
@@ -806,8 +810,9 @@ internal fun PremiumSegmentedControl(
                     .width(with(density) { thumbW.value.toDp() })
                     .height(with(density) { segH.toDp() })
                     .clip(segShape)
-                    .background(AppDs.Accent.copy(alpha = 0.18f))
-                    .border(1.dp, AppDs.Accent.copy(alpha = 0.45f), segShape),
+                    .background(AppDs.Accent.copy(alpha = 0.46f))
+                    .background(AppDs.ButtonTopLight)
+                    .border(1.dp, AppDs.AccentSoft.copy(alpha = 0.70f), segShape),
             )
         }
         Row(
@@ -817,8 +822,8 @@ internal fun PremiumSegmentedControl(
             options.forEachIndexed { i, (key, label) ->
                 val on = key == selected
                 val ink by animateColorAsState(
-                    targetValue = if (on) AppDs.TextHi else AppDs.TextMid,
-                    animationSpec = appMotion(reduce, 200),
+                    targetValue = if (on) Color.White else AppDs.TextMid,
+                    animationSpec = appMotion(reduce, 160),
                     label = "segInk",
                 )
                 Box(
@@ -836,7 +841,10 @@ internal fun PremiumSegmentedControl(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             role = Role.RadioButton,
-                        ) { onSelect(key) }
+                        ) {
+                            if (!on) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelect(key)
+                        }
                         .padding(horizontal = AppDs.S3, vertical = AppDs.S2),
                     contentAlignment = Alignment.Center,
                 ) {
