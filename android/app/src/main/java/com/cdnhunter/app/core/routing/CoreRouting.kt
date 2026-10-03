@@ -77,6 +77,11 @@ object CoreCapabilities {
         if (p.protocol == ProxyProtocol.SHADOWSOCKS && p.transport != TransportKind.TCP) {
             return Support.No("shadowsocks with a stream transport is not supported")
         }
+        if (p.security == SecurityKind.REALITY) {
+            // REALITY is a VLESS TLS mode; it is defined over tcp, h2, grpc and xhttp only.
+            if (p.protocol != ProxyProtocol.VLESS) return Support.No("REALITY is only available for VLESS")
+            if (p.transport !in CLASH_REALITY_TRANSPORTS) return Support.No("REALITY is not defined over ${p.transport}")
+        }
         return when (p.transport) {
             TransportKind.TCP, TransportKind.WS, TransportKind.GRPC, TransportKind.H2,
             TransportKind.HTTP_OBFS, TransportKind.HTTPUPGRADE -> Support.Yes
@@ -108,6 +113,7 @@ object CoreCapabilities {
     }
 
     private val REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2)
+    private val CLASH_REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2, TransportKind.XHTTP)
 }
 
 /**

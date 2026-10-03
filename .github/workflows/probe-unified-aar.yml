@@ -78,7 +78,7 @@ jobs:
       - name: Inspect AAR
         shell: bash
         run: |
-          set -uo pipefail
+          set +e
           cd unified-probe
           mkdir -p x && unzip -o -q libcores.aar -d x
           {
