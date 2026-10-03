@@ -104,6 +104,18 @@ jobs:
           } > /tmp/i4.log 2>&1; note "server+handler+options" /tmp/i4.log
           exit 0
 
+      - name: Dump libbox platform types (API only, for the PlatformInterface glue)
+        if: matrix.target == 'android/arm64'
+        shell: bash
+        run: |
+          set +e
+          cd unified-probe
+          dump() { for c in "$@"; do echo "== $c"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.$c 2>&1 | sed 's/com.cdnhunter.mihomo.libbox.//g; s/public final native //; s/public abstract //; s/public native //; s/java.lang.//g' | grep -vE 'refnum|incRefnum|Compiled from|equals|hashCode|toString|static \{|^\}|^public (final )?(class|interface)' ; done; }
+          note() { echo "::notice title=$1::$(cut -c1-200 "$2" | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')"; }
+          dump InterfaceUpdateListener NeighborUpdateListener NetworkInterface NetworkInterfaceIterator LocalDNSTransport DNSResponseWriter WIFIState Notification > /tmp/d1.log 2>&1; note "glue types 1" /tmp/d1.log
+          dump ConnectionOwner RoutePrefix RoutePrefixIterator StringIterator StringBox SystemProxyStatus SetupOptions > /tmp/d2.log 2>&1; note "glue types 2" /tmp/d2.log
+          exit 0
+
       - uses: actions/upload-artifact@v4
         with:
           name: libcores-probe-${{ strategy.job-index }}
