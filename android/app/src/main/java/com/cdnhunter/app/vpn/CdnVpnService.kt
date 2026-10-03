@@ -384,7 +384,7 @@ class CdnVpnService : VpnService() {
         val p = plan ?: return
         attemptJob = null
         lastError = cmd.error.technical
-        ConnLog.error(cmd.connectionId, Stage.ERROR, cmd.error, coreOutput = recentCoreOutput())
+        ConnLog.error(cmd.connectionId, Stage.ERROR, cmd.error, coreOutput = com.cdnhunter.app.core.CoreLogFilter.summary(recentCoreOutput(), max = 6))
 
         val policy = policyFor(p.settings)
         val used = store.snapshot.reconnectAttempt
@@ -540,6 +540,9 @@ class CdnVpnService : VpnService() {
             SettingsValidator.validate(p.settings)?.let { throw AttemptFailure(it) }
             if (prepare(this) != null) throw AttemptFailure(ConnectionError.PermissionError("VPN permission is not granted"))
             val homeDir = prepareGeoFiles()
+            // Without this the core downloads its rule-providers synchronously on start, through the
+            // proxy being brought up, and start() blocks for ~20 s (seen in the field: 23 s).
+            VpnConfigBuilder.seedRuleProviderCache(homeDir, p.settings)
             checkPrivateDnsStrictMode()?.let {
                 ConnLog.w(cid, Stage.CONFIG_VALIDATED, "Android Private DNS is in strict mode ($it); it bypasses the tunnel's DNS handling")
             }
@@ -615,7 +618,7 @@ class CdnVpnService : VpnService() {
                     continue
                 }
                 if (System.currentTimeMillis() > deadline) {
-                    throw AttemptFailure(ConnectionError.TimeoutError("no traffic passed through the server within ${VERIFY_TIMEOUT_MS / 1000}s: $lastFailure"))
+                    throw AttemptFailure(ConnectionError.TimeoutError(diagnoseNoTraffic(validated.config, lastFailure)))
                 }
                 delay(700)
             }
@@ -653,6 +656,33 @@ class CdnVpnService : VpnService() {
         } catch (e: Exception) {
             report(serial, cid, ConnectionError.UnknownError("${e.javaClass.simpleName}: ${e.message}", e), connected)
         }
+    }
+
+    /**
+     * The probe through the core never succeeded. Say WHY as far as can be told, because "timed out"
+     * covers very different problems with different fixes:
+     *  - the server's port does not even accept a TCP connection from this network (down / filtered),
+     *  - it does, but nothing comes back through it (transport, encryption or credentials mismatch).
+     * The first is decided by a plain TCP connect made outside the core; the core's own failure lines
+     * (filtered of log noise) are appended for whatever it says about the second.
+     */
+    private fun diagnoseNoTraffic(config: InternalConnectionConfig, lastProbeFailure: String): String {
+        val tcp = try {
+            com.cdnhunter.app.core.ping.TcpPinger(protect = { s -> protect(s) }).probe(config.server, config.port, 4_000)
+        } catch (e: Exception) {
+            com.cdnhunter.app.core.ping.ProbeOutcome.Unreachable(e.javaClass.simpleName)
+        }
+        val server = when (tcp) {
+            is com.cdnhunter.app.core.ping.ProbeOutcome.Success ->
+                "server port accepts TCP (${tcp.latencyMs} ms) but no traffic passed through it — transport, encryption or credentials likely do not match the server"
+            is com.cdnhunter.app.core.ping.ProbeOutcome.Timeout ->
+                "server port did not answer TCP within 4s — the server is down or this network filters it"
+            is com.cdnhunter.app.core.ping.ProbeOutcome.Unreachable ->
+                "server port is unreachable over TCP (${tcp.reason})"
+        }
+        val core = com.cdnhunter.app.core.CoreLogFilter.summary(recentCoreOutput(), max = 4)
+        return "no traffic through the server in ${VERIFY_TIMEOUT_MS / 1000}s ($lastProbeFailure); $server" +
+            if (core.isNotBlank()) "; core: $core" else ""
     }
 
     private fun report(serial: Int, cid: String, error: ConnectionError, wasConnected: Boolean) {
@@ -747,7 +777,7 @@ class CdnVpnService : VpnService() {
     private fun looksLikeGeoError(err: String) =
         err.contains("geodata", true) || err.contains("geosite", true) || err.contains("geoip", true)
 
-    private fun recentCoreOutput(): String = try { MihomoBridge.coreLog().takeLast(800) } catch (_: Exception) { "" }
+    private fun recentCoreOutput(): String = try { MihomoBridge.coreLog() } catch (_: Exception) { "" }
 
     private fun closeRawFd(fd: Int) {
         try { ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}

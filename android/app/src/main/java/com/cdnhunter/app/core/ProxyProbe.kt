@@ -60,7 +60,16 @@ class ProxyProbe(
     }
 
     companion object {
+        /**
+         * The first URL is an IP literal on purpose. A request by hostname makes the core resolve the
+         * name first, and in this app DNS is DNS-over-HTTPS that itself travels through the proxy: a
+         * proxy that is slow to come up, or a DoH endpoint that is unreachable, fails the check for
+         * reasons that have nothing to do with whether traffic can leave through the server. An IP
+         * literal tests exactly one thing — can a TLS connection be carried through the server.
+         * The hostname URLs follow as fallbacks (Cloudflare's certificate covers 1.1.1.1).
+         */
         val DEFAULT_URLS = listOf(
+            "https://1.1.1.1/cdn-cgi/trace",
             "https://www.gstatic.com/generate_204",
             "https://cp.cloudflare.com/generate_204",
         )

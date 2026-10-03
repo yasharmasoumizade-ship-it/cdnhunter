@@ -3,6 +3,7 @@ package com.cdnhunter.app.vpn
 import android.content.Context
 import com.cdnhunter.app.core.ConnectionSettings
 import com.cdnhunter.app.core.ValidatedConfig
+import java.io.File
 
 /**
  * Builds a mihomo (Clash.Meta) YAML config from the stored user proxy URI.
@@ -39,6 +40,107 @@ object VpnConfigBuilder {
             settings.adBlocker, settings.blockAds, settings.blockTrackers, settings.blockMalware,
             settings.customDnsEnabled, settings.customDnsServers, geoDbPresent
         )
+    }
+
+    /**
+     * The HTTP rule-providers the config declares. One definition, shared by the YAML renderer
+     * and [seedRuleProviderCache], so what is seeded can never drift from what is requested.
+     */
+    internal fun ruleProviders(
+        adBlocker: Boolean, blockAds: Boolean, blockTrackers: Boolean, blockMalware: Boolean,
+    ): Map<String, Any> = buildMap<String, Any> {
+        put("ir-domain", linkedMapOf(
+            "type" to "http",
+            "format" to "text",
+            "behavior" to "domain",
+            "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ir.txt",
+            "path" to "./ruleset/ir-domain.txt",
+            "interval" to 86400,
+        ))
+        put("ir-ip", linkedMapOf(
+            "type" to "http",
+            "format" to "yaml",
+            "behavior" to "ipcidr",
+            "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ircidr.yaml",
+            "path" to "./ruleset/ir-ip.yaml",
+            "interval" to 86400,
+        ))
+        // Ad blocker rule-providers — only added when the user has the
+        // corresponding toggle on, so disabled users pay no download
+        // cost and the rule engine has nothing extra to match.
+        if (adBlocker) {
+            // Ads + trackers (Loyalsoldier reject list covers both in one file).
+            if (blockAds || blockTrackers) {
+                put("ad-block", linkedMapOf(
+                    "type" to "http",
+                    "format" to "text",
+                    "behavior" to "domain",
+                    "url" to "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt",
+                    "path" to "./ruleset/ad-block.txt",
+                    "interval" to 86400,
+                ))
+            }
+        }
+        // Malware blocker — its OWN feature, gated only by its own toggle (NOT adBlocker).
+        // Source: hagezi's Threat Intelligence Feed (TIF) — a dedicated, actively
+        // maintained list of malware / phishing / scam / cryptojacking domains, shipped
+        // as one-domain-per-line text that mihomo's `behavior: domain` provider consumes
+        // directly with no conversion. This replaces the old banad.txt, which was
+        // Loyalsoldier's *ad*-ban list mislabelled as malware — the ad blocker already
+        // covers ads, so pointing "malware" at an ad list gave no real threat coverage.
+        if (blockMalware) {
+            put("malware-block", linkedMapOf(
+                "type" to "http",
+                "format" to "text",
+                "behavior" to "domain",
+                "url" to "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/tif.txt",
+                "path" to "./ruleset/malware-block.txt",
+                "interval" to 86400,
+            ))
+        }
+    }
+
+    /**
+     * Makes sure every HTTP rule-provider has a local cache file before the core starts.
+     *
+     * Why: with no file on disk mihomo downloads each provider SYNCHRONOUSLY during start and waits
+     * (about 20 s on timeout) for all of them. Those downloads go out through the very proxy that
+     * is being brought up, so a slow or broken server (or GitHub being unreachable from the
+     * user's network) held start() for ~23 s with the VPN interface already capturing all traffic.
+     *
+     * With a parseable file present the core loads it immediately and, if the file is older than the
+     * provider interval, refreshes it in the BACKGROUND — so the placeholder is written with an old
+     * modification time, which makes the first real download happen right after start, off the
+     * critical path. A real cached download is never touched. Until a real download succeeds the
+     * placeholder is harmless: a reserved TEST-NET range and a reserved `.invalid` name match
+     * nothing, which is exactly what a failed download left in place anyway. Routing is unchanged —
+     * the bundled GEOSITE/GEOIP layer is still the primary Iran-direct rule.
+     */
+    fun seedRuleProviderCache(homeDir: File, settings: ConnectionSettings, nowMs: Long = System.currentTimeMillis()) {
+        val root = homeDir.canonicalFile
+        val providers = ruleProviders(settings.adBlocker, settings.blockAds, settings.blockTrackers, settings.blockMalware)
+        for ((_, def) in providers) {
+            val m = def as? Map<*, *> ?: continue
+            if (m["type"] != "http") continue
+            val rel = (m["path"] as? String)?.removePrefix("./") ?: continue
+            val file = File(root, rel).canonicalFile
+            if (!file.path.startsWith(root.path + File.separator)) continue   // never write outside the core's home
+            if (file.exists() && file.length() > 0) continue                   // a real cached download: keep it
+            try {
+                file.parentFile?.mkdirs()
+                file.writeText(placeholderFor(m["behavior"] as? String, m["format"] as? String))
+                file.setLastModified(nowMs - 3L * 24 * 60 * 60 * 1000)
+            } catch (_: Exception) {
+                // Seeding is an optimisation. If it fails the core simply downloads as it always did.
+            }
+        }
+    }
+
+    /** Smallest valid, match-nothing content for a provider of the given behavior/format. */
+    internal fun placeholderFor(behavior: String?, format: String?): String = when {
+        behavior == "ipcidr" && format == "yaml" -> "payload:\n  - 192.0.2.1/32\n"
+        behavior == "ipcidr" -> "192.0.2.1/32\n"
+        else -> "example.invalid\n"
     }
 
     /** True when both bundled geo databases are present and non-empty in mihomo's home dir. */
@@ -307,57 +409,7 @@ object VpnConfigBuilder {
             // — see Settings > AD BLOCKING). When enabled we pull domain blocklists
             // from well-known clash-compatible sources and REJECT them before any
             // proxy/MATCH rule, so the request never leaves the device.
-            "rule-providers" to buildMap {
-                put("ir-domain", linkedMapOf(
-                    "type" to "http",
-                    "format" to "text",
-                    "behavior" to "domain",
-                    "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ir.txt",
-                    "path" to "./ruleset/ir-domain.txt",
-                    "interval" to 86400,
-                ))
-                put("ir-ip", linkedMapOf(
-                    "type" to "http",
-                    "format" to "yaml",
-                    "behavior" to "ipcidr",
-                    "url" to "https://raw.githubusercontent.com/Chocolate4U/Iran-clash-rules/release/ircidr.yaml",
-                    "path" to "./ruleset/ir-ip.yaml",
-                    "interval" to 86400,
-                ))
-                // Ad blocker rule-providers — only added when the user has the
-                // corresponding toggle on, so disabled users pay no download
-                // cost and the rule engine has nothing extra to match.
-                if (adBlocker) {
-                    // Ads + trackers (Loyalsoldier reject list covers both in one file).
-                    if (blockAds || blockTrackers) {
-                        put("ad-block", linkedMapOf(
-                            "type" to "http",
-                            "format" to "text",
-                            "behavior" to "domain",
-                            "url" to "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt",
-                            "path" to "./ruleset/ad-block.txt",
-                            "interval" to 86400,
-                        ))
-                    }
-                }
-                // Malware blocker — its OWN feature, gated only by its own toggle (NOT adBlocker).
-                // Source: hagezi's Threat Intelligence Feed (TIF) — a dedicated, actively
-                // maintained list of malware / phishing / scam / cryptojacking domains, shipped
-                // as one-domain-per-line text that mihomo's `behavior: domain` provider consumes
-                // directly with no conversion. This replaces the old banad.txt, which was
-                // Loyalsoldier's *ad*-ban list mislabelled as malware — the ad blocker already
-                // covers ads, so pointing "malware" at an ad list gave no real threat coverage.
-                if (blockMalware) {
-                    put("malware-block", linkedMapOf(
-                        "type" to "http",
-                        "format" to "text",
-                        "behavior" to "domain",
-                        "url" to "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/tif.txt",
-                        "path" to "./ruleset/malware-block.txt",
-                        "interval" to 86400,
-                    ))
-                }
-            },
+            "rule-providers" to ruleProviders(adBlocker, blockAds, blockTrackers, blockMalware),
             "proxies" to listOf(proxy),
             "proxy-groups" to listOf(
                 linkedMapOf(
