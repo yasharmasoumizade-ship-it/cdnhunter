@@ -7,10 +7,16 @@ on:
     paths:
       - 'android/**'
       - 'mihomo-mobile/**'
+      - 'cores-mobile/**'
       - '.github/workflows/build-unified.yml'
 
 permissions:
   contents: write
+
+env:
+  # ROLLBACK SWITCH. 'true': one AAR with mihomo + sing-box (cores-mobile/). 'false': the previous mihomo-only
+  # AAR (mihomo-mobile/). Flipping to 'false' is only valid while no Kotlin references com.cdnhunter.mihomo.libbox.
+  UNIFIED_AAR: 'true'
 
 jobs:
   build:
@@ -48,6 +54,7 @@ jobs:
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
 
       - name: Build libmihomo.aar (mihomo core, native)
+        if: env.UNIFIED_AAR != 'true'
         run: |
           set -euo pipefail
           cd mihomo-mobile
@@ -62,6 +69,7 @@ jobs:
           ls -la libmihomo.aar
 
       - name: DEBUG list AAR contents
+        if: env.UNIFIED_AAR != 'true'
         run: |
           mkdir -p /tmp/aar_check
           cd /tmp/aar_check
@@ -72,6 +80,54 @@ jobs:
           find extracted -name "classes.jar" -exec unzip -l {} \; | head -100
           echo "=== javap signature of Mobile.class ==="
           mkdir -p /tmp/classdump && cd /tmp/classdump && unzip -o "$GITHUB_WORKSPACE/mihomo-mobile/libmihomo.aar" classes.jar -d . && unzip -o classes.jar "com/cdnhunter/mihomo/mobile/Mobile.class" -d . && javap com/cdnhunter/mihomo/mobile/Mobile.class
+
+      - name: Build cores AAR (mihomo + sing-box libbox, one Go runtime)
+        if: env.UNIFIED_AAR == 'true'
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/26.1.10909125"
+          cd cores-mobile
+          cp ../mihomo-mobile/mobile.go .
+          GOMOBILE_VERSION=v0.1.12
+          go install github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}
+          go install github.com/sagernet/gomobile/cmd/gobind@${GOMOBILE_VERSION}
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile init
+          go mod tidy -v
+          gomobile bind -v -target android/arm64,android/arm -androidapi 24 \
+            -javapkg=com.cdnhunter.mihomo \
+            -tags with_gvisor,cmfa,with_quic,with_utls,badlinkname,tfogo_checklinkname0 \
+            -ldflags='-s -w -checklinkname=0' \
+            -o libcores.aar . github.com/sagernet/sing-box/experimental/libbox
+          ls -la libcores.aar
+
+      - name: Record cores artifact (checksum + versions + per-ABI size)
+        if: env.UNIFIED_AAR == 'true'
+        run: |
+          set -euo pipefail
+          cd cores-mobile
+          SHA=$(sha256sum libcores.aar | cut -d' ' -f1)
+          SIZE=$(stat -c %s libcores.aar)
+          MIHOMO=$(go list -m -f '{{.Version}}' github.com/metacubex/mihomo)
+          SING=$(go list -m -f '{{.Version}}' github.com/sagernet/sing-box)
+          GOMOBILE=$(go list -m -f '{{.Version}}' github.com/sagernet/gomobile)
+          GOV=$(go version)
+          rm -rf /tmp/cx && mkdir /tmp/cx && unzip -q libcores.aar -d /tmp/cx
+          SOS=$(find /tmp/cx -name '*.so' -printf '%P %s bytes\n')
+          SEQ=$(unzip -l /tmp/cx/classes.jar | grep -c 'go/Seq.class')
+          {
+            echo "libcores.aar sha256: $SHA"
+            echo "libcores.aar size:   $SIZE bytes"
+            echo "mihomo:   $MIHOMO"
+            echo "sing-box: $SING"
+            echo "gomobile (SagerNet fork): $GOMOBILE"
+            echo "$GOV"
+            echo "commit:   $GITHUB_SHA"
+            echo "native libs:"; echo "$SOS"
+            echo "go/Seq.class entries (must be 1): $SEQ"
+          } | tee "$GITHUB_WORKSPACE/cores-build-info.txt"
+          test "$SEQ" = "1"
+          echo "::notice title=cores AAR::sha256=$SHA mihomo=$MIHOMO sing-box=$SING gomobile=$GOMOBILE size=$SIZE%0A$(echo "$SOS" | awk 'BEGIN{ORS="%0A"}1')"
 
       - name: Place .aar in app/libs
         run: |
@@ -84,7 +140,11 @@ jobs:
           # ever contain the one AAR this workflow produces.
           rm -rf android/app/libs
           mkdir -p android/app/libs
-          cp mihomo-mobile/libmihomo.aar android/app/libs/
+          if [ "$UNIFIED_AAR" = "true" ]; then
+            cp cores-mobile/libcores.aar android/app/libs/
+          else
+            cp mihomo-mobile/libmihomo.aar android/app/libs/
+          fi
           ls -la android/app/libs/
 
       - name: Bundle mihomo geo assets
@@ -181,6 +241,13 @@ jobs:
           CDNHUNTER_KEY_ALIAS: ${{ secrets.CDNHUNTER_KEY_ALIAS }}
         run: ./gradlew assembleRelease --no-daemon
 
+      - name: Report APK sizes
+        if: always()
+        run: |
+          set +e
+          BODY=$(find android/app/build/outputs/apk -name '*.apk' -printf '%f %s\n' 2>/dev/null | awk '{printf "%s %.1f MB%%0A", $1, $2/1048576}')
+          echo "::notice title=APK sizes::${BODY:-no apk found}"
+
       - name: Collect APK
         run: |
           mkdir -p out
@@ -199,6 +266,7 @@ jobs:
             test -n "$APK" && cp "$APK" out/CDN-Hunter-v4.apk
           fi
 
+          [ -f cores-build-info.txt ] && cp cores-build-info.txt out/ || true
           ls -la out
 
       - name: Release
@@ -222,6 +290,8 @@ jobs:
             - Most phones (made after ~2017): **CDN-Hunter-v4-arm64.apk**
             - Older/32-bit phones: **CDN-Hunter-v4-armv7.apk**
             - Not sure / installer errors: **CDN-Hunter-v4-universal.apk**
-          files: out/*.apk
+          files: |
+            out/*.apk
+            out/cores-build-info.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
