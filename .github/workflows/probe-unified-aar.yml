@@ -70,12 +70,10 @@ jobs:
         shell: bash
         run: |
           [ -f /tmp/probe.log ] || exit 0
-          LAST=$(grep -n '^STEP ' /tmp/probe.log | tail -1 | cut -d: -f2-)
-          echo "::error title=probe failed at::${LAST:-unknown}"
-          # the error-looking lines first, then the tail
-          grep -nEi 'error|cannot|undefined|not found|mismatch|requires|invalid|fatal|panic|go: |ambiguous|redeclared|duplicate' /tmp/probe.log | head -25 | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=probe-line::$l"; done
-          TAIL=$(tail -n 15 /tmp/probe.log | cut -c1-300 | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
-          echo "::error title=probe-tail::$TAIL"
+          LAST=$(grep '^STEP ' /tmp/probe.log | tail -1)
+          grep -v 'go: downloading' /tmp/probe.log | grep -v '^STEP ' > /tmp/probe.filtered || true
+          BODY=$(tail -n 45 /tmp/probe.filtered | cut -c1-260 | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
+          echo "::error title=probe failed at ${LAST:-unknown}::$BODY"
 
       - name: Inspect AAR
         run: |
