@@ -83,13 +83,16 @@ class LibboxEngine(
     override suspend fun awaitTermination(): String = termination.await()
 
     override suspend fun stop() {
-        var toClose: BackendServer? = null
-        synchronized(mon) {
+        // The server is taken out under the lock and handed back as the block's result, so
+        // toClose is a val: the withContext lambda below can smart-cast it. (As a var assigned
+        // inside the synchronized lambda it was a "changing closure" capture, and Kotlin refused.)
+        val toClose: BackendServer? = synchronized(mon) {
             if (state == State.STOPPING || state == State.STOPPED) return
             state = State.STOPPING
             alive = false
-            toClose = server
+            val taken = server
             server = null
+            taken
         }
         withContext(NonCancellable + io) {
             if (toClose != null) {
