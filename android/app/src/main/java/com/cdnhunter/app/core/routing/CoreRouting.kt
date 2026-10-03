@@ -24,6 +24,12 @@ data class ConnectionProfile(
     val protocol: ProxyProtocol,
     val security: SecurityKind,
     val transport: TransportKind,
+    /**
+     * Why sing-box must NOT be given this config, when it uses a feature sing-box 1.14.2 does not
+     * implement or whose settings are not equivalent. Null when nothing blocks it. Checked before
+     * any transport rule, so such a config is never "approximately" translated.
+     */
+    val singBoxBlocker: String? = null,
 ) {
     companion object {
         fun of(config: InternalConnectionConfig): ConnectionProfile {
@@ -46,7 +52,14 @@ data class ConnectionProfile(
                 "quic" -> TransportKind.QUIC
                 else -> TransportKind.UNKNOWN
             }
-            return ConnectionProfile(config.protocol, security, transport)
+            val blocker = when {
+                !p["encryption"]?.toString().isNullOrBlank() ->
+                    "VLESS encryption (post-quantum) is not implemented by sing-box"
+                p["ech-opts"] != null ->
+                    "the ECH config of this profile is mihomo-format and is not translated for sing-box"
+                else -> null
+            }
+            return ConnectionProfile(config.protocol, security, transport, blocker)
         }
     }
 }
@@ -93,6 +106,7 @@ object CoreCapabilities {
     }
 
     private fun singBox(p: ConnectionProfile): Support {
+        p.singBoxBlocker?.let { return Support.No(it) }
         if (p.protocol == ProxyProtocol.SHADOWSOCKS && p.transport != TransportKind.TCP) {
             return Support.No("shadowsocks with a stream transport is not supported")
         }
