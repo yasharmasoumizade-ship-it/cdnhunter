@@ -85,8 +85,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -2152,12 +2150,10 @@ private val PowerFaceSheen = Brush.verticalGradient(
 // number changes while a dead one is still timing out, and the indicator goes away when
 // the last of them finishes or gives up.
 //
-// The gesture is Material 3's own [PullToRefreshContainer] driven by
-// [rememberPullToRefreshState], so it feels like every other Android list: the same
-// threshold, the same rubber-banding, the same spinner. The container is placed in a Box
-// over the list rather than inside it, which is how the pattern is meant to be assembled
-// — the indicator floats above the first row instead of pushing the content down and
-// re-laying out the list on every frame of the drag.
+// The gesture is [PullRefreshState] (PullRefresh.kt): the list is pulled DOWN with the finger and the
+// arrow sits in the gap that opens above the first row, so it can never cover a row. A release past
+// the threshold starts the sweep and the content rests at the refresh position until the sweep ends;
+// a shorter pull just returns. No springs: every move is a cubic-bezier tween.
 
 // ── List scroll edge ────────────────────────────────────────────────────────────
 // The divider between the card's head and its scrolling list, and the screen's one piece of
@@ -2996,22 +2992,13 @@ private fun ServerList(
     onRefreshPings: (List<SavedConfig>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pullState = rememberPullToRefreshState()
-    // Gesture → work: the state flips itself to refreshing when the drag passes the threshold.
-    if (pullState.isRefreshing) {
-        LaunchedEffect(Unit) { onRefreshPings(servers) }
-    }
-    // Work → indicator: VpnTab clears refreshingPings when the sweep ends; the 10s cap only
-    // guards against a stuck indicator.
-    LaunchedEffect(state.refreshingPings) {
-        if (state.refreshingPings) {
-            pullState.startRefresh()
-            delay(10_000L)
-            pullState.endRefresh()
-        } else {
-            pullState.endRefresh()
-        }
-    }
+    // Gesture -> work: a release past the threshold starts the real ping sweep. Work -> gesture:
+    // `refreshingPings` is what holds the content open and what lets it go (VpnTab clears it in a
+    // `finally`, and also uses it to refuse a second sweep), so one pull is exactly one sweep.
+    val pullState = rememberPullRefreshState(
+        refreshing = state.refreshingPings,
+        onRefresh = { onRefreshPings(servers) },
+    )
     val listState = rememberLazyListState()
     val reduce = appReduceMotion()
     // The list's first appearance staggers its first rows in (30ms apart, 200ms cap). Once it has
@@ -3027,12 +3014,13 @@ private fun ServerList(
     Box(
         modifier
             .fillMaxWidth()
-            .nestedScroll(pullState.nestedScrollConnection)
-            // The spinner is parked above the box at rest; clipping keeps it invisible until pulled.
+            .nestedScroll(pullState.connection)
+            // The pulled-down content and the arrow stay inside the list's own area.
             .clipToBounds(),
     ) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            // The pull moves the list itself (draw phase only), so the gap it opens is where the arrow lives.
+            Modifier.fillMaxSize().graphicsLayer { translationY = pullState.pull },
             state = listState,
             contentPadding = PaddingValues(top = AppDs.S1, bottom = AppDs.S6),
         ) {
@@ -3075,11 +3063,9 @@ private fun ServerList(
                 )
             }
         }
-        PullToRefreshContainer(
+        PullRefreshIndicator(
             state = pullState,
-            indicator = { s -> RefreshArrow(progress = s.progress, refreshing = s.isRefreshing) },
-            containerColor = RefElev2,
-            contentColor = RefTextHi,
+            refreshing = state.refreshingPings,
             modifier = Modifier.align(Alignment.TopCenter),
         )
         // The list dissolves into the page above the connect panel instead of being cut flat.
