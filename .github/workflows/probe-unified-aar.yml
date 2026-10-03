@@ -44,21 +44,38 @@ jobs:
         run: go version
 
       - name: Build unified AAR (arm64 only, probe)
+        shell: bash
         run: |
-          set -euo pipefail
-          cd unified-probe
-          cp ../mihomo-mobile/mobile.go .
-          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
-          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
-          export PATH=$PATH:$(go env GOPATH)/bin
-          gomobile init
-          go mod tidy -v
-          gomobile bind -v -target android/arm64 -androidapi 24 \
-            -javapkg=com.cdnhunter.mihomo \
-            -tags with_gvisor,cmfa,with_quic,with_utls,badlinkname,tfogo_checklinkname0 \
-            -ldflags='-s -w -checklinkname=0' \
-            -o libcores.aar . github.com/sagernet/sing-box/experimental/libbox
-          ls -la libcores.aar
+          set -o pipefail
+          {
+            set -euo pipefail
+            cd unified-probe
+            cp ../mihomo-mobile/mobile.go .
+            go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
+            go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
+            export PATH=$PATH:$(go env GOPATH)/bin
+            echo "STEP gomobile-init"; gomobile init
+            echo "STEP go-mod-tidy"; go mod tidy -v
+            echo "STEP gomobile-bind"
+            gomobile bind -v -target android/arm64 -androidapi 24 \
+              -javapkg=com.cdnhunter.mihomo \
+              -tags with_gvisor,cmfa,with_quic,with_utls,badlinkname,tfogo_checklinkname0 \
+              -ldflags='-s -w -checklinkname=0' \
+              -o libcores.aar . github.com/sagernet/sing-box/experimental/libbox
+            ls -la libcores.aar
+          } 2>&1 | tee /tmp/probe.log
+
+      - name: Surface failure as annotations (the run log is not readable from outside)
+        if: failure()
+        shell: bash
+        run: |
+          [ -f /tmp/probe.log ] || exit 0
+          LAST=$(grep -n '^STEP ' /tmp/probe.log | tail -1 | cut -d: -f2-)
+          echo "::error title=probe failed at::${LAST:-unknown}"
+          # the error-looking lines first, then the tail
+          grep -nEi 'error|cannot|undefined|not found|mismatch|requires|invalid|fatal|panic|go: |ambiguous|redeclared|duplicate' /tmp/probe.log | head -25 | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=probe-line::$l"; done
+          TAIL=$(tail -n 15 /tmp/probe.log | cut -c1-300 | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
+          echo "::error title=probe-tail::$TAIL"
 
       - name: Inspect AAR
         run: |
