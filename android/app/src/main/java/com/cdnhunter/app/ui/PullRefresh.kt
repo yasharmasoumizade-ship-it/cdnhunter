@@ -89,7 +89,7 @@ internal class PullRefreshState(
     private var job: Job? = null
     private var armed = false
 
-    private fun setPull(value: Float) {
+    private fun applyPull(value: Float) {
         pull = value
         if (!armed && value >= thresholdPx) {
             armed = true
@@ -146,7 +146,7 @@ internal class PullRefreshState(
             job?.cancel()
             val raw = PullMath.inverse(pull, maxPx)
             val used = available.y.coerceAtLeast(-raw)
-            setPull(PullMath.offset(raw + used, maxPx))
+            applyPull(PullMath.offset(raw + used, maxPx))
             return Offset(0f, used)
         }
 
@@ -155,7 +155,7 @@ internal class PullRefreshState(
             if (source != NestedScrollSource.Drag || isRefreshing() || available.y <= 0f) return Offset.Zero
             job?.cancel()
             val raw = PullMath.inverse(pull, maxPx) + available.y
-            setPull(PullMath.offset(raw, maxPx))
+            applyPull(PullMath.offset(raw, maxPx))
             return Offset(0f, available.y)
         }
 
