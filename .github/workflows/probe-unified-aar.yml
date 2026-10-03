@@ -76,18 +76,25 @@ jobs:
           echo "::error title=probe failed at ${LAST:-unknown}::$BODY"
 
       - name: Inspect AAR
+        shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           cd unified-probe
           mkdir -p x && unzip -o -q libcores.aar -d x
-          find x -name '*.so' -exec ls -la {} \;
-          unzip -l x/classes.jar | grep -E 'com/cdnhunter/mihomo/(mobile/Mobile|libbox/Libbox)\.class|go/Seq\.class' || true
-          echo "--- libbox public API (head)"
-          javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.Libbox | head -40 || true
-          echo "--- PlatformInterface"
-          javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.PlatformInterface || true
-          echo "--- Mobile"
-          javap -cp x/classes.jar com.cdnhunter.mihomo.mobile.Mobile || true
+          {
+            echo "== native libs"; find x -name '*.so' -exec ls -la {} \;
+            echo "== classes"; unzip -l x/classes.jar | grep -E 'com/cdnhunter/mihomo/(mobile/Mobile|libbox/Libbox|libbox/PlatformInterface|libbox/BoxService)\.class|go/Seq\.class'
+            echo "== PlatformInterface"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.PlatformInterface
+          } > /tmp/inspect.log 2>&1
+          BODY=$(cut -c1-220 /tmp/inspect.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
+          echo "::notice title=unified AAR contents::$BODY"
+          {
+            echo "== libbox top-level API"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.Libbox | grep -E 'newService|setup|checkConfig|newStandaloneCommandClient|BoxService|version' 
+            echo "== BoxService"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.BoxService
+            echo "== SetupOptions"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.SetupOptions | head -20
+          } > /tmp/inspect2.log 2>&1
+          BODY=$(cut -c1-220 /tmp/inspect2.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
+          echo "::notice title=libbox API::$BODY"
 
       - uses: actions/upload-artifact@v4
         with:

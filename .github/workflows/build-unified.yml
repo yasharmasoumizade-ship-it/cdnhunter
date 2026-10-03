@@ -126,6 +126,37 @@ jobs:
           /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
           chmod +x gradlew
 
+      - name: Unit tests (reported as annotations; does not block the APK yet)
+        working-directory: android
+        continue-on-error: true
+        env:
+          CI_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest --no-daemon > /tmp/unit.log 2>&1
+          code=$?
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          tot = fail = skip = 0
+          bad = []
+          for f in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              r = ET.parse(f).getroot()
+              tot += int(r.get("tests", 0)); fail += int(r.get("failures", 0)) + int(r.get("errors", 0)); skip += int(r.get("skipped", 0))
+              for tc in r.iter("testcase"):
+                  for k in ("failure", "error"):
+                      e = tc.find(k)
+                      if e is not None:
+                          bad.append(tc.get("classname", "").split(".")[-1] + "." + tc.get("name", "") + ": " + (e.get("message") or "")[:160].replace("\n", " "))
+          print(f"::notice title=unit tests::{tot} run, {fail} failed, {skip} skipped")
+          for b in bad[:8]:
+              print(f"::error title=unit test failed::{b}")
+          PY
+          if [ $code -ne 0 ] && ! ls app/build/test-results/testDebugUnitTest/*.xml >/dev/null 2>&1; then
+            BODY=$(grep -v 'go: downloading' /tmp/unit.log | tail -n 40 | cut -c1-240 | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
+            echo "::error title=unit tests did not run (compile?)::$BODY"
+          fi
+          exit $code
+
       - name: Build Release APK
         working-directory: android
         env:
