@@ -42,6 +42,12 @@
 -keep class com.cdnhunter.mihomo.** { *; }
 -keep interface com.cdnhunter.mihomo.** { *; }
 -keep class * implements com.cdnhunter.mihomo.mobile.Protector { *; }
+# libbox (sing-box) calls these implementations by name through JNI: same failure mode as Protector above.
+-keep class * implements com.cdnhunter.mihomo.libbox.PlatformInterface { *; }
+-keep class * implements com.cdnhunter.mihomo.libbox.CommandServerHandler { *; }
+-keep class * implements com.cdnhunter.mihomo.libbox.InterfaceUpdateListener { *; }
+-keep class * implements com.cdnhunter.mihomo.libbox.NetworkInterfaceIterator { *; }
+-keep class * implements com.cdnhunter.mihomo.libbox.StringIterator { *; }
 -dontwarn go.**
 -dontwarn com.cdnhunter.mihomo.**
 

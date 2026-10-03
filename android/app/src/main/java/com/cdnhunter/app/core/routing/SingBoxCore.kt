@@ -29,6 +29,9 @@ fun interface ConnectivityVerifier {
     suspend fun verify(): CoreOutcome
 }
 
+/** libbox asked the app for a TUN the app-owned TUN cannot honour. Core-independent, so it never triggers a fallback. */
+class TunSetupException(message: String) : Exception(message)
+
 sealed class SingBoxConfig {
     class Ok(val json: String) : SingBoxConfig()
     class Err(val error: ConnectionError) : SingBoxConfig()
@@ -60,6 +63,8 @@ class SingBoxCore(
             engine.start(json)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: TunSetupException) {
+            return CoreOutcome.Failed(ConnectionError.TunnelError("sing-box TUN set-up refused: ${e.message}"))
         } catch (e: Exception) {
             return CoreOutcome.Failed(ConnectionError.CoreError(ErrorCode.CORE_START_FAILED, "sing-box did not start: ${e.javaClass.simpleName}: ${e.message}", e))
         }

@@ -52,6 +52,13 @@ class SingBoxCoreTest {
         assertFalse(e.alive)
     }
 
+    @Test fun aTunSetupRefusalIsATunnelErrorAndNeverFallsBack() = runBlocking {
+        val e = FakeEngine(onStart = { throw TunSetupException("TUN MTU differs") })
+        val r = core(e).connect() as CoreOutcome.Failed
+        assertEquals(ErrorCode.TUNNEL_FAILED, r.error.code)
+        assertFalse(FallbackPolicy.eligible(r.error))
+    }
+
     @Test fun aCrashDuringVerificationIsReportedAtOnceAsCoreCrashed() = runBlocking {
         val e = FakeEngine()
         val hang = ConnectivityVerifier { e.terminated.complete("signal 11"); awaitCancellation() }
