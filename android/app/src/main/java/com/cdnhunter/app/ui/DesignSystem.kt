@@ -126,6 +126,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -296,41 +297,51 @@ internal fun PremiumPage(
     }
 }
 
-/** Back chip + screen title. Same chip as Home's menu button: 48dp, RMd, hairline border. */
+/**
+ * Back arrow + screen title, then one hairline. No chip, no card, no background: the arrow and the
+ * title sit directly on the page, aligned on one centre line, with a 48dp touch target around the
+ * arrow so the glyph can stay light.
+ */
 @Composable
 internal fun PremiumTopBar(title: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .padding(start = AppDs.S4, end = AppDs.S4, top = AppDs.S2, bottom = AppDs.S3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PremiumBackButton(onClick = onBack)
-        Spacer(Modifier.width(AppDs.S3))
-        Text(
-            title,
-            fontSize = AppType.Title.first,
-            fontWeight = AppType.Title.second,
-            color = AppDs.TextHi,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = AppDs.S2, end = AppDs.S4, top = AppDs.S2, bottom = AppDs.S1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PremiumBackButton(onClick = onBack)
+            Spacer(Modifier.width(AppDs.S1))
+            Text(
+                title,
+                fontSize = AppType.Headline.first,
+                fontWeight = AppType.Headline.second,
+                color = AppDs.TextHi,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(AppDs.Hairline))
     }
 }
 
+/** The bare back arrow: 48dp touch target, 24dp glyph; pressing it dims and shrinks it a touch. */
 @Composable
 internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = animatePressScale(pressed, AppDs.PressScaleSmall)
-    val shape = RoundedCornerShape(AppDs.RMd)
+    val alpha by animateFloatAsState(
+        targetValue = if (pressed) 0.6f else 1f,
+        animationSpec = appMotion(appReduceMotion(), 100),
+        label = "backAlpha",
+    )
     Box(
         modifier
             .size(AppDs.Control)
             .scale(scale)
-            .clip(shape)
-            .background(if (pressed) AppDs.SurfacePressed else AppDs.Surface)
-            .border(1.dp, AppDs.Border, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -341,9 +352,9 @@ internal fun PremiumBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_left),
+            lucide(com.cdnhunter.app.R.drawable.ic_lucide_arrow_left),
             contentDescription = "Back",
-            tint = AppDs.TextHi,
+            tint = AppDs.TextHi.copy(alpha = alpha),
             modifier = Modifier.size(24.dp),
         )
     }
@@ -366,6 +377,7 @@ internal fun PremiumScreen(
                 .navigationBarsPadding()
                 .padding(horizontal = AppDs.S4),
         ) {
+            Spacer(Modifier.height(AppDs.S4))
             content()
             Spacer(Modifier.height(AppDs.S7))
         }
@@ -477,7 +489,7 @@ private val IconTileShape = RoundedCornerShape(12.dp)
 @Composable
 private fun IconTile(tone: Color?, active: Boolean, modifier: Modifier, glyph: @Composable (Color) -> Unit) {
     val reduce = appReduceMotion()
-    val resolved = tone ?: if (active) AppDs.Accent else null
+    val resolved = tone ?: if (active) AppDs.Bone else null
     val tint by animateColorAsState(resolved ?: AppDs.TextMid, appMotion(reduce, 180), label = "tileTint")
     val fill by animateColorAsState(resolved?.copy(alpha = 0.12f) ?: AppDs.SurfaceRaised, appMotion(reduce, 180), label = "tileFill")
     val edge by animateColorAsState(resolved?.copy(alpha = 0.30f) ?: AppDs.Border, appMotion(reduce, 180), label = "tileEdge")
@@ -594,6 +606,21 @@ internal fun PremiumRow(
     }
 }
 
+/** A small read-only value on the right of a row ("VLESS"): quiet pill, Bone text. */
+@Composable
+internal fun ValuePill(text: String, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(percent = 50)
+    Box(
+        modifier
+            .clip(shape)
+            .background(AppDs.SurfaceRaised)
+            .border(1.dp, AppDs.Border, shape)
+            .padding(horizontal = AppDs.S3, vertical = 6.dp),
+    ) {
+        Text(text, fontSize = AppType.Caption.first, fontWeight = FontWeight.SemiBold, color = AppDs.Bone)
+    }
+}
+
 @Composable
 private fun RowChevron() {
     Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_chevron_right), null, tint = AppDs.TextLow, modifier = Modifier.size(AppDs.IconMd))
@@ -680,8 +707,8 @@ internal fun SettingsToggleRow(
 // ── Controls ──────────────────────────────────────────────────────────────────
 
 /**
- * The app's switch: a 52×30 pill that is a matte groove when off and the accent when on, with a
- * round thumb that springs across. Not Material's Switch — no ripple halo, no default palette.
+ * The app's switch: a 52×30 pill: a darker groove with a muted thumb when off, a dark neutral track
+ * with a Bone thumb when on; the thumb glides across on one ease-in-out curve. Not Material's Switch — no ripple halo, no default palette.
  * Pass a null [onCheckedChange] when an enclosing row owns the touch (see [PremiumRow]).
  */
 @Composable
@@ -692,13 +719,13 @@ internal fun PremiumToggle(
 ) {
     val reduce = appReduceMotion()
     val track by animateColorAsState(
-        if (checked) AppDs.Accent else AppDs.SurfaceRaised, appMotion(reduce, 180), label = "toggleTrack",
+        if (checked) AppDs.SurfacePressed else AppDs.Bg, appMotion(reduce, 180), label = "toggleTrack",
     )
     val edge by animateColorAsState(
-        if (checked) AppDs.Accent else AppDs.Border, appMotion(reduce, 180), label = "toggleEdge",
+        if (checked) AppDs.Bone.copy(alpha = 0.45f) else AppDs.Border, appMotion(reduce, 180), label = "toggleEdge",
     )
     val thumb by animateColorAsState(
-        if (checked) AppDs.OnAccent else AppDs.TextMid, appMotion(reduce, 180), label = "toggleThumb",
+        if (checked) AppDs.Bone else AppDs.TextLow, appMotion(reduce, 180), label = "toggleThumb",
     )
     val thumbX by animateDpAsState(
         targetValue = if (checked) 25.dp else 3.dp,
@@ -744,7 +771,7 @@ internal fun PremiumToggle(
 /**
  * A two-or-three way choice as one control: a recessed track with one lit thumb that glides to the
  * selected segment on one ease-in-out curve (no overshoot) and ticks the haptic as it lands. The
- * thumb is a strong accent wash, so the chosen option is unmistakable. The thumb is measured to each segment's real bounds, so it fits whether
+ * thumb is solid Bone with Ink text, so the chosen option is unmistakable. The thumb is measured to each segment's real bounds, so it fits whether
  * segments are content-sized (Server choice, MTU) or share the row ([equalWeight]).
  *
  * `options` is (stored value, shown label) — the key is what goes to [AppSettings].
@@ -757,8 +784,8 @@ internal fun PremiumSegmentedControl(
     modifier: Modifier = Modifier,
     equalWeight: Boolean = false,
 ) {
-    val trackShape = remember { RoundedCornerShape(AppDs.RMd) }
-    val segShape = remember { RoundedCornerShape(AppDs.RMd - 3.dp) }
+    val trackShape = remember { RoundedCornerShape(percent = 50) }
+    val segShape = remember { RoundedCornerShape(percent = 50) }
     val density = LocalDensity.current
     val reduce = appReduceMotion()
     val haptics = LocalHapticFeedback.current
@@ -800,9 +827,7 @@ internal fun PremiumSegmentedControl(
                     .width(with(density) { thumbW.value.toDp() })
                     .height(with(density) { segH.toDp() })
                     .clip(segShape)
-                    .background(AppDs.Accent.copy(alpha = 0.46f))
-                    .background(AppDs.ButtonTopLight)
-                    .border(1.dp, AppDs.AccentSoft.copy(alpha = 0.70f), segShape),
+                    .background(AppDs.Bone),
             )
         }
         Row(
@@ -812,7 +837,7 @@ internal fun PremiumSegmentedControl(
             options.forEachIndexed { i, (key, label) ->
                 val on = key == selected
                 val ink by animateColorAsState(
-                    targetValue = if (on) Color.White else AppDs.TextMid,
+                    targetValue = if (on) AppDs.Ink else AppDs.TextMid,
                     animationSpec = appMotion(reduce, 160),
                     label = "segInk",
                 )
@@ -869,8 +894,8 @@ internal fun PremiumButton(
     val shape = RoundedCornerShape(AppDs.RMd)
     val fill by animateColorAsState(
         targetValue = when {
-            accent && pressed -> AppDs.Accent.copy(alpha = 0.82f)
-            accent -> AppDs.Accent
+            accent && pressed -> AppDs.Bone.copy(alpha = 0.82f)
+            accent -> AppDs.Bone
             pressed -> AppDs.SurfacePressed
             else -> AppDs.SurfaceRaised
         },
@@ -900,7 +925,7 @@ internal fun PremiumButton(
             text,
             fontSize = AppType.Body.first,
             fontWeight = AppType.Body.second,
-            color = if (accent) AppDs.OnAccent else AppDs.TextHi,
+            color = if (accent) AppDs.Ink else AppDs.TextHi,
         )
     }
 }
@@ -993,7 +1018,7 @@ internal fun PlanBadge(plan: PlanTier, modifier: Modifier = Modifier) {
     )
 }
 
-/** Initials in a matte disc with a thin accent ring — one composable, so every size matches. */
+/** Initials in a matte disc with a thin Bone ring — one composable, so every size matches. */
 @Composable
 internal fun Avatar(size: Dp, initials: String, initialsSize: TextUnit, modifier: Modifier = Modifier) {
     Box(
@@ -1001,10 +1026,10 @@ internal fun Avatar(size: Dp, initials: String, initialsSize: TextUnit, modifier
             .size(size)
             .clip(CircleShape)
             .background(AppDs.SurfaceRaised)
-            .border(1.5.dp, AppDs.Accent.copy(alpha = 0.55f), CircleShape),
+            .border(1.5.dp, AppDs.Bone.copy(alpha = 0.40f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AppDs.Accent)
+        Text(initials, fontSize = initialsSize, fontWeight = FontWeight.Bold, color = AppDs.Bone)
     }
 }
 
@@ -1063,9 +1088,13 @@ internal fun ProfileHeader(
 /** The account card at the top of Settings: avatar, name, plan, chevron. Opens Profile. */
 @Composable
 internal fun AccountSummaryCard(account: AccountUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    PremiumCard(modifier = modifier, onClick = onClick) {
+    PremiumCard(
+        modifier = modifier,
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = AppDs.S4, vertical = AppDs.S3),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(size = 48.dp, initials = account.initials, initialsSize = AppType.Subtitle.first)
+            Avatar(size = 40.dp, initials = account.initials, initialsSize = AppType.Body.first)
             Spacer(Modifier.width(AppDs.S3))
             Column(Modifier.weight(1f)) {
                 Text(

@@ -2496,27 +2496,21 @@ private fun InlineField(
  */
 @Composable
 private fun ModeChoiceRow(mode: ConnectMode, onSetMode: (ConnectMode) -> Unit) {
-    Column {
-        PremiumRow(
-            title = "Server choice",
-            subtitle = when (mode) {
-                ConnectMode.SMART -> "Best-measuring server, picked for you"
-                ConnectMode.MANUAL -> "The one you tap in the list"
-            },
-            leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_sparkles), active = mode == ConnectMode.SMART) },
-        )
-        // Its own line, indented to the text column: beside the title it took a third of the row
-        // and left "Server choice" wrapping onto two lines.
-        PremiumSegmentedControl(
-            options = ConnectMode.values().map { it.name to it.label },
-            selected = mode.name,
-            onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
-            equalWeight = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = AppDs.S4 + AppDs.IconContainer + AppDs.S3, end = AppDs.S4, bottom = AppDs.S4),
-        )
-    }
+    PremiumRow(
+        title = "Server choice",
+        subtitle = when (mode) {
+            ConnectMode.SMART -> "Best-measuring server, picked for you"
+            ConnectMode.MANUAL -> "The one you tap in the list"
+        },
+        leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_server), active = mode == ConnectMode.SMART) },
+        trailing = {
+            PremiumSegmentedControl(
+                options = ConnectMode.values().map { it.name to it.label },
+                selected = mode.name,
+                onSelect = { key -> onSetMode(ConnectMode.valueOf(key)) },
+            )
+        },
+    )
 }
 
 @Composable
@@ -2551,7 +2545,12 @@ private fun SettingsScreen(
             // disc as the sole way to change it — discoverable by nobody.
             ModeChoiceRow(mode = mode, onSetMode = onSetMode)
             PremiumDivider()
-            SettingsRow(com.cdnhunter.app.R.drawable.ic_lucide_shield_check, "Protocol", "VLESS")
+            PremiumRow(
+                title = "Protocol",
+                subtitle = "From your server config",
+                leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_shield_check)) },
+                trailing = { ValuePill("VLESS") },
+            )
             PremiumDivider()
             SettingsToggleRow(
                 com.cdnhunter.app.R.drawable.ic_lucide_refresh, "Auto-reconnect", "Reconnect if connection drops",
@@ -2579,7 +2578,7 @@ private fun SettingsScreen(
         SectionHeader("PROTECTION")
         PremiumCardGroup {
             SettingsToggleRow(
-                com.cdnhunter.app.R.drawable.ic_lucide_wifi_off, "Kill switch", "Block traffic on disconnect",
+                com.cdnhunter.app.R.drawable.ic_lucide_shield_off, "Kill switch", "Block traffic on disconnect",
                 killSwitch, {
                     killSwitch = it
                     AppSettings.setKillSwitchEnabled(context, it)
@@ -2720,7 +2719,7 @@ private fun SettingsScreen(
             var showDnsInputs by remember { mutableStateOf(customDnsEnabled) }
 
             SettingsToggleRow(
-                com.cdnhunter.app.R.drawable.ic_lucide_database, "Custom DNS", "Use your own resolvers",
+                com.cdnhunter.app.R.drawable.ic_lucide_wifi, "Custom DNS", "Use your own resolvers",
                 customDnsEnabled, {
                     customDnsEnabled = it
                     showDnsInputs = it
@@ -2771,23 +2770,23 @@ private fun SettingsScreen(
                     Spacer(Modifier.height(AppDs.S4))
                     Column(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(AppDs.RMd))
-                            .background(AppDs.Accent.copy(alpha = 0.07f))
+                            .background(AppDs.Bone.copy(alpha = 0.05f))
                             .drawBehind {
                                 drawRect(
-                                    color = AppDs.Accent.copy(alpha = 0.55f),
+                                    color = AppDs.Bone.copy(alpha = 0.45f),
                                     size = Size(SheetNoteRuleWidth.toPx(), size.height),
                                 )
                             }
                             .padding(start = AppDs.S4, top = AppDs.S3, end = AppDs.S3, bottom = AppDs.S3),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppDs.S2)) {
-                            Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_shield), null, tint = AppDs.Accent, modifier = Modifier.size(AppDs.IconSm))
+                            Icon(lucide(com.cdnhunter.app.R.drawable.ic_lucide_shield), null, tint = AppDs.Bone, modifier = Modifier.size(AppDs.IconSm))
                             Text(
                                 "DNS leak protection",
                                 fontSize = AppType.Caption.first,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.2.sp,
-                                color = AppDs.Accent,
+                                color = AppDs.Bone,
                             )
                         }
                         Spacer(Modifier.height(AppDs.S2))
@@ -2810,7 +2809,7 @@ private fun SettingsScreen(
 
         val clip = LocalClipboardManager.current
 
-        SectionHeader("DIAGNOSTICS")
+        SectionHeader("ADVANCED")
         PremiumCardGroup {
             PremiumRow(
                 title = "Connection log",
@@ -2866,6 +2865,16 @@ private fun SettingsScreen(
                     },
                 )
             }
+
+            PremiumDivider()
+            val versionName = remember {
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+            }
+            PremiumRow(
+                title = "About",
+                subtitle = if (versionName.isBlank()) "CDN Hunter" else "Version $versionName",
+                leading = { PremiumIconContainer(lucide(com.cdnhunter.app.R.drawable.ic_lucide_info)) },
+            )
         }
     }
 }
