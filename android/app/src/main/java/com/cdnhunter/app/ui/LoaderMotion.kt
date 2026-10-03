@@ -1,5 +1,6 @@
 package com.cdnhunter.app.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -29,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import kotlin.math.cos
 import kotlin.math.floor
 
 /**
@@ -46,62 +46,72 @@ import kotlin.math.floor
  * instrument, but each is used for exactly one meaning and none stands in for another.
  */
 internal object LoaderMotion {
-    /** One pass of the ping loader, one revolution of the connect line, one wave of the dots. */
+    /** One pass of the ping loader and one wave of the dots. (The connect line has its own, see [ConnectRevMs].) */
     const val CycleMs = 1100
 
     /** How faint the unlit part of a loader is — the ping bars' resting alpha. */
     const val TrackAlpha = 0.22f
 
-    private const val TWO_PI = 6.2831855f
+    /**
+     * One revolution of the VPN connect line. Deliberately not [CycleMs]: the connect line is the
+     * one loader that is allowed to take its time, and the ping bars / dots must not change pace
+     * because of it.
+     */
+    const val ConnectRevMs = 1500
 
-    /** One revolution, in seconds. */
-    private const val REV_S = CycleMs / 1000f
+    private const val REV_S = ConnectRevMs / 1000f
 
     /**
-     * How much of each revolution rides the ease-in-out curve; the rest is a steady turn. At 0.8
-     * the slowest instant is a fifth of the mean pace, so the line eases to a crawl and never stops.
+     * How much of each revolution rides the rotation curve; the rest is a steady turn. At 0.5 the
+     * slowest instant is half the mean pace and the fastest about 1.85x it: a clearly felt surge
+     * that is still subtle, and the line never stops.
      */
-    private const val WEIGHT = 0.8f
+    private const val WEIGHT = 0.5f
 
-    private const val MIN_LENGTH = 40f
-    private const val MAX_LENGTH = 230f
+    /** The line's own two curves, deliberately not the rotation's: it stretches on one and settles on another. */
+    private val RotationCurve = CubicBezierEasing(0.55f, 0f, 0.3f, 1f)
+    private val StretchCurve = CubicBezierEasing(0.3f, 0f, 0.3f, 1f)
+    private val SettleCurve = CubicBezierEasing(0.5f, 0f, 0.3f, 1f)
 
-    /** Where in a revolution the line is longest — just after the speed peaks, like a weight
-     *  trailing behind its own momentum. */
-    private const val LENGTH_PEAK = 0.58f
+    /** Shortest and longest the visible stroke gets, in degrees (about 18% and 37% of the circle: never a ring). */
+    const val MIN_LENGTH = 66f
+    const val MAX_LENGTH = 135f
+
+    /**
+     * Where in a revolution the line is longest. The speed peaks at about 0.43 of a revolution and
+     * the length at this, so the stroke keeps stretching a little after the surge has begun to
+     * ease: the weight trails its own momentum.
+     */
+    const val LENGTH_PEAK = 0.56f
 
     /**
      * Where the line's head is, in degrees, [t] seconds after it started. Each revolution is
-     * slow → fast → slow on the app's ease-in-out bezier, blended with a steady turn so it never
-     * stalls. Continuous across revolutions, and the same every time: nothing random.
+     * slow -> fast -> slow on [RotationCurve], blended with a steady turn so it never stalls.
+     * Continuous across revolutions (speed at the end of one equals the speed at the start of the
+     * next), and the same every time: nothing random.
      */
     fun headDegrees(t: Float): Float {
         val u = t / REV_S
         val rev = floor(u)
         val f = u - rev
-        return 360f * (rev + (1f - WEIGHT) * f + WEIGHT * Motion.EaseInOut.transform(f))
+        return 360f * (rev + (1f - WEIGHT) * f + WEIGHT * RotationCurve.transform(f))
     }
 
     /**
-     * How long the line is, in degrees: short → medium → long → medium → short once per
-     * revolution, on the same bezier (rising to [LENGTH_PEAK], easing back after it). Every other
-     * revolution stretches a little less, so the rhythm is intentional rather than metronomic.
+     * How long the line is, in degrees: short -> long -> short once per revolution, on its own
+     * curves ([StretchCurve] up to [LENGTH_PEAK], [SettleCurve] back down) and its own peak, so it
+     * is not locked to the rotation. Starts and ends at [MIN_LENGTH], so the loop has no seam.
      */
     fun lengthDegrees(t: Float): Float {
         val u = t / REV_S
-        val rev = floor(u)
-        val f = u - rev
+        val f = u - floor(u)
         val bump = if (f < LENGTH_PEAK) {
-            Motion.EaseInOut.transform(f / LENGTH_PEAK)
+            StretchCurve.transform(f / LENGTH_PEAK)
         } else {
-            1f - Motion.EaseInOut.transform((f - LENGTH_PEAK) / (1f - LENGTH_PEAK))
+            1f - SettleCurve.transform((f - LENGTH_PEAK) / (1f - LENGTH_PEAK))
         }
-        val reach = if (rev.toInt() % 2 == 0) 1f else 0.82f
-        return MIN_LENGTH + (MAX_LENGTH - MIN_LENGTH) * bump * reach
+        return MIN_LENGTH + (MAX_LENGTH - MIN_LENGTH) * bump
     }
-
-    /** A gentle once-per-cycle swell in brightness, the loader bars' "lit then released". */
-    fun glow(t: Float): Float = 0.86f + 0.14f * cos(TWO_PI * t / REV_S)
 }
 
 /**

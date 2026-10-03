@@ -59,8 +59,8 @@ private fun glyphSpec(
  *   Idle           bolt.
  *   Connecting     bolt → line. The line is a single stroke whose speed and length both breathe
  *                  ([LoaderMotion.headDegrees] / [LoaderMotion.lengthDegrees]): it surges, eases to
- *                  a crawl, never stops, stretches as it speeds up and shortens as it slows. Same
- *                  pace and resting weight as the ping loader ([SignalLoader]).
+ *                  a crawl, never stops, stretches as it speeds up and shortens as it slows. Bone,
+ *                  one thin rounded stroke, no glow: rotation and length run on their own curves.
  *   Connected      the line closes into a full loop → the loop becomes a check (drawn, not faded
  *                  in) → one soft pulse leaves it.
  *   Disconnecting  the reverse: the check un-draws, the loop opens back into the line, which
@@ -81,7 +81,7 @@ internal fun ConnectGlyph(
     boltPath: Path,
     modifier: Modifier = Modifier,
     boltColor: Color = AppDs.Bone,
-    ringColor: Color = AppDs.AccentSoft,
+    ringColor: Color = AppDs.Bone,
     checkColor: Color = AppDs.OnAccent,
     errorColor: Color = AppDs.Error,
 ) {
@@ -189,9 +189,8 @@ internal fun ConnectGlyph(
                 // It draws itself out of nothing, and closes into a loop when asked to.
                 val travel = LoaderMotion.lengthDegrees(t) * present
                 val length = travel + (360f - travel) * closed.value
-                val glow = LoaderMotion.glow(t)
                 drawArc(
-                    color = tint.copy(alpha = present * (glow + (1f - glow) * closed.value)),
+                    color = tint.copy(alpha = present),
                     startAngle = if (disconnecting) headAngle else headAngle - length,
                     sweepAngle = length,
                     useCenter = false,
