@@ -209,7 +209,7 @@ private fun EnteringAppLoader(onDone: () -> Unit) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Private. Fast. Secure.", fontSize = 13.sp, color = Color(0xFF8B8E98))
                 Spacer(Modifier.height(28.dp))
-                com.cdnhunter.app.ui.GlowSpinner(size = 32.dp, strokeWidth = 3.dp)
+                com.cdnhunter.app.ui.DotLoader(dotSize = com.cdnhunter.app.ui.DotLoaderSize.Large, color = Color(0xFFF2F3F5))
             }
         }
     }

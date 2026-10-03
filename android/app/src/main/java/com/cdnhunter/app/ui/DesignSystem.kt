@@ -129,6 +129,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.rememberUpdatedState
 import com.cdnhunter.app.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -1202,18 +1204,113 @@ private fun SignalBars(modifier: Modifier, height: Dp, color: Color, phase: (() 
     }
 }
 
+/** How far the arrow has turned when the pull reaches the refresh threshold. */
+private const val PULL_TURN = 270f
+
 /**
- * The pull-to-refresh mark, in the app's own signal language rather than a Material spinner. While
- * the finger is pulling, the four bars light one by one with the pull ([progress], 0..1+); once the
- * measurement is running it is the same [SignalLoader] the ping columns use. Nothing else moves.
+ * The pull-to-refresh mark: a circular arrow. While the finger pulls, the arc grows and the arrow
+ * turns with the pull distance ([progress], 0..1+) — it follows the finger and nothing else. When
+ * the refresh starts it carries on from exactly the angle the finger left it at and turns steadily
+ * for as long as data is refreshing; when the refresh ends it eases to the next upright position
+ * and stops. A fast ease-out, no spring, no overshoot.
+ *
+ * It means one thing — "the user asked for a refresh" — and is used nowhere else.
  */
 @Composable
-internal fun PullSignalIndicator(progress: Float, refreshing: Boolean, modifier: Modifier = Modifier) {
-    if (refreshing) {
-        SignalLoader(modifier, height = 18.dp, color = AppDs.AccentSoft)
-    } else {
-        val p = (progress.coerceIn(0f, 1f)) * 0.8f
-        SignalBars(modifier, 18.dp, AppDs.AccentSoft, phase = { p })
+internal fun RefreshArrow(
+    progress: Float,
+    refreshing: Boolean,
+    modifier: Modifier = Modifier,
+    color: Color = AppDs.TextHi,
+) {
+    val reduce = appReduceMotion()
+    val pull by rememberUpdatedState(progress.coerceIn(0f, 1f))
+    val spin = remember { Animatable(0f) }
+
+    LaunchedEffect(refreshing, reduce) {
+        if (refreshing) {
+            spin.snapTo(pull * PULL_TURN)
+            if (!reduce) {
+                while (true) {
+                    spin.animateTo(spin.value + 360f, tween(LoaderMotion.CycleMs, easing = LinearEasing))
+                    spin.snapTo(spin.value % 360f)
+                }
+            }
+        } else if (spin.value != 0f) {
+            if (!reduce) {
+                val upright = kotlin.math.ceil(spin.value / 360f) * 360f
+                spin.animateTo(upright, tween(Motion.Standard, easing = Motion.EaseOut))
+            }
+            spin.snapTo(0f)
+        }
+    }
+
+    Canvas(modifier.size(AppDs.IconMd + AppDs.S1)) {
+        val p = pull
+        val settled = refreshing || spin.value != 0f
+        val rotation = if (settled) spin.value else p * PULL_TURN
+        val grow = if (settled) 1f else p
+        val sweep = 40f + 250f * grow
+        val stroke = 2.dp.toPx()
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val r = size.minDimension / 2f - stroke * 1.5f
+        val start = -60f
+        val shown = color.copy(alpha = color.alpha * (0.35f + 0.65f * grow))
+        rotate(rotation, pivot = c) {
+            drawArc(
+                color = shown,
+                startAngle = start,
+                sweepAngle = sweep,
+                useCenter = false,
+                topLeft = Offset(c.x - r, c.y - r),
+                size = Size(r * 2f, r * 2f),
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            // The head: two short strokes laid back along the arc's direction of travel.
+            val end = Math.toRadians((start + sweep).toDouble())
+            val tip = Offset(c.x + r * kotlin.math.cos(end).toFloat(), c.y + r * kotlin.math.sin(end).toFloat())
+            val backX = kotlin.math.sin(end).toFloat() // -(tangent), tangent = (-sin, cos)
+            val backY = -kotlin.math.cos(end).toFloat()
+            val wing = stroke * 2.6f
+            for (turn in floatArrayOf(40f, -40f)) {
+                val a = Math.toRadians(turn.toDouble())
+                val ca = kotlin.math.cos(a).toFloat()
+                val sa = kotlin.math.sin(a).toFloat()
+                drawLine(
+                    color = shown,
+                    start = tip,
+                    end = Offset(tip.x + (backX * ca - backY * sa) * wing, tip.y + (backX * sa + backY * ca) * wing),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * What stands where a measured number will land: a dim block and the four ping bars. This is the
+ * ONE "the network is being measured" face — the server list's ping column, the connect button's
+ * IP line and the panel's IP readout all use it, so a ping and an address that has not arrived
+ * yet look exactly alike. [blockWidth] is the width of the number it stands in for.
+ */
+@Composable
+internal fun MeasuringPlaceholder(
+    blockWidth: Dp,
+    blockColor: Color,
+    loaderColor: Color,
+    modifier: Modifier = Modifier,
+    loaderHeight: Dp = 14.dp,
+    /** The column the number will occupy, when that is wider than the block (it lands right-aligned). */
+    slotWidth: Dp = blockWidth,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(slotWidth), contentAlignment = Alignment.CenterEnd) {
+            SkeletonBlock(Modifier.width(blockWidth).height(10.dp), color = blockColor)
+        }
+        Spacer(Modifier.width(AppDs.S3))
+        // The same four bars as PingBars, at the same size: the number lands without a shift.
+        SignalLoader(height = loaderHeight, color = loaderColor)
     }
 }
 

@@ -1999,7 +1999,7 @@ private fun QrCodeDialog(cfg: SavedConfig, onDismiss: () -> Unit) {
                 if (qrBitmap != null) {
                     Image(qrBitmap.asImageBitmap(), contentDescription = "QR code", modifier = Modifier.size(196.dp))
                 } else {
-                    SignalLoader(height = 28.dp, color = AppDs.Accent)
+                    DotLoader(dotSize = DotLoaderSize.Medium, color = AppDs.Ink, description = "Preparing QR code")
                 }
             }
 
@@ -2966,7 +2966,7 @@ private fun EmailVerificationCard(account: AccountUiState) {
                 },
                 leading = {
                     if (sending) {
-                        SignalLoader(height = AppDs.IconSm, color = AppDs.Accent)
+                        DotLoader(dotSize = DotLoaderSize.Small, color = AppDs.Accent, description = "Sending")
                     } else {
                         Icon(
                             if (sent) lucide(com.cdnhunter.app.R.drawable.ic_lucide_mail_check) else lucide(com.cdnhunter.app.R.drawable.ic_lucide_send),
@@ -3302,7 +3302,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
             }
 
             if (apps == null) {
-                AppListSkeleton(Modifier.weight(1f).padding(horizontal = AppDs.S4))
+                AppListLoading(Modifier.weight(1f).padding(horizontal = AppDs.S4))
             } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(
@@ -3355,36 +3355,20 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
 }
 
 /**
- * What the split-tunnel list looks like while the installed apps are being read: the same card, the
- * same rows (40dp squircle, a name line, a package line, the select dot), every part a placeholder
- * — so the page already has its shape and the list fills in rather than appearing.
+ * What the split-tunnel list shows while the installed apps are being read: the list's own card at
+ * its own size, with the page loader in the middle — so the list fills in where the card already is.
  */
 @Composable
-private fun AppListSkeleton(modifier: Modifier = Modifier) {
+private fun AppListLoading(modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(AppDs.RLg)
-    Column(
+    Box(
         modifier
-            .semantics { contentDescription = "Loading apps" }
             .clip(shape)
             .background(AppDs.Surface)
             .border(1.dp, AppDs.Border, shape),
+        contentAlignment = Alignment.Center,
     ) {
-        repeat(7) { index ->
-            if (index > 0) PremiumDivider()
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = AppDs.RowHeight).padding(horizontal = AppDs.S4, vertical = AppDs.S3),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SkeletonBlock(Modifier.size(AppDs.IconContainer), RoundedCornerShape(12.dp))
-                Spacer(Modifier.width(AppDs.S3))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppDs.S2)) {
-                    SkeletonBlock(Modifier.width(if (index % 3 == 0) 150.dp else 112.dp).height(12.dp))
-                    SkeletonBlock(Modifier.width(if (index % 2 == 0) 210.dp else 168.dp).height(9.dp))
-                }
-                Spacer(Modifier.width(AppDs.S3))
-                SkeletonBlock(Modifier.size(22.dp), CircleShape)
-            }
-        }
+        DotLoader(dotSize = DotLoaderSize.Medium, description = "Loading apps")
     }
 }
 

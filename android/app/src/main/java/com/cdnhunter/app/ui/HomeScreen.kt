@@ -1691,49 +1691,6 @@ private enum class IpKind { READY, CHECKING, UNAVAILABLE }
 private val IpValueSize = 15.sp
 private val IpPlaceholderSize = 13.sp
 
-/** One full up-down cycle of a single dot, in ms — see [IpCheckingDots]. */
-private const val DOT_BOUNCE_MS = 600
-/** How far each dot travels, up and back down. */
-private val DotBounceHeight = 5.dp
-
-/**
- * Three bold dots bouncing up and down in sequence while the IP lookup is in flight — replaces
- * the old "Checking…" text. Each dot runs the same up-down tween on an infinite loop, offset
- * from the next by a third of the cycle, which is what reads as a wave running left to right
- * rather than three dots bobbing in place together. Off (dots sit flat) under reduced motion.
- */
-@Composable
-private fun IpCheckingDots() {
-    val reduce = appReduceMotion()
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(3) { i ->
-            val infinite = rememberInfiniteTransition(label = "ipDot$i")
-            val offsetY by if (reduce) {
-                remember { mutableStateOf(0f) }
-            } else {
-                infinite.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(DOT_BOUNCE_MS, easing = EaseInOutSine),
-                        repeatMode = RepeatMode.Reverse,
-                        initialStartOffset = StartOffset((DOT_BOUNCE_MS / 3) * i),
-                    ),
-                    label = "ipDotVal$i",
-                )
-            }
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .offset(y = -DotBounceHeight * offsetY)
-                    .clip(CircleShape)
-                    .background(RefTextHi),
-            )
-        }
-    }
-}
-
-
 /**
  * The mirror image of [IpMergedPill] on the disc's other side: "Connecting…" while a tunnel is
  * coming up, "Connected" once it is, hidden entirely at [ConnPhase.OFF]. Rounded cap on the
@@ -1817,11 +1774,14 @@ private fun IpCard(state: HomeUiState, onRetryIp: () -> Unit, modifier: Modifier
                         softWrap = false,
                         style = TextStyle(fontFeatureSettings = "tnum", shadow = HeroInkShadow),
                     )
-                    // In flight: three bold dots bouncing up and down, not a "Checking…" word —
-                    // the value is not known yet, so nothing that could look like a malformed
-                    // address is drawn either way, but three dots read as the pill itself
-                    // "thinking" rather than needing to be read.
-                    IpKind.CHECKING -> IpCheckingDots()
+                    // Not here yet: the same face a ping wears while it is measured -- an address
+                    // that has not arrived is a measurement in progress, and nothing here draws a
+                    // stand-in for the digits.
+                    IpKind.CHECKING -> MeasuringPlaceholder(
+                        blockWidth = 84.dp,
+                        blockColor = AppDs.SurfaceRaised,
+                        loaderColor = RefTextMid,
+                    )
                     // Lookup finished with nothing: a dash and a retry glyph the tap handler wires.
                     IpKind.UNAVAILABLE -> {
                         Text(
@@ -2613,17 +2573,16 @@ private fun ConnVisual.caption(): String = when (this) {
 }
 
 /**
- * The glyph mirrors the same real state the words do -- except that it never loads. The three
- * dots after the title ([ActivityDots]) are the connect button's only loading indicator, so while
- * connecting or disconnecting the well simply holds the bolt, and on CONNECTED the bolt closes
- * into the check. (The travelling line stays in [ConnectGlyph] for anything else that wants it.)
+ * The glyph mirrors the same real state the words do: the bolt while idle, one weighted line while
+ * the tunnel is coming up (or being re-established), the check once it is up, the line backwards
+ * while it comes down, and a still red loop on a failure or a block.
  */
 private fun ConnVisual.glyph(): GlyphPhase = when (this) {
     ConnVisual.DISCONNECTED -> GlyphPhase.Idle
-    ConnVisual.CONNECTING -> GlyphPhase.Idle
-    ConnVisual.RECONNECTING -> GlyphPhase.Idle
+    ConnVisual.CONNECTING -> GlyphPhase.Connecting
+    ConnVisual.RECONNECTING -> GlyphPhase.Connecting
     ConnVisual.CONNECTED -> GlyphPhase.Connected
-    ConnVisual.DISCONNECTING -> GlyphPhase.Idle
+    ConnVisual.DISCONNECTING -> GlyphPhase.Disconnecting
     ConnVisual.ERROR -> GlyphPhase.Error
     ConnVisual.BLOCKED -> GlyphPhase.Error
 }
@@ -3118,7 +3077,7 @@ private fun ServerList(
         }
         PullToRefreshContainer(
             state = pullState,
-            indicator = { s -> PullSignalIndicator(progress = s.progress, refreshing = s.isRefreshing) },
+            indicator = { s -> RefreshArrow(progress = s.progress, refreshing = s.isRefreshing) },
             containerColor = RefElev2,
             contentColor = RefTextHi,
             modifier = Modifier.align(Alignment.TopCenter),
@@ -3240,12 +3199,13 @@ private fun PingReadout(measuring: Boolean, pingMs: Int, reduce: Boolean) {
     ) { isMeasuring ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (isMeasuring) {
-                Box(Modifier.width(AppDs.PingWidth), contentAlignment = Alignment.CenterEnd) {
-                    SkeletonBlock(Modifier.width(30.dp).height(10.dp))
-                }
-                Spacer(Modifier.width(AppDs.S3))
-                // Same four bars as PingBars, at the same size -- the number lands without a shift.
-                SignalLoader(height = 14.dp, color = AppDs.TextLow)
+                // The shared "being measured" face: the number lands in its own column without a shift.
+                MeasuringPlaceholder(
+                    blockWidth = 30.dp,
+                    slotWidth = AppDs.PingWidth,
+                    blockColor = AppDs.SurfaceRaised,
+                    loaderColor = AppDs.TextLow,
+                )
             } else {
                 AnimatedContent(
                     targetState = pingMs,
@@ -3631,12 +3591,12 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
                     color = AppDs.Ink.copy(alpha = 0.50f),
                     maxLines = 1,
                 )
-                ButtonIp.Pending -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Exactly the server row's "ms is being measured" pair, tinted for the bone button.
-                    SkeletonBlock(Modifier.width(84.dp).height(10.dp), color = AppDs.Ink.copy(alpha = 0.16f))
-                    Spacer(Modifier.width(AppDs.S3))
-                    SignalLoader(height = 14.dp, color = AppDs.Ink.copy(alpha = 0.55f))
-                }
+                // Exactly the server row's "ms is being measured" face, tinted for the bone button.
+                ButtonIp.Pending -> MeasuringPlaceholder(
+                    blockWidth = 84.dp,
+                    blockColor = AppDs.Ink.copy(alpha = 0.16f),
+                    loaderColor = AppDs.Ink.copy(alpha = 0.55f),
+                )
             }
         }
     }

@@ -115,16 +115,3 @@ object Glass {
         unfocusedContainerColor = Color.Black.copy(alpha = 0.30f),
     )
 }
-
-/**
- * A rotating teal-gradient ring spinner, used everywhere the app shows a loading
- * state (button spinners, the auth video-loading screen) instead of the plain
- * Material CircularProgressIndicator -- gives loading moments a consistent,
- * on-brand look with a soft glow instead of a flat single-color arc.
- */
-@Composable
-fun GlowSpinner(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 22.dp, strokeWidth: androidx.compose.ui.unit.Dp = 2.5.dp) {
-    // Kept under its old name so every caller picks up the app's loader: see [SignalLoader].
-    // [strokeWidth] is ignored — the bars have a fixed geometry.
-    SignalLoader(modifier = modifier, height = size, color = AppDs.AccentSoft)
-}

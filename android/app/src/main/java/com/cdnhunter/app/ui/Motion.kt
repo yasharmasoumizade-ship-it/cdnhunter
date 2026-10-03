@@ -19,6 +19,10 @@ import androidx.compose.animation.core.tween
  *   CONNECTION  420  the connect lifecycle only (bolt -> check, pulse): optical exception, the one
  *                    moment the app is allowed to take its time.
  *
+ * Loading has five fixed meanings and they are never swapped (see [LoaderMotion]):
+ * page data = [DotLoader], VPN connecting = [ConnectGlyph]'s weighted line, "Connecting" text =
+ * [ActivityDots], a ping or a not-yet-known IP = [SignalLoader], pull to refresh = [RefreshArrow].
+ *
  * Enter uses [EaseOut], exit [EaseIn], a value that moves between two places [EaseInOut]. Under
  * reduced motion every spec built here is a cut ([snap]); callers that also translate or scale
  * must drop that part and keep only a fade.
