@@ -1,0 +1,81 @@
+name: Probe unified AAR (mihomo + sing-box libbox)
+
+# Experiment only: does ONE gomobile AAR containing both cores build? Does not touch
+# build-unified.yml or android/. Runs on demand, or when unified-probe/** changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'unified-probe/**'
+      - '.github/workflows/probe-unified-aar.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '11076708'
+          packages: 'platform-tools'
+
+      - name: Install SDK + NDK
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> "$GITHUB_ENV"
+
+      - name: Go version
+        run: go version
+
+      - name: Build unified AAR (arm64 only, probe)
+        run: |
+          set -euo pipefail
+          cd unified-probe
+          cp ../mihomo-mobile/mobile.go .
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile init
+          go mod tidy -v
+          gomobile bind -v -target android/arm64 -androidapi 24 \
+            -javapkg=com.cdnhunter.mihomo \
+            -tags with_gvisor,cmfa,with_quic,with_utls,badlinkname,tfogo_checklinkname0 \
+            -ldflags='-s -w -checklinkname=0' \
+            -o libcores.aar . github.com/sagernet/sing-box/experimental/libbox
+          ls -la libcores.aar
+
+      - name: Inspect AAR
+        run: |
+          set -euo pipefail
+          cd unified-probe
+          mkdir -p x && unzip -o -q libcores.aar -d x
+          find x -name '*.so' -exec ls -la {} \;
+          unzip -l x/classes.jar | grep -E 'com/cdnhunter/mihomo/(mobile/Mobile|libbox/Libbox)\.class|go/Seq\.class' || true
+          echo "--- libbox public API (head)"
+          javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.Libbox | head -40 || true
+          echo "--- PlatformInterface"
+          javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.PlatformInterface || true
+          echo "--- Mobile"
+          javap -cp x/classes.jar com.cdnhunter.mihomo.mobile.Mobile || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libcores-probe
+          path: unified-probe/libcores.aar
+          retention-days: 3
