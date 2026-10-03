@@ -267,19 +267,13 @@ internal fun appReduceMotion(): Boolean {
 internal fun <T> appMotion(reduce: Boolean, durationMs: Int): FiniteAnimationSpec<T> =
     if (reduce) snap() else tween(durationMs)
 
-/** The one press animation: a quick sink while held, a soft spring back on release. */
+/** The one press animation: a fast ease-out sink while held, a calm ease-in-out return. No spring. */
 @Composable
 internal fun animatePressScale(pressed: Boolean, pressedScale: Float = AppDs.PressScale): Float {
     val reduce = appReduceMotion()
     val scale by animateFloatAsState(
         targetValue = if (pressed) pressedScale else 1f,
-        animationSpec = if (reduce) {
-            snap()
-        } else if (pressed) {
-            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
-        } else {
-            spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
-        },
+        animationSpec = if (pressed) Motion.enter(reduce, Motion.Micro) else Motion.inOut(reduce, Motion.Exit),
         label = "press",
     )
     return scale
@@ -706,11 +700,7 @@ internal fun PremiumToggle(
     )
     val thumbX by animateDpAsState(
         targetValue = if (checked) 25.dp else 3.dp,
-        animationSpec = if (reduce) {
-            snap()
-        } else {
-            spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)
-        },
+        animationSpec = Motion.inOut(reduce, Motion.Standard),
         label = "toggleX",
     )
     Box(
@@ -750,9 +740,9 @@ internal fun PremiumToggle(
 }
 
 /**
- * A two-or-three way choice as one control: a recessed track with one lit thumb that springs to
- * the selected segment — it overshoots a touch and settles (bouncy), and ticks the haptic as it
- * lands. The thumb is a strong accent wash, so the chosen option is unmistakable. The thumb is measured to each segment's real bounds, so it fits whether
+ * A two-or-three way choice as one control: a recessed track with one lit thumb that glides to the
+ * selected segment on one ease-in-out curve (no overshoot) and ticks the haptic as it lands. The
+ * thumb is a strong accent wash, so the chosen option is unmistakable. The thumb is measured to each segment's real bounds, so it fits whether
  * segments are content-sized (Server choice, MTU) or share the row ([equalWeight]).
  *
  * `options` is (stored value, shown label) — the key is what goes to [AppSettings].
@@ -789,10 +779,8 @@ internal fun PremiumSegmentedControl(
             thumbW.snapTo(targetW)
             settled = true
         } else {
-            // Position bounces a little more than width, so the thumb stretches and snaps back
-            // rather than sliding on rails. Low damping = visible overshoot; the track clips it.
-            launch { thumbX.animateTo(targetX, spring(dampingRatio = 0.5f, stiffness = 420f)) }
-            launch { thumbW.animateTo(targetW, spring(dampingRatio = 0.62f, stiffness = 420f)) }
+            launch { thumbX.animateTo(targetX, Motion.inOut(false, Motion.Standard)) }
+            launch { thumbW.animateTo(targetW, Motion.inOut(false, Motion.Standard)) }
         }
     }
 
@@ -1211,6 +1199,21 @@ private fun SignalBars(modifier: Modifier, height: Dp, color: Color, phase: (() 
                 cornerRadius = CornerRadius(barW / 2f),
             )
         }
+    }
+}
+
+/**
+ * The pull-to-refresh mark, in the app's own signal language rather than a Material spinner. While
+ * the finger is pulling, the four bars light one by one with the pull ([progress], 0..1+); once the
+ * measurement is running it is the same [SignalLoader] the ping columns use. Nothing else moves.
+ */
+@Composable
+internal fun PullSignalIndicator(progress: Float, refreshing: Boolean, modifier: Modifier = Modifier) {
+    if (refreshing) {
+        SignalLoader(modifier, height = 18.dp, color = AppDs.AccentSoft)
+    } else {
+        val p = (progress.coerceIn(0f, 1f)) * 0.8f
+        SignalBars(modifier, 18.dp, AppDs.AccentSoft, phase = { p })
     }
 }
 

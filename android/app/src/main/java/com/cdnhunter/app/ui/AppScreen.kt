@@ -908,6 +908,7 @@ private fun VpnTab(onSignOut: () -> Unit) {
     // recomputed from the snapshot on every poll, so a previous connection's address can't linger.
     var connectionIp by remember { mutableStateOf<String?>(null) }
     var connectionIpFailed by remember { mutableStateOf(false) }
+    var reconnecting by remember { mutableStateOf(false) }
     // When the user last asked for a connection. The service's own flag is only set
     // once startVpn() runs, which is after the system VPN-permission dialog — so for
     // the seconds that dialog is up there is a real request in flight that the
@@ -1076,6 +1077,8 @@ private fun VpnTab(onSignOut: () -> Unit) {
                 (snap.configId == null || snap.configId == activeId)
             connectionIp = if (live) snap.tunnel?.publicIp?.takeIf { it.isNotBlank() } else null
             connectionIpFailed = live && connectionIp == null && snap.tunnel?.publicIpFailed == true
+            reconnecting = snap.state == ConnectionState.RECONNECTING ||
+                (snap.state == ConnectionState.ERROR && snap.willRetry)
 
             if (connected) {
                 if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
@@ -1613,18 +1616,21 @@ private fun VpnTab(onSignOut: () -> Unit) {
         }
     }
 
+    val reduceNav = appReduceMotion()
     AnimatedContent(
         targetState = currentScreen,
         transitionSpec = {
-            val durationMs = 250  // Faster transitions
-            slideInHorizontally(
-                initialOffsetX = { it },
-                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-            ) + fadeIn(animationSpec = tween(durationMs, easing = FastOutSlowInEasing)) togetherWith 
-            slideOutHorizontally(
-                targetOffsetX = { -it },
-                animationSpec = tween(durationMs, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-            ) + fadeOut(animationSpec = tween(durationMs / 2, easing = FastOutSlowInEasing))
+            // Quiet and fast: the new screen fades in on ease-out while drifting ~1/12 of the width
+            // from the right; the old one just fades out, quicker. No full-width slide, no overshoot.
+            // Reduced motion: opacity only, no drift.
+            if (reduceNav) {
+                fadeIn(tween(Motion.Micro)) togetherWith fadeOut(tween(Motion.Micro))
+            } else {
+                (
+                    fadeIn(tween(Motion.Standard, easing = Motion.EaseOut)) +
+                        slideInHorizontally(tween(Motion.Standard, easing = Motion.EaseOut)) { it / 12 }
+                    ) togetherWith fadeOut(tween(Motion.Exit, easing = Motion.EaseIn))
+            }
         },
         label = "screenTransition"
     ) { targetScreen ->
@@ -1656,6 +1662,7 @@ private fun VpnTab(onSignOut: () -> Unit) {
                         refreshingPings = refreshingPings,
                         connectionIp = connectionIp,
                         connectionIpFailed = connectionIpFailed,
+                        reconnecting = reconnecting,
                     ),
                     onOpenSettings = { navigateTo(AnanasScreen.SETTINGS) },
                     onOpenProfile = { navigateTo(AnanasScreen.PROFILE) },

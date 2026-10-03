@@ -57,6 +57,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1175,6 +1176,8 @@ internal data class HomeUiState(
     val connectionIp: String? = null,
     /** That lookup finished without an address. The tunnel is up regardless; only the readout gives up. */
     val connectionIpFailed: Boolean = false,
+    /** The service reports RECONNECTING (or an ERROR it will retry): the tunnel dropped and is being rebuilt. */
+    val reconnecting: Boolean = false,
 ) {
     private fun hasExitGeo(cfg: SavedConfig) =
         connected && exitGeoConfigId == cfg.id && exitCountryCode.isNotBlank()
@@ -2587,11 +2590,12 @@ private val PanelFill = Color(0xFF0A101C)
  * protected" — nothing is leaking — and it must not look like it, or the person turns the VPN off
  * to get online and exposes themselves. It reuses the error glyph and colours (no new animation).
  */
-private enum class ConnVisual { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING, ERROR, BLOCKED }
+private enum class ConnVisual { DISCONNECTED, CONNECTING, RECONNECTING, CONNECTED, DISCONNECTING, ERROR, BLOCKED }
 
 private fun ConnVisual.title(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Connect"
     ConnVisual.CONNECTING -> "Connecting"
+    ConnVisual.RECONNECTING -> "Reconnecting"
     ConnVisual.CONNECTED -> "Connected"
     ConnVisual.DISCONNECTING -> "Disconnecting"
     ConnVisual.ERROR -> "Couldn't connect"
@@ -2601,6 +2605,7 @@ private fun ConnVisual.title(): String = when (this) {
 private fun ConnVisual.caption(): String = when (this) {
     ConnVisual.DISCONNECTED -> "Not protected"
     ConnVisual.CONNECTING -> "Establishing secure connection"
+    ConnVisual.RECONNECTING -> "Network interrupted"
     ConnVisual.CONNECTED -> "Protected"
     ConnVisual.DISCONNECTING -> "Closing secure connection"
     ConnVisual.ERROR -> "Tap to retry"
@@ -2616,6 +2621,7 @@ private fun ConnVisual.caption(): String = when (this) {
 private fun ConnVisual.glyph(): GlyphPhase = when (this) {
     ConnVisual.DISCONNECTED -> GlyphPhase.Idle
     ConnVisual.CONNECTING -> GlyphPhase.Idle
+    ConnVisual.RECONNECTING -> GlyphPhase.Idle
     ConnVisual.CONNECTED -> GlyphPhase.Connected
     ConnVisual.DISCONNECTING -> GlyphPhase.Idle
     ConnVisual.ERROR -> GlyphPhase.Error
@@ -2731,6 +2737,10 @@ internal fun HomeScreen(
         onDispose { remove() }
     }
     val visual = when {
+        // The service's own RECONNECTING state (or an ERROR it is about to retry): the tunnel was
+        // lost and is being rebuilt. Real state only; it outranks CONNECTED so an interruption of a
+        // live tunnel shows as one rather than as "Connected".
+        state.reconnecting -> ConnVisual.RECONNECTING
         state.phase == ConnPhase.CONNECTING -> ConnVisual.CONNECTING
         disconnecting -> ConnVisual.DISCONNECTING
         state.phase == ConnPhase.CONNECTED -> ConnVisual.CONNECTED
@@ -2887,6 +2897,10 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = animatePressScale(pressed, AppDs.PressScaleSmall)
+    // Press feedback is a quick dim as well as the tiny sink, both on the micro token.
+    val dim by animateFloatAsState(
+        if (pressed) 0.72f else 1f, Motion.inOut(appReduceMotion(), Motion.Micro), label = "menuDim",
+    )
     val shape = RoundedCornerShape(MenuChipRadius)
     // The touch target keeps its full 48dp; only the drawn chip is smaller, centred inside it.
     Box(
@@ -2904,6 +2918,7 @@ private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             Modifier
                 .size(MenuChipSize)
                 .scale(scale)
+                .graphicsLayer { alpha = dim }
                 .clip(shape)
                 .background(Color.Black.copy(alpha = 0.34f))
                 .border(1.dp, AppDs.Border, shape),
@@ -3010,7 +3025,7 @@ private fun ServerSearchField(
 // ── Server list ───────────────────────────────────────────────────────────────
 // Lives directly on the page (no card of its own). Pull-to-refresh re-measures the pings of the
 // rows currently shown; the sweep's completion, not a timer, is what retracts the spinner.
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ServerList(
     state: HomeUiState,
@@ -3039,6 +3054,14 @@ private fun ServerList(
         }
     }
     val listState = rememberLazyListState()
+    val reduce = appReduceMotion()
+    // The list's first appearance staggers its first rows in (30ms apart, 200ms cap). Once it has
+    // settled, rows that arrive later -- scrolling, a new search -- do not re-run it.
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay((Motion.StaggerCapMs + Motion.Standard + 100).toLong())
+        settled = true
+    }
     val favContext = LocalContext.current
     var favoriteIds by remember { mutableStateOf(AppSettings.favoriteServers(favContext)) }
 
@@ -3063,9 +3086,21 @@ private fun ServerList(
                     )
                 }
             }
-            itemsIndexed(servers, key = { _, cfg -> cfg.id }) { _, cfg ->
+            itemsIndexed(servers, key = { _, cfg -> cfg.id }) { index, cfg ->
                 val title = state.rowTitle(cfg)
+                val rise = remember(cfg.id) { Animatable(if (reduce || settled) 1f else 0f) }
+                LaunchedEffect(cfg.id) {
+                    if (rise.value < 1f) {
+                        rise.animateTo(1f, tween(Motion.Standard, Motion.stagger(index), Motion.EaseOut))
+                    }
+                }
                 ServerRow(
+                    modifier = Modifier
+                        .animateItemPlacement(tween(Motion.Standard, easing = Motion.EaseInOut))
+                        .graphicsLayer {
+                            alpha = rise.value
+                            translationY = (1f - rise.value) * 6.dp.toPx()
+                        },
                     title = title,
                     countryCode = state.countryCodeFor(cfg),
                     pingMs = cfg.pingMs,
@@ -3083,6 +3118,7 @@ private fun ServerList(
         }
         PullToRefreshContainer(
             state = pullState,
+            indicator = { s -> PullSignalIndicator(progress = s.progress, refreshing = s.isRefreshing) },
             containerColor = RefElev2,
             contentColor = RefTextHi,
             modifier = Modifier.align(Alignment.TopCenter),
@@ -3106,6 +3142,7 @@ private fun ServerList(
  */
 @Composable
 private fun ServerRow(
+    modifier: Modifier = Modifier,
     title: String,
     countryCode: String,
     pingMs: Int,
@@ -3136,7 +3173,7 @@ private fun ServerRow(
         label = "rowEdge",
     )
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = AppDs.S3)
             .heightIn(min = AppDs.ServerRowHeight)
@@ -3176,29 +3213,74 @@ private fun ServerRow(
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(AppDs.S3))
-        if (measuring) {
-            Box(Modifier.width(AppDs.PingWidth), contentAlignment = Alignment.CenterEnd) {
-                SkeletonBlock(Modifier.width(30.dp).height(10.dp))
-            }
-            Spacer(Modifier.width(AppDs.S3))
-            // Same four bars as PingBars, at the same size — the number lands without a shift.
-            SignalLoader(height = 14.dp, color = AppDs.TextLow)
-        } else {
-            Text(
-                if (pingMs >= 0) "${pingMs}ms" else "—",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = AppDs.TextMid,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                style = TextStyle(fontFeatureSettings = "tnum"),
-                modifier = Modifier.width(AppDs.PingWidth),
-            )
-            Spacer(Modifier.width(AppDs.S3))
-            PingBars(pingMs)
-        }
+        PingReadout(measuring = measuring, pingMs = pingMs, reduce = reduce)
         Spacer(Modifier.width(AppDs.S1))
         FavoriteButton(title = title, isFavorite = isFavorite, onToggle = onToggleFavorite)
+    }
+}
+
+/**
+ * A server's ping column: number + signal bars, or their placeholders while it is being measured.
+ * Two transitions, both on the motion tokens and neither moving anything sideways:
+ *   measuring <-> measured   a plain cross-fade between the placeholder pair and the real pair
+ *                            (same size on both sides, so nothing shifts when the number lands);
+ *   106ms -> 82ms            the number cross-fades with a 3dp drift in the direction it moved
+ *                            (lower = in from above), tabular figures keeping the width steady.
+ * Reduced motion cuts both. The bars settle themselves (see [PingBars]); they do not keep moving.
+ */
+@Composable
+private fun PingReadout(measuring: Boolean, pingMs: Int, reduce: Boolean) {
+    AnimatedContent(
+        targetState = measuring,
+        transitionSpec = {
+            (fadeIn(Motion.enter(reduce, Motion.Standard)) togetherWith fadeOut(Motion.exit(reduce, Motion.Micro)))
+                .using(SizeTransform(clip = false) { _, _ -> snap() })
+        },
+        label = "pingReadout",
+    ) { isMeasuring ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isMeasuring) {
+                Box(Modifier.width(AppDs.PingWidth), contentAlignment = Alignment.CenterEnd) {
+                    SkeletonBlock(Modifier.width(30.dp).height(10.dp))
+                }
+                Spacer(Modifier.width(AppDs.S3))
+                // Same four bars as PingBars, at the same size -- the number lands without a shift.
+                SignalLoader(height = 14.dp, color = AppDs.TextLow)
+            } else {
+                AnimatedContent(
+                    targetState = pingMs,
+                    transitionSpec = {
+                        val down = targetState < initialState
+                        val drift = { h: Int -> if (down) -h / 5 else h / 5 }
+                        val enter = if (reduce) fadeIn(snap()) else {
+                            fadeIn(tween(Motion.Standard, easing = Motion.EaseOut)) +
+                                slideInVertically(tween(Motion.Standard, easing = Motion.EaseOut), drift)
+                        }
+                        val exit = if (reduce) fadeOut(snap()) else {
+                            fadeOut(tween(Motion.Micro, easing = Motion.EaseIn)) +
+                                slideOutVertically(tween(Motion.Micro, easing = Motion.EaseIn)) { h -> -drift(h) }
+                        }
+                        (enter togetherWith exit).using(SizeTransform(clip = false) { _, _ -> snap() })
+                    },
+                    contentAlignment = Alignment.CenterEnd,
+                    label = "pingNumber",
+                    modifier = Modifier.width(AppDs.PingWidth),
+                ) { p ->
+                    Text(
+                        if (p >= 0) "${p}ms" else "\u2014",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AppDs.TextMid,
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        style = TextStyle(fontFeatureSettings = "tnum"),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.width(AppDs.S3))
+                PingBars(pingMs)
+            }
+        }
     }
 }
 
@@ -3211,9 +3293,12 @@ private fun FavoriteButton(title: String, isFavorite: Boolean, onToggle: () -> U
         if (previous != isFavorite) {
             previous = isFavorite
             if (!reduce) {
-                // Adding dips a little deeper than removing; both ease back with no overshoot.
-                settle.snapTo(if (isFavorite) 0.78f else 0.9f)
-                settle.animateTo(1f, tween(170, easing = FastOutSlowInEasing))
+                // 1 -> 1.08 -> 1, only when it is added: out on ease-out, back on ease-in-out.
+                // Removing it just fades; the heart never dips and never overshoots.
+                if (isFavorite) {
+                    settle.animateTo(1.08f, tween(Motion.Micro, easing = Motion.EaseOut))
+                    settle.animateTo(1f, tween(Motion.Exit, easing = Motion.EaseInOut))
+                }
             }
         }
     }
@@ -3268,6 +3353,8 @@ private fun ConnectPanel(
         targetValue = when (visual) {
             ConnVisual.CONNECTED -> AppDs.Accent.copy(alpha = 0.45f)
             ConnVisual.CONNECTING -> AppDs.Accent.copy(alpha = 0.22f)
+            // Interrupted, not failed: the hairline warms, the page does not turn red.
+            ConnVisual.RECONNECTING -> AppDs.Warning.copy(alpha = 0.30f)
             ConnVisual.ERROR, ConnVisual.BLOCKED -> AppDs.Error.copy(alpha = 0.45f)
             else -> AppDs.Hairline
         },
@@ -3387,6 +3474,7 @@ private fun ConnectButton(
     val label = when (visual) {
         ConnVisual.CONNECTED -> "Disconnect"
         ConnVisual.CONNECTING -> "Cancel connecting"
+        ConnVisual.RECONNECTING -> "Cancel reconnecting"
         ConnVisual.DISCONNECTING -> "Disconnecting"
         ConnVisual.ERROR -> "Retry connecting"
         ConnVisual.BLOCKED -> "Reconnect. Traffic is blocked by the kill switch"
@@ -3463,7 +3551,7 @@ private fun ConnectButton(
                         color = AppDs.Ink,
                         maxLines = 1,
                     )
-                    if (v == ConnVisual.CONNECTING || v == ConnVisual.DISCONNECTING) {
+                    if (v == ConnVisual.CONNECTING || v == ConnVisual.RECONNECTING || v == ConnVisual.DISCONNECTING) {
                         ActivityDots(TypeTitle.first, TypeTitle.second, AppDs.Ink)
                     }
                 }

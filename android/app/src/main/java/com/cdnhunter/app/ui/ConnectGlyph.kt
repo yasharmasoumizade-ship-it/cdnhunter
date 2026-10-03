@@ -65,8 +65,8 @@ private fun glyphSpec(
  *                  in) → one soft pulse leaves it.
  *   Disconnecting  the reverse: the check un-draws, the loop opens back into the line, which
  *                  turns the other way at a lower pace.
- *   Error          the line closes into a still loop that takes the error colour and gives one
- *                  short shake; the caller then moves to [GlyphPhase.Idle] and it returns to bolt.
+ *   Error          the line closes into a still loop that takes the error colour -- a controlled
+ *                  interruption, no shake; the caller then moves to [GlyphPhase.Idle] and it returns to bolt.
  *
  * It is a few draw calls on one canvas and every animated value is read in the draw phase, so no
  * frame recomposes. Nothing runs while idle or connected (the clock is not even registered), and
@@ -100,7 +100,6 @@ internal fun ConnectGlyph(
     val check = remember { Animatable(if (first == GlyphPhase.Connected) 1f else 0f) }
     val fault = remember { Animatable(if (first == GlyphPhase.Error) 1f else 0f) }
     val pulse = remember { Animatable(1f) } // 1 = finished: nothing is drawn
-    val shake = remember { Animatable(0f) }
     val clock = rememberLoaderClock(active = phase == GlyphPhase.Connecting || phase == GlyphPhase.Disconnecting)
     val density = LocalDensity.current
     val lineStroke = remember(density) { Stroke(width = with(density) { LineWidth.toPx() }, cap = StrokeCap.Round) }
@@ -167,11 +166,6 @@ internal fun ConnectGlyph(
                 launch { line.animateTo(1f, glyphSpec(reduce, 160)) }
                 launch { fault.animateTo(1f, glyphSpec(reduce, 220)) }
                 launch { closed.animateTo(1f, glyphSpec(reduce, 280)) }
-                if (!reduce) {
-                    for (x in floatArrayOf(-1f, 1f, -0.6f, 0.3f, 0f)) {
-                        shake.animateTo(x, tween(55, easing = LinearOutSlowInEasing))
-                    }
-                }
             }
         }
     }
@@ -183,7 +177,7 @@ internal fun ConnectGlyph(
         val s = size.minDimension
         val c = Offset(size.width / 2f, size.height / 2f)
 
-        translate(left = shake.value * 2.5.dp.toPx()) {
+        run {
             // ── the line ───────────────────────────────────────────────────────────────
             val present = line.value
             if (present > 0.01f) {
