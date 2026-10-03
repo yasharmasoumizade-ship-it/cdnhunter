@@ -95,6 +95,21 @@ jobs:
           rm -f android/app/src/main/assets/geoip.dat
           ls -la android/app/src/main/assets/
 
+      - name: Bundle sing-box Iran rule-sets (official SagerNet, pinned commit + sha256)
+        # Official SagerNet rule-sets for the sing-box fallback engine. Pinned to an exact commit of the
+        # `rule-set` branch and verified by sha256: a changed or tampered file fails the build instead of
+        # shipping. To update: bump the commit SHA and the hash together, on purpose.
+        run: |
+          set -euo pipefail
+          GEOIP_COMMIT=7fe82a879ad2666526730c195b55a6d8d9147908
+          GEOSITE_COMMIT=53e0e99be15953f1865c4f3f4cffe8c8f8543dff
+          mkdir -p android/app/src/main/assets
+          curl -fsSL "https://raw.githubusercontent.com/SagerNet/sing-geoip/${GEOIP_COMMIT}/geoip-ir.srs" -o android/app/src/main/assets/singbox-geoip-ir.srs
+          curl -fsSL "https://raw.githubusercontent.com/SagerNet/sing-geosite/${GEOSITE_COMMIT}/geosite-category-ir.srs" -o android/app/src/main/assets/singbox-geosite-category-ir.srs
+          cd android/app/src/main/assets
+          echo "c88af3372f71234f6d015d0452ba472f26b0d9d62e82ae5167d066c1df24b8f5  singbox-geoip-ir.srs" | sha256sum -c -
+          echo "5e4ef5289e0b4f73018854730b2ab049860ec1e87e1a601fdbe976bcb6c669b6  singbox-geosite-category-ir.srs" | sha256sum -c -
+
       - name: Generate signing keystore
         # build.gradle.kts's release signingConfig reads the store/key passwords
         # ONLY from the CDNHUNTER_* env vars (no hardcoded fallback anymore), so

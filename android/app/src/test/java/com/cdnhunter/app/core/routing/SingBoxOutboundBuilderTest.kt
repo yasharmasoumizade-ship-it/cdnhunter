@@ -49,6 +49,12 @@ class SingBoxOutboundBuilderTest {
         assertFalse(e.message.contains(id)); assertFalse(e.message.contains(host)); assertFalse(e.message.contains("ab12"))
     }
 
+    @Test fun realityOverWsKeepsBothTheRealityBlockAndTheTransport() {
+        val o = ok("vless://$id@$host:443?security=reality&sni=www.example.org&pbk=PUBKEY123&sid=ab12&fp=chrome&type=ws&path=/w&host=h.example.com#rw")
+        assertEquals("PUBKEY123", o.m("tls").m("reality")["public_key"])
+        assertEquals("ws", o.m("transport")["type"]); assertEquals("/w", o.m("transport")["path"])
+    }
+
     @Test fun wsKeepsPathAndHostHeader() {
         val t = ok("vless://$id@$host:443?security=tls&sni=$host&type=ws&path=/ws&host=cdn.example.com#w").m("transport")
         assertEquals("ws", t["type"]); assertEquals("/ws", t["path"])

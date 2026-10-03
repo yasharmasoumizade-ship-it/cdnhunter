@@ -107,8 +107,30 @@ class CoreRouterTest {
         assertNull(r.after(CoreType.CLASH_META))
     }
 
-    @Test fun realityOverWebSocketHasNoEngine() {
+    // Explicit decision: REALITY over WS is Clash Meta first, then sing-box on a real failure.
+    @Test fun realityOverWebSocketIsClashFirstThenSingBox() {
         val p = ConnectionProfile(ProxyProtocol.VLESS, SecurityKind.REALITY, TransportKind.WS)
+        assertEquals(listOf(CoreType.CLASH_META, CoreType.SING_BOX), (CoreRouter.plan(p) as CorePlan.Route).order)
+    }
+
+    // sing-box 1.14.2: RealityClientConfig.STDConfig() is "unsupported usage for reality", and the QUIC transport needs it.
+    @Test fun realityOverQuicHasNoEngine() {
+        val p = ConnectionProfile(ProxyProtocol.VLESS, SecurityKind.REALITY, TransportKind.QUIC)
+        assertTrue(CoreRouter.plan(p) is CorePlan.Unsupported)
+        assertTrue(CoreCapabilities.supports(CoreType.SING_BOX, p) is Support.No)
+    }
+
+    // Explicit decision: REALITY + XHTTP is Clash Meta ONLY. sing-box has no XHTTP, and it is never offered as a fallback.
+    @Test fun realityOverXhttpIsClashOnlyWithNoSingBoxFallback() {
+        val p = ConnectionProfile(ProxyProtocol.VLESS, SecurityKind.REALITY, TransportKind.XHTTP)
+        val r = CoreRouter.plan(p) as CorePlan.Route
+        assertEquals(listOf(CoreType.CLASH_META), r.order)
+        assertNull(r.after(CoreType.CLASH_META))
+        assertTrue(CoreCapabilities.supports(CoreType.SING_BOX, p) is Support.No)
+    }
+
+    @Test fun realityOverHttpObfuscationHasNoEngine() {
+        val p = ConnectionProfile(ProxyProtocol.VLESS, SecurityKind.REALITY, TransportKind.HTTP_OBFS)
         assertTrue(CoreRouter.plan(p) is CorePlan.Unsupported)
     }
 

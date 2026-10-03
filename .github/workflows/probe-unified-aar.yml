@@ -17,6 +17,10 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [android/arm64, android/arm]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +47,7 @@ jobs:
       - name: Go version
         run: go version
 
-      - name: Build unified AAR (arm64 only, probe)
+      - name: Build unified AAR (probe)
         shell: bash
         run: |
           set -o pipefail
@@ -57,7 +61,7 @@ jobs:
             echo "STEP gomobile-init"; gomobile init
             echo "STEP go-mod-tidy"; go mod tidy -v
             echo "STEP gomobile-bind"
-            gomobile bind -v -target android/arm64 -androidapi 24 \
+            gomobile bind -v -target ${{ matrix.target }} -androidapi 24 \
               -javapkg=com.cdnhunter.mihomo \
               -tags with_gvisor,cmfa,with_quic,with_utls,badlinkname,tfogo_checklinkname0 \
               -ldflags='-s -w -checklinkname=0' \
@@ -81,23 +85,27 @@ jobs:
           set +e
           cd unified-probe
           mkdir -p x && unzip -o -q libcores.aar -d x
+          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          note() { local t="$1" f="$2"; echo "::notice title=${{ matrix.target }} $t::$(cut -c1-230 "$f" | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')"; }
           {
             echo "== native libs"; find x -name '*.so' -exec ls -la {} \;
-            echo "== classes"; unzip -l x/classes.jar | grep -E 'com/cdnhunter/mihomo/(mobile/Mobile|libbox/Libbox|libbox/PlatformInterface|libbox/BoxService)\.class|go/Seq\.class'
-            echo "== PlatformInterface"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.PlatformInterface
-          } > /tmp/inspect.log 2>&1
-          BODY=$(cut -c1-220 /tmp/inspect.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
-          echo "::notice title=unified AAR contents::$BODY"
+            echo "== go/Seq.class entries in classes.jar (must be 1)"; unzip -l x/classes.jar | grep -c 'go/Seq.class'
+            echo "== JNI_OnLoad definitions (must be 1 per .so)"; for so in $(find x -name '*.so'); do "$NM" -D --defined-only "$so" | grep -c ' JNI_OnLoad'; done
+            echo "== duplicate exported symbols (should be none)"; for so in $(find x -name '*.so'); do "$NM" -D --defined-only "$so" | awk '{print $3}' | sort | uniq -d | head -5; done
+            echo "== both bindings present"; unzip -l x/classes.jar | grep -E 'mihomo/mobile/Mobile.class|mihomo/libbox/Libbox.class' | awk '{print $4}'
+          } > /tmp/i1.log 2>&1; note "native audit" /tmp/i1.log
           {
-            echo "== libbox top-level API"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.Libbox | grep -E 'newService|setup|checkConfig|newStandaloneCommandClient|BoxService|version' 
-            echo "== BoxService"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.BoxService
-            echo "== SetupOptions"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.SetupOptions | head -20
-          } > /tmp/inspect2.log 2>&1
-          BODY=$(cut -c1-220 /tmp/inspect2.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}1')
-          echo "::notice title=libbox API::$BODY"
+            echo "== libbox classes"; unzip -l x/classes.jar | awk '{print $4}' | grep 'mihomo/libbox/' | sed 's#.*/libbox/##; s#.class##' | grep -v '\$' | tr '\n' ' '
+            echo; echo "== Libbox statics"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.Libbox | grep -E 'static native' | sed 's/public static native //'
+          } > /tmp/i2.log 2>&1; note "libbox classes" /tmp/i2.log
+          { javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.PlatformInterface | sed 's/com.cdnhunter.mihomo.libbox.//g; s/public abstract //'; } > /tmp/i3.log 2>&1; note "PlatformInterface" /tmp/i3.log
+          {
+            for c in CommandServer CommandServerHandler OverrideOptions TunOptions; do echo "== $c"; javap -cp x/classes.jar com.cdnhunter.mihomo.libbox.$c | sed 's/com.cdnhunter.mihomo.libbox.//g; s/public final native //; s/public abstract //; s/public native //' | grep -v 'refnum\|incRefnum\|Compiled from' ; done
+          } > /tmp/i4.log 2>&1; note "server+handler+options" /tmp/i4.log
+          exit 0
 
       - uses: actions/upload-artifact@v4
         with:
-          name: libcores-probe
+          name: libcores-probe-${{ strategy.job-index }}
           path: unified-probe/libcores.aar
           retention-days: 3

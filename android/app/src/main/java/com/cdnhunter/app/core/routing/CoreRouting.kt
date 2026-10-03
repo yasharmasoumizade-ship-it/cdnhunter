@@ -126,8 +126,11 @@ object CoreCapabilities {
         }
     }
 
-    private val REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2)
-    private val CLASH_REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2, TransportKind.XHTTP)
+    // REALITY + WS is an explicit product decision: sing-box dials WS through tls.NewDialer -> ClientHandshake, which the
+    // REALITY client implements, and the docs do not forbid it. REALITY + QUIC is NOT here on purpose: sing-box's QUIC
+    // transport needs STDConfig(), and RealityClientConfig.STDConfig() returns "unsupported usage for reality" (v1.14.2).
+    private val REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2, TransportKind.WS)
+    private val CLASH_REALITY_TRANSPORTS = setOf(TransportKind.TCP, TransportKind.GRPC, TransportKind.H2, TransportKind.WS, TransportKind.XHTTP)
 }
 
 /**
@@ -154,6 +157,8 @@ sealed class CorePlan {
 
 object CoreRouter {
 
+    private val REALITY_CLASH_FIRST = setOf(TransportKind.WS)
+
     fun plan(config: InternalConnectionConfig): CorePlan = plan(ConnectionProfile.of(config))
 
     fun plan(p: ConnectionProfile): CorePlan {
@@ -165,6 +170,9 @@ object CoreRouter {
             // carry this particular REALITY combination, the only engine that can is used alone — and
             // there is no fallback in either case.
             return when {
+                // The one explicit exception to "REALITY goes straight to sing-box": WS is Clash Meta first.
+                p.transport in REALITY_CLASH_FIRST && clash is Support.Yes && singBox is Support.Yes ->
+                    CorePlan.Route(listOf(CoreType.CLASH_META, CoreType.SING_BOX), "REALITY over ${p.transport}: Clash Meta first, sing-box on a real failure")
                 singBox is Support.Yes -> CorePlan.Route(listOf(CoreType.SING_BOX), "REALITY: sing-box directly")
                 clash is Support.Yes -> CorePlan.Route(
                     listOf(CoreType.CLASH_META),
