@@ -82,12 +82,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
@@ -184,7 +183,13 @@ internal object AppDs {
     val TextHi = Color(0xFFEEF2F8)          // Primary text — cool white
     val TextMid = Color(0xFF98A2B3)         // Secondary text
     val TextLow = Color(0xFF6B7588)         // Muted text
-    val Accent = Color(0xFF3D82F0)          // Premium blue — controlled, not neon
+    val Accent = Color(0xFF3F83F1)          // Premium blue — controlled, not neon
+    /** The Connect button at rest: the accent a step deeper so white text on it clears 4.5:1. */
+    val AccentButton = Color(0xFF356FD0)
+    /** The Connect button while the tunnel is coming up: darker and quieter, the same hue. */
+    val AccentWorking = Color(0xFF2C569C)
+    /** The selected server's surface: the page's navy, one step lifted. */
+    val SelectedNavy = Color(0xFF0F1B33)
     val AccentSoft = Color(0xFF8FB4F5)      // Soft blue (pin, orbit lines)
     val Success = Color(0xFF34C77A)
     val Warning = Color(0xFFE0B23B)         // needs attention
@@ -718,6 +723,7 @@ internal fun PremiumToggle(
     modifier: Modifier = Modifier,
 ) {
     val reduce = appReduceMotion()
+    val view = LocalView.current
     val track by animateColorAsState(
         if (checked) AppDs.SurfacePressed else AppDs.Bg, appMotion(reduce, 180), label = "toggleTrack",
     )
@@ -746,7 +752,10 @@ internal fun PremiumToggle(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         role = Role.Switch,
-                        onValueChange = onCheckedChange,
+                        onValueChange = {
+                            AppHaptics.tap(view)
+                            onCheckedChange(it)
+                        },
                     )
                 } else {
                     Modifier
@@ -788,7 +797,7 @@ internal fun PremiumSegmentedControl(
     val segShape = remember { RoundedCornerShape(percent = 50) }
     val density = LocalDensity.current
     val reduce = appReduceMotion()
-    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
 
     val segX = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
     val segW = remember(options.size) { mutableStateListOf<Float>().apply { repeat(options.size) { add(0f) } } }
@@ -857,7 +866,7 @@ internal fun PremiumSegmentedControl(
                             indication = null,
                             role = Role.RadioButton,
                         ) {
-                            if (!on) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (!on) AppHaptics.tap(view)
                             onSelect(key)
                         }
                         .padding(horizontal = AppDs.S3, vertical = AppDs.S2),
@@ -946,7 +955,7 @@ internal fun PrimaryActionButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val scale = animatePressScale(pressed && enabled)
     val shape = RoundedCornerShape(AppDs.RLg)
     val shade by animateColorAsState(
@@ -970,7 +979,7 @@ internal fun PrimaryActionButton(
                 indication = null,
                 role = Role.Button,
                 onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    AppHaptics.tap(view)
                     onClick()
                 },
             ),

@@ -3311,7 +3311,7 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
             }
 
             if (apps == null) {
-                AppListLoading(Modifier.weight(1f).padding(horizontal = AppDs.S4))
+                AppListLoading(Modifier.weight(1f))
             } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(
@@ -3364,19 +3364,13 @@ private fun SplitTunnelScreen(onBack: () -> Unit) {
 }
 
 /**
- * What the split-tunnel list shows while the installed apps are being read: the list's own card at
- * its own size, with the page loader in the middle — so the list fills in where the card already is.
+ * What the split-tunnel list shows while the installed apps are being read: the page loader at the
+ * centre of the space the list will occupy. Deliberately NOT a card — an empty bordered container
+ * given the list's height is a tall hollow rectangle, which is what this used to be.
  */
 @Composable
 private fun AppListLoading(modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(AppDs.RLg)
-    Box(
-        modifier
-            .clip(shape)
-            .background(AppDs.Surface)
-            .border(1.dp, AppDs.Border, shape),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         DotLoader(dotSize = DotLoaderSize.Medium, description = "Loading apps")
     }
 }

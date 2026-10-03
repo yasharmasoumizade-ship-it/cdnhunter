@@ -1,5 +1,8 @@
 package com.cdnhunter.app.ui
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.snap
@@ -34,6 +37,9 @@ internal object Motion {
     const val Emphasis = 300
     const val Connection = 420
 
+    /** One lap of the light that travels round an active border (see [perimeterLight]). */
+    const val PerimeterMs = 3400
+
     /** Arrives fast, settles slowly. For things entering. */
     val EaseOut = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
@@ -58,4 +64,30 @@ internal object Motion {
 
     /** Delay for row [index] of an entering list: 30ms apart, capped so a long list is never theatrical. */
     fun stagger(index: Int): Int = (index * StaggerMs).coerceAtMost(StaggerCapMs)
+}
+
+/**
+ * Haptics, in three strengths and no more. Each is one call from an event handler or from an effect
+ * keyed on a real state change — never from inside an animation — and each goes through the
+ * system's own haptic setting, so a user who has turned touch feedback off hears nothing from here.
+ */
+internal object AppHaptics {
+    /** A light tick: a tap, a selection, a switch. */
+    fun tap(view: View) {
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    /** The tunnel is really up. Only ever called on the transition into CONNECTED. */
+    fun success(view: View) {
+        view.performHapticFeedback(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS,
+        )
+    }
+
+    /** An attempt really failed. */
+    fun failure(view: View) {
+        view.performHapticFeedback(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS,
+        )
+    }
 }

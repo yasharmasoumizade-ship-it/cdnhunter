@@ -136,7 +136,6 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -147,7 +146,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -2929,7 +2928,8 @@ private fun ServerSearchField(
             .clip(shape)
             .background(fill)
             .border(1.dp, border, shape)
-            .padding(start = AppDs.S4, end = if (query.isEmpty()) AppDs.S4 else AppDs.S2),
+            .perimeterLight(cornerRadius = AppDs.SearchHeight / 2, enabled = focused)
+            .padding(start = AppDs.S4, end = AppDs.S2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -2940,14 +2940,784 @@ private fun ServerSearchField(
         )
         Spacer(Modifier.width(AppDs.S3))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (query.isEmpty()) {
-                Text(
-                    "Search location or server",
-                    style = SearchFieldStyle,
-                    color = AppDs.TextLow,
-                    maxLines = 1,
+            // Fades rather than blinking out as the first letter lands; never leaves the layout.
+            val placeholder by animateFloatAsState(
+                targetValue = if (query.isEmpty()) 1f else 0f,
+                animationSpec = Motion.inOut(reduce, Motion.Micro + 50),
+                label = "searchPlaceholder",
+            )
+            Text(
+                "Search location or server",
+                style = SearchFieldStyle,
+                color = AppDs.TextLow,
+                maxLines = 1,
+                modifier = Modifier.graphicsLayer { alpha = placeholder },
+            )
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = SearchFieldStyle,
+                cursorBrush = SolidColor(AppDs.Accent),
+                interactionSource = interaction,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        // The clear button's slot is always there, so the row never changes width as it arrives;
+        // only the icon fades and scales in and out.
+        Box(
+            Modifier
+                .size(AppDs.ClearTap)
+                .clip(CircleShape)
+                .clickable(enabled = query.isNotEmpty(), onClickLabel = "Clear search") { onQueryChange("") },
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedVisibility(
+                visible = query.isNotEmpty(),
+                enter = if (reduce) fadeIn(snap()) else fadeIn(tween(Motion.Exit, easing = Motion.EaseOut)) +
+                    scaleIn(tween(Motion.Exit, easing = Motion.EaseOut), initialScale = 0.7f),
+                exit = if (reduce) fadeOut(snap()) else fadeOut(tween(Motion.Micro, easing = Motion.EaseIn)) +
+                    scaleOut(tween(Motion.Micro, easing = Motion.EaseIn), targetScale = 0.7f),
+            ) {
+                Icon(
+                    lucide(com.cdnhunter.app.R.drawable.ic_lucide_x),
+                    contentDescription = "Clear search",
+                    tint = AppDs.TextMid,
+                    modifier = Modifier.size(AppDs.IconSm),
                 )
             }
+        }
+    }
+}
+
+// ── Server list ───────────────────────────────────────────────────────────────
+// .server-row, Windscribe-style: a [RowFlagSize] circular flag, the country name, an
+// optional ping (bars + ms, only when measured), and a favourite heart at the trailing
+// edge. No per-row background wash — a hairline divider between rows and a slim leading
+// accent bar on the active one do that job instead. See [ServerRow] below.
+
+
+@Composable
+private fun EmptyHint(allEmpty: Boolean, searching: Boolean, onAdd: () -> Unit) {
+    val (title, subtitle) = when {
+        searching -> "Nothing matches" to "Try another name, city or country"
+        allEmpty -> "No servers yet" to "Add a config or import a subscription"
+        else -> "Nothing added by hand" to "Pasted and scanned configs land here"
+    }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = "Add servers",
+                onClick = onAdd,
+            )
+            .padding(horizontal = ListPad, vertical = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(52.dp)
+                .embossed(CircleShape, EmptyDiscFill, 8.dp, pressed),
+            contentAlignment = Alignment.Center,
+        ) {
+            PlusGlyph(color = RefTextMid, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(16.dp))          // snapped to the 4dp grid, was 14dp
+        Text(title, fontSize = TypeSubtitle.first, fontWeight = TypeSubtitle.second, color = RefTextHi)
+        Spacer(Modifier.height(4.dp))
+        Text(subtitle, fontSize = TypeCaption.first, color = RefTextLow)
+    }
+}
+
+// ── Usage card ────────────────────────────────────────────────────────────────
+// .bottom-card: a floating strip over the list — traffic ring, two lines, chevron.
+// The mockup's copy is a monthly quota; the app only knows the live session, so
+// that is what the ring and the lines report.
+@Composable
+private fun UsageCard(
+    state: HomeUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val subtext = when {
+        state.connected ->
+            "↓ ${speedLabel(state.downloadKBps)}   ↑ ${speedLabel(state.uploadKBps)}"
+        state.activeConfig == null -> "No server selected"
+        else -> "Not connected"
+    }
+    // No elapsed time here: the session duration is deliberately not shown anywhere on
+    // this screen any more (the hero's timer chip went with it), so the title stays the
+    // same string in both phases and only [subtext] changes with the connection.
+    val title = "Data used today"
+    val shape = remember { RoundedCornerShape(CardCorner) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Row(
+        modifier
+            .fillMaxWidth()
+            // The hard [RefBorder] outline is gone, in step with the rest of the app: this card
+            // is now separated by its own lift and its lit rim ([Modifier.embossed]) rather than
+            // by a drawn line. Deeper than the buttons — it floats over a scrolling list.
+            .embossed(shape, UsageCardFill, 4.dp, pressed, CardShadowAmbient, CardShadowSpot)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = "Choose a server",
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UsageRing(
+            bytes = state.dailyUsageBytes,
+            // Teal while the tunnel is up; a plain grey the rest of the time, so the card
+            // never announces a state of its own. The ring measures today's running total
+            // against [USAGE_DAILY_CAP_BYTES], not the current session.
+            accent = if (state.connected) RefLive else RefTextMid,
+        )
+        Spacer(Modifier.width(16.dp))              // .bottom-card gap (snapped to the 4dp grid, was 14dp)
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontSize = TypeBody.first,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.1.sp,
+                color = RefTextHi,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtext,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = RefTextMid,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(16.dp))     // snapped to the 4dp grid, was 14dp
+        Chevron(size = 16.dp, color = RefTextLow)
+    }
+}
+
+/**
+ * .usage-ring — a 5dp arc over a machined track, with today's total in the middle.
+ *
+ * Apple-Health-grade rather than a flat conic: the track is lit from the top (a
+ * subtle white vertical gradient, brightest where light would fall) so it reads as a
+ * groove rather than a drawn line; the fill is a forward sweep gradient that runs from
+ * a dim tail to a bright, rounded head; and a wider, fainter underglow sits beneath the
+ * head so the arc looks lit, not painted. The sweep animates to [USAGE_DAILY_CAP_BYTES].
+ */
+@Composable
+private fun UsageRing(bytes: Long, accent: Color) {
+    val (value, unit) = ringLabel(bytes)
+    val reduce = appReduceMotion()
+    val fraction = (bytes.toFloat() / USAGE_DAILY_CAP_BYTES.toFloat()).coerceIn(0f, 1f)
+    val sweep by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = appMotion(reduce, 600),
+        label = "usageSweep",
+    )
+    Box(Modifier.size(RingSize), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = RingStroke.toPx()
+            val inset = stroke / 2f
+            val topLeft = Offset(inset, inset)
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+
+            // Machined groove: lit from the top, not a flat hairline.
+            drawCircle(
+                brush = UsageRingTrack,
+                radius = (size.minDimension - stroke) / 2f,
+                style = Stroke(width = stroke),
+            )
+
+            if (sweep > 0.001f) {
+                // Draw from twelve o'clock: rotate the frame so the sweep gradient's start
+                // (three o'clock in its own axis) lands at the top, matching the arc.
+                rotate(degrees = -90f, pivot = center) {
+                    // Underglow — a wider, translucent pass so the head reads as lit.
+                    drawArc(
+                        color = accent.copy(alpha = 0.18f),
+                        startAngle = 0f,
+                        sweepAngle = 360f * sweep,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = stroke * 2.1f, cap = StrokeCap.Round),
+                    )
+                    drawArc(
+                        brush = usageSweepBrush(accent, sweep, center),
+                        startAngle = 0f,
+                        sweepAngle = 360f * sweep,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    )
+                }
+            }
+        }
+        // Numeral over unit, not "1.8 MB" on one line: at this diameter the one-line form either
+        // wraps at the ring's inner wall or has to shrink past legibility. The two are sized apart
+        // so the stack reads as one measurement rather than as two stacked words.
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                value,
+                fontSize = 12.sp,
+                lineHeight = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.2).sp,
+                color = accent,
+                maxLines = 1,
+            )
+            Text(
+                unit,
+                fontSize = 8.5.sp,
+                lineHeight = 9.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.4.sp,
+                color = accent.copy(alpha = 0.72f),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** Lit-from-top track for the usage ring — a groove, not a drawn circle. Mirrors
+ *  [PowerRingTrack] so the two rings on Home read as the same machined family. */
+private val UsageRingTrack = Brush.verticalGradient(
+    0.00f to Color.White.copy(alpha = 0.16f),
+    0.38f to Color.White.copy(alpha = 0.08f),
+    0.70f to Color.White.copy(alpha = 0.05f),
+    1.00f to Color.White.copy(alpha = 0.10f),
+)
+
+/**
+ * The usage arc's colour along its length: a dim tail climbing to a bright, opaque head.
+ * A [Brush.sweepGradient] is the only brush whose axis matches the arc; its fractions run
+ * once round from three o'clock (which the caller has rotated to the top), so the drawn
+ * arc — from 0° for [sweep] of the circle — occupies the first `sweep` of them, and the
+ * stops are placed as fractions of that. The transparent stop just past the head is never
+ * drawn but stops the head's colour bleeding back round the gap into the tail (sweep
+ * gradients wrap).
+ */
+private fun usageSweepBrush(accent: Color, sweep: Float, center: Offset): Brush {
+    val end = sweep.coerceIn(0.001f, 1f)
+    return Brush.sweepGradient(
+        0f to accent.copy(alpha = 0.38f),
+        end * 0.55f to accent.copy(alpha = 0.85f),
+        end to accent,
+        (end + 0.0015f).coerceAtMost(1f) to Color.Transparent,
+        center = center,
+    )
+}
+
+// ── Glyphs ────────────────────────────────────────────────────────────────────
+// The mockup draws its chevron, account mark and wifi mark as inline SVG on a
+// 24-unit grid at stroke-width 2–2.4. Material's equivalents are heavier and, for
+// the account mark, filled, so these three are drawn on the same grid: `unit`
+// below is one mockup unit, so the path numbers stay recognisable. The connect
+// mark is a hand-drawn lightning bolt ([PowerBolt]) on the same 24-unit grid — a
+// filled, bevelled glyph rather than Material's flat power symbol.
+
+@Composable
+private fun Chevron(size: Dp, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(size)) {
+        val unit = this.size.minDimension / 24f
+        val stroke = 2f * unit
+        // M9 18l6-6-6-6
+        drawLine(
+            color,
+            Offset(9f * unit, 18f * unit),
+            Offset(15f * unit, 12f * unit),
+            stroke,
+            StrokeCap.Round,
+        )
+        drawLine(
+            color,
+            Offset(15f * unit, 12f * unit),
+            Offset(9f * unit, 6f * unit),
+            stroke,
+            StrokeCap.Round,
+        )
+    }
+}
+
+/** circle cx12 cy8 r4 over M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8 — head and shoulders. */
+@Composable
+private fun AccountGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val unit = size.minDimension / 24f
+        val stroke = 2.4f * unit
+        drawCircle(
+            color = color,
+            radius = 4f * unit - stroke / 2f,
+            center = Offset(12f * unit, 8f * unit),
+            style = Stroke(width = stroke),
+        )
+        drawArc(
+            color = color,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(4f * unit, 13f * unit),
+            size = Size(16f * unit, 16f * unit),
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun PlusGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stroke = 1.7.dp.toPx()
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        drawLine(color, Offset(stroke / 2f, cy), Offset(size.width - stroke / 2f, cy), stroke, StrokeCap.Round)
+        drawLine(color, Offset(cx, stroke / 2f), Offset(cx, size.height - stroke / 2f), stroke, StrokeCap.Round)
+    }
+}
+
+// ══ HOME · DESIGN SYSTEM ══════════════════════════════════════════════════════════
+// One small set of tokens; every card, button, field and row below is built from it, so no
+// component carries a radius, padding or colour of its own.
+//
+//   Colour      matte black surfaces, ONE blue accent. Green/amber/red exist only as signal
+//               semantics (bars, status dot) — never as decoration.
+//   Type        Manrope (AppFont) on the AppType scale; the hero name has its own size ramp.
+//   Spacing     4dp grid: S1 4 · S2 8 · S3 12 · S4 16 · S5 20 · S6 24.
+//   Radius      RMd 16 (rows, chips) · RLg 22 (connect button) · RXl 28 (hero, panel) · pill (search).
+//   Elevation   two soft, low-alpha shadows only — hero and bottom panel. Everything else is a
+//               hairline border on a slightly lighter surface.
+//   Icons       IconSm 16 · IconMd 20, one stroke weight (2dp) for hand-drawn marks.
+//   States      rest → pressed (surface steps lighter, buttons sink 2.5%) → active (accent hairline).
+/** The bottom panel sits a shade deeper than the card surface, so it reads as recessed. */
+private val PanelFill = Color(0xFF0A101C)
+
+/** The six states the connect control draws. [ConnPhase] has no disconnecting
+ *  phase — the service tears down and reports OFF — so HomeScreen holds DISCONNECTING for the
+ *  gap between the tap and the tunnel actually reporting down. */
+/**
+ * [BLOCKED] is the kill switch doing its job: the tunnel dropped, the app is holding the interface
+ * with traffic discarded instead of letting it fall back to the open network. It is not "not
+ * protected" — nothing is leaking — and it must not look like it, or the person turns the VPN off
+ * to get online and exposes themselves. It reuses the error glyph and colours (no new animation).
+ */
+private enum class ConnVisual { DISCONNECTED, CONNECTING, RECONNECTING, CONNECTED, DISCONNECTING, ERROR, BLOCKED }
+
+private fun ConnVisual.title(): String = when (this) {
+    ConnVisual.DISCONNECTED -> "Connect"
+    ConnVisual.CONNECTING -> "Connecting"
+    ConnVisual.RECONNECTING -> "Reconnecting"
+    ConnVisual.CONNECTED -> "Connected"
+    ConnVisual.DISCONNECTING -> "Disconnecting"
+    ConnVisual.ERROR -> "Couldn't connect"
+    ConnVisual.BLOCKED -> "Blocked"
+}
+
+private fun ConnVisual.caption(): String = when (this) {
+    ConnVisual.DISCONNECTED -> "Not protected"
+    ConnVisual.CONNECTING -> "Establishing secure connection"
+    ConnVisual.RECONNECTING -> "Network interrupted"
+    ConnVisual.CONNECTED -> "Protected"
+    ConnVisual.DISCONNECTING -> "Closing secure connection"
+    ConnVisual.ERROR -> "Tap to retry"
+    ConnVisual.BLOCKED -> "Kill switch is blocking traffic · tap to reconnect"
+}
+
+/**
+ * The glyph mirrors the same real state the words do: the bolt while idle, one weighted line while
+ * the tunnel is coming up (or being re-established), the check once it is up, the line backwards
+ * while it comes down, and a still red loop on a failure or a block.
+ */
+private fun ConnVisual.glyph(): GlyphPhase = when (this) {
+    ConnVisual.DISCONNECTED -> GlyphPhase.Idle
+    ConnVisual.CONNECTING -> GlyphPhase.Connecting
+    ConnVisual.RECONNECTING -> GlyphPhase.Connecting
+    ConnVisual.CONNECTED -> GlyphPhase.Connected
+    ConnVisual.DISCONNECTING -> GlyphPhase.Disconnecting
+    ConnVisual.ERROR -> GlyphPhase.Error
+    ConnVisual.BLOCKED -> GlyphPhase.Error
+}
+
+/** How long DISCONNECTING stays up after the tunnel reports down, so the state is readable. */
+private const val DISCONNECT_HOLD_MS = 500L
+
+/** Give up on DISCONNECTING if the tunnel never reports down (the tap did not take). */
+private const val DISCONNECT_TIMEOUT_MS = 6_000L
+
+/** How long the ERROR state stays up after a failed attempt before the button settles back. */
+private const val ERROR_HOLD_MS = 2_500L
+
+/**
+ * Taps closer together than this are one tap. Without it a double-tap would start a connect and
+ * immediately cancel it, replaying the whole animation for an attempt that never meant anything.
+ * Short enough that cancelling a slow connect still feels immediate.
+ */
+private const val TAP_GUARD_MS = 450L
+
+private val HeroMinHeight = 168.dp
+private val HeroMaxHeight = 232.dp
+
+/** Darkening over the flag: a little at the top for the menu chip, a lot at the foot for the name. */
+private val HeroScrim = Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.34f),
+    0.28f to Color.Black.copy(alpha = 0.05f),
+    0.62f to Color.Transparent,
+    1.00f to Color.Black.copy(alpha = 0.28f),
+)
+
+// ── Home ──────────────────────────────────────────────────────────────────────
+// Top to bottom: hero card (the selected server's flag, full width) → search pill → server list
+// → floating connect panel. HomeScreen stays stateless about the VPN: one HomeUiState plus event
+// lambdas. The only state kept here is view state: the search query and the DISCONNECTING hold.
+@Composable
+internal fun HomeScreen(
+    state: HomeUiState,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenLocations: () -> Unit,
+    onTogglePower: () -> Unit,
+    onSelectConfig: (SavedConfig) -> Unit,
+    onAddServer: () -> Unit,
+    onSetMode: (ConnectMode) -> Unit,
+    /** Ask for the public IP again — the address row is a tap target when the lookup failed. */
+    onRetryIp: () -> Unit,
+    /** Re-measure the pings of exactly the rows currently listed (pull-to-refresh). */
+    onRefreshPings: (List<SavedConfig>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var query by remember { mutableStateOf("") }
+
+    // The ORDER is frozen per (set of servers, query) rather than recomputed on every change to
+    // `allConfigs`: the live ping monitor replaces the whole list every few seconds, and sorting
+    // on that would make a row jump under the user's finger when its ping ticks.
+    val serverIds = state.allConfigs.map { it.id }.toSet()
+    val orderedIds = remember(serverIds, query) {
+        state.allConfigs.matching(query).byLatency().map { it.id }
+    }
+    val configById = state.allConfigs.associateBy { it.id }
+    val servers = remember(orderedIds, state.allConfigs) {
+        orderedIds.mapNotNull { configById[it] }
+    }
+    val activeId = state.activeConfig?.id
+
+    var disconnecting by remember { mutableStateOf(false) }
+    LaunchedEffect(state.phase, disconnecting) {
+        if (disconnecting) {
+            delay(if (state.phase == ConnPhase.OFF) DISCONNECT_HOLD_MS else DISCONNECT_TIMEOUT_MS)
+            disconnecting = false
+        }
+    }
+
+    // A failed attempt = the tunnel was coming up, then dropped to OFF without the user cancelling,
+    // and the service recorded an error. The service's lastError is plain state (not observable), so
+    // it is read once, a beat after the phase flips, rather than relied on for recomposition.
+    var failed by remember { mutableStateOf(false) }
+    var cancelled by remember { mutableStateOf(false) }
+    var wasConnecting by remember { mutableStateOf(false) }
+    LaunchedEffect(state.phase) {
+        when (state.phase) {
+            ConnPhase.CONNECTING -> {
+                wasConnecting = true
+                cancelled = false
+                failed = false
+            }
+            ConnPhase.CONNECTED -> {
+                wasConnecting = false
+                failed = false
+            }
+            ConnPhase.OFF -> {
+                val attempted = wasConnecting && !cancelled
+                wasConnecting = false
+                if (attempted) {
+                    delay(250)
+                    if (CdnVpnService.lastError.isNotBlank()) {
+                        failed = true
+                        delay(ERROR_HOLD_MS)
+                        failed = false
+                    }
+                }
+            }
+        }
+    }
+    // Observed from the connection store, not polled: it is set while the kill switch holds the
+    // tunnel after a drop and cleared the moment a new attempt starts or the VPN is stopped.
+    var blocked by remember { mutableStateOf(CdnVpnService.store.snapshot.killSwitchHolding) }
+    DisposableEffect(Unit) {
+        val remove = CdnVpnService.store.addListener { blocked = it.killSwitchHolding }
+        onDispose { remove() }
+    }
+    val visual = when {
+        // The service's own RECONNECTING state (or an ERROR it is about to retry): the tunnel was
+        // lost and is being rebuilt. Real state only; it outranks CONNECTED so an interruption of a
+        // live tunnel shows as one rather than as "Connected".
+        state.reconnecting -> ConnVisual.RECONNECTING
+        state.phase == ConnPhase.CONNECTING -> ConnVisual.CONNECTING
+        disconnecting -> ConnVisual.DISCONNECTING
+        state.phase == ConnPhase.CONNECTED -> ConnVisual.CONNECTED
+        blocked -> ConnVisual.BLOCKED
+        failed -> ConnVisual.ERROR
+        else -> ConnVisual.DISCONNECTED
+    }
+
+    val heroHeight = (LocalConfiguration.current.screenHeightDp * 0.25f).dp
+        .coerceIn(HeroMinHeight, HeroMaxHeight)
+
+    ProvideTextStyle(TextStyle(fontFamily = LuxuryFont)) {
+        Box(modifier.fillMaxSize().background(PageGradient)) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                HeroCard(
+                    state = state,
+                    onOpenSettings = onOpenSettings,
+                    modifier = Modifier
+                        .padding(start = AppDs.S4, end = AppDs.S4, top = AppDs.S2)
+                        .height(heroHeight),
+                )
+                Spacer(Modifier.height(AppDs.S3))
+                ServerSearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    modifier = Modifier.padding(horizontal = AppDs.S4),
+                )
+                Spacer(Modifier.height(AppDs.S2))
+                ServerList(
+                    state = state,
+                    servers = servers,
+                    activeId = activeId,
+                    query = query,
+                    onSelectConfig = onSelectConfig,
+                    onAddServer = onAddServer,
+                    onRefreshPings = onRefreshPings,
+                    modifier = Modifier.weight(1f),
+                )
+                ConnectPanel(
+                    state = state,
+                    visual = visual,
+                    enabled = state.activeConfig != null,
+                    onClick = {
+                        if (state.phase == ConnPhase.CONNECTED) disconnecting = true
+                        if (state.phase == ConnPhase.CONNECTING) cancelled = true
+                        failed = false
+                        onTogglePower()
+                    },
+                    onSwipeUp = { onSetMode(ConnectMode.SMART) },
+                    onSwipeDown = { onSetMode(ConnectMode.MANUAL) },
+                    onRetryIp = onRetryIp,
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(start = AppDs.S3, end = AppDs.S3, top = AppDs.S2, bottom = AppDs.S2),
+                )
+            }
+        }
+    }
+}
+
+// ── Hero card ─────────────────────────────────────────────────────────────────
+// The selected server's flag fills the whole card edge to edge (Crop, clipped to the card's own
+// radius) and nothing else competes with it: the menu chip at the top, and one long glass pill at
+// the foot holding a pin + the country name (left) and the ping signal bars (right). The middle
+// of the flag is left at its own colour.
+@Composable
+private fun HeroCard(
+    state: HomeUiState,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reduce = appReduceMotion()
+    val shape = RoundedCornerShape(AppDs.RXl)
+
+    val cfg = state.activeConfig
+    val liveCountry = countryCodeToName(state.headerCountryCode)
+    // The config's name is the fallback only when the country is unknown.
+    val liveName = liveCountry.ifBlank {
+        cfg?.let { c -> c.displayName.ifBlank { c.address } } ?: "No server"
+    }
+    // Held while connecting so the pill does not flicker as the exit geo resolves.
+    var stableName by remember { mutableStateOf(liveName) }
+    LaunchedEffect(liveName, state.phase) {
+        if (state.phase != ConnPhase.CONNECTING) stableName = liveName
+    }
+    val name = if (state.phase == ConnPhase.CONNECTING) stableName else liveName
+
+    val flagCountry = state.heroFlagCountry
+    var lastFlagCountry by remember { mutableStateOf(flagCountry) }
+    if (flagCountry.isNotBlank()) lastFlagCountry = flagCountry
+    val flagAlpha by animateFloatAsState(
+        targetValue = if (flagCountry.isNotBlank()) 1f else 0f,
+        animationSpec = appMotion(reduce, PHASE_FADE_MS),
+        label = "heroFlag",
+    )
+
+    var heroSize by remember { mutableStateOf(IntSize.Zero) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .onSizeChanged { heroSize = it }
+            .shadow(
+                elevation = AppDs.ElevHero,
+                shape = shape,
+                clip = false,
+                ambientColor = AppDs.ShadowAmbient,
+                spotColor = AppDs.ShadowSpot,
+            )
+            .clip(shape)
+            .background(AppDs.Surface),
+    ) {
+        if (flagAlpha > 0.01f) {
+            HeaderFlag(
+                countryCode = lastFlagCountry,
+                modifier = Modifier.fillMaxSize().alpha(flagAlpha),
+            )
+        }
+        Box(Modifier.fillMaxSize().background(HeroScrim))
+        // The card's own edge, lit from above like every other framed surface on Home.
+        Box(Modifier.fillMaxSize().border(1.dp, heroEdge, shape))
+
+        Row(
+            // The touch target is larger than the drawn chip; inset by the difference so the chip
+            // itself sits exactly one S3 from the card's edges.
+            Modifier.fillMaxWidth().align(Alignment.TopStart)
+                .padding(AppDs.S3 - (AppDs.Control - MenuChipSize) / 2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MenuButton(onClick = onOpenSettings)
+        }
+
+        LocationGlassPill(
+            title = name,
+            pingMs = cfg?.pingMs ?: -1,
+            backdropSize = heroSize,
+            backdrop = {
+                if (flagAlpha > 0.01f) {
+                    HeaderFlag(countryCode = lastFlagCountry, modifier = Modifier.fillMaxSize().alpha(flagAlpha))
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(start = AppDs.S4, end = AppDs.S4, bottom = AppDs.S4),
+        )
+    }
+}
+
+// ── Menu button ───────────────────────────────────────────────────────────────
+// The tapered three-line mark on a glass chip, so it holds its edge on any flag without the old
+// under-stroke. Same press language as the rest of Home: no ripple, a quick sink and a soft return.
+@Composable
+private fun MenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = animatePressScale(pressed, AppDs.PressScaleSmall)
+    // Press feedback is a quick dim as well as the tiny sink, both on the micro token.
+    val dim by animateFloatAsState(
+        if (pressed) 0.72f else 1f, Motion.inOut(appReduceMotion(), Motion.Micro), label = "menuDim",
+    )
+    val shape = RoundedCornerShape(MenuChipRadius)
+    // The touch target keeps its full 48dp; only the drawn chip is smaller, centred inside it.
+    Box(
+        modifier
+            .size(AppDs.Control)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = "Menu",
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(MenuChipSize)
+                .scale(scale)
+                .graphicsLayer { alpha = dim }
+                .clip(shape)
+                .background(Color.Black.copy(alpha = 0.34f))
+                .border(1.dp, AppDs.Border, shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(MenuGlyphSize)) {
+                val stroke = MenuStroke.toPx()
+                val gap = MenuLineGap.toPx()
+                // Centre the mark's visual mass, not its box: the lines are left-aligned and
+                // taper, so shift by half the average shortfall.
+                val shift = size.width * (1f - MenuLineRatios.average().toFloat()) / 2f
+                val cy = size.height / 2f
+                listOf(cy - gap, cy, cy + gap).forEachIndexed { i, y ->
+                    drawLine(
+                        AppDs.TextHi.copy(alpha = 0.92f),
+                        Offset(shift + stroke / 2f, y),
+                        Offset(shift + size.width * MenuLineRatios[i] - stroke / 2f, y),
+                        stroke,
+                        StrokeCap.Round,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+// A matte pill under the hero. Focus is one quiet change: the border and the icon take the accent
+// and the fill lifts a step — no glow.
+@Composable
+private fun ServerSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reduce = appReduceMotion()
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(50)
+    val fill by animateColorAsState(
+        if (focused) AppDs.SurfaceRaised else AppDs.Surface, appMotion(reduce, 180), label = "searchFill",
+    )
+    val border by animateColorAsState(
+        if (focused) AppDs.Accent.copy(alpha = 0.55f) else AppDs.Border, appMotion(reduce, 180), label = "searchBorder",
+    )
+    val iconTint by animateColorAsState(
+        if (focused) AppDs.Accent else AppDs.TextMid, appMotion(reduce, 180), label = "searchIcon",
+    )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(AppDs.SearchHeight)
+            .clip(shape)
+            .background(fill)
+            .border(1.dp, border, shape)
+            .perimeterLight(cornerRadius = AppDs.SearchHeight / 2, enabled = focused)
+            .padding(start = AppDs.S4, end = AppDs.S2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            lucide(com.cdnhunter.app.R.drawable.ic_lucide_search),
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(AppDs.IconMd),
+        )
+        Spacer(Modifier.width(AppDs.S3))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            // Fades rather than blinking out as the first letter lands; never leaves the layout.
+            val placeholder by animateFloatAsState(
+                targetValue = if (query.isEmpty()) 1f else 0f,
+                animationSpec = Motion.inOut(reduce, Motion.Micro + 50),
+                label = "searchPlaceholder",
+            )
+            Text(
+                "Search location or server",
+                style = SearchFieldStyle,
+                color = AppDs.TextLow,
+                maxLines = 1,
+                modifier = Modifier.graphicsLayer { alpha = placeholder },
+            )
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -3099,6 +3869,7 @@ private fun ServerRow(
     measuring: Boolean = false,
 ) {
     val reduce = appReduceMotion()
+    val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = RoundedCornerShape(AppDs.RMd)
@@ -3106,14 +3877,14 @@ private fun ServerRow(
     val fill by animateColorAsState(
         targetValue = when {
             pressed -> AppDs.SurfacePressed
-            isActive -> AppDs.SurfaceRaised
+            isActive -> AppDs.SelectedNavy
             else -> AppDs.Surface.copy(alpha = 0f)
         },
         animationSpec = appMotion(reduce, 120),
         label = "rowFill",
     )
     val edge by animateColorAsState(
-        targetValue = AppDs.Bone.copy(alpha = if (isActive) 0.45f else 0f),
+        targetValue = AppDs.Accent.copy(alpha = if (isActive) 0.70f else 0f),
         animationSpec = appMotion(reduce, 220),
         label = "rowEdge",
     )
@@ -3125,11 +3896,15 @@ private fun ServerRow(
             .clip(shape)
             .background(fill)
             .border(1.dp, edge, shape)
+            .perimeterLight(cornerRadius = AppDs.RMd, enabled = isActive)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
                 onClickLabel = "Use $title",
-                onClick = onClick,
+                onClick = {
+                    AppHaptics.tap(view)
+                    onClick()
+                },
             )
             .drawBehind {
                 if (!isActive) {
@@ -3152,7 +3927,7 @@ private fun ServerRow(
             title,
             fontSize = TypeSubtitle.first,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
-            color = if (isActive) AppDs.Bone else AppDs.TextHi,
+            color = AppDs.TextHi,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -3390,7 +4165,7 @@ private fun ConnectButton(
     modifier: Modifier = Modifier,
 ) {
     val reduce = appReduceMotion()
-    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = RoundedCornerShape(AppDs.RLg)
@@ -3406,12 +4181,63 @@ private fun ConnectButton(
         },
         label = "connectLive",
     )
-    // The light inner CTA is bone in every state; the state lives in the well, the words and the
-    // outer panel's edge. Pressed deepens it a step.
-    val fill by animateColorAsState(
-        if (pressed) lerp(AppDs.Bone, Color.Black, 0.10f) else AppDs.Bone, appMotion(reduce, 100), label = "connectFill",
+    // Blue while idle or working (a step deeper and quieter while the tunnel is coming up); the
+    // same card turns cream once the tunnel is really up. The colours are State read while
+    // drawing, so the change costs no recomposition.
+    val working = visual == ConnVisual.CONNECTING || visual == ConnVisual.RECONNECTING ||
+        visual == ConnVisual.DISCONNECTING
+    val blue = animateColorAsState(
+        targetValue = if (working) AppDs.AccentWorking else AppDs.AccentButton,
+        animationSpec = Motion.inOut(reduce, Motion.Emphasis),
+        label = "connectBlue",
+    )
+    val pressShade = animateFloatAsState(
+        targetValue = if (pressed) 0.12f else 0f,
+        animationSpec = Motion.inOut(reduce, Motion.Micro),
+        label = "connectPressShade",
+    )
+    // The words flip from white to dark in step with the surface turning cream.
+    val isConnected = visual == ConnVisual.CONNECTED
+    val inkSpec: FiniteAnimationSpec<Color> = when {
+        reduce -> snap()
+        isConnected -> tween(280, delayMillis = 220, easing = Motion.EaseInOut)
+        else -> tween(200, easing = Motion.EaseInOut)
+    }
+    val titleInk by animateColorAsState(
+        if (isConnected) AppDs.Ink else AppDs.OnAccent, inkSpec, label = "connectTitleInk",
+    )
+    val captionInk by animateColorAsState(
+        if (isConnected) AppDs.Ink.copy(alpha = 0.62f) else AppDs.OnAccent, inkSpec, label = "connectCaptionInk",
     )
     var lastTapAt by remember { mutableStateOf(0L) }
+
+    // Feedback for REAL state changes only. `previous` starts as the state the screen opened in,
+    // so opening the app already connected feels like nothing; only a working -> CONNECTED (or
+    // -> ERROR) transition does. It runs once per transition, from this effect and never from
+    // inside an animation, and a timed-out attempt arrives as ERROR, so it can never feel like
+    // success. The success tick waits for the glyph's ring to close into the check.
+    val settle = remember { Animatable(1f) }
+    var previous by remember { mutableStateOf(visual) }
+    LaunchedEffect(visual) {
+        val was = previous
+        previous = visual
+        val wasWorking = was == ConnVisual.CONNECTING || was == ConnVisual.RECONNECTING
+        when {
+            visual == ConnVisual.CONNECTED && wasWorking -> {
+                if (!reduce) {
+                    launch {
+                        settle.snapTo(0.985f)
+                        settle.animateTo(1f, tween(Motion.Connection, delayMillis = 220, easing = Motion.EaseOut))
+                    }
+                    delay(260)
+                }
+                AppHaptics.success(view)
+            }
+            visual == ConnVisual.ERROR && wasWorking -> AppHaptics.failure(view)
+            settle.value != 1f -> settle.animateTo(1f, tween(Motion.Micro))
+            else -> Unit
+        }
+    }
 
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { ModeSwipeThreshold.toPx() } }
@@ -3432,13 +4258,29 @@ private fun ConnectButton(
             .fillMaxWidth()
             .height(AppDs.ConnectHeight)
             .scale(scale)
+            .graphicsLayer {
+                scaleX = settle.value
+                scaleY = settle.value
+            }
             .clip(shape)
-            .background(fill)
+            .drawBehind {
+                drawRect(lerp(blue.value, AppDs.Bone, liveFill.value))
+                if (pressShade.value > 0.001f) drawRect(Color.Black.copy(alpha = pressShade.value))
+            }
             .background(AppDs.ButtonTopLight)
             .border(
                 1.dp,
-                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0f))),
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0f))),
                 shape,
+            )
+            // The one light that marks this card as live while it is idle or working. Gone once
+            // connected: the cream card is at rest.
+            .perimeterLight(
+                cornerRadius = AppDs.RLg,
+                enabled = visual == ConnVisual.DISCONNECTED || visual == ConnVisual.CONNECTING ||
+                    visual == ConnVisual.RECONNECTING,
+                color = Color.White,
+                peakAlpha = 0.55f,
             )
             .pointerInput(threshold) {
                 var travel = 0f
@@ -3463,7 +4305,7 @@ private fun ConnectButton(
                     val now = android.os.SystemClock.uptimeMillis()
                     if (now - lastTapAt >= TAP_GUARD_MS) {
                         lastTapAt = now
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        AppHaptics.tap(view)
                         onClick()
                     }
                 },
@@ -3494,11 +4336,11 @@ private fun ConnectButton(
                         v.title(),
                         fontSize = TypeTitle.first,
                         fontWeight = TypeTitle.second,
-                        color = AppDs.Ink,
+                        color = titleInk,
                         maxLines = 1,
                     )
                     if (v == ConnVisual.CONNECTING || v == ConnVisual.RECONNECTING || v == ConnVisual.DISCONNECTING) {
-                        ActivityDots(TypeTitle.first, TypeTitle.second, AppDs.Ink)
+                        ActivityDots(TypeTitle.first, TypeTitle.second, titleInk)
                     }
                 }
             }
@@ -3512,7 +4354,7 @@ private fun ConnectButton(
                     c,
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
-                    color = AppDs.Ink.copy(alpha = 0.62f),
+                    color = captionInk,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = TextStyle(fontFeatureSettings = "tnum"),
@@ -3522,7 +4364,7 @@ private fun ConnectButton(
             // arriving (or giving up) changes what is inside it and nothing around it.
             AnimatedVisibility(
                 visible = visual == ConnVisual.CONNECTED,
-                enter = if (reduce) fadeIn(snap()) else fadeIn(tween(200)) + expandVertically(tween(220, easing = FastOutSlowInEasing)),
+                enter = if (reduce) fadeIn(snap()) else fadeIn(tween(200, delayMillis = 220)) + expandVertically(tween(220, delayMillis = 220, easing = FastOutSlowInEasing)),
                 exit = if (reduce) fadeOut(snap()) else fadeOut(tween(120)) + shrinkVertically(tween(160, easing = FastOutSlowInEasing)),
             ) {
                 ConnectionIpLine(connectionIp, connectionIpFailed, reduce)
@@ -3549,7 +4391,7 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
         Text(
             "IP",
             fontSize = TypeCaption.first,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             color = AppDs.Ink.copy(alpha = 0.62f),
             maxLines = 1,
         )
@@ -3564,7 +4406,7 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
                 is ButtonIp.Value -> Text(
                     s.ip,
                     fontSize = TypeCaption.first,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     color = AppDs.Ink.copy(alpha = 0.88f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -3621,8 +4463,9 @@ private fun <S> labelTransition(reduce: Boolean): AnimatedContentTransitionScope
 }
 
 /**
- * The icon well: an ink disc on the bone button that fills with the accent once connected, with
- * the [ConnectGlyph] (bolt → travelling line → check) drawn over it. [fillAmount] is read while drawing.
+ * The icon well: a dark disc on the blue button, which gives way to a pale blue-tinted one once the
+ * card is cream, with the [ConnectGlyph] (bolt → travelling line → blue check) drawn over it.
+ * [fillAmount] (0 = blue button, 1 = cream card) is read while drawing.
  */
 @Composable
 private fun ConnectWell(
@@ -3634,16 +4477,22 @@ private fun ConnectWell(
         Canvas(Modifier.matchParentSize()) {
             val stroke = 2.dp.toPx()
             val radius = size.minDimension / 2f
-            drawCircle(AppDs.Ink)
-            drawCircle(AppDs.Border, radius = radius - stroke / 2f, style = Stroke(stroke))
             val fill = fillAmount()
+            drawCircle(AppDs.Ink.copy(alpha = 1f - fill))
+            drawCircle(
+                AppDs.Border.copy(alpha = AppDs.Border.alpha * (1f - fill)),
+                radius = radius - stroke / 2f,
+                style = Stroke(stroke),
+            )
             if (fill > 0.01f) {
-                drawCircle(AppDs.Accent.copy(alpha = fill), radius = radius * (0.88f + 0.12f * fill))
+                drawCircle(AppDs.Accent.copy(alpha = 0.14f * fill), radius = radius)
+                drawCircle(AppDs.Accent.copy(alpha = 0.40f * fill), radius = radius - stroke / 2f, style = Stroke(stroke))
             }
         }
         ConnectGlyph(
             phase = phase,
             boltPath = ConnectBoltPath,
+            checkColor = AppDs.Accent,
             modifier = Modifier.matchParentSize(),
         )
     }
