@@ -3595,7 +3595,7 @@ private fun ConnectButton(
  */
 @Composable
 private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
-    val slot = if (ip != null) IpSlot.Value(ip) else if (failed) IpSlot.Failed else IpSlot.Pending
+    val slot = if (ip != null) ButtonIp.Value(ip) else if (failed) ButtonIp.Failed else ButtonIp.Pending
     Row(
         Modifier.height(IpLineHeight).padding(top = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -3615,7 +3615,7 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
             label = "connectionIp",
         ) { s ->
             when (s) {
-                is IpSlot.Value -> Text(
+                is ButtonIp.Value -> Text(
                     s.ip,
                     fontSize = TypeCaption.first,
                     fontWeight = FontWeight.SemiBold,
@@ -3624,14 +3624,14 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
                     overflow = TextOverflow.Ellipsis,
                     style = TextStyle(fontFeatureSettings = "tnum"),
                 )
-                IpSlot.Failed -> Text(
+                ButtonIp.Failed -> Text(
                     "Unavailable",
                     fontSize = TypeCaption.first,
                     fontWeight = TypeCaption.second,
                     color = AppDs.Ink.copy(alpha = 0.50f),
                     maxLines = 1,
                 )
-                IpSlot.Pending -> Row(verticalAlignment = Alignment.CenterVertically) {
+                ButtonIp.Pending -> Row(verticalAlignment = Alignment.CenterVertically) {
                     // Exactly the server row's "ms is being measured" pair, tinted for the bone button.
                     SkeletonBlock(Modifier.width(84.dp).height(10.dp), color = AppDs.Ink.copy(alpha = 0.16f))
                     Spacer(Modifier.width(AppDs.S3))
@@ -3642,10 +3642,10 @@ private fun ConnectionIpLine(ip: String?, failed: Boolean, reduce: Boolean) {
     }
 }
 
-private sealed interface IpSlot {
-    data class Value(val ip: String) : IpSlot
-    data object Failed : IpSlot
-    data object Pending : IpSlot
+private sealed interface ButtonIp {
+    data class Value(val ip: String) : ButtonIp
+    data object Failed : ButtonIp
+    data object Pending : ButtonIp
 }
 
 /** One line of caption text plus its 2dp lead-in; fixed so the slot never changes size. */
