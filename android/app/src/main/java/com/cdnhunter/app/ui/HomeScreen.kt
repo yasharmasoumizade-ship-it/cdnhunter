@@ -2972,7 +2972,10 @@ private fun ServerSearchField(
                 .clickable(enabled = query.isNotEmpty(), onClickLabel = "Clear search") { onQueryChange("") },
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedVisibility(
+            // Fully qualified on purpose: inside this Box the enclosing Row's RowScope is an
+            // outer implicit receiver, and Compose's scope marker forbids using it, which
+            // breaks the unqualified call ("RowScope.AnimatedVisibility ... implicit receiver").
+            androidx.compose.animation.AnimatedVisibility(
                 visible = query.isNotEmpty(),
                 enter = if (reduce) fadeIn(snap()) else fadeIn(tween(Motion.Exit, easing = Motion.EaseOut)) +
                     scaleIn(tween(Motion.Exit, easing = Motion.EaseOut), initialScale = 0.7f),
