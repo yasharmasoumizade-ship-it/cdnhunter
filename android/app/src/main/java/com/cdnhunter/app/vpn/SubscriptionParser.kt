@@ -160,7 +160,7 @@ object SubscriptionParser {
             // A config line carries the server address plus its UUID/password, so the
             // line itself only ever reaches the log in a debug build.
             if (com.cdnhunter.app.BuildConfig.DEBUG) {
-                Log.w(TAG, "Failed to parse config: $line", e)
+                Log.w(TAG, "Failed to parse config: ${com.cdnhunter.app.core.Redactor.redact(line)}", e)
             } else {
                 Log.w(TAG, "Failed to parse a config line from subscription", e)
             }
